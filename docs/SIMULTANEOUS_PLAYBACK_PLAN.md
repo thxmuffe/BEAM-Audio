@@ -24,9 +24,14 @@ The existing isolated Mac runtime check passes. The rebuilt iPhone rejoins and
 returns remote diagnostics; the user confirms Mac-to-iPhone audio plays normally
 and approved the inspector Keychain prompt. Actual Windows packaging/playback
 and stop/play recovery remain pending. Windows was Offline during inspection.
-See PROGRESS.md for evidence/limits. The Mac/iPhone baseline is restored; the
-next implementation stage is the replaceable media boundary. Stages 2–5 remain
-planned, not implemented; no synchronization improvement is claimed.
+See PROGRESS.md for evidence/limits. Step 2 is implemented in source: the
+receiver media-engine behaviour, libwebrtc/GStreamer bindings, common controls
+and output reports are separated. Thirteen focused contract/timing checks and
+unsigned iPhone compilation pass; these changes have not been installed or
+listened to on devices. Step 3 now has a passing isolated Mac WebRTC/Opus scheduling/control proof
+and 18 passing policy/engine/timing checks. Windows/WASAPI access is deferred
+until November 4. App clock integration, physical output and recovery remain
+unproved; the app engine capabilities are still unsupported.
 
 ## 1. Restore compilation after the repository move — Mac/iPhone baseline confirmed
 
@@ -43,12 +48,17 @@ planned, not implemented; no synchronization improvement is claimed.
   preparation, notices, and checks that cross the repository boundary.
 - Compile core and build Mac and unsigned iPhone here. Check Windows packaging
   sources here; actual Windows build/playback remains for Windows. Add no tests
-  or hardening programme in this increment.
+  or hardening programme in this increment. (Historical first-increment scope;
+  subsequent relevant tests are authorized by the revised preference.)
 - Handoff: user launches rebuilt Mac, installs/signs iPhone via Xcode, rebuilds
   Windows, then checks admission/rejoin, chat and the existing unsynchronized
   playback. Stop this increment at a usable baseline for user testing.
 
-## 2. Finish the replaceable media boundary
+## 2. Finish the replaceable media boundary — implemented, device check pending
+
+See [the implemented interface](AUDIO_ENGINE_INTERFACE.md) and PROGRESS.md for
+scope and validation limits. The following requirements guided this increment:
+
 
 - Reuse the existing Erlang behaviour and OTP ownership. Separate shared
   subscription/presentation policy from backend signaling, buffering/decode and
@@ -62,7 +72,14 @@ planned, not implemented; no synchronization improvement is claimed.
 - Current backend remains explicitly unsynchronized until schedule execution is
   proven. Do not route native PCM through BEAM solely to fit legacy callbacks.
 
-## 3. Prove scheduled GStreamer output on Windows
+## 3. Prove scheduled GStreamer output on Windows — local proof passes, Windows pending
+
+See [the isolated fixture and Windows commands](../src/Audio/experiments/gstreamer/README.md).
+The clean Mac run preserves all 401 RTP/decoded PTS associations and executes
+an Erlang-planned offset plus bounded dedicated-clock calibration. This is not
+an app scheduling implementation or physical alignment proof. The user will
+have Windows available November 4; preserve the current app baseline meanwhile.
+
 
 - Start from the existing WebRTC/Opus/WASAPI receiver. Retain codec, secure
   transport and cluster connectivity to isolate the timing change.
@@ -94,7 +111,7 @@ planned, not implemented; no synchronization improvement is claimed.
   and a required relock without new jumps.
 - Preserve remaining recovery checks from PLAN.md. Investigate uncompressed
   transport only if justified by quality evidence; PCM alone fixes neither loss
-  nor synchronization. Ask before adding new tests.
+  nor synchronization. Follow the global testing preferences.
 
 ## After this subplan
 

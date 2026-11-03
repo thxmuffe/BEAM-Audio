@@ -4,6 +4,24 @@ See [audio/stream/subscription draft 0.1](../../docs/AUDIO_STREAM_CONTRACT.md)
 for the shared semantic boundary and its first PCM/WebRTC binding. It is not
 an interoperability or synchronized-playback claim.
 
+## Scheduling proof status
+
+The [isolated GStreamer proof](experiments/gstreamer/README.md) now executes an
+Erlang-planned clock target and bounded pipeline-clock rate change through a
+local WebRTC/Opus pair. This is not enabled in the apps. Windows/WASAPI, real
+cluster-clock mapping, output calibration and physical alignment remain pending.
+
+## Replaceable receiver engines
+
+The native receiver now uses `parvi_audio_engine`, with libwebrtc and GStreamer
+adapters behind the same session-owned command/event interface. Stream handlers
+retain wire format and peer signaling; shared Erlang retains timing policy.
+See [the engine interface](../../docs/AUDIO_ENGINE_INTERFACE.md) for selection,
+capabilities, source/output reporting and explicit unsupported schedule/rate
+controls. Existing native JSON/media messages remain unchanged. Changing a local
+adapter setting requires its matching native service; it does not install a new
+library. This refactor has not been deployed to the playing devices.
+
 ## Plan A: WebRTC Opus audio
 
 `handlers/webrtc/` implements the selected audio handler, `webrtc_audio_opus`.
@@ -81,7 +99,8 @@ patched and no copied class/vtable layout is used.
 The local JSON command is `set_audio_minimum_playout_delay` with string `delay_ms`
 (e.g. `"200"` or `"automatic"`). The supervised session waits for a matching native
 acknowledgement with a two-second named timeout. A success reports
-`guarantee=minimum_only`; it does not report an exact achieved buffer depth.
+`guarantee=minimum_only` on iPhone; Windows reports
+`guarantee=jitter_buffer_latency`. Neither reports an exact achieved buffer depth.
 Initial buffering stays automatic. Readiness and requested delay appear in the
 existing bounded statistics stream. An actual output-time measurement and
 calibrated timing are still needed before group correction; nominal track latency

@@ -12,6 +12,7 @@ final class IOSWebRTCAudio {
         var port: UInt16 = 0
         listener = parvi_bridge_listen(&port)
         guard listener >= 0 else { throw NSError(domain: "WebRTC audio", code: 1) }
+        setenv("PARVI_AUDIO_ENGINE", "libwebrtc", 1)
         let fd = listener
         RTCInitializeSSL()
         DispatchQueue.global(qos: .userInitiated).async {

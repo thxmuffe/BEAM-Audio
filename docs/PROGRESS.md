@@ -1,5 +1,79 @@
 # Progress
 
+## 2026-11-03 — Step 3 local GStreamer scheduling proof; Windows deferred
+
+Implemented an isolated WebRTC/Opus sender/receiver fixture with the existing
+pinned GStreamer 1.28.8 runtime. It reads RTP/decoded-buffer associations, asks
+an Erlang escript for a sink offset, and executes the target through GStreamer's
+clock/sink mechanisms. A second control operation applies a bounded, phase-
+continuous pipeline-clock rate change. RTP jitter-buffer mode=none avoids a
+second sender/receiver skew servo in the fixture. Native library timing and
+Python callback observations are kept separate. Existing apps remain unchanged.
+
+The Erlang scheduling policy and fixture live under Audio/experiments/gstreamer;
+the normal application does not list the experimental planner. Added a
+checkout-private Mac runtime setup with the official package checksum, five
+focused policy checks, and a Windows PowerShell runner that reuses existing
+private GStreamer/Python/OTP runtimes without rebuilding/deploying an app.
+See [proof usage and boundaries](../src/Audio/experiments/gstreamer/README.md).
+
+Evidence on this Mac: a local eight-second WebRTC run negotiated Connected on
+both peers, matched all 401 RTP packets to 401 decoded buffers, and reported 401
+rendered / zero dropped buffers. All observed associations were exact PTS pairs.
+The future sink offset was applied; +25 ppm within a 50 ppm bound was read back
+from the dedicated clock calibration. A separate RTP-only run matched all 201
+pairs. No native errors/warnings were reported in the successful runs. An early
+fixture SDP ordering failure was corrected before these results. EUnit passes
+all 18 policy/engine/timing checks; normal core compilation also passes.
+
+Limits: fakesink/Python callbacks show millisecond delivery delay, not physical
+speaker accuracy; QoS diff is buffer-arrival timing. No DAC rate correction,
+calibrated speaker onset, real cluster-clock bridge, 250 ms app-budget execution,
+source converter/Opus content-delay qualification, impairment/relock recovery or
+two-output alignment is proved. No app schedule/rate capability was enabled and
+no apps were rebuilt or deployed in this increment. The Windows wrapper is
+source-reviewed only. The user deferred Windows access until November 4; its
+native runtime/plugin versions, real WASAPI path and output measurements remain
+pending. Step 3 remains in progress. Raw local JSON/log evidence is under ignored
+builds/diagnostics/gstreamer-schedule and builds/schedule-*.log.
+
+## 2026-11-03 — Step 2: replaceable receiver media-engine contract
+
+Extracted native execution from the WebRTC session behind the
+`parvi_audio_engine` behaviour. Small libwebrtc and GStreamer adapters reuse the
+existing local packet-4 JSON binding; the session owns the chosen module/handle
+until teardown. Platform bindings choose their installed engine locally. No
+extra OTP process, cluster transport change, automatic switching, native media
+algorithm or dependency was added. Provider RTP/source sequencing and native
+PCM paths stay in their existing owners.
+
+Added handler-neutral output_control/2 and receiver control_output/1; retained
+existing UI/inspector minimum-delay and playback entry points. Typed presentation
+and bounded rate-correction operations are explicitly unsupported by both current
+engines and send no native bytes. Common output reports preserve source anchors
+and existing native statistics without claiming source-to-output mapping or
+calibrated speaker timing. Missing metrics remain null. GStreamer delay replies
+now identify jitter-buffer latency rather than implying libwebrtc's minimum-delay
+semantics. See [the contract](AUDIO_ENGINE_INTERFACE.md).
+
+Updated Windows packaging to compile the new behaviour before its implementations.
+OpenSound UI sources are unchanged. Updated global test preferences as requested:
+moderate relevant tests need no prior permission; broad hardening remains separate.
+Added six focused engine checks over real loopback sockets, covering both adapters'
+commands/events/closure, pinning, unsupported commands sending nothing, unknown
+selection/unavailable output and truthful source/output reporting.
+
+Validation: core Erlang compile and the Windows packaging source set pass with
+warnings as errors. Six new engine checks plus seven existing WebRTC timing
+checks pass (13 total). The initial sandboxed socket run failed with eperm; the
+same checks passed with loopback access. An unsigned physical-iPhone/native build
+passes, including the updated Swift binding and packaged Erlang modules. No new
+app installation, Mac rebuild, actual Windows executable build or device playback
+check was performed. The prior normal Mac/iPhone listening result applies to the
+preceding baseline, not this uninstalled refactor. No alignment improvement is
+claimed. Next: step 3's Windows GStreamer deadline/sample-rate proof; pending
+Windows baseline and recovery checks remain named in the subplan.
+
 ## 2026-11-03 — Step 1 baseline runtime and physical iPhone check
 
 Ran the existing isolated `tests/macOS/smoke.py` against the rebuilt Mac bundle:

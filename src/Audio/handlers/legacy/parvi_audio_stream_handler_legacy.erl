@@ -2,7 +2,7 @@
 -module(parvi_audio_stream_handler_legacy).
 -behaviour(parvi_audio_stream_handler).
 -export([info/0, session_module/0, bind/3, send/3, close/2, output_available/0,
-         start_output/2, push_output/3, stop_output/1,
+         start_output/2, push_output/3, stop_output/1, output_control/2,
          validate_descriptor/2, validate_block/4, encode/5, decode/3,
          frame_bytes/1, max_payload_bytes/1]).
 
@@ -55,3 +55,6 @@ start_output(Owner, Descriptor) ->
     end.
 push_output(Output, Header, PCM) -> parvi_audio_output:push(Output, Header, PCM).
 stop_output(Output) -> parvi_audio_output:stop(Output).
+
+%% Legacy scheduling is per PCM block; it has no native session control API.
+output_control(_,_) -> {error, unsupported_output_control}.

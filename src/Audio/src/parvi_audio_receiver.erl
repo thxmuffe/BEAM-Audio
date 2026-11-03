@@ -1,7 +1,7 @@
 %% Runtime-owned source catalogue and one received-audio meter; no device I/O.
 -module(parvi_audio_receiver).
 -behaviour(gen_server).
--export([snapshot/0, refresh/0, subscribe/2, stop/0, playback/1, minimum_playout_delay/1, start_link/0]).
+-export([snapshot/0, refresh/0, subscribe/2, stop/0, playback/1, minimum_playout_delay/1, control_output/1, start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -define(GROUP, {parvi, audio, sources}).
 
@@ -10,7 +10,8 @@ refresh() -> call(refresh).
 subscribe(Id, Profile) -> call({subscribe, Id, Profile}).
 stop() -> call(stop).
 playback(Action) -> call({playback, Action}).
-minimum_playout_delay(Delay) -> call({minimum_playout_delay,Delay}).
+minimum_playout_delay(Delay) -> control_output({minimum_delay,Delay}).
+control_output(Command) -> call({output_control,Command}).
 call(Request) ->
     case parvi_audio_sup:ensure_started() of
         ok ->
@@ -52,12 +53,11 @@ handle_call({playback, stop}, _, S) ->
     {reply, ok, stop_output(S)};
 handle_call({playback, _}, _, S) ->
     {reply, {error, <<"Subscribe to a mono or stereo channel stream before playback.">>}, S};
-handle_call({minimum_playout_delay, Delay}, _,
-            #{handler := parvi_audio_stream_handler_webrtc,
-              receive_state := #{state := active, session := Session}} = S) ->
-    {reply,gen_statem:call(Session,{minimum_playout_delay,Delay}),S};
-handle_call({minimum_playout_delay, _}, _, S) ->
-    {reply,{error,<<"Subscribe to WebRTC audio before setting its minimum buffering delay.">>},S};
+handle_call({output_control, Command}, _,
+            #{handler := Handler, receive_state := #{state := active, session := Session}} = S) ->
+    {reply,Handler:output_control(Session,Command),S};
+handle_call({output_control, _}, _, S) ->
+    {reply,{error,<<"Subscribe to audio before controlling its output.">>},S};
 handle_call({subscribe, Id, Profile}, _, #{offers := Offers, receive_state := R} = S) ->
     Matches = [{Pid,O} || {Pid, #{id := I, profiles := Ps} = O} <- maps:to_list(Offers),
                           I =:= Id, maps:is_key(Profile, Ps)],

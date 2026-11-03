@@ -1,4 +1,128 @@
-# Fixed L16 desktop experiment
+# GStreamer experiments
+
+## Scheduled WebRTC/Opus proof — 2026-11-03
+
+`schedule_proof.py` runs a finite, isolated native sender/receiver pair. Its
+default uses GStreamer webrtcbin on both sides, with local ICE and DTLS-SRTP,
+Opus at 48 kHz stereo/192 kb/s, and a clock-synchronized fakesink. No Reception
+Desk, saved identity, live cluster, app setting or user audio input is involved.
+It generates synthetic audio; fakesink is silent. This is a media/control
+prerequisite, not a claim of simultaneous physical output.
+
+The receiver uses a dedicated GstSystemClock instance. Its rtpjitterbuffer uses
+mode=none (RTP spacing rather than a second sender/receiver drift servo).
+The proof pairs actual post-jitter RTP timestamps/PTS with decoded buffer PTS;
+no latest-packet guess is used. Missing/GAP associations are counted, and losing
+an association or receiving a new segment after arming invalidates the proof.
+Expected decoder format is checked. These checks qualify this clean, fixed
+20 ms Opus fixture; impairment and reset/relock recovery are not established.
+
+A separate escript compiles the isolated `parvi_audio_gstreamer_schedule.erl`
+policy and accepts control requests. Erlang computes the sink timestamp offset
+from the decoded segment running-time, clock/base-time, pipeline latency and
+render-delay. The native fixture applies that offset, leaving final waiting to
+GStreamer. Optional bounded rate correction recalibrates only the dedicated
+pipeline clock and preserves its phase at the calibration coordinate. No
+Erlang round trip runs in a device audio callback. An audio-device run selects
+GStreamer's existing resampling clock-slaving mode; actual device correction
+rates still need measurement.
+
+The normal apps' schedule/rate capabilities remain false. The proof planner is
+outside normal production source paths; its EUnit checks compile it only in
+the test profile. No native engine, clock reference or app was switched by this
+experiment.
+
+### Run on this Mac
+
+The existing setup script unpacks the checksum-pinned official 1.28.8 package
+under ignored builds, without a system installation:
+
+```sh
+python3 scripts/platforms/macOS/prepare-gstreamer.py
+/usr/bin/python3 src/Audio/experiments/gstreamer/schedule_proof.py \
+  --runtime builds/intermediates/gstreamer/runtime \
+  --transport webrtc --seconds 8 --rate-ppm 25 \
+  --output builds/diagnostics/gstreamer-schedule/webrtc-proof.json
+```
+
+Use `/usr/bin/python3` (3.9) for the official Mac bindings. `--transport rtp`
+checks only the inner RTP/jitter/decode path in one pipeline and is explicitly
+separate from the default two-peer WebRTC proof. `--sink osxaudiosink` plays a
+quiet synthetic tone; it does not capture or measure the physical output.
+
+### Windows check prepared for November 4
+
+From an updated BEAM-Audio checkout on Windows:
+
+```powershell
+.\scripts\platforms\Windows\check-scheduled-output.ps1
+```
+
+It reuses the existing app's private Python/GStreamer and OTP runtimes, or their
+core build caches. `-AudioRuntime`, `-OtpRoot` and `-OpenSoundRoot` override paths.
+It compiles the Erlang proof in memory; an app rebuild or deployment is not
+required. It saves `builds/diagnostics/gstreamer-schedule/windows-fakesink.json`.
+If runtime preparation is needed, use the existing setup.ps1/prepare-audio.py
+scripts in the same platform directory. No Windows transport NIF build is needed
+for this standalone native pair.
+
+After the silent check, an optional real output execution check is:
+
+```powershell
+.\scripts\platforms\Windows\check-scheduled-output.ps1 -Sink wasapisink
+```
+
+This plays a quiet synthetic tone on the default output and saves
+`windows-wasapisink.json`. Neither command changes the running OpenSound app.
+The Windows wrapper is source-reviewed, not run on Windows. Windows availability
+was explicitly deferred by the user until tomorrow; no result is assumed.
+
+### Evidence and what remains unproved
+
+The eight-second Mac WebRTC run negotiated both peers as Connected. All 401
+received RTP packets matched 401 decoded buffers; no associations were missing,
+and the sink reported 401 rendered / zero dropped buffers. The Erlang-planned
+future offset was applied and a requested +25 ppm change within a 50 ppm bound
+was read back from the dedicated clock calibration. The separate RTP-only run
+also matched all 201 packet/buffer pairs. These are clean local observations,
+not loss/retransmission, cross-platform or independent DAC evidence.
+
+Raw reports/logs are under ignored `builds/diagnostics/gstreamer-schedule/` and
+`builds/schedule-*.log`. Reports include actual plugin versions/caps, source RTP/
+PTS anchors, counts, target/calibration, errors, QoS arrival differences and
+Python callback observations. Five new policy checks plus the prior thirteen
+engine/timing checks pass (18 total): latency accounting, signed offsets, stale
+RTP anchors, late/incomplete targets, and continuous bounded clock calibration.
+
+The software fakesink callbacks were roughly 3.6 ms late at the median in the
+recorded Mac run; this includes Python delivery and does not establish native
+DAC timing or the user's precision goal. Native QoS diff describes buffer
+arrival relative to its pipeline deadline, not a physical speaker timestamp.
+The first-to-last callback difference is not a measured DAC drift result.
+
+The proof's target is 1.5 seconds ahead of its local observation, with a fixture
+identity mapping between native and local time. This does not verify the app's
+250 ms group budget or connect the real Erlang shared-clock bridge. The PTS
+association is to the encoded RTP/decoded timeline, before device conversion;
+Mac converter priming, Opus lookahead/content correspondence and source capture
+calibration are still unqualified. Device clock/resampler bounds, output-path
+calibration, speaker onset, loss/reset recovery and two real receivers remain
+open. Future capability flags must stay false until the relevant execution and
+reporting boundary is implemented and evidenced.
+
+Next: run the prepared Windows checks, then wire qualified source anchors and
+real Erlang clock/deadline commands into the native backend with explicit apply/
+failure acknowledgements and relock handling. Follow with correlated WASAPI/
+physical output measurements before claiming scheduled Windows playback.
+
+Primary references:
+
+- [Pinned audio sink scheduling formula](https://github.com/GStreamer/gstreamer/blob/1.28.8/subprojects/gst-plugins-base/gst-libs/gst/audio/gstaudiobasesink.c): ts-offset, latency, render-delay and standard resampling execution.
+- [Clock calibration](https://gstreamer.freedesktop.org/documentation/gstreamer/gstclock.html): dedicated clock time/rate mapping.
+- [Audio decoder timestamps](https://gstreamer.freedesktop.org/documentation/audio/gstaudiodecoder.html): output timestamp handling and tolerance.
+- [QoS meaning](https://gstreamer.freedesktop.org/documentation/plugin-development/advanced/qos.html): upstream arrival/lateness observations.
+
+## Earlier fixed L16 desktop experiment
 
 This is an isolated native media experiment for plan step 3. It does not change
 the app backend, admission, clock ownership or playback controls. It initially

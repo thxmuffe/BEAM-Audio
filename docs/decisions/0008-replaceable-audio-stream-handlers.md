@@ -99,7 +99,7 @@ format preservation/conversion requirements and device-clock behavior. Do not
 assume the existing packet-level WebRTC dependency includes an audio engine.
 
 Compile the refactor first; device playback and replacement-handler validation
-are separate evidence. Ask before adding new automated tests or hardening.
+are separate evidence. Follow the global testing preferences.
 Both Apple apps must be usable before proceeding to later features. GStreamer
 SDKs/experiments remain isolated reference work, not active app dependencies.
 

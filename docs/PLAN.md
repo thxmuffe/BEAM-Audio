@@ -5,9 +5,13 @@
 Follow [Make playback simultaneous](SIMULTANEOUS_PLAYBACK_PLAN.md). Source
 extraction and core/Mac/signed-iPhone builds pass. The user confirms normal
 Mac-to-iPhone playback after the move. Windows packaging/playback and stop/play
-recovery remain open; Windows was Offline during inspection. Next finish the
-backend contract and attempt Erlang-directed GStreamer scheduling, followed by
-iPhone integration and measured two-output alignment. The explicit repository
+recovery remain open; Windows was Offline during inspection. The receiver-engine
+contract is now implemented in source with focused checks and unsigned iPhone
+compilation; it has not been deployed. Next attempt Erlang-directed GStreamer
+scheduling: the isolated Mac WebRTC/Opus proof now passes, with 18 policy/engine/
+timing checks. Windows/WASAPI checks are prepared and deferred by the user to
+November 4. App integration and physical output measurements remain pending;
+then continue iPhone integration and measured two-output alignment. The explicit repository
 split now precedes the previous cinema gate. The priorities below retain the
 quality/recovery/multichannel/DSP backlog; older sequencing does not override
 this subplan.
@@ -88,8 +92,7 @@ claiming that durable cluster membership also restores every audio subscription.
 **Exit:** clean reference playback at a controllable level, truthful telemetry,
 and repeatable lifecycle/recovery behavior within a documented Mac/iPhone setup.
 Known defects remain named until reproduced/fixed or explicitly bounded; compiling
-and one good listening run are not the exit evidence. Ask before adding new tests
-or a broader hardening programme. No arbitrary long-duration qualification gate.
+and one good listening run are not the exit evidence. No arbitrary long-duration qualification gate.
 
 ### 2. Resolve scheduled output, then prove two receivers
 
@@ -968,7 +971,7 @@ recovery phase or new cluster framework. Ask before broader hardening.
 
 Implement one reviewable step at a time. Update this plan, the progress log and
 relevant component README as behavior changes. Preserve the legacy path and
-unrelated work. Ask before adding automated tests or broader hardening; arrange
+unrelated work. Follow global testing preferences; arrange
 the focused builds and device experiments when their evidence is needed. This
 plan does not authorize routine deployment or device installation.
 
@@ -1019,9 +1022,8 @@ and LAN-first assumptions do not govern the current swarm protocol.
 Build small, useful increments and continue implementation without a separate
 testing phase or a comprehensive recovery programme as a prerequisite. Check
 behavior when a change needs evidence, something seems wrong, or the next
-implementation decision depends on it. Ask before adding automated tests or
-hardening; routine builds, deployments and repeated regression runs are not
-default tasks. Record what is implemented and what remains unverified.
+implementation decision depends on it. Follow global testing preferences; routine
+builds, deployments and repeated regression runs are not default tasks. Record what is implemented and what remains unverified.
 
 Use the single Render-hosted Reception Desk for development, testing and
 production. Service changes and interruptions are authorized; no separate desk

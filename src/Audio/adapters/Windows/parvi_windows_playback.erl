@@ -20,6 +20,7 @@ init([]) ->
         {Port,{data,{eol,Line}}} ->
             #{<<"port">> := Number} = json:decode(Line),
             os:putenv("PARVI_WEBRTC_AUDIO_PORT",integer_to_list(Number)),
+            os:putenv("PARVI_AUDIO_ENGINE","gstreamer"),
             {ok,#{port => Port}};
         {Port,{exit_status,Code}} -> {stop,{audio_helper_failed,Code}}
     after 30000 -> port_close(Port), {stop,audio_helper_start_timeout}
@@ -30,4 +31,5 @@ handle_info({Port,{exit_status,Code}},#{port := Port} = S) -> {stop,{audio_helpe
 handle_info(_,S) -> {noreply,S}.
 terminate(_,#{port := Port}) ->
     os:unsetenv("PARVI_WEBRTC_AUDIO_PORT"),
+    os:unsetenv("PARVI_AUDIO_ENGINE"),
     try port_close(Port) catch error:badarg -> ok end, ok.

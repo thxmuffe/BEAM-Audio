@@ -8,8 +8,8 @@ build directories belong to those dependencies and must not be moved or edited
 to reorganize this project's instructions.
 
 Personal preferences supplied by the coding environment apply alongside this
-file, including communication style, incremental work, asking before adding
-tests or hardening, live-system approvals and dry-run follow-through. Keep those
+file, including communication style, incremental work, proportionate testing,
+live-system approvals and dry-run follow-through. Keep those
 preferences in the global instructions rather than duplicating them here.
 Dependency instructions apply only within their own dependency subtree; their
 build/test requirements do not govern this project's source code.

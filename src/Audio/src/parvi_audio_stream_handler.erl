@@ -12,6 +12,9 @@
 -callback start_output(pid(), map()) -> {ok, pid()} | {error, term()}.
 -callback push_output(pid(), map(), binary()) -> ok.
 -callback stop_output(pid()) -> ok.
+-callback output_control(pid(), {minimum_delay, automatic | non_neg_integer()} |
+    {presentation, parvi_audio_engine:presentation()} |
+    {rate_correction, parvi_audio_engine:rate_correction()}) -> ok | {ok, map()} | {error, term()}.
 
 %% Data callbacks for the existing BEAM PCM path. A native handler must gain
 %% its actual control/handoff interface, rather than routing native buffers
@@ -24,7 +27,7 @@
 -optional_callbacks([send/3, push_output/3, validate_block/4, encode/5, decode/3,
                      frame_bytes/1, max_payload_bytes/1]).
 
-%% The only bundled stream handler. Pin it for each worker's lifetime; add
+%% Default PCM compatibility handler. Pin it for each worker's lifetime; add
 %% selection/negotiation only when another implementation has been demonstrated.
 default() -> parvi_audio_stream_handler_legacy.
 
