@@ -190,8 +190,8 @@ The reorganization does not silently add broadcasting to the legacy Windows app.
 The shared `src/control/rebar.config` compiles portable sources and platform adapter
 folders into the existing `parvi` application; Windows packaging uses the same
 source directories. Native builds select only their platform's helper. No extra
-OTP application or service was introduced. See the [Windows guide](../Apps/Windows/README.md),
-[Mac broadcast guide](../Apps/macOS/README.md#broadcast-default-output), and
+OTP application or service was introduced. See the [Windows guide](../../docs/apps/Windows/README.md),
+[Mac broadcast guide](../../docs/apps/macOS/README.md#broadcast-default-output), and
 [binding decision](../../docs/decisions/0004-windows-audio-library-trial.md).
 Real Mac capture, physical iPhone receive metering and audible iPhone playback
 are verified (playback by user observation). Timing/alignment remain unmeasured.
@@ -377,11 +377,11 @@ The output uses packet presentation time minus reported downstream latency,
 rejects expired/out-of-order and over-one-second-future blocks, and silences by
 closing the binding when ownership ends. The first binding supports mono/stereo
 at 8–192 kHz. It has no jitter reordering, drift correction, mixing or acoustic
-calibration; see the [iPhone usage/limits](../Apps/iOS/README.md#speaker-output-step-5).
+calibration; see the [iPhone usage/limits](../../docs/apps/iOS/README.md#speaker-output-step-5).
 
 ## Inspecting an audible jump
 
-Use the [inspector API](../Apps/Inspector/README.md) to compare `capture` on Mac,
+Use the [inspector API](../Tools/Inspector/README.md) to compare `capture` on Mac,
 `inspect` on the receiver and `clock` on each node. New source builds expose
 capture segment and host residual, clock offset/slew/uncertainty, and optional
 native `insertedSamplesForDeceleration`, `removedSamplesForAcceleration`,

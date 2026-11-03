@@ -15,7 +15,7 @@ The UI's existing minimum-level filter applies, and clock notices remain Trace.
 ## Headless inspection and control
 
 `parvi_node_api:request/1` exposes named commands over admitted OTP connections.
-The [macOS inspector](../Apps/Inspector/README.md) joins as a separate persistent
+The [macOS inspector](../Tools/Inspector/README.md) joins as a separate persistent
 node and accepts JSON lines, allowing scripts to read clocks/audio statistics and
 control subscriptions, playback, buffering and Mac Opus broadcasts without UI.
 
@@ -340,8 +340,8 @@ the trust worker, relay client and WebRTC channels. The native JSON bridge
 adapts this single cluster to the existing chat UI. iPhone sources now also
 select the native path by default, with an explicit relay build option; current
 Windows sources retain the earlier profile. Previously installed apps are
-unchanged. See [Mac usage](../Apps/macOS/README.md) and
-[iPhone preparation](../Apps/iOS/README.md) for implementation/validation limits.
+unchanged. See [Mac usage](../../docs/apps/macOS/README.md) and
+[iPhone preparation](../../docs/apps/iOS/README.md) for implementation/validation limits.
 UI/source naming cleanup remains deferred.
 
 ## Network scope

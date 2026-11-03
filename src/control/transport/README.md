@@ -3,7 +3,7 @@
 The [native OTP carrier](experiments/otp_dist/README.md) now lives in
 `src/control/src/` and is integrated into the Mac app sources and build. The Mac
 native bridge reuses the shared OTP chat worker and the global Render desk for
-introductions. See [Mac usage and limitations](../../Apps/macOS/README.md).
+introductions. See [Mac usage and limitations](../../../docs/apps/macOS/README.md).
 Probe drivers remain experimental. The older application transport below is
 retained for the current iPhone/Windows path and existing regression helpers.
 
@@ -46,6 +46,11 @@ compatibility or NAT traversal across separate internet access networks.
 
 ## Build and test
 
+After the repository split, use `python3 scripts/setup-host.py` and
+`bash scripts/build-native.sh` from BEAM Audio on Apple Silicon. See
+[the current build guide](../../../docs/BUILDING.md) for app/core paths and
+validation limits. The commands below are retained component-level examples.
+
 Requirements: compatible OTP, Elixir 1.19, Rust, pkg-config and OpenSSL development
 files. Local development here uses the repository's ignored Elixir/Rust caches.
 
@@ -71,7 +76,7 @@ library search path without changing OS trust or system library locations.
 
 Mac and iPhone sources now package the native carrier and dependencies. Neither
 new app path has been verified running. iPhone uses target-built static NIFs;
-see [its preparation guide](../../Apps/iOS/README.md). Device compilation/linkage
+see [its preparation guide](../../../docs/apps/iOS/README.md). Device compilation/linkage
 passes; simulator native compilation and on-device connection remain unverified.
 In the older runtime profile, `parvi_direct` remains optional and the existing
 relay continues to work without those libraries.

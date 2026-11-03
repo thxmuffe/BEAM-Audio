@@ -1,0 +1,25 @@
+[
+  {
+    "name": "elixir.zip",
+    "sha256": "ca481510feb6dabc875bba43e44b25c7abafa53bd7a103639851b7aeace8a022",
+    "url": "https://github.com/elixir-lang/elixir/releases/download/v1.19.5/elixir-otp-28.zip",
+    "directory": "elixir"
+  },
+  {
+    "name": "strawberry-perl-5.42.3.1.zip",
+    "sha256": "6a081a811781c30aca51dbc036afd93092af91e3297901f02c17043795a10690",
+    "url": "https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_54231_64bit/strawberry-perl-5.42.3.1-64bit-portable.zip",
+    "directory": "perl"
+  },
+  {
+    "name": "rustup-init.exe",
+    "sha256": "00f139da614dced87d3c3d4121c43eebdac3c1bf8a5ee86b9d80dfd71c8d70fd",
+    "url": "https://static.rust-lang.org/rustup/archive/1.29.2/x86_64-pc-windows-msvc/rustup-init.exe"
+  },
+  {
+    "sha256": "d533c1ef49214229681e90196ed2094691e8c4a0a0bef0b2c901debcb562682b",
+    "directory": "jom",
+    "url": "https://download.qt.io/official_releases/jom/jom_1_1_4.zip",
+    "name": "jom_1_1_4.zip"
+  }
+]

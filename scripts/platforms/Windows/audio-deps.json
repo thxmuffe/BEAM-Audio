@@ -1,0 +1,32 @@
+[
+  {
+    "name": "gstreamer_libs-1.28.8-cp39-abi3-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/94/6c/10fcd69d97baef3b22820dea92b2beb9075f403ee4bcb332c671d76b210c/gstreamer_libs-1.28.8-cp39-abi3-win_amd64.whl",
+    "sha256": "1e7f9d04fdda109d08bedc381c1cda801f6bab4c7778f7eadafb027a6a0a9da4"
+  },
+  {
+    "name": "gstreamer_plugins-1.28.7-cp39-abi3-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/62/4d/8f60c96a1c2afeaf00b3a90b60cd2f3bec1f2fc5c381c58337068ef48f39/gstreamer_plugins-1.28.7-cp39-abi3-win_amd64.whl",
+    "sha256": "960f8cc19f4c4dfb460e782b1c8a426e95d06a300195b6f356319731a3a2b70b"
+  },
+  {
+    "name": "gstreamer_plugins_libs-1.28.7-cp39-abi3-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/ea/0e/ae869eaefbcc164494be251260ba953e624b873ada017eb3c66877b1939d/gstreamer_plugins_libs-1.28.7-cp39-abi3-win_amd64.whl",
+    "sha256": "5bfd41b8f3ec6ad1dac30132ad0ae4738a8a79de926606c7cc2c736bb1d22d06"
+  },
+  {
+    "name": "gstreamer_python-1.28.8-cp312-cp312-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/df/32/8314a290826ba8812d906382ed58de82041062ba72ea1beb0dcd0317cbc4/gstreamer_python-1.28.8-cp312-cp312-win_amd64.whl",
+    "sha256": "50865c60eb88445e66181858ed49770e13480e50c637133ca674aef552ed87de"
+  },
+  {
+    "name": "gstreamer_ext_runtime-1.28.8-cp39-abi3-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/d2/5f/a0446c7b99eacdcda4a116cb75996d7834f1c0cf4562dcea34110b79a156/gstreamer_ext_runtime-1.28.8-cp39-abi3-win_amd64.whl",
+    "sha256": "8c3f13bfefc0d52d1969d7d47e645a84ca50aeb0b5c184dfe210843c0d6024e7"
+  },
+  {
+    "name": "python-3.12.10-embed-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
+    "sha256": "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
+  }
+]

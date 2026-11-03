@@ -1,0 +1,13 @@
+[package]
+name = "ex_sctp"
+version = "0.1.0"
+edition = "2021"
+
+# Build the pinned dependency's unmodified implementation as an iOS static NIF.
+[lib]
+path = "../../../../builds/intermediates/BeamTransportDeps/ex_sctp/native/ex_sctp/src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+rustler = "=0.37.0"
+sctp-proto = "=0.3.0"
