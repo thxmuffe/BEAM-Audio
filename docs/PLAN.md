@@ -16,6 +16,14 @@ split now precedes the previous cinema gate. The priorities below retain the
 quality/recovery/multichannel/DSP backlog; older sequencing does not override
 this subplan.
 
+Same-Mac receiver comparison is now implemented and exercised silently; see
+[commands, results and limits](../src/Audio/experiments/gstreamer/README.md).
+Clean-tone output does not establish a GStreamer quality improvement. Controlled
+loss favors GStreamer on the synthetic sine residual metric; CPU is similar in
+these fixtures. Retain both backends. Next: user-run Windows silent/WASAPI
+scheduling check, then actual app clock/schedule integration and physical
+alignment; do not enable app capabilities based on these offline results.
+
 ## Previous priorities — revised 2026-11-02
 
 This section retains the earlier implementation order and backlog. The active

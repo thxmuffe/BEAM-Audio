@@ -1,5 +1,29 @@
 # Progress
 
+## 2026-11-03 — Silent same-Mac receiver comparison
+
+Added a compiled native libwebrtc receiver with an injectable silent device,
+a matched GStreamer/Opus sender/receiver comparison and a PCM/counter analyzer.
+Clean, periodic-loss and NetEq 200 ms minimum-delay cases run sequentially.
+All 18 trials pass (three per case), with matching encoded source payload hashes
+and zero native callback errors/timer overruns. Clean automatic output gives
+approximately 47.7 dB sine-fit residual ratio on both engines; loss yields
+approximately 30.6–30.7 dB for GStreamer versus 13.9–15.5 dB for automatic NetEq
+in the initial repeats. This includes phase/recovery effects, not perceptual
+quality. NetEq's minimum-delay case inserts samples while building its buffer.
+Resource measurements cover whole fixtures; CPU is similar, RSS lower in the
+single-process GStreamer fixture. No native output errors or clipping observed.
+
+Native fixture compilation, Python syntax checks and three focused analyzer
+tests pass. Raw trials/PCM are in builds/diagnostics/receiver-comparison; usage,
+methodology and limits are in the experiment README. An initial empty ICE
+end-marker assertion in the fixture was fixed before successful runs. No core
+runtime or commercial app was changed, built or deployed by this comparison.
+It does not assess capture quality, music/stereo perception, physical latency,
+real networks or synchronization. Windows/device checks remain pending for the
+user. A general engine replacement is not justified by this evidence.
+
+
 ## 2026-11-03 — Step 3 local GStreamer scheduling proof; Windows deferred
 
 Implemented an isolated WebRTC/Opus sender/receiver fixture with the existing

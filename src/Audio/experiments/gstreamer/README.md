@@ -1,5 +1,64 @@
 # GStreamer experiments
 
+## Same-Mac receiver comparison — 2026-11-03
+
+The isolated comparison uses identical 48 kHz stereo / 192 kb/s Opus payloads
+and local WebRTC, selecting either GStreamer 1.28.8 or the pinned libwebrtc
+Mac slice with a silent 10 ms audio-device callback. It neither changes apps
+nor plays through speakers. The Mac framework supports the custom device;
+the bridge imports the matching public protocol from its iOS slice, without
+patching the framework. Existing minimum-delay binding is reused.
+
+Eighteen successful runs (three per case), with identical source payload hashes: both automatic NetEq and GStreamer reproduce the clean 997 Hz tone
+with approximately 47.7 dB sine-fit residual ratio and equal level. With isolated
+20 ms losses, GStreamer gives approximately 30.6–30.7 dB, versus 13.9–15.5 dB
+for automatic NetEq. This metric includes phase/timing changes and is **not a
+perceptual music-quality score**. NetEq's 200 ms minimum setting inserts samples
+while filling its buffer (clean-tone ratio approximately 19.6–19.9 dB); that is
+not proof of codec distortion. Neither engine clips this signal. CPU is similar
+(roughly 6–9% of one core for the entire fixture); summed RSS is roughly 46 MiB
+for GStreamer versus 62 MiB for the two-process NetEq fixture. Process/binding
+overhead and shared mappings prevent treating these as isolated engine costs.
+
+GStreamer's first software output is approximately 330–350 ms after the first
+RTP probe, versus 100–130 ms for NetEq. This includes connection startup and
+codec/callback timing, not capture-to-speaker latency. The minimum-delay setting
+is a different control from GStreamer's jitter-buffer latency; neither is a
+shared presentation deadline. No general quality winner or app replacement is
+established. Keep libwebrtc available and continue the scheduled-output proof.
+
+Reproduce from the core repository root (existing private dependencies needed):
+
+```sh
+bash src/Audio/experiments/gstreamer/build-native-receiver.sh
+/usr/bin/python3 src/Audio/experiments/gstreamer/compare_receivers.py \
+  --runtime builds/intermediates/gstreamer/runtime --receiver neteq \
+  --native-receiver builds/intermediates/gstreamer/comparison/libwebrtc-receiver \
+  --output builds/diagnostics/receiver-comparison/neteq-clean
+/usr/bin/python3 src/Audio/experiments/gstreamer/compare_receivers.py \
+  --runtime builds/intermediates/gstreamer/runtime --receiver gstreamer \
+  --output builds/diagnostics/receiver-comparison/gstreamer-clean
+python3 src/Audio/experiments/gstreamer/analyze_receivers.py \
+  builds/diagnostics/receiver-comparison
+python3 -m unittest discover -s src/Audio/experiments/gstreamer -p 'test_*.py'
+```
+
+The analyzer uses NumPy (available in this Mac's Python 3.11); the media fixture
+uses Apple's Python 3.9 for the packaged GI bindings. Add `--drop-every 100` and
+use a separate output directory for loss runs; add `--minimum-delay-ms 200` only
+for the NetEq minimum-delay case. Trials last eight seconds, with counters and
+waveform analysis restricted to roughly seconds 2–6. Three isolated packet drops
+occur overall, two within that measurement window. Drops happen before WebRTC
+send/cache and do not qualify retransmission, jitter, burst loss or network
+recovery. The analyzer verifies matching encoded-source payload hashes.
+
+Raw PCM, callbacks, counters and resource readings are under ignored
+`builds/diagnostics/receiver-comparison/`; `summary.json` contains per-trial
+metrics. Three focused analyzer tests pass. Device audio, spatial/music quality,
+capture-chain effects, Windows and iPhone behavior remain untested here. For
+manual Windows testing use the prepared commands below; those check scheduling,
+not this Mac-only head-to-head fixture.
+
 ## Scheduled WebRTC/Opus proof — 2026-11-03
 
 `schedule_proof.py` runs a finite, isolated native sender/receiver pair. Its
