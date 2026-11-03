@@ -1,0 +1,9 @@
+{application, parvi_broker, [
+    {description, "Local Parvi node discovery directory"},
+    {vsn, "0.1.0"},
+    {registered, [parvi_broker_sup, parvi_directory, parvi_broker_http]},
+    {mod, {parvi_broker_app, []}},
+    {applications, [kernel, stdlib, inets]},
+    {env, [{bind_address, {127,0,0,1}}, {port, 8765}]},
+    {licenses, ["Apache-2.0"]}
+]}.

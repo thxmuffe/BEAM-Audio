@@ -1,0 +1,12 @@
+{"1.2.0",
+[{<<"cowlib">>,
+  {git,"https://github.com/ninenines/cowlib",
+       {ref,"4401b858f2229abb3ea115c60924f6c77e5f8aa3"}},
+  0},
+ {<<"gun">>,{pkg,<<"gun">>,<<"2.7.0">>},0}]}.
+[
+{pkg_hash,[
+ {<<"gun">>, <<"8DFC20FF1B70F3C78F07122F7D82AC6950C40D33A8A9B35DA0134F49FB35B334">>}]},
+{pkg_hash_ext,[
+ {<<"gun">>, <<"2A90D073069E72654B6C9A91FAE365B746FF5CE385A4A5BBF71EF53A8BF95D82">>}]}
+].

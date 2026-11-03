@@ -1,0 +1,31 @@
+# Local operating-system and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Erlang and Rust build outputs
+_build/
+deps/
+erl_crash.dump
+target/
+/builds/
+.build/
+DerivedData/
+xcuserdata/
+# Xcode regenerates this project's implicit, self-only workspace.
+/src/Apps/iOS/Parvi.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+__pycache__/
+
+# Local experiments and measurement captures
+tmp/
+captures/
+*.log

@@ -1,0 +1,6 @@
+# Keep text consistent in Git and on Mac/Windows, regardless of user settings.
+* text=auto eol=lf
+
+# Windows command scripts need CRLF when checked out.
+*.bat text eol=crlf
+*.cmd text eol=crlf
