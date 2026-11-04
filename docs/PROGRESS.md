@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-11-04 — Root build entry points in both repositories
+
+Added build.sh and build.ps1 to BEAM-Audio and OpenSound: four entry points.
+Core scripts orchestrate existing private runtime, transport, audio and Erlang
+builders without depending on product sources. Product scripts invoke the core
+root script first, fail before product work if it fails, then call existing app
+builders. Mac accepts all/mac/ios (default all); Windows builds native Windows.
+Paths derive from each checkout and BEAM_AUDIO_ROOT; current working directory
+is not required to be the repository root. No Git, clean, signing/deployment or
+app-launch action is added. Existing component caches/build logic are retained.
+See BUILDING.md for commands, prerequisites and terminal/Xcode distinctions.
+
+Bash syntax and help paths pass; child paths and PowerShell fail-fast behavior
+are reviewed. PowerShell is not installed on this Mac, so Windows execution is
+pending. No full app rebuild was needed for the script-only change. The wobble
+report remains the next audio investigation; this change does not alter playback.
+
+
 ## 2026-11-04 — Event-driven Windows UI and watcher cleanup
 
 Completed the Windows UI invalidation path: runtime/OTP notifications replace

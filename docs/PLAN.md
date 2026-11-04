@@ -16,6 +16,10 @@ Next: manual Windows playback/stop-play checks. The two existing multi-node
 clock tests still fail; speaker synchronization remains unqualified. See PROGRESS.md
 for the recovery and validation record.
 
+Root build entry points are now available in both repositories (`build.sh` and
+`build.ps1`); product builders run the core root builder first. See BUILDING.md.
+The reported playback wobble remains open for the next timing investigation.
+
 ## Active increment — revised 2026-11-04
 
 Original [simultaneous-playback subplan](SIMULTANEOUS_PLAYBACK_PLAN.md), step 4.
