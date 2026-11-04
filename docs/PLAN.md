@@ -1,5 +1,77 @@
 # Development plan
 
+## Current follow-up — labels, volume and resume
+
+Use Offset for the shared playback setting and cluster throughout visible UI;
+OpenSound replaces legacy visible Parvi branding. Keep protocol/module names,
+identities and saved membership compatible. User reports the per-packet build
+plays cleanly at 70 ms offset; this is listening evidence, not physical alignment
+measurement. Investigate the reported full-scale/red Mac capture meter with Music
+at about 60%, leaving −6 dB gain unchanged until evidence identifies the stage.
+Over-range capture is now reproduced: +17.415 dBFS raw, with correct −6 dB
+conversion/gain. Device-wide and Music-only tap variants agree. EQ and Sound
+Enhancer are off; Sound Check is enabled. The approved on/off/on comparison is
+complete and the setting is restored/verified on. No phase reproduced overload;
+different musical passages make it inconclusive, not a Sound Check diagnosis.
+Next isolate a repeatable source/passage under the overload condition, comparing
+raw tap samples against encoder input. Do not infer exact Music gain from
+unmatched source/capture windows or hide the issue with arbitrary attenuation.
+Subscription restoration on iPhone is feasible but absent; design recorded in
+IDEAS.md for a separate increment, not implemented as part of text corrections.
+
+## Current priority — restore the per-packet target contract
+
+The earlier random-origin RTP counter plus periodic presentation anchor did not
+fulfil the project's defining requirement. Supersede the anchor/servo execution
+plan below. Every packet must independently encode the broadcaster's assigned
+global playback target; the receiver converts it to local time and executes it
+or reports failure. No neighbour-derived target, receiver-selected timeline or
+silent adaptive retiming is allowed. This principle is also in AGENTS.md.
+
+Current increment: global POSIX-epoch 48 kHz ticks in each RTP timestamp, explicit
+descriptor/request version, and iPhone GStreamer per-packet plans/PTS execution.
+Disable sink resampling and clock-rate correction. Missing targets, unmapped
+decoded buffers and late/rejected plans are counted and discarded explicitly.
+Keep −6 dB gain and the existing cluster playback target offset.
+
+Packet independence passes the actual pinned ExWebRTC RTP sender check; 33
+focused Erlang tests and Mac/iPhone compilation pass. Next user installs both updated
+apps and checks playback, target-offset changes and diagnostic counters.
+Compilation is not device verification or proof of physical speaker alignment.
+Windows GStreamer and libwebrtc have no implemented per-packet executor yet:
+reject subscription explicitly rather than silently use adaptive playback.
+Implement and verify their execution boundary in a later platform increment.
+Hourly accountability and lossless diagnostics are deferred in IDEAS.md.
+
+## Earlier wobble investigation — historical checkpoint
+
+Held none until the user answered: distortion no longer audible. Restored
+resample and held it: distortion returned. Current subscription is back to none
+for listening; at that checkpoint new subscriptions still defaulted to resample.
+This was a temporary workaround, not proof of synchronization. The per-packet
+contract correction above supersedes the proposed rate-adaptation repair.
+
+### Earlier measured checkpoint
+
+Live playback had zero drop/reset deltas over 19.5 seconds despite audible
+flutter. Sink-rate conversion is the next specific suspect. A build with actual
+sink-rate readback and a short inspector-controlled none/resample A/B switch is
+ready; user deployment is pending. Restore resample after the short test. This
+is diagnosis, not a decision to disable drift correction. The visible global
+setting is now “Cluster playback target offset”, applying to all cluster playback.
+
+### Earlier diagnostic checkpoint
+
+The next iPhone build exposes decoder-probe drops separately from sink drops,
+plus native schedule/reset and Erlang request/phase counters. Build through
+OpenSound `./build.sh ios`, install and collect repeated inspector snapshots
+while wobble is audible. Initial read-only sampling reached iPhone but found no
+subscription. Preserve playback policy until measurements distinguish dropped
+PCM, repeated relock, sink lateness and rate/resampling behavior. Decoder counts
+alone do not prove playback. See docs/apps/iOS/README.md for field definitions.
+Keep −6 dB broadcast gain and the shared cluster sync delay unchanged.
+
+
 ## Windows verification and recovery — 2026-11-04
 
 The rebuilt Windows UI uses runtime invalidations rather than idle polling, with

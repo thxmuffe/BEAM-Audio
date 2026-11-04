@@ -50,16 +50,25 @@ selection_is_pinned_and_unsupported_controls_send_nothing_test() ->
 scheduled_gstreamer_controls_are_explicit_test() ->
     with_engine("gstreamer", fun(Engine,Peer) ->
         os:putenv("PARVI_GSTREAMER_SCHEDULE","1"),
-        ?assertMatch(#{presentation_schedule_execution := true,rate_correction_control := true},
+        ?assertMatch(#{presentation_schedule_execution := true,rate_correction_control := false},
             parvi_audio_engine:info(Engine)),
         Plan = #{generation => 3,ts_offset_ns => 4000,native_target_ns => 9000},
         ?assertEqual(ok,parvi_audio_engine:command(Engine,{presentation,Plan})),
         ?assertEqual(wire(#{op => <<"schedule">>,plan => Plan}),read(Peer)),
         Rate = #{correction_ppm => -25,max_absolute_ppm => 50},
-        ?assertEqual(ok,parvi_audio_engine:command(Engine,{rate_correction,Rate})),
-        ?assertEqual(wire(#{op => <<"rate">>,plan => Rate}),read(Peer)),
+        ?assertEqual({error,{unsupported_output_control,rate_correction_control}},
+            parvi_audio_engine:command(Engine,{rate_correction,Rate})),
         ?assertEqual(ok,parvi_audio_engine:command(Engine,{invalidate_schedule,<<"clock_changed">>})),
-        ?assertEqual(wire(#{op => <<"invalidate_schedule">>,reason => <<"clock_changed">>}),read(Peer))
+        ?assertEqual(wire(#{op => <<"invalidate_schedule">>,reason => <<"clock_changed">>}),read(Peer)),
+        ?assertEqual(ok,parvi_audio_engine:command(Engine,{diagnostic_sink_slaving,none})),
+        ?assertEqual(wire(#{op => <<"diagnostic_sink_slaving">>,method => <<"none">>}),read(Peer)),
+        ?assertEqual({error,adaptive_retiming_disabled},
+            parvi_audio_engine:command(Engine,{diagnostic_sink_slaving,resample})),
+        ?assertEqual(ok,parvi_audio_engine:command(Engine,{reject_packet,17,<<"late">>})),
+        ?assertEqual(wire(#{op => <<"reject_packet">>,packet_id => 17,reason => <<"late">>}),read(Peer)),
+        ?assertEqual({error,unsupported_output_control},
+            parvi_audio_engine:command(Engine,{diagnostic_sink_slaving,unsupported})),
+        ?assertEqual({error,timeout},gen_tcp:recv(Peer,0,20))
     end).
 
 unsupported_selection_never_falls_back_test() ->

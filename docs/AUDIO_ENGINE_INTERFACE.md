@@ -1,10 +1,47 @@
 # Receiver media engine interface
 
-Implemented 2026-11-03 as step 2 of the simultaneous-playback plan. This is a
-local execution boundary inside BEAM Audio. Updated November 4: the iPhone
-GStreamer host explicitly enables native sink scheduling and bounded clock-rate
-execution. Windows/libwebrtc keep their existing adaptive paths. Physical output
-synchronization remains unqualified.
+Implemented 2026-11-03 as step 2 of the simultaneous-playback plan. The
+2026-11-04 contract correction replaces anchor-derived playback timing with
+independent per-packet targets. iPhone GStreamer implements the new executor;
+Windows GStreamer and libwebrtc reject scheduled subscription until their
+executors exist. Physical speaker synchronization remains unqualified.
+
+## Authoritative per-packet target
+
+The broadcaster assigns a target to every audio packet. Receivers execute that
+original target or report failure. They may reorder transport packets and decode
+media, but must not infer missing targets from neighbours, use arrival order as
+a playback timeline, or adaptively choose replacement deadlines.
+
+The Opus RTP profile now declares `rtp_timestamp_semantics=global_playback_48k_v1`
+and `presentation_stream_id` in its descriptor. Subscription requests explicitly
+require that clock profile. Each RTP timestamp is the low 32 bits of the packet's
+POSIX-epoch playback time in 48000 ticks/second. It is **not** a random-origin
+source sample counter. Both peers must be updated; legacy profiles are rejected.
+Sender assignment is quantized to the representable tick before it is stored,
+so receiver decoding recovers precisely that assigned value. Tick resolution is
+20.833 microseconds; rounding differs from the ideal target by at most half a
+tick. No periodic source timing anchor is needed to resolve an individual target.
+
+The shared clock resolves the nearest 32-bit era (wrap approximately every
+24.86 hours); a target more than 60 seconds from receiver reference time is
+rejected. Configured cluster target offset is at most 30 seconds. This conversion
+uses the shared reference only, never neighbouring packets. Periodic source
+observations retained for diagnostics do not supply packet playback deadlines.
+
+Erlang maps each target to receiver monotonic time and combines the native clock
+observation with GstSegment/base-time/latency information. Its packet-correlated
+plan carries `packet_id`, `rtp_timestamp`, target, generation and local sink
+coordinates. iPhone's decoder worker awaits its own decision, rewrites only that
+buffer's PTS, and rejects missing, mismatched, stale, timed-out or late decisions.
+There is no persistent sink offset used to choose later packets' targets.
+A packet rejection wakes only that packet's worker. Closure also wakes the worker
+before stopping the pipeline. Adaptive sink rate matching is disabled.
+
+The scheduled boundary is the GStreamer sink clock, not measured acoustic
+emission. `calibrated_output_latency_ns=null` means uncalibrated, not zero.
+Counter evidence distinguishes receipt, decode, probe acceptance and sink
+submission; none alone proves sound came out at the requested instant.
 
 ## Ownership
 
@@ -105,13 +142,10 @@ or stale/unmappable schedules rather than reinterpret them as buffering requests
 Positive correction means consume source samples faster per local elapsed time.
 
 The iPhone host opts in with local `PARVI_GSTREAMER_SCHEDULE=1`; only that
-GStreamer execution path advertises scheduling/rate support. The session sends
-a native `schedule` plan with decoded generation, sink offset, future native
-target and stream/reference/revision identity. Native code acknowledges apply or
-stale/late rejection. A dedicated clock accepts bounded calibration plans only
-for the observed clock generation. A native `pipeline_observation` event carries
-actual matched RTP/running time, native/pipeline clocks, base time, sink latency
-and calibration. Native `invalidate_schedule` mutes pending a fresh plan.
+GStreamer execution path advertises scheduling support. Rate correction remains
+an interface operation but is unsupported on this path. Native observations and
+plans are exchanged per packet as specified above. `reject_packet` explicitly
+rejects an identified pending packet; invalidation mutes pending a fresh plan.
 
 The current trial targets the nominal packet/decoder timeline at the GStreamer
 sink clock boundary. `calibrated_output_latency_ns=null` explicitly denotes an
@@ -128,7 +162,7 @@ add `output_engine` and `output_status`; session status also includes `engine`.
 The output report preserves a `source_anchor` with the source's sample position,
 capture segment, RTP association and presentation stream/revision. It explicitly
 reports `source_output_mapping=unavailable` without a valid applied plan. The
-scheduled iPhone path reports `decoded_rtp_nominal`; this is a decoder-buffer
+scheduled iPhone path reports `packet_global_target`; this is a decoder-buffer
 association, not a physical output callback or calibrated speaker sample.
 
 The report separately exposes callback host/sample observations, their existing
@@ -138,11 +172,12 @@ underruns and counters remain `null`. Raw callback coordinates are observations;
 consult validity/status and do not treat them as calibrated speaker times.
 The render sample rate is the configured stream format, not a measured DAC
 oscillator rate. No sample identity is inferred through NetEq stretching/concealment or GStreamer
-buffering, and output scheduling/rate control remain explicitly false.
+buffering. Scheduling is advertised only for the implemented per-packet executor;
+rate control remains false.
 
 Stage 3 must preserve exact source/output identity through decode and retained
 buffers, report timing/validity at the selected execution boundary, execute the
-Erlang deadline, and use one smooth device-rate controller. Calibration must be
+Erlang deadline, without silently replacing packet targets. Calibration must be
 accounted for once. A GStreamer library feature alone does not prove that the
 current Windows pipeline executes this contract.
 

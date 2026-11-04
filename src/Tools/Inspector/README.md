@@ -124,6 +124,15 @@ p.stdin.close()
 p.wait()
 ```
 
+## Sink-rate diagnostic and per-packet execution
+
+The earlier none/resample listening A/B implicated resample. The per-packet
+executor now defaults to none, and `diagnostic_sink_slaving` with resample returns
+`adaptive_retiming_disabled` without changing playback. Do not restore the old
+adaptive mode. Inspect per-packet plan/rejection/timeout and decoder/sink counters
+described in the iPhone guide. `sinkClockRatePpm` is a sink/device clock reading,
+not proof of physical emission timing or a request to retime packets.
+
 ## Cluster playback sync delay
 
 `{"op":"sync_delay","node":"FULL_NODE_NAME"}` reads that member's replicated

@@ -14,7 +14,8 @@
 -type command() :: play | pause | stats | {clock, integer()} |
     {signal, answer | candidate, map()} |
     {minimum_delay, automatic | non_neg_integer(), integer()} |
-    {presentation, presentation()} | {rate_correction, rate_correction()}.
+    {presentation, presentation()} | {rate_correction, rate_correction()} |
+    {diagnostic_sink_slaving, none | resample}.
 
 -callback info() -> map().
 -callback available() -> boolean().
@@ -72,7 +73,7 @@ output_status(Engine, Timeline, Stats) ->
     #{engine => info(Engine),
       source_anchor => case is_map(Timeline) of true -> Timeline; false -> null end,
       source_output_mapping => case maps:get(<<"output_schedule_enforced">>,Stats,false) of
-          true -> decoded_rtp_nominal; false -> unavailable end,
+          true -> packet_global_target; false -> unavailable end,
       presentation_schedule_execution => maps:get(<<"output_schedule_enforced">>,Stats,false),
       rate_correction_control => maps:get(rate_correction_control,info(Engine),false),
       output_timing_status => maps:get(<<"output_timing_status">>, Stats, <<"unavailable">>),

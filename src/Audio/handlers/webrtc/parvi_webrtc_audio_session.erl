@@ -10,7 +10,7 @@ start_link(Args) -> gen_statem:start_link(?MODULE, Args, []).
 callback_mode() -> handle_event_function.
 init({receiver, Owner}) ->
     monitor(process, Owner), {ok, idle, #{role => receiver, owner => Owner, pending_ice => []}};
-init({provider, Source, Peer, #{selector := all} = Request, Descriptor}) ->
+init({provider, Source, Peer, #{selector := all,packet_target_clock := global_playback_48k_v1} = Request, Descriptor}) ->
     monitor(process, Source), monitor(process, Peer),
     {ok, PC} = ?PC:start_link([{ice_servers, ice()}, {video_codecs, []}]),
     monitor(process, PC),
@@ -18,12 +18,11 @@ init({provider, Source, Peer, #{selector := all} = Request, Descriptor}) ->
     {ok, _} = ?PC:add_track(PC, Track),
     {ok, negotiating, #{role => provider, source => Source, peer => Peer, descriptor => Descriptor,
         pc => PC, track => maps:get(id,Track), sequence => rand:uniform(65536)-1,
-        timestamp => rand:uniform(4294967296)-1,
         timing_observations => maps:get(timing_observations,Request,false), pending_ice => []}, timeout()};
 init(_) -> {stop, unsupported_audio_comparison_request}.
 
 handle_event({call, From}, {open, Source, Request}, idle, D) ->
-    monitor(process, Source), Id = gen_server:send_request(Source, {subscribe,Request#{timing_observations => true}}),
+    monitor(process, Source), Id = gen_server:send_request(Source, {subscribe,Request#{timing_observations => true,packet_target_clock => global_playback_48k_v1}}),
     {next_state, opening, D#{source => Source, pending => Id, caller => From}, timeout()};
 handle_event(info, Message, opening, #{pending := Id} = D) ->
     case gen_server:check_response(Message,Id) of
@@ -37,7 +36,7 @@ handle_event(info, Message, opening, #{pending := Id} = D) ->
 handle_event({call, From}, {listen, Consumer}, _, #{role := receiver} = D) ->
     {keep_state,D#{consumer => Consumer},[{reply,From,ok}]};
 handle_event({call, From}, ready, accepted, #{role := receiver} = D) ->
-    case parvi_audio_engine:open(#{ice_servers => ice()}) of
+    case open_scheduled_engine() of
         {ok, Engine} ->
             erlang:send_after(1000,self(),stats),
             Next = request_clock(D#{engine => Engine, caller => From}),
@@ -51,7 +50,8 @@ handle_event({call, From}, {playback, Action}, active, #{engine := Engine} = D) 
     {keep_state,D,[{reply,From,Reply}]};
 handle_event({call, From}, status, State, D) ->
     {keep_state_and_data,[{reply,From,#{state => State, backend => parvi_audio_stream_handler_webrtc:info(),
-        engine => engine_info(D), statistics => maps:get(statistics,D,#{})}}]};
+        engine => engine_info(D),unscheduled_packets => maps:get(unscheduled_packets,D,0),
+        statistics => maps:get(statistics,D,#{})}}]};
 %% Compatibility for existing local callers; the receiver now uses output_control.
 handle_event({call, From}, {minimum_playout_delay, Delay}, State, D) ->
     handle_event({call,From},{output_control,{minimum_delay,Delay}},State,D);
@@ -64,15 +64,29 @@ handle_event({call, From}, {output_control,{minimum_delay,Delay}}, active, #{eng
 handle_event({call, From}, {output_control,{Kind, _} = Command}, active, #{engine := Engine} = D)
         when Kind =:= presentation; Kind =:= rate_correction ->
     {keep_state,D,[{reply,From,parvi_audio_engine:command(Engine,Command)}]};
+handle_event({call, From}, {output_control,{diagnostic_sink_slaving,resample}}, active, _) ->
+    {keep_state_and_data,[{reply,From,{error,adaptive_retiming_disabled}}]};
+%% Inspect the readback before treating a queued request as applied.
+handle_event({call, From}, {output_control,{diagnostic_sink_slaving,Method} = Command}, active,
+             #{engine := Engine} = D) when Method =:= none ->
+    Reply = case maps:is_key(<<"sinkClockSlaving">>,maps:get(statistics,D,#{})) of
+        true ->
+            ok = parvi_audio_engine:command(Engine,Command),
+            {ok,#{status => queued,requested => Method}};
+        false -> {error,diagnostic_sink_slaving_unavailable}
+    end,
+    {keep_state,D,[{reply,From,Reply}]};
 handle_event({call, From}, _, _, _) -> {keep_state_and_data,[{reply,From,{error,invalid_state}}]};
 handle_event(cast, {encoded, Source, #{sample_position := Position} = Timing, Packet}, active,
              #{role := provider, source := Source, pc := PC, track := Track,
-               sequence := Seq, timestamp := Origin} = D) ->
-    Time = (Origin + Position) band 16#ffffffff,
-    RTP = 'Elixir.ExRTP.Packet':new(Packet,[{sequence_number,Seq},{timestamp,Time},{marker,Seq =:= 0}]),
-    ok = ?PC:send_rtp(PC,Track,RTP),
-    %% One anchor per second plus segment/validity changes, separate from RTP. Every receiver
-    %% can relate its RTP position to the same source capture timeline.
+               sequence := Seq} = D) ->
+    case parvi_audio_rtp_time:packet(Packet,Timing,Seq,Seq =:= 0) of
+        {error,packet_playback_target_unavailable} ->
+            {keep_state,D#{unscheduled_packets => maps:get(unscheduled_packets,D,0)+1}};
+        {ok,RTP} ->
+            Time = maps:get(timestamp,RTP),
+            ok = ?PC:send_rtp(PC,Track,RTP),
+    %% Auxiliary capture diagnostics only. Playback targets are IN EVERY RTP header.
     Presentation = maps:get(presentation,Timing,#{}),
     Marker = {maps:get(capture_segment,Timing,0),maps:get(continuous,Timing,false),
               maps:get(revision,Presentation,undefined)},
@@ -85,7 +99,8 @@ handle_event(cast, {encoded, Source, #{sample_position := Position} = Timing, Pa
             D#{last_timeline_position => Position,last_timeline_marker => Marker};
         false -> D
     end,
-    {keep_state,Next#{sequence := (Seq+1) band 16#ffff}};
+    {keep_state,Next#{sequence := (Seq+1) band 16#ffff}}
+    end;
 handle_event(cast, {signal, Peer, #{<<"event">> := <<"offer">>, <<"sdp">> := SDP}}, _,
              #{role := provider, peer := Peer, pc := PC} = D) ->
     ok = ?PC:set_remote_description(PC,?SD:from_json(#{<<"type">> => <<"offer">>,<<"sdp">> => SDP})),
@@ -126,6 +141,12 @@ handle_event(info, Message, State, #{role := receiver,engine := Engine} = D) ->
     end;
 handle_event(_,_,_,_) -> keep_state_and_data.
 
+open_scheduled_engine() ->
+    case parvi_audio_engine:info() of
+        #{presentation_schedule_execution := true} -> parvi_audio_engine:open(#{ice_servers => ice()});
+        _ -> {error,<<"This audio engine cannot execute per-packet playback targets.">>}
+    end.
+
 engine_info(#{engine := Engine}) -> parvi_audio_engine:info(Engine);
 engine_info(_) -> null.
 
@@ -134,7 +155,7 @@ engine_event(M,State,#{peer := Peer,engine := Engine} = D) ->
         <<"offer">> -> signal(Peer,M), keep_state_and_data;
         <<"candidate">> -> signal(Peer,M), keep_state_and_data;
         <<"connected">> when State =:= negotiating ->
-            %% Keep normal adaptive playout until Erlang supplies a minimum.
+            %% This controls transport jitter buffering only, never the packet target.
             ok = parvi_audio_engine:command(Engine,{minimum_delay,automatic,0}),
             {next_state,active,maps:remove(caller,D),[{reply,maps:get(caller,D),ok}]};
         <<"minimum_delay">> ->
@@ -164,7 +185,8 @@ engine_event(M,State,#{peer := Peer,engine := Engine} = D) ->
                 #{state => <<"stopped">>,cluster_synchronized => false}},
             keep_state_and_data;
         <<"stats">> ->
-            Timing = parvi_webrtc_audio_timing:report(maps:get(source_timeline,D,undefined),M,
+            Measured = maps:merge(M,maps:get(schedule_diagnostics,D,#{})),
+            Timing = parvi_webrtc_audio_timing:report(maps:get(source_timeline,D,undefined),Measured,
                 maps:get(native_clock,D,undefined)),
             Report = Timing#{<<"output_engine">> => parvi_audio_engine:info(Engine),
                 <<"output_status">> => parvi_audio_engine:output_status(Engine,
@@ -199,45 +221,39 @@ terminate(_,_,D) ->
     case maps:find(pc,D) of {ok,PC} -> try ?PC:close(PC) catch exit:_ -> ok end; _ -> ok end.
 
 %% All schedule/servo policy stays on the session process, outside device callbacks.
-plan_gstreamer(M,#{engine := Engine} = D) ->
-    Keys = [rtp_timestamp,host_ns,pipeline_clock_ns,base_time_ns,running_time_ns,
-            pipeline_latency_ns,render_delay_ns,observation_uncertainty_ns,generation,
-            internal_ns,calibration_internal_ns,calibration_external_ns,
-            rate_numerator,rate_denominator,clock_generation],
+plan_gstreamer(M,D0) ->
+    D = schedule_diagnostic(<<"controllerObservationCount">>,#{},D0),
+    #{engine := Engine} = D,
+    Keys = [rtp_timestamp,packet_id,host_ns,pipeline_clock_ns,base_time_ns,running_time_ns,
+            pipeline_latency_ns,render_delay_ns,observation_uncertainty_ns,generation],
     Observation = maps:from_list([{K,maps:get(atom_to_binary(K),M)} || K <- Keys]),
-    Source = maps:get(source_timeline,D,undefined),
+    Source = maps:get(descriptor,D),
     Reference = parvi_clock:status(),
     case {parvi_audio_gstreamer_control:target(Source,Observation,Reference),maps:find(native_clock,D)} of
         {{ok,Target},{ok,Bridge}} ->
-            {ok,Local} = parvi_clock:to_monotonic(maps:get(target_output_time_ns,Target)),
-            Pipeline = Observation#{observation_uncertainty_ns :=
-                maps:get(observation_uncertainty_ns,Observation)+maps:get(round_trip_ns,Bridge) div 2},
-            case parvi_audio_gstreamer_schedule:plan(Target#{local_handoff_time_ns => Local},Bridge,Pipeline) of
-                {ok,Plan0} ->
-                    Plan = maps:merge(Target,Plan0#{generation => maps:get(generation,Observation),
-                        local_handoff_time_ns => Local,calibrated_output_latency_ns => null}),
-                    Applied = maps:get(<<"applied_schedule">>,M,#{}),
-                    Same = lists:all(fun(K) -> maps:get(atom_to_binary(K),Applied,undefined) =:= maps:get(K,Plan) end,
-                                     [stream_id,revision,clock_timeline]),
-                    case {maps:get(<<"scheduled">>,M,false),Same} of
-                        {true,true} ->
-                            Desired = maps:get(ts_offset_ns,Plan),
-                            Actual = maps:get(<<"ts_offset_ns">>,M),
-                            case parvi_audio_gstreamer_control:correction(Desired,Actual) of
-                                relock -> ok = parvi_audio_engine:command(Engine,{presentation,Plan});
-                                Correction ->
-                                    {ok,Rate} = parvi_audio_gstreamer_schedule:rate_plan(Correction,Observation),
-                                    ok = parvi_audio_engine:command(Engine,{rate_correction,maps:merge(Target,Rate#{
-                                        clock_generation => maps:get(clock_generation,Observation),
-                                        correction_ppm => maps:get(correction_ppm,Correction),max_absolute_ppm => 50})})
-                            end;
-                        _ -> ok = parvi_audio_engine:command(Engine,{presentation,Plan})
-                    end,
-                    D#{schedule_status => sink_clock_requested};
-                {error,Reason} -> invalidate_gstreamer(Reason,D)
+            case parvi_clock:to_monotonic(maps:get(target_output_time_ns,Target)) of
+                {ok,Local} ->
+                    Pipeline = Observation#{observation_uncertainty_ns :=
+                        maps:get(observation_uncertainty_ns,Observation)+maps:get(round_trip_ns,Bridge) div 2},
+                    case parvi_audio_gstreamer_schedule:plan(Target#{local_handoff_time_ns => Local},Bridge,Pipeline) of
+                        {ok,Plan0} ->
+                            Plan = maps:merge(Target,Plan0#{generation => maps:get(generation,Observation),
+                                rtp_timestamp => maps:get(rtp_timestamp,Observation),packet_id => maps:get(packet_id,Observation),
+                                local_handoff_time_ns => Local,calibrated_output_latency_ns => null}),
+                            ok = parvi_audio_engine:command(Engine,{presentation,Plan}),
+                            schedule_diagnostic(<<"controllerPacketPlanRequests">>,#{},D);
+                        {error,Reason} -> reject_gstreamer_packet(Reason,M,D)
+                    end;
+                {error,_} -> reject_gstreamer_packet(receiver_clock_unavailable,M,D)
             end;
-        _ -> invalidate_gstreamer(source_or_receiver_clock_unavailable,D)
+        _ -> reject_gstreamer_packet(packet_target_clock_unavailable,M,D)
     end.
-invalidate_gstreamer(Reason,#{engine := Engine} = D) ->
-    ok = parvi_audio_engine:command(Engine,{invalidate_schedule,atom_to_binary(Reason)}),
-    D#{schedule_status => Reason}.
+reject_gstreamer_packet(Reason,M,#{engine := Engine} = D) ->
+    ok = parvi_audio_engine:command(Engine,{reject_packet,maps:get(<<"packet_id">>,M),atom_to_binary(Reason)}),
+    schedule_diagnostic(<<"controllerRejectedPacketTargets">>,
+        #{<<"controllerLastRejection">> => atom_to_binary(Reason)},D).
+
+schedule_diagnostic(Counter,Fields,D) ->
+    Previous = maps:get(schedule_diagnostics,D,#{}),
+    D#{schedule_diagnostics => maps:merge(Previous,Fields#{
+        Counter => maps:get(Counter,Previous,0)+1})}.

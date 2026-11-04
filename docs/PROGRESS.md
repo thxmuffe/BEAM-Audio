@@ -1,5 +1,223 @@
 # Progress
 
+## 2026-11-04 — Approved Sound Check comparison completed and restored
+
+User approved temporarily disabling Music's Sound Check, measuring and restoring
+it. Verified enabled before the baseline, disabled after applying preferences,
+then restored enabled, applied, reopened and verified enabled again. Closed the
+preferences dialog afterward. Music volume remained 0.2724546 throughout; no
+track seek/restart, route change or gain change was performed.
+
+Three eight-second raw CoreAudio level summaries during First Passacaglia:
+
+| Sound Check | Peak dBFS | RMS dBFS | Samples at/above full scale |
+| --- | ---: | ---: | ---: |
+| On, before | −4.893 | −24.287 | 0 |
+| Off | −9.081 | −24.641 | 0 |
+| On, restored | −5.614 | −22.694 | 0 |
+
+This did not reproduce the severe over-range condition. The music continued
+through different passages, so peak differences are not a same-sample gain
+comparison; similar RMS values do not prove Sound Check unrelated. Do not name
+Sound Check as the cause or claim a fix. The earlier +17.415 dBFS raw capture
+remains confirmed. Next useful isolation is a repeatable same-passage/source
+comparison under the overload condition, or a bounded known digital reference,
+while comparing raw tap and encoder-input samples. No user-supplied test recording
+is required. Captures are summaries only under
+builds/diagnostics/volume/sound-check-{on-before,off,on-restored}.json.
+
+## 2026-11-04 — Above-full-scale capture reproduced and localized
+
+User supplied a screenshot showing +2.2 dBFS source peak, −7.3 dBFS RMS. Follow-up
+read-only live sampling reproduced post-gain source peaks as high as +12.81 dBFS
+and RMS +3.07 dBFS. The earlier quiet-window sampling did not disprove the report.
+No special test sample is required to reproduce over-range audio.
+
+Compared the packaged raw CoreAudio helper and packaged Opus helper concurrently
+for 12 seconds, independently interpreting their float32 PCM. Both report the
+same 48 kHz stereo packed-float32 format. Raw peak was 7.42613 (+17.415 dBFS);
+post-conversion/gain peak was 3.72188 (+11.415 dBFS): exactly the intended −6 dB.
+Both saw 1,136,640 samples. Over-range counts were 112,068 before conversion and
+35,617 after gain. Thus an over-range signal already exists at the raw tap; this
+is not merely a red UI scaling issue or amplification added by GStreamer/Opus.
+Exact upstream cause and downstream saturation boundary remain unproven.
+
+An isolated diagnostic copy of the raw binding compared device-wide,
+stereo-global, stereo-Music-only and device-Music-only tap descriptions. All four
+gave essentially identical peaks/RMS in that later window (about +1.16/−13.3
+dBFS); changing tap selection alone did not remove the over-range samples.
+Only Music was reported as an active audio-producing process. Output was the
+built-in MacBook Air speakers; its hardware volume was at zero at inspection.
+No output route, speaker gain or broadcast gain was changed.
+
+The two local MP3 files open in Music decoded offline at −2.77 and −2.44 dBFS
+whole-file peak. These are not sample-aligned comparisons with the earlier worst
+capture window and do not quantify an exact gain through Music. UI inspection
+confirmed Music EQ off/flat with 0 dB preamp, Sound Enhancer off, Sound Check on.
+Sound Check is a candidate, not a confirmed cause; requested permission for a
+temporary off/on comparison with restoration. Music's volume control was briefly
+muted accidentally during UI inspection, then immediately restored and verified
+at its previous 0.2724546 value. No persistent Music preference was changed.
+
+Evidence and isolated diagnostic executables/sources are ignored under
+builds/diagnostics/volume: raw-converted-comparison.json, red-capture-samples.json,
+route.json, tap-variants.json and source-file-levels.json. Diagnostics retain
+levels/metadata only, not captured audio. No production audio code was modified,
+rebuilt, installed or restarted for these checks. Keep −6 dB gain while locating
+the cause; do not conceal it with an unproven normalization/limiter change.
+
+## 2026-11-04 — UI terminology and initial volume check
+
+User reports the per-packet Mac-to-iPhone build sounds good at 70 ms offset.
+This is listening evidence; no acoustic timing measurement was performed.
+Changed the visible shared playback control to "Offset", cluster wording in
+Apple/Windows UI and core user messages, and legacy visible Parvi branding to
+OpenSound. Preserve runtime identifiers, wire keys, bundle IDs, invitations and
+saved identities. Existing generated artifacts and runtime paths retain their
+internal names. Five existing meter/cluster EUnit tests pass; shared Swift
+typechecking, Windows UI Erlang compilation and both Apple plist checks pass.
+Product `./build.sh all` also passes for Mac and unsigned iPhone. Nothing was
+installed or launched; Command-R can use the refreshed core resources.
+
+User also reports a red/full-scale Mac source meter with Music around 60% volume.
+Ten read-only live capture snapshots showed source peaks between −69.74 and
+−30.86 dBFS, so this check did not reproduce clipping. Source meters accumulate
+the exact post-−6 dB, pre-Opus float32 samples; UI uses amplitude and turns red
+only at peak >=0 dBFS. Existing meter tests cover silence, separate peak/RMS and
+above-full-scale detection. No volume policy, gain or native capture processing
+was changed. Asked for the numeric peak/RMS at the red condition to correlate
+with live readings. Evidence: builds/diagnostics/volume/capture-samples.json.
+The read-only Music automation volume query stalled and was terminated; Music
+volume/playback was not changed and its 60% setting was not independently read.
+
+Audio subscriptions are currently transient. Resume/relaunch restoration is
+feasible by persisting subscription intent and recreating sessions after source
+discovery and clock acquisition. It is recorded in IDEAS.md, not implemented.
+
+## 2026-11-04 — Per-packet contract correction, awaiting device playback
+
+The preceding random-origin RTP plus periodic timing-anchor design violated the
+user's defining requirement: each packet must independently identify its original
+broadcaster-assigned playback target. Approximate observed delay and successful
+adaptive playback did not establish compliance. The earlier anchor/servo results
+below are historical, not evidence that that design met the contract.
+
+Mac now assigns a representable global 48 kHz playback tick and places it in
+every audio RTP timestamp. Explicit request/descriptor clock semantics reject
+legacy profiles. Targets are decoded directly from each packet and the shared
+reference; neighbour loss, arrival order and periodic media anchors are irrelevant
+to target recovery. Missing source targets prevent transmission and are counted.
+
+iPhone GStreamer reports a packet-correlated decoder observation; Erlang maps
+that packet's global target into native/sink coordinates. The decoder worker
+awaits that decision and rewrites the individual buffer PTS. Missing association,
+late/mismatched plans and decision timeouts discard explicitly with counters;
+shutdown wakes the worker before pipeline teardown. A successful decision does
+not claim physical emission. Adaptive sink slaving/rate correction is disabled,
+and attempts to restore diagnostic resample are rejected without changing output.
+The earlier listening A/B remains evidence against that resample path only.
+
+Validation: 33 focused EUnit tests pass, covering global target recovery,
+independent/reordered targets, clock wrap, representable sender assignment,
+missing-target and legacy-profile rejection, controller arithmetic, engine socket
+commands and timing reports. The separate audio-packet-target.escript passes
+through the actual pinned ExWebRTC RTP sender and ExRTP byte encoder/decoder:
+the assigned target survives the actual RTP header with a lost neighbour and
+reverse arrival. This is a local sender/codec check, not a network or native
+playback test. Existing loopback checks required sandbox network permission.
+
+Final Mac and unsigned iPhone packages compile through product `./build.sh all`;
+no apps were installed or launched. Installation/listening is left to the
+user. Neither the new native path nor physical speaker timing is device-qualified
+yet. Both apps must be updated/relaunched for the new wire semantics. Windows
+GStreamer and libwebrtc have no per-packet executor and now reject subscription
+explicitly instead of silently falling back to adaptive playback. Keep −6 dB gain
+and the shared cluster playback target offset. Hourly accountability and lossless
+diagnostic audio are recorded in IDEAS.md, with no periodic vetting implemented.
+
+## 2026-11-04 — User listening A/B implicates sink rate matching
+
+The first timed comparison was inconclusive to the listener. Repeated with
+none held until the user answered. User reported distortion no longer audible.
+Restored resample, verified readback and held it; user reported the distortion
+returned (“yes it did. conclusive.”). This provides strong listening evidence
+against this sink rate-matching path, not evidence that removing long-term rate
+correction solves synchronization. Current iPhone subscription returned to none
+for clean listening; new subscriptions still default to resample. No production
+rate/drop/clock defaults were changed by this A/B test.
+
+Device/sink clock calibration during the initial A phase ranged roughly −1568
+through +1008 ppm while Erlang's corrections were near zero; the independent
+native estimator and sample-copy rate conversion are now the primary repair
+area. The longer held test also included clock/schedule invalidations, so it is
+not a clean proof of all recovery behavior or acoustic alignment. Listening
+improved with rate matching off despite those other effects. Raw comparative
+logs are under builds/diagnostics/wobble, including ab-samples.json and
+held-ab-samples.json. Preserve the shared cluster playback target and implement
+smooth, stable rate adaptation before claiming sustained synchronized playback.
+
+
+## 2026-11-04 — Live wobble trace: no drops or relocks; sink-rate A/B prepared
+
+Collected 20 live iPhone snapshots over 19.538 seconds while the user reported
+clear flutter on strings/horns. All 1002 decoded buffers passed the decoder
+probe. Deltas: zero reported packet loss, probe drops, GAP buffers, sink drops,
+relocks or active-schedule invalidations. Sink offset stayed 2936058736 ns and
+pipeline latency 320 ms. The controller remained at −50 ppm, applying 187 rate
+updates; measured phase error decreased from 3.407 to 2.408 ms. Historical
+startup invalidations/relock totals were present but did not increase during
+this interval. These results do not support drop/reset churn as the cause in
+this window. Raw data: builds/diagnostics/wobble/live-samples.json.
+
+Inspected pinned upstream GstAudioBaseSink/GstAudioRingBuffer and the osxaudio
+subclass. The selected RESAMPLE sink slaving mode uses the base ring buffer's
+individual sample copy/skip/repeat rate conversion; osxaudio does not override
+commit. This is distinct from the upstream audioresample element. It is a
+concrete remaining artifact candidate, not a confirmed cause; actual device-
+clock calibration can differ from the Erlang command's ±50 ppm limit.
+
+Added sinkClockRatePpm and sinkClockSlaving readback, plus the inspector-only
+diagnostic_sink_slaving none/resample command. It queues a native change;
+inspect readback must confirm application. Default remains resample, and the
+shared presentation target, gain and packet/drop policy remain unchanged.
+The none mode is a short diagnostic: long-term rate alignment is not assured.
+A fresh subscription restores the default. The UI explicitly marks diagnostic
+rate matching disabled. Renamed the visible cluster setting to “Cluster playback
+target offset”, applying to all playback in the cluster; stored policy and wire
+field names stay compatible. Root iPhone build and 28 regression checks pass.
+The user is deploying via Parvi iPhone/physical device/Command-R before live A/B.
+
+Primary implementation references:
+[GstAudioBaseSink](https://github.com/GStreamer/gstreamer/blob/1.28.8/subprojects/gst-plugins-base/gst-libs/gst/audio/gstaudiobasesink.c),
+[GstAudioRingBuffer](https://github.com/GStreamer/gstreamer/blob/1.28.8/subprojects/gst-plugins-base/gst-libs/gst/audio/gstaudioringbuffer.c),
+[osxaudio ring buffer](https://github.com/GStreamer/gstreamer/blob/1.28.8/subprojects/gst-plugins-good/sys/osxaudio/gstosxaudioringbuffer.c).
+
+
+## 2026-11-04 — Investigate wobble: passive decoder/schedule diagnostics
+
+Reviewed the user's external repository analysis against current source. Exact
+RTP/decoded PTS failure does discard buffers, >20 ms phase error requests relock,
+and the sink has 20 ms maximum lateness. Those remain plausible suspects, not
+measured causes. Decoder totals deliberately count pre-drop PCM; missing stage
+counters made that easy to mistake for successful playback. No driver fault,
+Opus defect or audible pitch-rate effect is established by source review.
+
+Collected eight read-only live iPhone snapshots through the admitted Mac
+inspector: reachable, but no subscription/packets, so no wobble was reproduced.
+Saved compact evidence in builds/diagnostics/wobble/initial-samples.json and
+closed the diagnostic process. Asked the user to start playback for correlation.
+
+Added native decoded/passed/probe-drop/GAP/unmatched/segment counters, native
+schedule apply/relock/invalidation/rejection and rate apply/rejection counters,
+last reset/offset/latency fields, plus Erlang request and phase-error diagnostics.
+The shared Audio statistics view separates these stages. Counters are bounded
+summaries read over the existing control connection; no sample transport,
+gain, buffering, matching/drop or scheduling policy was changed. See the iPhone
+guide for definitions. Existing root `OpenSound/build.sh ios` completed core and
+unsigned iPhone build successfully. Timing/engine/cluster regression checks are
+run for this increment. Device deployment and audible correlation remain pending.
+
+
 ## 2026-11-04 — Root build entry points in both repositories
 
 Added build.sh and build.ps1 to BEAM-Audio and OpenSound: four entry points.

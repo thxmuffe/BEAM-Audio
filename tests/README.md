@@ -17,3 +17,10 @@ and `escript tests/control/smoke.escript`. These are existing checks moved from
 component tool directories, not a new test framework. Windows checks need the
 Windows bundle; Mac checks need the Mac bundle. Component unit tests remain in
 their existing `test/` or Swift `Tests/` directories under `src/`.
+
+`escript tests/transport/audio-packet-target.escript` runs the pinned ExWebRTC RTP
+sender and ExRTP wire decoder without a network connection. Build the core/native
+transport first. It checks the actual RTP timestamp bytes and target recovery
+with nonuniform targets, a lost neighbour and reverse arrival. EUnit's
+`parvi_audio_rtp_time_tests` additionally covers clock wrap, assignment precision
+and rejection. These do not prove native playback or physical speaker timing.

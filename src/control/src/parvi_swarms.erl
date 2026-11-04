@@ -1,4 +1,4 @@
-%% Independent swarm memberships; transport is trusted local distribution or
+%% Independent cluster memberships; transport is trusted local distribution or
 %% authenticated capability-addressed relay. Nodes own membership and history.
 -module(parvi_swarms).
 -behaviour(gen_server).
@@ -32,17 +32,17 @@ handle_call_event(health, _, State) -> {reply, #{node => identity()}, State};
 handle_call_event(snapshot, _, #{swarms := Swarms, order := Order} = State) ->
     {reply, [view(maps:get(Id, Swarms)) || Id <- Order, active(maps:get(Id, Swarms))], State};
 handle_call_event({create, _}, _, #{swarms := Swarms} = State) when map_size(Swarms) >= 64 ->
-    {reply, {error, <<"This prototype supports 64 swarm sessions per node. Restart for a fresh session.">>}, State};
+    {reply, {error, <<"This prototype supports 64 cluster sessions per node. Restart for a fresh session.">>}, State};
 handle_call_event({create, Name}, _, #{swarms := Swarms, order := Order, next := Next} = State) ->
     Title = case Name of
-        <<>> -> iolist_to_binary(io_lib:format("Swarm ~B", [Next]));
+        <<>> -> iolist_to_binary(io_lib:format("Cluster ~B", [Next]));
         _ -> Name
     end,
     case valid_text(Title, 80) of
         true ->
             Swarm = new_swarm(Title), Id = maps:get(id, Swarm),
             {reply, {ok, Id}, State#{swarms := Swarms#{Id => Swarm}, order := Order ++ [Id], next := Next + 1}};
-        false -> {reply, {error, <<"Use a swarm name of 1–80 UTF-8 bytes.">>}, State}
+        false -> {reply, {error, <<"Use a cluster name of 1–80 UTF-8 bytes.">>}, State}
     end;
 handle_call_event({join_relay, #{node := Owner, swarm := Id, token := Token, mailbox := Cap}}, From, #{pending := Pending, swarms := Swarms} = State) ->
     case find_active(Id, State) of
@@ -57,7 +57,7 @@ handle_call_event({join_relay, #{node := Owner, swarm := Id, token := Token, mai
                     {noreply, State#{pending := Pending#{Request => Entry}}};
                 _ -> parvi_relay:close(maps:get(mailbox, Member)), {reply, {error, <<"Reception desk is not connected.">>}, State}
             end;
-        error -> {reply, {error, <<"Swarm session or pending admission limit reached.">>}, State}
+        error -> {reply, {error, <<"Cluster session or pending admission limit reached.">>}, State}
     end;
 handle_call_event({join, Node, Id, Token}, _, State) ->
     case find_active(Id, State) of
@@ -69,7 +69,7 @@ handle_call_event({join, Node, Id, Token}, _, State) ->
             case Reply of
                 {ok, Shared, Links} ->
                     %% Prototype distribution still uses trusted local peer links.
-                    %% Establish those independently of logical swarm membership.
+                    %% Establish those independently of logical cluster membership.
                     [connect_member(Link) || Link <- Links],
                     Existing = maps:get(Id, maps:get(swarms, State), Shared),
                     Combined = merge(Existing, Shared),
@@ -111,13 +111,13 @@ handle_call_event({send, Id, Text}, _, State) ->
                         sent_at_ms => erlang:system_time(millisecond)},
             broadcast(Swarm, {chat, Id, own_id(Swarm), Message}),
             {reply, ok, put_swarm(record(Message, Swarm), State)};
-        {error, _} -> {reply, {error, <<"You are no longer in this swarm.">>}, State};
+        {error, _} -> {reply, {error, <<"You are no longer in this cluster.">>}, State};
         _ -> {reply, {error, <<"Use 1–4096 bytes of UTF-8 text.">>}, State}
     end;
 handle_call_event({leave, Id}, _, State) ->
     case find_active(Id, State) of
         {ok, Swarm} -> depart(Swarm, [own_id(Swarm)], [], State);
-        error -> {reply, {error, <<"You are no longer in this swarm.">>}, State}
+        error -> {reply, {error, <<"You are no longer in this cluster.">>}, State}
     end;
 handle_call_event({remove_both, Id, Target}, _, State) ->
     case find_active(Id, State) of
@@ -130,9 +130,9 @@ handle_call_event({remove_both, Id, Target}, _, State) ->
                     Own = maps:get(identity(), Members),
                     Revoked = [T || #{via := T} <- [Own, Other], is_binary(T)],
                     depart(Swarm, [maps:get(id, Own), maps:get(id, Other)], Revoked, State);
-                _ -> {reply, {error, <<"Select another current member of this swarm.">>}, State}
+                _ -> {reply, {error, <<"Select another current member of this cluster.">>}, State}
             end;
-        error -> {reply, {error, <<"You are no longer in this swarm.">>}, State}
+        error -> {reply, {error, <<"You are no longer in this cluster.">>}, State}
     end;
 handle_call_event(_, _, State) -> {reply, {error, unsupported_request}, State}.
 
@@ -260,7 +260,7 @@ new_member(Via) ->
 
 new_swarm(Name) ->
     Id = fresh(),
-    Title = case Name of <<>> -> <<"Swarm ", (binary:part(Id, 0, 4))/binary>>; _ -> Name end,
+    Title = case Name of <<>> -> <<"Cluster ", (binary:part(Id, 0, 4))/binary>>; _ -> Name end,
     Member = new_member(none),
     case parvi_relay:enabled() of true -> parvi_relay:open(Id, maps:get(mailbox, Member)); false -> ok end,
     #{id => Id, name => Title, token => fresh(),

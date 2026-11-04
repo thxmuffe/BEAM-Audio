@@ -36,6 +36,10 @@ request(#{<<"op">> := <<"subscribe">>, <<"node">> := Node, <<"source_id">> := Id
 request(#{<<"op">> := <<"play">>, <<"node">> := Node}) -> call(Node,parvi_audio_receiver,playback,[start]);
 request(#{<<"op">> := <<"pause">>, <<"node">> := Node}) -> call(Node,parvi_audio_receiver,playback,[stop]);
 request(#{<<"op">> := <<"unsubscribe">>, <<"node">> := Node}) -> call(Node,parvi_audio_receiver,stop,[]);
+request(#{<<"op">> := <<"diagnostic_sink_slaving">>, <<"node">> := Node, <<"method">> := Method})
+        when Method =:= <<"none">>; Method =:= <<"resample">> ->
+    Atom = case Method of <<"none">> -> none; <<"resample">> -> resample end,
+    call(Node,parvi_audio_receiver,control_output,[{diagnostic_sink_slaving,Atom}]);
 request(#{<<"op">> := <<"sync_delay">>, <<"node">> := Node, <<"delay_ms">> := Delay}) ->
     call(Node,parvi_cluster_trust,set_audio_sync_delay,[Delay]);
 request(#{<<"op">> := <<"sync_delay">>, <<"node">> := Node}) ->

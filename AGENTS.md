@@ -34,6 +34,12 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
   report device timing. Keep other native code to OS/library bindings and buffer
   transfer unless measured needs justify offloading.
 - Build incrementally. Do not introduce features, fallbacks, or complexity for hypothetical future needs.
+- Every audio packet must independently identify its broadcaster-assigned playback
+  target in the shared clock reference. Linear clock/unit conversions are allowed;
+  reconstructing a missing target from neighbouring packets, periodic media anchors
+  or arrival order is not. Receivers execute that target or explicitly report a
+  failure; adaptive streaming must never silently choose a replacement target.
+  Software scheduling evidence must remain distinct from physical speaker timing.
 
 **Guiding principle:** I provide the vision. You provide the technical expertise. Our goal is the simplest elegant architecture that fulfills the vision, not merely code that works.
 
@@ -66,6 +72,11 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 - Keep experimental implementations isolated until the planned integration step. Follow the current accepted plan in [docs/PLAN.md](docs/PLAN.md); do not turn speculative future requirements into present architecture.
 
 ### Repository split
+
+Use "cluster" in user-facing text, "Offset" for the shared playback target
+offset, and OpenSound for product branding. Preserve established internal Parvi
+module/protocol names, bundle identifiers, identity storage and invitation schemes
+unless a separately planned compatibility migration requires changing them.
 
 BEAM Audio owns reusable runtime, audio handlers, platform bindings, services,
 tooling, tests and project documentation. Commercial UI/app sources live in the

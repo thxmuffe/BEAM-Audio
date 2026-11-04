@@ -31,7 +31,11 @@ command(Socket, {minimum_delay, Delay, Id}) ->
     send(Socket, #{op => <<"minimum_delay">>, delay_ms => Value, request_id => Id});
 command(Socket, {presentation, Plan}) -> send(Socket, #{op => <<"schedule">>, plan => Plan});
 command(Socket, {rate_correction, Plan}) -> send(Socket, #{op => <<"rate">>, plan => Plan});
+command(Socket, {reject_packet, Id, Reason}) -> send(Socket, #{op => <<"reject_packet">>, packet_id => Id, reason => Reason});
 command(Socket, {invalidate_schedule, Reason}) -> send(Socket, #{op => <<"invalidate_schedule">>, reason => Reason});
+command(_, {diagnostic_sink_slaving, resample}) -> {error,adaptive_retiming_disabled};
+command(Socket, {diagnostic_sink_slaving, Method}) when Method =:= none ->
+    send(Socket, #{op => <<"diagnostic_sink_slaving">>, method => atom_to_binary(Method)});
 command(_, _) -> {error, unsupported_output_control}.
 
 event(Socket, {tcp, Socket, Bytes}) ->

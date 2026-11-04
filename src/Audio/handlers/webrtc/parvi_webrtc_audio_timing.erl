@@ -122,15 +122,12 @@ unavailable(Reason,Stats) ->
     (maps:without([<<"estimated_capture_to_track_ms">>,<<"track_delivery_time_ns">>,
                    <<"native_clock_round_trip_ns">>],Stats))#{<<"capture_timing_status">> => Reason}.
 
-%% Schedule execution is a native sink-clock fact, not calibrated speaker timing.
-scheduled_report(#{continuous := true,presentation := Schedule},
-                 #{<<"sinkScheduleEnforced">> := true,<<"appliedSchedule">> := Applied} = Stats) ->
-    Same = lists:all(fun(K) -> maps:get(K,Schedule,undefined) =:=
-        maps:get(atom_to_binary(K),Applied,undefined) end,[stream_id,revision,clock_timeline]),
-    case Same of
-        true -> Stats#{<<"output_schedule_enforced">> => true,
-            <<"presentation_status">> => <<"scheduled_sink_clock_uncompensated">>,
-            <<"output_timing_status">> => <<"decoded_rtp_to_sink_clock_nominal">>};
-        false -> Stats
-    end;
+%% Only a plan derived from the current packet's global RTP target is accepted.
+scheduled_report(_,#{<<"sinkScheduleEnforced">> := true,<<"packetTargetExecution">> := true,
+    <<"appliedSchedule">> := #{<<"basis">> := <<"packet_global_playback_target">>,
+        <<"rtp_timestamp">> := RTP,<<"target_output_time_ns">> := Target}} = Stats)
+        when is_integer(RTP),is_integer(Target) ->
+    Stats#{<<"output_schedule_enforced">> => true,
+        <<"presentation_status">> => <<"per_packet_global_target_execution">>,
+        <<"output_timing_status">> => <<"packet_target_to_local_sink_clock">>};
 scheduled_report(_,Stats) -> Stats.

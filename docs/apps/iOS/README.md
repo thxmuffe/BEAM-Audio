@@ -1,5 +1,71 @@
 # Parvi for iPhone
 
+## Current per-packet timing path — 2026-11-04
+
+Build both apps from the product repository with `./build.sh all`. This compiles
+Mac plus an unsigned iPhone app; it does not install either. Rebuild/deploy the
+signed iPhone target through your normal signing workflow, relaunch the rebuilt
+Mac app, and start a new broadcast/subscription. Both sides must be updated:
+legacy random-origin RTP streams are rejected. Source attenuation remains −6 dB.
+
+Mac assigns each packet a target using the shared cluster playback target offset
+and encodes that target directly in its RTP timestamp. GStreamer on iPhone pairs
+the decoded buffer with that packet; Erlang converts its own target to local time
+and returns a packet-correlated execution plan. The decoder worker waits for this
+plan, then sets that buffer's PTS individually. Missing associations, rejected or
+late targets and decision timeouts discard that buffer explicitly. There is no
+periodic media anchor dependency or adaptive replacement target. The wait occurs
+on the decoder worker, not the UI thread or device callback.
+
+Sink slaving is now `none`; adaptive rate correction and the diagnostic `resample`
+command are rejected. The earlier listening A/B found distortion absent with
+none and returning with resample. This removes that diagnosed path, but device
+playback after the per-packet rewrite still needs verification. The hourly
+accountability idea is recorded separately and is not implemented.
+
+Inspect `packetTargetExecution`, `packetTargetTimeouts`, `packetTargetRejects`,
+`decoderUnmappedBuffers`, `decoderProbeDroppedBuffers`, `scheduleApplyCount`,
+`controllerPacketPlanRequests`, `controllerRejectedPacketTargets`, and the latest
+`appliedSchedule` (including packet ID, RTP timestamp and assigned target).
+Acceptance/probe-pass counters do not prove audible playback. Sink/hardware
+latency remains uncalibrated; physical simultaneous output is not yet qualified.
+Windows and libwebrtc subscriptions reject this scheduled path until they have a
+per-packet executor. See [wire contract](../../AUDIO_ENGINE_INTERFACE.md).
+
+The older diagnostic and implementation checkpoints below describe preceding
+versions; their anchor/servo instructions are superseded by this section.
+
+## Wobble diagnostics — 2026-11-04
+
+The next diagnostic build adds counters without changing audio drop, buffering,
+scheduling or correction policy. Build with OpenSound `./build.sh ios`, then
+sign/install with the existing Xcode workflow. Start a fresh subscription and
+keep playback steady for at least 20 seconds. Compare counter **increases** while
+the wobble is audible, allowing startup to settle first. The Audio screen shows
+most useful totals; Inspector `inspect` returns all native/controller fields.
+
+| Fields | Meaning |
+| --- | --- |
+| `decodedFrames`, `decodedBuffers` | All valid-format PCM decoded, including subsequently discarded audio. `totalSamplesReceived` retains this interpretation for compatibility. |
+| `decoderPassedFrames`, `decoderPassedBuffers` | Passed beyond the decoder probe toward conversion/output; may still be muted or dropped downstream. |
+| `decoderProbeDroppedBuffers`, `decoderProbeDroppedFrames` | Discarded by our decoder timing probe, separate from the native sink drop count. |
+| `decoderUnmappedBuffers`, `decoderGapBuffers`, `decodedSegmentEvents` | Missing exact RTP association, GAP flags and segment events. These categories can overlap and must not be summed as separate losses. |
+| `outputDroppedBuffers`, `outputRenderedBuffers` | GStreamer sink counters, including rendering while muted; not calibrated DAC or audible-frame counts. |
+| `scheduleApplyCount`, `scheduleRelockCount`, `scheduleInvalidateCount`, `scheduleRejectCount` | Native accepted plans (including first arm), replacement while scheduled, loss of an active schedule, and rejected plans. |
+| `rateApplyCount`, `rateRejectCount`, `clockCorrectionPpm` | Native applied/rejected clock corrections and latest accepted ppm. Frequent small corrections alone do not establish audible distortion. |
+| `lastScheduleInvalidation`, `lastScheduleChangeHostNs`, `sinkTimestampOffsetNs`, `pipelineLatencyNs` | Last reset reason/change coordinate and current offset/latency; host nanoseconds are local monotonic coordinates. |
+| `controllerObservationCount`, `controllerArmRequests`, `controllerRelockRequests`, `controllerRateRequests`, `controllerInvalidationRequests` | Erlang control requests, distinct from native acceptance or actual loss-of-lock transitions. |
+| `controllerPhaseErrorNs`, `controllerLastInvalidation` | Most recent computed phase error and invalidation reason; phase error is not a speaker timing measurement. |
+
+Increasing probe drops or reset counts with zero reported RTP loss points us
+toward the local recovery/scheduling path. Sink drops rising independently point
+toward deadline delivery. Stable offsets/reset counts with audible pitch changes
+need an isolated rate/resampling check. Exact timestamp association is still
+required in this diagnostic build; do not confuse decoder totals with playback.
+No live wobble was reproduced while preparing this version: the reachable iPhone
+reported no subscription during eight sampled snapshots.
+
+
 ## Current timing controls — 2026-11-04 correction
 
 Rebuild/relaunch both Mac and iPhone, then start a fresh broadcast/subscription.

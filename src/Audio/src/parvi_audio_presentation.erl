@@ -17,7 +17,7 @@ stamp(#{continuous := true, estimated_capture_time_ns := Capture,
     end,
     Target = maps:get(time,Next)+(Position-maps:get(position,Next))*1000000000 div Rate,
     Schedule = #{stream_id => maps:get(stream_id,State), revision => maps:get(revision,Next),
-                 clock_timeline => Timeline, target_output_time_ns => Target,
+                 clock_timeline => Timeline, target_output_time_ns => parvi_audio_rtp_time:quantize(Target),
                  sample_position => Position, sample_rate => Rate, delay_ns => Delay,
                  basis => nominal_capture},
     {Header#{presentation => Schedule},Next};

@@ -1,33 +1,22 @@
 %% Pure receiver policy. A sink-clock target is not calibrated speaker emission.
 -module(parvi_audio_gstreamer_control).
--export([target/3, correction/2]).
+-export([target/3]).
 
-target(#{continuous := true, presentation := #{clock_timeline := Timeline} = Schedule,
-         segment_start_position := Start} = Source,
-       #{rtp_timestamp := RTP}, #{timeline := Timeline} = Reference) ->
-    %% A master owns this reference even when offline members make coverage
-    %% partial. Followers need an acquired mapping; coverage is not admission.
+target(#{rtp_timestamp_semantics := global_playback_48k_v1,presentation_stream_id := Stream},
+       #{rtp_timestamp := RTP,generation := Generation},
+       #{timeline := Timeline,filtered_utc_time := Now} = Reference) ->
     case clock_ready(Reference) of
         false -> {error,source_or_receiver_clock_unavailable};
-        true -> target_position(Source,Schedule,Start,RTP)
+        true ->
+            case parvi_audio_rtp_time:decode(RTP,Now) of
+                {ok,Target} -> {ok,#{stream_id => Stream,revision => Generation,
+                    clock_timeline => Timeline,sample_position => RTP,sample_rate => 48000,
+                    target_output_time_ns => Target,basis => packet_global_playback_target}};
+                Error -> Error
+            end
     end;
-target(_,_,_) -> {error,source_or_receiver_clock_unavailable}.
+target(_,_,_) -> {error,packet_target_clock_unavailable}.
 clock_ready(#{role := master}) -> true;
 clock_ready(#{state := synchronized}) -> true;
 clock_ready(#{role := follower,filter_ready := true,state := holdover}) -> true;
 clock_ready(_) -> false.
-target_position(Source,Schedule,Start,RTP) ->
-    case parvi_audio_gstreamer_schedule:source_position(Source,RTP,0) of
-        {ok,Position} when Position >= Start ->
-            {ok,Schedule#{sample_position => Position,
-                target_output_time_ns => parvi_audio_presentation:target(Schedule,Position)}};
-        {ok,_} -> {error,previous_capture_segment};
-        Error -> Error
-    end.
-
-%% Correct small phase errors with a slow clock servo; large changes relock.
-%% Positive offset error means output must be later, so slow the reference.
-correction(Desired,Applied) when abs(Desired-Applied) > 20000000 -> relock;
-correction(Desired,Applied) ->
-    PPM = max(-50.0,min(50.0,-(Desired-Applied)/10000)),
-    #{correction_ppm => PPM,max_absolute_ppm => 50}.

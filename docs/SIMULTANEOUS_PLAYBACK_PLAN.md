@@ -6,6 +6,14 @@ multichannel milestone at the user's explicit request. Existing quality, recover
 cinema and DSP requirements remain tracked in PLAN.md; they are not completed or
 cancelled by this subplan.
 
+## Defining contract — clarified 2026-11-04
+
+Every packet independently carries its broadcaster-assigned target in the shared
+clock reference. Linear unit/clock conversions are permitted; neighbour-based
+reconstruction or adaptive receiver deadlines are not. Execute that target or
+report failure. The current correction and platform limits are in PLAN.md and
+AUDIO_ENGINE_INTERFACE.md; older anchor/servo checkpoints are historical.
+
 ## Goal and acceptance
 
 One Mac source plays on iPhone and Windows against the same Erlang-owned

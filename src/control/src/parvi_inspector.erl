@@ -79,7 +79,7 @@ request(Line) ->
 
 command(#{<<"op">> := <<"help">>}) ->
     {ok,#{commands => [status,join,wait,nodes,inspect,clock,capture,sources,refresh_sources,subscribe,play,pause,
-                       unsubscribe,sync_delay,minimum_delay,broadcast_start,broadcast_stop]}};
+                       unsubscribe,diagnostic_sink_slaving,sync_delay,minimum_delay,broadcast_start,broadcast_stop]}};
 command(#{<<"op">> := <<"join">>, <<"invitation">> := Link}) -> parvi_cluster_desk:join(Link);
 command(#{<<"op">> := <<"wait">>} = Command) ->
     Timeout = maps:get(<<"timeout_ms">>,Command,30000),

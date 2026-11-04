@@ -62,7 +62,7 @@ command(#{<<"method">> := <<"join_swarm">>, <<"invitation">> := Invitation}) ->
                 null -> swarm_result(parvi_swarms:join(binary_to_existing_atom(Name), Id, Token));
                 Error -> Error
             end;
-        _ -> <<"Invalid swarm invitation. Copy a fresh invitation from a swarm member.">>
+        _ -> <<"Invalid cluster invitation. Copy a fresh invitation from a cluster member.">>
     end;
 command(#{<<"method">> := <<"send_swarm">>, <<"swarm_id">> := Id, <<"text">> := Text}) ->
     swarm_result(parvi_swarms:send(Id, Text));
@@ -98,7 +98,7 @@ command(#{<<"method">> := <<"connect">>, <<"node">> := Name, <<"cookie">> := Coo
                 ok -> null;
                 _ -> <<"Could not connect. Check the node name and shared cookie.">>
             end;
-        _ -> <<"This build connects to Parvi app instances on this computer only.">>
+        _ -> <<"This build connects to OpenSound app instances on this computer only.">>
     end;
 command(_) -> <<"Unsupported request.">>.
 
