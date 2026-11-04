@@ -1,5 +1,48 @@
 # Progress
 
+## 2026-11-04 — Windows build, state recovery and connection diagnostics
+
+Built the split checkouts from empty Windows caches with pinned private tools.
+Core/workspace compilation, native app packaging and DTLS/SRTP/SCTP/CRC library
+loading pass. A host certificate-chain issue required fetching the same pinned
+archives through PowerShell; checksum and certificate verification were retained.
+
+The connection failure came from different AppData views. Yesterday's policy
+and routes were under Codex's MSIX LocalCache/Local directory; the app launched
+from Explorer saw no policy at the same logical LocalAppData path. Credential
+Manager retained the same Windows identity. Verified the saved identity/node and
+cluster, backed up the destination desk record, and restored its original policy
+and routes. The user then confirmed Mac, iPhone and Windows Running. The offline
+inspectors were older remembered members; today's CLI inspector did not join.
+No networking redesign or iPhone edit was needed. Original state and identity
+were preserved. See the Windows guide for launch-context details.
+
+Retained improvements: operation/audio errors use standard read-only wxTextCtrl
+fields with native selection, Select All and Copy; unchanged refreshes preserve
+selection. Relay request IDs correlate unavailable replies to the exact attempt
+without closing a replacement. Authentication rejections survive channel closure,
+and retries clear the old rejection. Opening timeouts capture bounded ICE/DTLS
+state, candidate types and check counts without addresses, SDP or credentials.
+Temporary hot-load probes and restoration code are absent from product sources.
+The local invitation copy and one-off repair/probe scripts were removed; recovery
+backups, protected inspector identity and useful logs remain local. The trust
+probe also formats structured rejection reasons instead of assuming an atom.
+
+Validation: 14 package/core/model tests, seven native-foundation/cluster-setting
+checks, two relay-error regression tests and the existing wx reload smoke pass.
+Core EUnit is 59/61; its two previously documented multi-node clock failures
+remain. Native OTP transport smoke passes RPC, binary transfer, ordering,
+links/monitors, ticks, disconnect detection and cookie rejection. Two disposable
+Windows nodes pass native invitation admission and cluster chat through public
+desk signaling. Public relay routing and a 50-second idle connection pass.
+WASAPI captures 48 kHz stereo and stops cleanly. The silent GStreamer scheduling
+proof renders 401 matched buffers without drops.
+
+Windows output remains adaptive. Manual playback quality, stop/play recovery and
+physical speaker synchronization remain unqualified by the successful cluster
+reconnection. No service was deployed; live Render settings were not inspected.
+Earlier CLI and pre-split comparisons did not establish a NAT/protocol defect.
+
 ## 2026-11-04 — Silent iPhone playback and cluster sync-delay correction
 
 Read the live nodes during the reported failure. The iPhone was the selected

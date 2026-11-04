@@ -1,8 +1,10 @@
 # Parvi Reception Desk
 
 A Phoenix/Cowboy host with supervised Erlang relay workers. Each Parvi node opens
-an outbound WebSocket connection and keeps it open. The desk forwards admission,
-membership and chat messages for as long as a direct peer path is unavailable.
+an outbound WebSocket connection and keeps it open. In the native profile the
+desk carries peer introductions/signaling; authenticated OTP membership and chat
+use the direct encrypted WebRTC DataChannel. It is not a TURN/data relay for
+that profile. The legacy profile carries membership and chat through the desk.
 It does not join swarms or own their memberships or histories. The full browser
 client under `src/Apps/WebApp` remains deferred; `/` is only a small desk landing page.
 
@@ -29,8 +31,9 @@ bash src/Services/ReceptionDesk/run.sh
 
 Rebuilt native apps automatically connect to the public Parvi desk configured in
 `src/control/src/parvi.app.src` (`default_reception_desk_url`). No URL entry is needed.
-To switch desks, enter another **Reception desk URL** and select **Use desk (new
-session)**, which replaces transient memberships. Select a swarm in one app, copy its
+In the legacy UI, enter another **Reception desk URL** and select **Use desk (new
+session)** to switch desks, which replaces transient memberships. Native UI
+switching is currently disabled; supply a startup override instead. Select a swarm in one app, copy its
 invitation and paste it into **Add a swarm** in another. Only one admission is
 needed. New and existing memberships stay independent. Changing UI selection
 never joins or leaves a swarm.
@@ -40,6 +43,13 @@ Set it to an empty string for local-only development; an unset variable uses the
 public default. An explicit OTP `reception_desk_url` setting (including the UI
 choice) takes priority over both. Restart to apply startup configuration. Never use the
 localhost URL on a different device: localhost always refers to that device.
+
+The default belongs to BEAM Audio; app hosts can supply the OTP setting before
+starting the shared runtime without editing that default. Invitations record
+the effective URL, and native joins reject a link for a different desk. The
+current handler requires the `/relay/v1` protocol/path; an arbitrary custom desk
+protocol handler is not a pluggable interface yet. iOS's `relay_resolver` callback
+customizes DNS resolution only.
 
 ## Internet deployment
 

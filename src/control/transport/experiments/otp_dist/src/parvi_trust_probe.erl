@@ -40,7 +40,8 @@ loop(Connections) ->
         {trust, Ctrl, authorized, Node} ->
             event(Ctrl, #{event => <<"authorized">>, peer => atom_to_binary(Node)}, Connections), loop(Connections);
         {trust, Ctrl, rejected, Reason} ->
-            event(Ctrl, #{event => <<"rejected">>, reason => atom_to_binary(Reason)}, Connections), loop(Connections);
+            event(Ctrl, #{event => <<"rejected">>, reason =>
+                iolist_to_binary(io_lib:format("~p", [Reason]))}, Connections), loop(Connections);
         {parvi_message, Message} ->
             emit(#{event => <<"chat">>, message => chat_message(Message)}), loop(Connections);
         _ -> loop(Connections)

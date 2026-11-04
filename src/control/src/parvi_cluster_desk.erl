@@ -69,7 +69,7 @@ handle_call({join, Link}, _, #{cluster := undefined} = S) ->
                         {ok, Next} ->
                             Open = mailbox(Cluster, Next),
                             Result = send(Peer, Cap, Id, #{<<"kind">> => <<"hello">>}, Open),
-                            {reply, Result, Open};
+                            {reply, Result, maps:remove(last_rejection, Open)};
                         {error, Reason} -> {reply, {error, Reason}, S}
                     end
             end;
@@ -117,6 +117,12 @@ handle_info({relay, connected}, S) ->
     {noreply, refresh(S#{event := {desk, connected}})};
 handle_info({relay, disconnected}, S) ->
     {noreply, S#{online := [], event := {desk, disconnected}}};
+handle_info({relay, {error, Id, <<"unavailable">>}}, #{sessions := Sessions} = S) ->
+    case maps:find(Id, Sessions) of
+        {ok, #{ctrl := Ctrl}} ->
+            exit(Ctrl, {shutdown, peer_unavailable}), {noreply, S};
+        error -> {noreply, S#{event := {desk, {error, Id, <<"unavailable">>}}}}
+    end;
 handle_info({relay, Event}, S) -> {noreply, S#{event := {desk, Event}}};
 handle_info({trust, policy_changed}, S) -> {noreply, refresh(S)};
 handle_info(reconnect, S) -> {noreply, reconnect(S#{retry := undefined})};
@@ -207,7 +213,7 @@ route(Ctrl, Sessions) -> [R || R = #{ctrl := P} <- maps:values(Sessions), P =:= 
 send(Peer, Cap, Id, Signal, S) ->
     parvi_relay:send(Peer, Cap, #{<<"type">> => <<"otp_signal">>,
         <<"swarm">> => maps:get(cluster, S), <<"connection">> => Id,
-        <<"reply">> => maps:get(mailbox, S), <<"signal">> => Signal}).
+        <<"request">> => Id, <<"reply">> => maps:get(mailbox, S), <<"signal">> => Signal}).
 
 parse_link(Link) ->
     try

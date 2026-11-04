@@ -128,7 +128,12 @@ handle_info({claim_result, Ctrl, Client, Proof, Result}, S) ->
 handle_info({auth_timeout, Ctrl, Ref}, #{sessions := Sessions} = S) ->
     case maps:find(Ctrl, Sessions) of
         {ok, #{timer := Ref, stage := authorized}} -> {noreply, S};
-        {ok, #{timer := Ref}} -> {noreply, reject(Ctrl, authentication_timeout, S)};
+        {ok, #{timer := Ref, stage := opening}} ->
+            Details = try gen_server:call(Ctrl,connection_diagnostics,1000)
+                      catch exit:_ -> #{} end,
+            {noreply, reject(Ctrl, {authentication_timeout,opening,Details}, S)};
+        {ok, #{timer := Ref, stage := Stage}} ->
+            {noreply, reject(Ctrl, {authentication_timeout,Stage}, S)};
         _ -> {noreply, S}
     end;
 handle_info({'EXIT', Ctrl, _}, S) -> {noreply, forget(Ctrl, S)};

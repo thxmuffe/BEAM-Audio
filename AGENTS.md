@@ -48,6 +48,9 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 ### Architecture and Repository Boundaries
 
 - Keep cluster networking, negotiation, trust and runtime control in the BEAM layer. Approved audio backends may execute media transport under Erlang control. UI layers submit commands and display state; keep ordinary text editing, selection, copy and paste simple and available.
+- Display errors in native selectable text controls with built-in selection,
+  Select All and Copy. Do not render error messages solely as static labels or
+  implement custom clipboard/context-menu handling for them.
 - Use OTP for process lifecycle, supervision, messaging, links/monitors and process-group membership. Keep admission permission distinct from observed connection/process liveness.
 - Implementation sources belong under `src/`: platform apps in `src/Apps/`, app-specific shared code in `src/Apps/Shared/`, audio processing and native audio adapters in `src/Audio/`, shared networking/swarm runtime in `src/control/`, and independently deployed services in `src/Services/`. Cross-component integration checks belong in top-level `tests/`; component unit tests can stay beside their component. Documentation belongs in `docs/` and repository-wide tooling in `scripts/`.
 - Keep `src/Audio/src/` platform independent. Platform audio bindings, including

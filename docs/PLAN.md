@@ -1,5 +1,15 @@
 # Development plan
 
+## Windows verification and recovery — 2026-11-04
+
+Windows core/native builds and the restored cluster connection are verified.
+The user confirmed Mac, iPhone and Windows online after restoring the matching
+policy/routes from Codex's redirected AppData to the Explorer-launched app's
+state directory. Keep the copyable errors and bounded connection diagnostics.
+Next: manual Windows playback/stop-play checks. The two existing multi-node
+clock tests still fail; speaker synchronization remains unqualified. See PROGRESS.md
+for the recovery and validation record.
+
 ## Active increment — revised 2026-11-04
 
 Original [simultaneous-playback subplan](SIMULTANEOUS_PLAYBACK_PLAN.md), step 4.

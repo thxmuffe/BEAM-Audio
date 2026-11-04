@@ -45,6 +45,18 @@ handle_call(getstat, _, #{received := R, sent := W} = S) -> {reply, {ok, R, W, 0
 handle_call({media, Request}, From, S) ->
     {Reply, Next} = parvi_media_channel:request(Request, From, S),
     {reply, Reply, Next};
+handle_call(connection_diagnostics, _, #{pc := PC} = S) ->
+    Stats = ?PC:get_stats(PC),
+    Candidates = fun(Type) -> lists:sort([maps:get(candidate_type,C) ||
+        C = #{type := T} <- maps:values(Stats), T =:= Type]) end,
+    Pairs = [P || P = #{type := candidate_pair} <- maps:values(Stats)],
+    Summary = (maps:with([ice_state,dtls_state,ice_gathering_state],maps:get(transport,Stats)))#{
+        local_candidates => Candidates(local_candidate),
+        remote_candidates => Candidates(remote_candidate),
+        checks_sent => lists:sum([maps:get(requests_sent,P) || P <- Pairs]),
+        checks_received => lists:sum([maps:get(requests_received,P) || P <- Pairs]),
+        responses_received => lists:sum([maps:get(responses_received,P) || P <- Pairs])},
+    {reply, Summary, S};
 handle_call(stats, _, S) ->
     {reply, (maps:with([ready, sent, received, sent_bytes, received_bytes], S))#{
         native => maps:get(handle, S) =/= undefined}, S}.

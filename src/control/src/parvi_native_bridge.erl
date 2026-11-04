@@ -96,7 +96,7 @@ minimum_delay(Text) ->
     end.
 
 snapshot() ->
-    #{policy := Policy, event := Event} = parvi_cluster_desk:status(),
+    #{policy := Policy, event := Event, last_rejection := Rejection} = parvi_cluster_desk:status(),
     #{chat_nodes := ChatNodes} = parvi:status(),
     Messages = [message(M) || M <- parvi:history()],
     Known = case Policy of
@@ -112,7 +112,11 @@ snapshot() ->
         _ -> []
     end,
     Clock = clock_snapshot(),
-    #{node => atom_to_binary(node()), native_cluster => true, error => event_error(Event,Policy), clock => Clock,
+    ErrorEvent = case {Event,Rejection} of
+        {{channel_stopped,_,{shutdown,unauthorized}},R} when R =/= null -> {rejected,R};
+        _ -> Event
+    end,
+    #{node => atom_to_binary(node()), native_cluster => true, error => event_error(ErrorEvent,Policy), clock => Clock,
       audio => audio_snapshot(),
       audio_receive => parvi_audio_receiver:snapshot(),
       relay => parvi_relay:status(),
@@ -173,6 +177,19 @@ audio_snapshot() ->
 
 error_text(already_clustered_or_not_created) ->
     <<"One native cluster is remembered. Forget it before creating or joining another.">>;
+error_text({authentication_timeout,opening,Details}) ->
+    iolist_to_binary([error_text({authentication_timeout,opening}),"\n",
+        io_lib:format("ICE: ~p; DTLS: ~p; local candidates: ~p; remote candidates: ~p; checks sent/received/replied: ~p/~p/~p",
+            [maps:get(ice_state,Details,unknown),maps:get(dtls_state,Details,unknown),
+             maps:get(local_candidates,Details,[]),maps:get(remote_candidates,Details,[]),
+             maps:get(checks_sent,Details,0),maps:get(checks_received,Details,0),
+             maps:get(responses_received,Details,0)])]);
+error_text({authentication_timeout,opening}) ->
+    <<"Secure peer connection did not open before the admission timeout (authentication_timeout/opening).">>;
+error_text({authentication_timeout,challenge}) ->
+    <<"Secure peer connection opened, but authentication timed out (authentication_timeout/challenge).">>;
+error_text({authentication_timeout,pending}) ->
+    <<"Admission authority did not reply before the timeout (authentication_timeout/pending).">>;
 error_text(Reason) when is_binary(Reason) -> Reason;
 error_text(Reason) -> iolist_to_binary(io_lib:format("Native operation: ~p", [Reason])).
 
@@ -182,14 +199,21 @@ event_error({native_connected, Node, false},_) ->
         true -> null;
         false -> <<"Native connection failed. Known members reconnect automatically while online.">>
     end;
-event_error({channel_stopped, _, _},undefined) ->
-    <<"Join did not complete. Check the desk and invited peer, then submit the invitation again.">>;
+event_error({channel_stopped, _, {shutdown,peer_unavailable}},undefined) ->
+    <<"Inviting peer or mailbox is unavailable at the Reception desk. Keep the inviting app open and retry.">>;
+event_error({channel_stopped, _, Reason},undefined) ->
+    iolist_to_binary(["Join did not complete (",channel_reason(Reason),
+        "). Check the desk and invited peer, then submit the invitation again."]);
 event_error({channel_stopped, Node, _},_) ->
     case connected_node(Node) of
         true -> null;
         false -> <<"Native channel stopped. Membership is retained; waiting to reconnect.">>
     end;
 event_error(_,_) -> null.
+
+channel_reason({shutdown,Reason}) -> channel_reason(Reason);
+channel_reason(Reason) when is_atom(Reason) -> atom_to_binary(Reason);
+channel_reason(_) -> <<"transport process failed">>.
 
 connected_node(Node) ->
     lists:any(fun(N) -> N =:= Node orelse atom_to_binary(N) =:= Node end, nodes()).

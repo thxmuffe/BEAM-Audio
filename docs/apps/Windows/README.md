@@ -1,5 +1,48 @@
 # Parvi for Windows — wxErlang
 
+## Current build — verified 2026-11-04
+
+The split repositories build on Windows x64 from empty caches. The default
+Windows package now uses **native_cluster**, Windows-built WebRTC/DTLS/SRTP/SCTP
+dependencies, durable Windows identity and GStreamer WebRTC/Opus/WASAPI output.
+Follow [the current setup and build commands](../../BUILDING.md#windows), then
+launch `OpenSound/builds/Windows/Parvi/Parvi.exe` from the sibling product repo.
+For console diagnostics, run `src/Apps/Windows/run.ps1` there.
+
+Operation errors and audio input/receiver status use standard read-only text
+fields: select text, Ctrl+A/Ctrl+C or use the native context menu. Unchanged
+refreshes preserve selection. Join failures include the channel stop reason;
+authentication rejection details survive the subsequent channel close.
+
+For manual use, launch the product from Explorer consistently. A process started
+under a packaged host such as Codex can see redirected MSIX AppData instead of
+the normal `%LOCALAPPDATA%/org.opensound.parvi/cluster` directory. The same saved
+Credential Manager identity can therefore appear to have no cluster when the
+launch context changes. Do not clear identity or create a replacement cluster:
+check for the matching policy/routes in the host's LocalCache/Local directory.
+The November 4 repair restored the original Windows membership/routes with a
+backup. After reopening from Explorer, the user confirmed Mac, iPhone and
+Windows Running in the cluster.
+
+Core/workspace compilation, native dependency compilation/loading, 14 app/core
+model tests, the existing wx reload smoke and isolated native app startup pass.
+WASAPI loopback capture opens at 48 kHz stereo and stops cleanly. The separate
+silent GStreamer scheduling proof passes; it does not enable scheduled output
+in the Windows app. Windows playback remains adaptive. Shared EUnit reports
+59/61 passing, with the two previously documented multi-node clock checks still
+failing. See [full validation and limits](../../PROGRESS.md).
+
+Restored membership and cross-platform cluster connectivity are user-confirmed.
+Next manual check: chat, subscribe to a Mac broadcast, play, then stop/play.
+Listen to Windows alone before comparing receivers. Listening quality and
+physical speaker synchronization remain unqualified.
+
+The dated legacy/native-build-incomplete notes below are historical. Their old
+monorepo setup paths and statements that native dependencies or network playback
+are unavailable do not describe the verified November 4 package.
+
+## Earlier Windows implementation notes
+
 Repository split (2026-11-03): see [current build paths](../../BUILDING.md).
 Product sources now live in the sibling OpenSound checkout; shared runtime,
 tooling and documentation live here. Older monorepo paths below are historical.

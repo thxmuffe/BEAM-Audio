@@ -82,8 +82,10 @@ are introduced by the split. No service deployment is needed for local repairs.
    play on each receiver, then check stop/play. Listen to each output alone too.
    Report failures at this baseline before the scheduled-output implementation.
 
-The Mac and unsigned device builds pass here; real playback and the Windows
-executable still need your check. Keep the existing presentation expectation:
+The Mac and unsigned device builds pass. On Windows, core/native compilation,
+packaging and isolated native app startup were verified on November 4; saved
+rejoin and real cross-platform playback still need your manual check. See the
+[Windows verification record](apps/Windows/README.md). Keep the existing presentation expectation:
 these builds preserve adaptive playback and do not yet synchronize the speakers.
 The moved Render configuration is ready for the core repository layout; the live
 service's repository selection/deployment has not been changed.
