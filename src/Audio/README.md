@@ -425,3 +425,19 @@ Seven recovery/timestamp checks plus three clock-mapping checks pass. They use a
 deterministic clock mapping and validate segment boundaries, sample-position
 mapping and stale-estimate removal; device/audio recovery still needs a matched
 Mac/iPhone run.
+
+## Saved receive subscription
+
+`parvi_audio_receiver` is a permanent child of the on-demand audio supervisor.
+It owns `audio_subscription.term` through `parvi_audio_subscription_intent` and
+the existing identity-scoped atomic cluster store. Save the current source/profile
+and desired playing state, not sessions or media. Publishers should provide a
+stable binary `source_key` for each logical source; absent that, the receiver
+uses name plus publisher node. Ambiguous matches never auto-select. Subscription
+restoration requires matching cluster membership and a usable clock. iPhone
+`resume_audio`/`suspend_audio` notify this worker; native instances and packet
+targets are recreated. `stop/0` forgets intent; `playback(stop)` retains it paused.
+
+Run the focused lifecycle checks with
+`rebar3 eunit --module=parvi_audio_subscription_intent_tests,parvi_audio_cluster_settings_tests`.
+They cover intent/recovery policy and supervision, not physical media output.

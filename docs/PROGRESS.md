@@ -1,5 +1,42 @@
 # Progress
 
+## 2026-11-04 — Persistent subscriptions and synchronized Offset controls
+
+The supervised Erlang receiver now checkpoints subscription intent through the
+existing atomic cluster store: cluster, publisher node identity, stable source
+key, profile/display name and playing/paused choice. The Mac Opus source advertises
+stable default-output identity. Legacy publishers without source_key use their
+name; renamed legacy sources require reselection. No PIDs, changing catalogue
+IDs, packet targets or audio buffers are saved. The receiver is a permanent audio
+supervisor child, reloads intent after a crash/relaunch, and reconnects a unique
+matching admitted publisher once its source and clock are available. Temporary
+failures retry with a bounded five-second interval. Missing or ambiguous matches
+remain visibly waiting. Stop playback persists pause; Unsubscribe and Forget
+clear the saved choice. Forget waits for durable clearing before returning.
+
+The iPhone host supplies background/active lifecycle commands only. Erlang closes
+old sessions/buffers on suspension/resume, requests clock resampling and requires
+a follower sample acquired after resume before restoring. A valid clock master
+continues to own its local reference. Native engines receive fresh sessions and
+per-packet schedules; restored UI state never replays expired audio. No background
+playback entitlement or promise of uninterrupted suspended playback is added.
+
+Apple Offset fields now initialize/follow the cluster value, including remote
+updates, and apply through one method on button, Enter or loss of focus (including
+keyboard Done). An unchanged value sends no new command. Windows adds the same
+cluster Offset field and button, Enter/blur handling and replicated-value updates
+through its existing runtime invalidations. The authority remains the writer;
+existing policy revision propagation/persistence is reused.
+
+Validation: 32 focused EUnit checks pass, including stable source identity across
+publication changes, recent-clock gating, pause/save/clear, suspension retaining
+intent while discarding old state, permanent receiver restart/reload, and playing
+versus paused activation. Shared Swift typechecking and Windows Erlang UI
+warnings-as-errors compilation pass. Final Mac and unsigned iPhone builds pass through product `./build.sh all`,
+including the last Forget/keyboard changes. No app was installed/launched,
+no live subscription/Offset was altered, and no physical resume/relaunch or
+Windows native UI check is claimed. Gain and Music settings are unchanged.
+
 ## 2026-11-04 — User accepts current playback baseline
 
 User reports volume and playback now sound good and explicitly asks to retain

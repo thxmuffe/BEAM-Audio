@@ -1,5 +1,26 @@
 # Development plan
 
+## Current increment — persistent subscription and shared Offset editing
+
+Implemented in source: save the current subscription and playback-enabled intent
+per device/cluster; restore by publisher and source key after restart, source
+republication and iPhone foreground resume. Keep paused subscriptions paused;
+Unsubscribe and Forget clear intent. Recreate the native session after resume,
+refresh the clock and accept only fresh per-packet targets. Never persist buffers,
+PIDs, publication IDs or old playback deadlines. The one existing receive slot
+remains; this does not add multiple simultaneous subscriptions.
+
+Offset remains the persisted cluster policy value. Apple and Windows edit fields
+follow replicated values; Apply, Enter and focus loss use the same setter. Avoid
+writing an unchanged value. Windows control source compiles here; its native UI
+and the updated physical iPhone lifecycle require user verification.
+
+Next user check: subscribe and Play once, background/foreground and relaunch;
+verify restoration, repeat while paused, stop/restart the Mac broadcast, then
+Unsubscribe and confirm relaunch stays unsubscribed. Change Offset on either
+node and check both edit fields; test Enter, blur and Apply. Keep current gain,
+Sound Check and packet-target semantics unchanged.
+
 ## Current checkpoint — preserve the working playback baseline
 
 User reports current volume and playback sound good and asks to keep this state.

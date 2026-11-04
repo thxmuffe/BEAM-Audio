@@ -1,12 +1,14 @@
 %% Runtime-owned source catalogue and one received-audio meter; no device I/O.
 -module(parvi_audio_receiver).
 -behaviour(gen_server).
--export([snapshot/0, refresh/0, subscribe/2, stop/0, playback/1, minimum_playout_delay/1, control_output/1, start_link/0]).
+-export([snapshot/0, refresh/0, suspend/0, resume/0, subscribe/2, stop/0, playback/1, minimum_playout_delay/1, control_output/1, start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -define(GROUP, {parvi, audio, sources}).
 
 snapshot() -> call(snapshot).
 refresh() -> call(refresh).
+suspend() -> call(suspend).
+resume() -> call(resume).
 subscribe(Id, Profile) -> call({subscribe, Id, Profile}).
 stop() -> call(stop).
 playback(Action) -> call({playback, Action}).
@@ -14,33 +16,41 @@ minimum_playout_delay(Delay) -> control_output({minimum_delay,Delay}).
 control_output(Command) -> call({output_control,Command}).
 call(Request) ->
     case parvi_audio_sup:ensure_started() of
-        ok ->
-            case supervisor:start_child(parvi_audio_sup,
-                    #{id => audio_receiver, start => {?MODULE, start_link, []}, restart => temporary}) of
-                {ok, Pid} -> gen_server:call(Pid, Request);
-                {error, {already_started, Pid}} -> gen_server:call(Pid, Request);
-                Error -> Error
-            end;
+        ok -> gen_server:call(?MODULE,Request);
         Error -> Error
     end.
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
     ok = net_kernel:monitor_nodes(true),
     connect_sources(),
+    {ok,_} = parvi_events:subscribe(),
+    erlang:send_after(1000,self(),restore_subscription),
     {Watch, Sources} = parvi_audio:watch_sources(),
     S = #{handler => parvi_audio_stream_handler:default(), watch => Watch, offers => #{},
           requests => gen_server:reqids_new(), receive_state => idle(),
-          output => undefined, playback => #{state => <<"stopped">>}},
+          output => undefined, playback => #{state => <<"stopped">>},
+          intent => parvi_audio_subscription_intent:load(),suspended => false,
+          resume_after => undefined,retry_at => erlang:monotonic_time(millisecond)},
     {ok, discover(Sources, S)}.
 idle() -> #{state => stopped, session => undefined, packets => 0, frames => 0, bytes => 0}.
 
 handle_call(Request, From, S) -> changed(handle_call_event(Request, From, S), S).
 
 handle_call_event(refresh,_,S) -> connect_sources(), {reply,ok,S};
+handle_call_event(forget_subscription,_,S) ->
+    ok = parvi_audio_subscription_intent:save(undefined),
+    {reply,ok,disconnect(S#{intent := undefined})};
+handle_call_event(suspend,_,S) ->
+    {reply,ok,disconnect(S#{suspended := true})};
+handle_call_event(resume,_,S) ->
+    After = erlang:monotonic_time(nanosecond),
+    _ = try parvi_clock:resync() catch exit:_ -> unavailable end,
+    connect_sources(),
+    {reply,ok,disconnect(S#{suspended := false,resume_after := After,retry_at := erlang:monotonic_time(millisecond)})};
 handle_call_event(snapshot, _, #{offers := Offers, receive_state := R, handler := Handler} = S) ->
     Rows = [public_offer(Pid, Offer) || {Pid, #{name := _} = Offer} <- maps:to_list(Offers)],
     {reply, #{offers => lists:sort(fun(A,B) -> maps:get(id,A) < maps:get(id,B) end, Rows),
-              receiver => public_receive(R), backend => Handler:info(), handler => maps:get(id,Handler:info()),
+              receiver => public_receive_with_intent(R,S), backend => Handler:info(), handler => maps:get(id,Handler:info()),
               native_statistics => maps:get(native_statistics,S,null),
               playback => (maps:get(playback,S))#{available => Handler:output_available()}}, S};
 handle_call_event({playback, start}, _, #{output := undefined,
@@ -48,11 +58,11 @@ handle_call_event({playback, start}, _, #{output := undefined,
     case Handler:start_output(self(), D#{session => Session}) of
         {ok, Pid} ->
             Ref = monitor(process, Pid),
-            {reply, ok, S#{output := {Pid,Ref}, playback := #{state => <<"starting">>}}};
+            {reply, ok, remember_playback(true,S#{output := {Pid,Ref}, playback := #{state => <<"starting">>}})};
         Error -> {reply, Error, S}
     end;
 handle_call_event({playback, stop}, _, S) ->
-    {reply, ok, stop_output(S)};
+    {reply, ok, remember_playback(false,stop_output(S))};
 handle_call_event({playback, _}, _, S) ->
     {reply, {error, <<"Subscribe to a mono or stereo channel stream before playback.">>}, S};
 handle_call_event({output_control, Command}, _,
@@ -65,25 +75,25 @@ handle_call_event({subscribe, Id, Profile}, _, #{offers := Offers, receive_state
                           I =:= Id, maps:is_key(Profile, Ps)],
     case {maps:get(session, R), Matches} of
         {undefined, [{Source, Offer}]} ->
-            Handler = parvi_audio_stream_handler:for_descriptor(maps:get(Profile,maps:get(profiles,Offer))),
-            {ok, Session} = parvi_audio_sup:start_session({receiver, self(), Handler}),
-            Monitor = monitor(process, Session),
-            Request = #{profile => Profile, selector => all},
-            Pending = gen_statem:send_request(Session, {open, Source, Request}),
-            Next = (idle())#{state := opening, session := Session, monitor => Monitor,
-                pending => Pending, source_id => Id, source_name => maps:get(name, Offer), profile => Profile},
-            {reply, ok, (maps:remove(native_statistics,S))#{receive_state := Next, handler := Handler}};
+            Next = begin_subscription(Source,Offer,Profile,remember_source(Source,Offer,Profile,S)),
+            {reply,ok,Next};
         {undefined, _} -> {reply, {error, source_unavailable}, S};
         _ -> {reply, {error, <<"Stop the current subscription before selecting another.">>}, S}
     end;
 handle_call_event(stop, _, #{receive_state := R} = S) ->
     close(R),
-    {reply, ok, (stop_output(S))#{receive_state := idle()}};
+    ok = parvi_audio_subscription_intent:save(undefined),
+    {reply, ok, (stop_output(S))#{receive_state := idle(),intent := undefined}};
 handle_call_event(_, _, S) -> {reply, {error, unsupported_request}, S}.
 handle_cast(_, S) -> {noreply, S}.
 
 handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
 
+handle_info_event(restore_subscription,S) ->
+    erlang:send_after(1000,self(),restore_subscription),
+    {noreply,restore_subscription(S)};
+handle_info_event({parvi_changed,policy},S) ->
+    {noreply,reconcile_policy(S)};
 handle_info_event({nodeup,_},S) -> connect_sources(), {noreply,S};
 handle_info_event({Watch, join, ?GROUP, Pids}, #{watch := Watch} = S) -> {noreply, discover(Pids, S)};
 handle_info_event({Watch, leave, ?GROUP, Pids}, #{watch := Watch, offers := Offers} = S) ->
@@ -168,13 +178,13 @@ discover(Pids, S) ->
 
 description(Message, #{requests := Requests, offers := Offers} = S) ->
     case gen_server:check_response(Message, Requests, true) of
-        {{reply, #{name := Name, profiles := Profiles}}, Pid, Next} ->
+        {{reply, #{name := Name, profiles := Profiles} = Description}, Pid, Next} ->
             case maps:find(Pid, Offers) of
                 {ok, Offer} ->
                     Supported = maps:filter(fun(P,D) ->
                         Selected = parvi_audio_stream_handler:for_descriptor(D),
                         Selected:validate_descriptor(P,D) =:= ok end, Profiles),
-                    S#{requests := Next, offers := Offers#{Pid := Offer#{name => Name, profiles => Supported}}};
+                    S#{requests := Next, offers := Offers#{Pid := Offer#{name => Name,source_key => maps:get(source_key,Description,Name), profiles => Supported}}};
                 error -> S#{requests := Next}
             end;
         {_, Pid, Next} -> S#{requests := Next, offers := maps:remove(Pid, Offers)};
@@ -191,10 +201,89 @@ response({reply, ok}, #{receive_state := #{state := activating} = R} = S) ->
     parvi_chat:system(info,audio_subscription,
         <<"[Audio] Subscribed to: ",(maps:get(source_name,R))/binary,".">>,
         #{source_id => maps:get(source_id,R),source_name => maps:get(source_name,R)}),
-    S#{receive_state := maps:remove(pending, R#{state := active})};
+    restore_playback(S#{receive_state := maps:remove(pending, R#{state := active})});
 response({reply, {error, Reason}}, S) -> failed(Reason, S);
 response({error, Reason}, S) -> failed(Reason, S);
 response(_, S) -> failed(invalid_subscription_reply, S).
+
+
+begin_subscription(Source,Offer,Profile,S) ->
+    Handler = parvi_audio_stream_handler:for_descriptor(maps:get(Profile,maps:get(profiles,Offer))),
+    {ok,Session} = parvi_audio_sup:start_session({receiver,self(),Handler}),
+    Monitor = monitor(process,Session),
+    Pending = gen_statem:send_request(Session,{open,Source,#{profile => Profile,selector => all}}),
+    Next = (idle())#{state := opening,session := Session,monitor => Monitor,pending => Pending,
+        source_id => maps:get(id,Offer),source_name => maps:get(name,Offer),profile => Profile},
+    (maps:remove(native_statistics,S))#{receive_state := Next,handler := Handler}.
+remember_source(Source,Offer,Profile,S) ->
+    case parvi_cluster_trust:snapshot() of
+        #{<<"cluster">> := Cluster} ->
+            I = parvi_audio_subscription_intent:new(Cluster,atom_to_binary(node(Source)),Offer,Profile),
+            ok = parvi_audio_subscription_intent:save(I), S#{intent := I};
+        _ -> S
+    end.
+remember_playback(Playing,#{intent := I} = S) when is_map(I) ->
+    Next = I#{playing := Playing},
+    ok = parvi_audio_subscription_intent:save(Next), S#{intent := Next};
+remember_playback(_,S) -> S.
+disconnect(#{receive_state := R} = S) ->
+    close(R), (maps:remove(native_statistics,stop_output(S)))#{receive_state := idle()}.
+reconcile_policy(#{intent := #{cluster := Cluster}} = S) ->
+    case parvi_cluster_trust:snapshot() of
+        #{<<"cluster">> := Cluster} = Policy ->
+            case source_admitted(maps:get(intent,S),Policy) of
+                true -> S;
+                false -> disconnect(S)
+            end;
+        _ -> ok = parvi_audio_subscription_intent:save(undefined),
+             disconnect(S#{intent := undefined})
+    end;
+reconcile_policy(S) -> S.
+source_admitted(#{node := Node},#{<<"members">> := Members}) ->
+    lists:any(fun(M) -> maps:get(<<"node">>,M) =:= Node end,maps:values(Members)).
+
+restore_subscription(#{suspended := true} = S) -> S;
+restore_subscription(#{intent := #{cluster := Cluster} = I,receive_state := #{session := undefined},
+                       offers := Offers,retry_at := Retry,resume_after := After} = S) ->
+    case parvi_cluster_trust:snapshot() of
+        #{<<"cluster">> := Cluster} = Policy ->
+            Ready = source_admitted(I,Policy) andalso erlang:monotonic_time(millisecond) >= Retry andalso
+                parvi_audio_subscription_intent:clock_ready(parvi_clock:status(),After),
+            Matches = [{P,O} || {P,#{name := _} = O} <- maps:to_list(Offers),
+                parvi_audio_subscription_intent:matches(I,atom_to_binary(node(P)),O)],
+            case {Ready,Matches} of
+                {true,[{Source,Offer}]} ->
+                    Handler = parvi_audio_stream_handler:for_descriptor(
+                        maps:get(maps:get(profile,I),maps:get(profiles,Offer))),
+                    Supported = Handler =/= parvi_audio_stream_handler_webrtc orelse
+                        (Handler:output_available() andalso
+                         maps:get(presentation_schedule_execution,parvi_audio_engine:info(),false)),
+                    case Supported of
+                        true -> begin_subscription(Source,Offer,maps:get(profile,I),S);
+                        false -> S
+                    end;
+                {_,[]} when Ready ->
+                    connect_sources(), S#{retry_at := erlang:monotonic_time(millisecond)+5000};
+                _ -> S
+            end;
+        undefined -> S;
+        _ -> reconcile_policy(S)
+    end;
+restore_subscription(S) -> S.
+restore_playback(#{intent := #{playing := true},handler := Handler,
+                   receive_state := #{descriptor := D,session := Session}} = S) ->
+    case Handler:start_output(self(),D#{session => Session}) of
+        {ok,Pid} -> S#{output := {Pid,monitor(process,Pid)},playback := #{state => <<"starting">>}};
+        {error,Reason} -> failed({playback_restore_failed,Reason},S)
+    end;
+restore_playback(S) -> S.
+public_receive_with_intent(R,#{intent := I,suspended := Suspended}) ->
+    View = public_receive(R),
+    case {maps:get(session,R),I} of
+        {undefined,#{name := Name}} -> View#{saved_subscription => true,source_name => Name,
+            state => case Suspended of true -> <<"suspended">>; false -> <<"waiting_for_source">> end};
+        _ -> View#{saved_subscription => is_map(I)}
+    end.
 
 public_offer(Pid, #{id := Id, name := Name, profiles := Profiles}) ->
     #{id => Id, name => Name, node => atom_to_binary(node(Pid)), profiles =>
@@ -222,9 +311,13 @@ public_receive(R) ->
       source_name => maps:get(source_name,R,null), error => maps:get(error,R,null),
       subscribed => maps:get(session,R) =/= undefined}.
 failed(Reason, #{receive_state := R} = S) ->
-    close(R), Text = <<"Audio subscription ended. Check the source and connection, then subscribe again.">>,
+    close(R), Text = case maps:get(intent,S,undefined) of
+        I when is_map(I) -> <<"Audio connection lost. Waiting to restore the saved subscription.">>;
+        _ -> <<"Audio subscription ended. Check the source and connection, then subscribe again.">>
+    end,
     parvi_chat:system(error, audio_subscription, <<"[Audio] ", Text/binary>>, #{reason => Reason}),
-    (stop_output(S))#{receive_state := (maps:without([monitor,pending,descriptor],R))#{state := error, session := undefined, error => Text}}.
+    (stop_output(S))#{retry_at := erlang:monotonic_time(millisecond)+5000,
+        receive_state := (maps:without([monitor,pending,descriptor],R))#{state := error, session := undefined, error => Text}}.
 stop_output(#{output := Output, handler := Handler} = S) ->
     case Output of
         {Pid,Ref} -> demonitor(Ref,[flush]), Handler:stop_output(Pid);

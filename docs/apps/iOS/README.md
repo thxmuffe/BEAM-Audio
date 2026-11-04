@@ -1,5 +1,36 @@
 # Parvi for iPhone
 
+## Persistent subscription and Offset — 2026-11-04
+
+The current receive subscription is remembered automatically after selecting a
+source. Play/Stop playback also saves the playing/paused choice. After app
+relaunch or returning from the background, the runtime reconnects the saved
+cluster, discovers the same publisher/source and recreates the subscription. It
+waits for a usable clock (a fresh follower sample after resume), then restores
+playback if it was enabled. Waiting is displayed while source/clock is unavailable.
+No old packets or expired targets are restored. Background audio itself remains
+outside this increment. This replaces older transient-subscription notes below.
+
+**Stop subscription** clears the saved choice, including while waiting to restore;
+**Stop playback** retains it paused. **Forget cluster** clears it. One receive
+subscription is supported, as before. A publisher restart gets a new catalogue
+ID but the Mac default-output source remains identifiable. A legacy publisher
+that changes its name without providing a stable source key must be reselected.
+
+Offset is shared cluster policy. Its edit field follows remote updates; Apply,
+Return/Enter, keyboard Done and field blur submit through the same setter. Updates
+need the authority connection; offline members catch up through existing policy
+reconciliation. Invalid values show the runtime error. The range remains 50–30000
+ms. No individual-speaker offset is introduced.
+
+Build both updated apps through product `./build.sh all`, then deploy the iPhone
+normally (Command-R can use those prepared resources). Subscribe and Play once
+in this version to save a choice; old versions did not persist one. Test returning
+from background, terminating/relaunching, paused restoration, broadcaster restart,
+then Unsubscribe followed by relaunch. Change Offset from both nodes and compare
+the input fields, using Enter, blur and Apply separately. Builds/tests do not
+replace these physical-device checks.
+
 ## Current per-packet timing path — 2026-11-04
 
 Build both apps from the product repository with `./build.sh all`. This compiles

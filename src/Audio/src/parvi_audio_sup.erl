@@ -36,4 +36,5 @@ sessions() ->
         _ -> [Pid || {{subscription, _}, Pid, _, _} <- supervisor:which_children(?MODULE), is_pid(Pid)]
     end.
 
-init([]) -> {ok, {#{strategy => one_for_one, intensity => 5, period => 10}, []}}.
+init([]) -> {ok, {#{strategy => one_for_one, intensity => 5, period => 10},
+    [#{id => audio_receiver,start => {parvi_audio_receiver,start_link,[]}}]}}.

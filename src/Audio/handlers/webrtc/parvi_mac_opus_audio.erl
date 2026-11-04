@@ -36,7 +36,7 @@ handle_info({Port, {data, <<1, Metadata/binary>>}}, #{port := Port} = S) ->
         stream_handler => webrtc_audio_opus,
         rtp_timestamp_semantics => parvi_audio_rtp_time:semantics(),
         presentation_stream_id => maps:get(stream_id,maps:get(presentation_state,S))},
-    {ok, Source} = parvi_audio:publish(#{name => <<"Mac output - Opus / NetEq comparison">>,
+    {ok, Source} = parvi_audio:publish(#{source_key => <<"default-output">>,name => <<"Mac output - Opus / NetEq comparison">>,
         profiles => #{channel => Descriptor}}, self()),
     {noreply, read(S#{state := running, source => Source, source_monitor => monitor(process, Source),
         capture_format => Format, format => #{rate => 48000, channels => 2}, handler => <<"webrtc_audio_opus">>})};

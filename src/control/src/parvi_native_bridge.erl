@@ -26,6 +26,8 @@ command(#{<<"method">> := <<"subscribe_audio">>, <<"source_id">> := Id, <<"profi
         {#{<<"cluster">> := _}, <<"point">>} -> parvi_audio_receiver:subscribe(Id, point);
         _ -> {error, <<"Join a cluster and select an available audio profile.">>}
     end;
+command(#{<<"method">> := <<"suspend_audio">>}) -> parvi_audio_receiver:suspend();
+command(#{<<"method">> := <<"resume_audio">>}) -> parvi_audio_receiver:resume();
 command(#{<<"method">> := <<"refresh_audio_sources">>}) -> parvi_audio_receiver:refresh();
 command(#{<<"method">> := <<"stop_audio_subscription">>}) -> parvi_audio_receiver:stop();
 command(#{<<"method">> := <<"start_audio_output">>}) -> parvi_audio_receiver:playback(start);

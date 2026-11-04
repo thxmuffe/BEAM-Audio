@@ -19,7 +19,7 @@ set_audio_sync_delay(Delay) when is_integer(Delay),Delay >= 50,Delay =< 30000 ->
             catch exit:_ -> {error,authority_unavailable} end;
         _ -> {error,not_a_member}
     end;
-set_audio_sync_delay(_) -> {error,<<"Playback sync delay must be 50-30000 ms.">>}.
+set_audio_sync_delay(_) -> {error,<<"Offset must be 50-30000 ms.">>}.
 
 start_link(Owner) -> gen_server:start_link({local, ?MODULE}, ?MODULE, Owner, []).
 identity() -> gen_server:call(?MODULE, identity).
@@ -304,6 +304,13 @@ authority(Command, #{<<"authority">> := Node}) ->
 
 checkpoint(#{policy := Public, owner := Owner} = S) ->
     ok = parvi_cluster_store:save(policy, Public),
+    case Public of
+        undefined -> case whereis(parvi_audio_receiver) of
+            undefined -> ok = parvi_cluster_store:save(audio_subscription,undefined);
+            Receiver -> ok = gen_server:call(Receiver,forget_subscription)
+        end;
+        _ -> ok
+    end,
     ets:insert(?MODULE, {policy, Public}),
     parvi_events:notify(policy),
     case whereis(parvi_clock) of undefined -> ok; Clock -> Clock ! membership_changed end,

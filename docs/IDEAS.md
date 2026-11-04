@@ -25,7 +25,8 @@ Opus. Do not remove transport encryption for this experiment.
 
 ## Restore audio subscriptions after iPhone resume/relaunch
 
-Requested 2026-11-04 as a feasibility question; not implemented yet. Save the
+Promoted to implementation 2026-11-04; see PLAN.md and the iPhone README for
+current behavior and pending physical-device checks. Original scope: save the
 user's intended source/profile and playback-enabled state in the core runtime's
 persistent settings. Use stable source identity rather than process/session IDs
 or a publication ID that changes when broadcasting restarts. On resume/relaunch,
