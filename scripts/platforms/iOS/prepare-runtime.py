@@ -20,6 +20,7 @@ parser.add_argument('--transport', choices=['native', 'relay'], default='native'
 args = parser.parse_args()
 target = args.target
 subprocess.run([sys.executable, str(ROOT / 'src/Audio/handlers/webrtc/prepare.py'), '--target', 'ios'], check=True)
+subprocess.run([sys.executable, str(ROOT / 'scripts/platforms/iOS/prepare-gstreamer.py'), '--target', target], check=True)
 archive = ROOT / f'builds/intermediates/iOS/downloads/otp-ios-{target}-d199a49a.tar.gz'
 archive.parent.mkdir(parents=True, exist_ok=True)
 if not archive.exists():

@@ -1,5 +1,99 @@
 # Progress
 
+## 2026-11-04 — Temporary −12 dB pre-encode broadcast test
+
+At the user's request, the Mac Opus capture worker now attenuates converted
+stereo PCM by 0.251188643 (−12 dB) before source metering and encoding. This is
+a temporary diagnostic change, not a confirmed fix or normalization policy.
+Local Music/speaker volume and receiver gain are unchanged. Native helper syntax
+is checked; no app was deployed or playback restarted. Rebuild/relaunch Mac,
+restart broadcast and make a fresh subscription; no iPhone rebuild is needed.
+With the same song passage and controls, source/output meters should fall about
+12 dB. User listening will establish whether the harshness changes. Remove the
+explicit broadcastTestGain multiplication to restore original broadcast level.
+
+
+## 2026-11-04 — Fix iPhone meter callback lifetime and clarify meter scale
+
+Inspected the existing paused Xcode session without resuming/relaunching it.
+The crashed media thread shows objc_msgSend → busMessage at the saved level
+value access (line 168 in that build). The Objective-C receiver source had not
+been built with ARC; its autoreleased meter dictionary could be freed while
+still stored in an ivar. Enabled -fobjc-arc explicitly for that source and added
+a compile-time guard so the ownership requirement cannot silently regress.
+The Xcode console also reported an ORC executable-memory allocation failure;
+ORC_CODE=backup now selects portable fallback code before GStreamer initializes,
+without requesting a JIT entitlement. Device rebuild/retest remains with user.
+
+The screenshot's −15.4 dBFS sample peak corresponds to roughly 17% of full-scale
+amplitude; −25.1 dBFS RMS is roughly 5.6%. The old bar used a linear mapping of
+−60..0 dB, exaggerating visual proximity to full scale. Both meters now show
+linear sample amplitude with an explicit full-scale label and red at >=0 dBFS.
+This changes presentation only; no gain, buffering or packet processing changed.
+The user's audible harshness remains unqualified pending matching receiver data.
+
+
+## 2026-11-04 — Restore Mac source and iPhone output meters
+
+Restored visible peak/RMS meters for the Opus path in both app Audio screens.
+Mac sends pre-encode float PCM from the capture worker over its existing local
+port for shared Erlang metering in 100 ms windows (384 kB/s local-only at stereo
+48 kHz); audio transport remains Opus. The iPhone GStreamer level plugin meters
+decoded PCM after mute and before the sink. It reports loudest-channel RMS from
+the latest 100 ms window and sample peak held since the preceding statistics
+reply. These are digital dBFS readings, not true peak, LUFS, physical loudness or
+speaker measurements. Missing/stale native measurements hide the meter rather
+than presenting fabricated silence or copying RMS into peak. Mac capture CLI
+results now include the meter. Existing libwebrtc does not report a real sample
+peak and therefore does not show this meter until such data is available.
+
+Core compilation, three focused Erlang meter checks, iPhone device compilation/
+linking, Mac capture-helper syntax and shared Mac UI type checking are used for
+verification. No apps were installed or launched; the user will rebuild/run both
+and check the meters during playback. No gain or stream buffering was changed.
+
+
+## 2026-11-04 — Live iPhone backend and loudness inspection
+
+Read-only inspector queries confirm the playing iPhone reports
+`gstreamer_webrtc`, with zero reported packet loss/output dropped buffers in two
+snapshots. A separate private, unmuted Mac system-output tap using the identical
+bundled Opus capture helper was decoded locally for 16 complete one-second
+windows: maximum sample peak −15.74 dBFS, RMS −36.56 to −28.11 dBFS, zero samples
+at or above full scale. This samples the same mix/encoding path independently;
+it does not measure the exact packets received or the physical iPhone output.
+Aggregate evidence: builds/diagnostics/audio-levels/mac-opus.json. Playback and
+volume controls were not changed; diagnostic processes exited.
+
+The iPhone adapter contains no explicit gain boost, but actual PCM/sink gain and
+route volume are not reported live. Its −120 dB receiver meters are invalid for
+this backend: missing audioLevel defaults to zero, and the common receiver
+copies RMS into peak. Do not infer silence or clipping from those readings.
+The user's harsh/loud output report remains unresolved. Next diagnostic work is
+real decoded/output PCM RMS, sample peak/clipping and effective sink/route gain,
+with truthful missing values; device deployment would be needed for live data.
+
+
+## 2026-11-04 — iPhone GStreamer app integration for user testing
+
+Completed the previously committed native adapter with iPhone app startup and
+static SDK linkage. The default receiver is now GStreamer; a launch environment
+variable retains explicit libwebrtc selection. Core owns the Swift local control
+service and Objective-C GStreamer binding; commercial sources only select/start
+it and package the dependencies. The existing packet-4 JSON engine contract,
+48 kHz stereo Opus transport, ICE/SDP, play/pause, clock, statistics and buffer
+latency controls are retained. Native callbacks have autorelease pools and own
+their callback context until shutdown. No generic plugin loader or Erlang timing
+policy was added. Shared schedule/rate capabilities remain false.
+
+The official checksum-pinned 1.28.8 device SDK is cached and extracted, and an
+unsigned physical-iPhone compile/link passes. No install, device execution,
+listening, simulator build or speaker-alignment validation was performed; the
+user requested to handle testing. Usage and explicit libwebrtc rollback are in
+[the iPhone guide](apps/iOS/README.md). Windows changes already present in the
+product working tree were left alone.
+
+
 ## 2026-11-03 — Silent same-Mac receiver comparison
 
 Added a compiled native libwebrtc receiver with an injectable silent device,

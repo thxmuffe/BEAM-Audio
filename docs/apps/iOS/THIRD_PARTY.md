@@ -1,5 +1,21 @@
 # Embedded runtime provenance
 
+## GStreamer iPhone trial (2026-11-04)
+
+The receiver links selected static plugins from the official
+[GStreamer 1.28.8 iOS XCFramework](https://gstreamer.freedesktop.org/data/pkg/ios/1.28.8/).
+The SDK archive SHA-256 is
+`d34ae6bd55b6cb9959734299536003d315deea1ab46f84182113692528d04fb5`.
+`scripts/platforms/iOS/prepare-gstreamer.py` verifies the archive and extracts
+only the selected device/simulator slice into ignored core builds. Plugin
+registration includes core elements, audio conversion/resampling/volume,
+Opus/RTP, WebRTC/libnice, DTLS/SRTP/SCTP and OS X/iOS audio output. The remaining
+SDK plugins are not registered by this receiver. This local static-link trial
+is not an App Store distribution or complete redistribution/license audit;
+upstream licenses and static-relinking obligations remain part of release work.
+The libwebrtc framework remains packaged for explicit comparison/rollback.
+
+
 ## Native transport source builds (2026-10-29)
 
 The native profile adds static NIFs built from the pinned dependencies in

@@ -1,5 +1,50 @@
 # Parvi for iPhone
 
+## Audio meters — 2026-11-04
+
+Rebuild both apps to show Mac **Source peak / RMS** before encoding and iPhone
+**Output peak / RMS** after decoding/mute, before the audio sink. Values are
+sample dBFS; zero dBFS is digital full scale. They do not measure speaker loudness
+or inter-sample true peaks. iPhone RMS is the loudest channel in the latest
+100 ms window; peak is held between statistics replies (approximately one second).
+Absent/stale measurements hide the meter. The hardware volume control remains
+outside this PCM measurement. CLI `capture` includes the Mac meter; `inspect`
+includes iPhone native `samplePeakDb` / `sampleRmsDb` and receiver peak/RMS.
+
+## GStreamer device trial — 2026-11-04
+
+The next build uses **GStreamer 1.28.8** for the Opus/WebRTC receiver by default.
+The native adapter uses the existing Erlang engine contract and local control
+socket, with an output-only `osxaudiosink`, stereo 48 kHz conversion and a
+200 ms jitter-buffer latency. Play/pause mutes/unmutes the continuing stream;
+“automatic” restores the 200 ms default. This control is jitter-buffer latency,
+not NetEq's adaptive minimum delay. Cluster membership, sender and trust are
+unchanged. Shared presentation scheduling/rate correction is still unsupported;
+this trial does not make the speakers simultaneous.
+
+From the sibling OpenSound checkout, open `src/Apps/Parvi.xcworkspace`, select
+**Parvi iPhone** and your device, then Run. The scheme prepares the pinned SDK
+and current BEAM resources automatically. On an empty cache the official SDK
+archive is about 1.1 GB; it is downloaded and extracted only under core builds.
+The device slice is already prepared on this Mac. An unsigned device compile/
+link passes; this version has not been installed or listened to here. Simulator
+compilation is not verified in this increment.
+
+For your manual check, keep the apps foreground, start the Mac's existing Opus
+broadcast, make a fresh iPhone subscription and tap Play. Then check Stop/Play
+and unsubscribe/resubscribe. The Mac's existing “Opus / NetEq comparison” label
+still names the compatible stream. Xcode logs `Audio receiver: GStreamer 1.28.8`;
+receiver statistics identify `gstreamer_webrtc`. No microphone is requested.
+An audio route change/interruption asks you to stop and subscribe again.
+
+For comparison, set `PARVI_AUDIO_ENGINE=libwebrtc` in the iPhone scheme's **Run →
+Arguments → Environment Variables**, then relaunch. Remove the variable to
+restore GStreamer. There is no automatic fallback; startup/connection errors
+remain visible. No device deployment or playback check was automated.
+
+The historical status below describes earlier libwebrtc builds.
+
+
 Repository split (2026-11-03): see [current build paths](../../BUILDING.md).
 Product sources now live in the sibling OpenSound checkout; shared runtime,
 tooling and documentation live here. Older monorepo paths below are historical.

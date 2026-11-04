@@ -1,4 +1,4 @@
-%% Port-owned system capture + libopus; encoded audio only crosses BEAM.
+%% Port-owned system capture + libopus; shared Erlang metering of pre-encode PCM.
 -module(parvi_mac_opus_audio).
 -behaviour(gen_server).
 -export([start/0, stop/0, status/0, start_link/0]).
@@ -46,6 +46,16 @@ handle_info({Port, {data, <<8, Host:64/little, Position:64/little-float,
         output_position => OutputPosition},
     {noreply,S#{capture_timing := parvi_webrtc_audio_timing:observe(Observation,Timing),
                dropped_callbacks := Dropped}};
+handle_info({Port, {data, <<7, PCM/binary>>}}, #{port := Port} = S) ->
+    Now = erlang:monotonic_time(millisecond),
+    {Acc0, Started} = maps:get(meter_window, S, {parvi_audio_meter:new(), Now}),
+    Acc = parvi_audio_meter:accumulate(float32_le, PCM, Acc0),
+    Next = case Now - Started >= 100 of
+        true -> S#{meter => parvi_audio_meter:levels(Acc), meter_updated => Now,
+                   meter_window => {parvi_audio_meter:new(), Now}};
+        false -> S#{meter_window => {Acc, Started}}
+    end,
+    {noreply, Next};
 handle_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
                           Leading:32/little, Trailing:32/little, Packet/binary>>}},
             #{port := Port, source := Source, capture_timing := Timing} = S) ->

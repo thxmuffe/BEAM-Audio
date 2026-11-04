@@ -92,7 +92,15 @@ have Windows available November 4; preserve the current app baseline meanwhile.
   integration. If required identity/control cannot be preserved, record the exact
   failed boundary and reconsider the libwebrtc binding or another engine.
 
-## 4. Establish the same execution boundary on iPhone
+## 4. Establish the same execution boundary on iPhone — app trial ready
+
+November 4: the iPhone app now selects the native GStreamer adapter by default;
+its unsigned device build links successfully. The user will deploy/listen and
+check Stop/Play and resubscription. Explicit launch-time libwebrtc selection is
+retained. This establishes a trial integration only: schedule execution, device
+clock correction, physical alignment and recovery qualification remain pending.
+See [device instructions](apps/iOS/README.md).
+
 
 - Assess GStreamer iOS packaging and real device output against the proven
   contract; existing libwebrtc stays available until its replacement works.

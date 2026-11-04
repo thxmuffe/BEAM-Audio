@@ -14,6 +14,7 @@ final class IOSGStreamerAudio {
         listener = parvi_bridge_listen(&port)
         guard listener >= 0 else { throw NSError(domain: "GStreamer audio", code: 1) }
         setenv("PARVI_AUDIO_ENGINE", "gstreamer", 1)
+        NSLog("Audio receiver: GStreamer 1.28.8")
         let fd = listener
         DispatchQueue.global(qos: .userInitiated).async {
             while true {

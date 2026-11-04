@@ -1,6 +1,28 @@
 # Development plan
 
-## Active increment — revised 2026-11-03
+## Active increment — revised 2026-11-04
+
+A temporary −12 dB pre-encode Mac broadcast reduction is ready for the user to
+build and listen to at unchanged device volumes. Compare matching song passages
+and source/output readings before deciding whether to retain any gain policy.
+
+The iPhone meter crash was localized in the paused Xcode debugger to an Objective-C
+ownership error. ARC is now explicit and enforced; ORC uses its iOS-safe fallback.
+Next: user rebuild/deploy and check launch, controls and playback; then compare
+source/output peak and RMS for the outstanding harshness report.
+
+Live user playback confirms GStreamer on iPhone. Loud/harsh output is now under
+investigation: a passive Mac Opus check shows no full-scale samples, while the
+iPhone PCM level/gain is unmeasured and its displayed meters use missing data.
+Source and GStreamer output peak/RMS meters are now implemented for the next
+user build. Compare those readings before attributing this to sender gain or
+changing playback levels; effective hardware/sink gain diagnostics remain open. See the November 4 live inspection in PROGRESS.md.
+
+The iPhone GStreamer receiver is now wired into the app as the default for the
+requested device trial; explicit libwebrtc selection remains available. Device
+compilation/linking passes. Next is user deployment/listening and stop/play/
+resubscribe verification, then real schedule integration and physical alignment.
+This does not enable simultaneous playback. See [iPhone instructions](apps/iOS/README.md).
 
 Follow [Make playback simultaneous](SIMULTANEOUS_PLAYBACK_PLAN.md). Source
 extraction and core/Mac/signed-iPhone builds pass. The user confirms normal

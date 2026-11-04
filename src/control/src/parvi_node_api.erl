@@ -28,7 +28,7 @@ request(#{<<"op">> := <<"refresh_sources">>, <<"node">> := Node}) ->
     call(Node,parvi_audio_receiver,refresh,[]);
 request(#{<<"op">> := <<"capture">>, <<"node">> := Node}) ->
     case remote(Node,parvi_mac_opus_audio,status,[],1000) of
-        {ok,Snapshot} -> {ok,maps:with([state,frames,blocks,dropped_callbacks,handler,format,timeline,capture_timing,skipped_frames,send_errors],Snapshot)};
+        {ok,Snapshot} -> {ok,maps:with([state,frames,blocks,dropped_callbacks,handler,format,timeline,capture_timing,skipped_frames,send_errors,meter],Snapshot)};
         Error -> Error
     end;
 request(#{<<"op">> := <<"subscribe">>, <<"node">> := Node, <<"source_id">> := Id,

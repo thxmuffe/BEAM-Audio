@@ -1,4 +1,4 @@
-// Capture-worker conversion/encoding only. The real-time tap never calls this.
+// Capture-worker conversion/encoding and PCM transfer. The real-time tap never calls this.
 #import <AVFAudio/AVFAudio.h>
 #include <opus.h>
 #include <vector>
@@ -74,9 +74,16 @@ public:
                 supplied = YES; *status = AVAudioConverterInputStatus_HaveData; return input;
             }];
         if (error) throw Failure{-1, "Audio conversion failed"};
-        const float *samples = static_cast<const float *>(output.audioBufferList->mBuffers[0].mData);
+        float *samples = static_cast<float *>(output.mutableAudioBufferList->mBuffers[0].mData);
+        // Temporary loudness diagnosis: -12 dB before both source metering and
+        // Opus encoding. This affects the broadcast only, not local playback.
+        constexpr float broadcastTestGain = 0.251188643150958f;
+        for (size_t i = 0; i < size_t(output.frameLength) * 2; ++i)
+            samples[i] *= broadcastTestGain;
         pending.insert(pending.end(), samples, samples + output.frameLength * 2);
         while (pending.size() >= 960 * 2) {
+            // Shared Erlang code meters the exact pre-encode stereo samples.
+            wirePacket(7, pending.data(), 960 * 2 * sizeof(float));
             uint8_t encoded[1275];
             int bytes = opus_encode_float(encoder, pending.data(), 960, encoded, sizeof(encoded));
             if (bytes < 0) throw Failure{bytes, "Opus encode failed"};

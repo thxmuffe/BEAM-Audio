@@ -98,11 +98,13 @@ handle_info({parvi_audio, Session, Header, PCM},
     {noreply, S#{receive_state := Next}};
 handle_info({parvi_native_audio, Session, Stats}, #{receive_state := #{session := Session} = R} = S) ->
     Packets = maps:get(<<"packetsReceived">>,Stats,0),
-    Level = maps:get(<<"audioLevel">>,Stats,0),
-    DB = case Level > 0 of true -> 20*math:log10(Level); false -> -120.0 end,
+    Meter = case {maps:get(<<"samplePeakDb">>,Stats,undefined), maps:get(<<"sampleRmsDb">>,Stats,undefined)} of
+        {Peak, RMS} when is_number(Peak), is_number(RMS) ->
+            #{<<"peak_db">> => Peak, <<"rms_db">> => RMS};
+        _ -> #{}
+    end,
     Next = R#{packets := Packets, bytes := maps:get(<<"bytesReceived">>,Stats,0),
-        frames := maps:get(<<"totalSamplesReceived">>,Stats,0),
-        meter => #{<<"rms_db">> => DB, <<"peak_db">> => DB}},
+        frames := maps:get(<<"totalSamplesReceived">>,Stats,0), meter => Meter},
     WithTime = case Packets > maps:get(packets,R) of
         true -> Next#{last_packet => erlang:monotonic_time(millisecond)}; false -> Next end,
     Report = recent_native_timing(native_timing(Stats),maps:get(native_statistics,S,#{})),
@@ -201,7 +203,7 @@ public_receive(R) ->
     {MeterAge,DataAge} = case Native of true -> {2000,2500}; false -> {250,500} end,
     Age = case maps:find(last_packet,R) of {ok,T} -> Now-T; error -> undefined end,
     Meter = case Age =/= undefined andalso Age =< MeterAge of
-        true -> maps:get(meter,R); false -> parvi_audio_meter:levels(parvi_audio_meter:new())
+        true -> maps:get(meter,R,#{}); false -> parvi_audio_meter:levels(parvi_audio_meter:new())
     end,
     State = case {maps:get(state,R), Age} of
         {active, undefined} -> waiting_for_audio;
@@ -210,8 +212,9 @@ public_receive(R) ->
         {Other, _} -> Other
     end,
     #{state => atom_to_binary(State), packets => maps:get(packets,R), frames => maps:get(frames,R),
-      bytes => maps:get(bytes,R), peak_db => maps:get(<<"peak_db">>,Meter),
-      rms_db => maps:get(<<"rms_db">>,Meter), source_id => maps:get(source_id,R,null),
+      bytes => maps:get(bytes,R), peak_db => maps:get(<<"peak_db">>,Meter,-96.0),
+      meter_available => maps:is_key(<<"peak_db">>,Meter) andalso Age =/= undefined andalso Age =< MeterAge,
+      rms_db => maps:get(<<"rms_db">>,Meter,-96.0), source_id => maps:get(source_id,R,null),
       source_name => maps:get(source_name,R,null), error => maps:get(error,R,null),
       subscribed => maps:get(session,R) =/= undefined}.
 failed(Reason, #{receive_state := R} = S) ->

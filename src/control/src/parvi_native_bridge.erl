@@ -168,7 +168,11 @@ audio_snapshot() ->
       dropped_callbacks => maps:get(dropped_callbacks, S, 0),
       skipped_frames => maps:get(skipped_frames, S, 0), send_errors => maps:get(send_errors, S, 0),
       sample_rate => maps:get(rate, F, null), channels => maps:get(channels, F, null),
-      peak_db => maps:get(<<"peak_db">>, Meter, -96.0), error => maps:get(error, S, null)}.
+      peak_db => maps:get(<<"peak_db">>, Meter, -96.0),
+      rms_db => maps:get(<<"rms_db">>, Meter, -96.0),
+      meter_available => map_size(Meter) > 0 andalso
+          erlang:monotonic_time(millisecond) - maps:get(meter_updated,S,erlang:monotonic_time(millisecond)) < 1000,
+      error => maps:get(error, S, null)}.
 
 error_text(already_clustered_or_not_created) ->
     <<"One native cluster is remembered. Forget it before creating or joining another.">>;
