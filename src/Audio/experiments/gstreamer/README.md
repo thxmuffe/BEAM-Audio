@@ -1,5 +1,10 @@
 # GStreamer experiments
 
+November 4: scheduling arithmetic now lives in `Audio/src` and is shared by the
+iPhone timing integration. The standalone proof/escript is retained. Its older
+scheduling-disabled statements below describe the November 3 checkpoint; current
+app status and testing instructions are in [the iPhone guide](../../../../docs/apps/iOS/README.md).
+
 ## Same-Mac receiver comparison — 2026-11-03
 
 The isolated comparison uses identical 48 kHz stereo / 192 kb/s Opus payloads

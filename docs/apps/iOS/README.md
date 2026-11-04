@@ -1,5 +1,41 @@
 # Parvi for iPhone
 
+## Step 4 timing trial — 2026-11-04
+
+Rebuild/relaunch both Mac and iPhone. Mac broadcast attenuation is now **−6 dB**
+(as requested), and the source still publishes its nominal 250 ms presentation
+schedule. Make a fresh iPhone subscription and tap Play. Keep both apps foreground.
+The iPhone waits silently for a matching source segment, synchronized receiver
+clock and a usable native timing observation. Clock acquisition can delay startup.
+The Audio screen should change from “Waiting for shared playback schedule…” to
+“Shared schedule applied to native sink clock · speaker timing uncalibrated”,
+with a bounded output-clock correction reading. If it stays waiting, report the
+reason shown rather than increasing the buffering control. Automatic scheduled
+buffering is 100 ms, leaving headroom within the source's 250 ms budget; manually
+requesting a latency beyond that budget cannot meet the target.
+
+The engine pairs actual post-jitter RTP PTS with decoder buffer PTS. Erlang maps
+that packet's source position to its shared target, converts to local monotonic
+time, then computes native sink timestamp offset. The iPhone applies only a
+future, current-generation plan. It uses a dedicated pipeline clock and native
+audio-sink resampling; Erlang requests phase-continuous rate adjustments within
+±50 ppm. Large (>20 ms) phase changes request a new offset; mapping/segment/clock
+loss invalidates the schedule and mutes until a valid plan returns. The initial
+controller is a bounded proportional servo, not a qualified recovery system.
+
+This trial executes the **nominal RTP/decoded-buffer schedule at the sink clock**.
+Codec lookahead/content delay, converter priming, route/device latency and speaker
+emission are not yet calibrated. “Schedule applied” does not establish acoustic
+synchronization, actual DAC rate correction or a numerical alignment tolerance.
+Stop/Play, resubscribe, packet loss and relock need your device check. Windows
+still uses its existing adaptive backend; its schedule integration is pending.
+Use the existing libwebrtc launch selection if you need the prior adaptive path.
+No apps were deployed or listening tests run by the agent for this increment.
+
+Earlier sections below document previous increments; this section supersedes
+their scheduling-disabled and −12 dB status for the new iPhone build.
+
+
 ## Audio meters — 2026-11-04
 
 Rebuild both apps to show Mac **Source peak / RMS** before encoding and iPhone

@@ -92,7 +92,15 @@ have Windows available November 4; preserve the current app baseline meanwhile.
   integration. If required identity/control cannot be preserved, record the exact
   failed boundary and reconsider the libwebrtc binding or another engine.
 
-## 4. Establish the same execution boundary on iPhone — app trial ready
+## 4. Establish the same execution boundary on iPhone — scheduling trial ready
+
+The November 4 build now executes Erlang-planned sink clock offsets and bounded
+rate calibration using matched RTP/decoded PTS and the real clock reference.
+24 focused checks and device compilation pass. User deployment/playback/relock
+checks are next. Output path calibration and physical drift/alignment remain
+unproved; Windows schedule execution is still pending. The following earlier
+app-trial checkpoint records the preceding increment.
+
 
 November 4: the iPhone app now selects the native GStreamer adapter by default;
 its unsigned device build links successfully. The user will deploy/listen and

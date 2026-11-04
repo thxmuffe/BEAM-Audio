@@ -75,9 +75,9 @@ public:
             }];
         if (error) throw Failure{-1, "Audio conversion failed"};
         float *samples = static_cast<float *>(output.mutableAudioBufferList->mBuffers[0].mData);
-        // Temporary loudness diagnosis: -12 dB before both source metering and
+        // Temporary loudness diagnosis: -6 dB before both source metering and
         // Opus encoding. This affects the broadcast only, not local playback.
-        constexpr float broadcastTestGain = 0.251188643150958f;
+        constexpr float broadcastTestGain = 0.501187233627272f;
         for (size_t i = 0; i < size_t(output.frameLength) * 2; ++i)
             samples[i] *= broadcastTestGain;
         pending.insert(pending.end(), samples, samples + output.frameLength * 2);

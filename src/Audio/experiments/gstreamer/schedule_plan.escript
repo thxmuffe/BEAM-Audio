@@ -1,7 +1,7 @@
 #!/usr/bin/env escript
 %% Pure Erlang policy for the standalone proof; no application/cluster startup.
 main(_) ->
-    Path = filename:join(filename:dirname(escript:script_name()),"parvi_audio_gstreamer_schedule.erl"),
+    Path = filename:join(filename:dirname(escript:script_name()),"../../src/parvi_audio_gstreamer_schedule.erl"),
     {ok,Module,Binary} = compile:file(Path,[binary]),
     {module,Module} = code:load_binary(Module,Path,Binary),
     io:put_chars("ready\n"),

@@ -150,6 +150,11 @@ engine_event(M,State,#{peer := Peer,engine := Engine} = D) ->
                     {keep_state,maps:remove(delay_caller,D),[{reply,From,Reply},{{timeout,minimum_delay},cancel}]};
                 _ -> keep_state_and_data
             end;
+        <<"pipeline_observation">> ->
+            {keep_state,plan_gstreamer(M,D)};
+        <<"schedule">> ->
+            {keep_state,D#{schedule_reply => M}};
+        <<"rate">> -> keep_state_and_data;
         <<"playing">> ->
             maps:get(consumer,D) ! {parvi_audio_output,self(),
                 #{state => <<"playing">>,cluster_synchronized => false}},
@@ -192,3 +197,47 @@ terminate(_,_,D) ->
     case maps:find(caller,D) of {ok,From} -> gen_statem:reply(From,{error,closed}); _ -> ok end,
     case maps:find(engine,D) of {ok,Engine} -> parvi_audio_engine:close(Engine); _ -> ok end,
     case maps:find(pc,D) of {ok,PC} -> try ?PC:close(PC) catch exit:_ -> ok end; _ -> ok end.
+
+%% All schedule/servo policy stays on the session process, outside device callbacks.
+plan_gstreamer(M,#{engine := Engine} = D) ->
+    Keys = [rtp_timestamp,host_ns,pipeline_clock_ns,base_time_ns,running_time_ns,
+            pipeline_latency_ns,render_delay_ns,observation_uncertainty_ns,generation,
+            internal_ns,calibration_internal_ns,calibration_external_ns,
+            rate_numerator,rate_denominator,clock_generation],
+    Observation = maps:from_list([{K,maps:get(atom_to_binary(K),M)} || K <- Keys]),
+    Source = maps:get(source_timeline,D,undefined),
+    Reference = parvi_clock:status(),
+    case {parvi_audio_gstreamer_control:target(Source,Observation,Reference),maps:find(native_clock,D)} of
+        {{ok,Target},{ok,Bridge}} ->
+            {ok,Local} = parvi_clock:to_monotonic(maps:get(target_output_time_ns,Target)),
+            Pipeline = Observation#{observation_uncertainty_ns :=
+                maps:get(observation_uncertainty_ns,Observation)+maps:get(round_trip_ns,Bridge) div 2},
+            case parvi_audio_gstreamer_schedule:plan(Target#{local_handoff_time_ns => Local},Bridge,Pipeline) of
+                {ok,Plan0} ->
+                    Plan = maps:merge(Target,Plan0#{generation => maps:get(generation,Observation),
+                        local_handoff_time_ns => Local,calibrated_output_latency_ns => null}),
+                    Applied = maps:get(<<"applied_schedule">>,M,#{}),
+                    Same = lists:all(fun(K) -> maps:get(atom_to_binary(K),Applied,undefined) =:= maps:get(K,Plan) end,
+                                     [stream_id,revision,clock_timeline]),
+                    case {maps:get(<<"scheduled">>,M,false),Same} of
+                        {true,true} ->
+                            Desired = maps:get(ts_offset_ns,Plan),
+                            Actual = maps:get(<<"ts_offset_ns">>,M),
+                            case parvi_audio_gstreamer_control:correction(Desired,Actual) of
+                                relock -> ok = parvi_audio_engine:command(Engine,{presentation,Plan});
+                                Correction ->
+                                    {ok,Rate} = parvi_audio_gstreamer_schedule:rate_plan(Correction,Observation),
+                                    ok = parvi_audio_engine:command(Engine,{rate_correction,maps:merge(Target,Rate#{
+                                        clock_generation => maps:get(clock_generation,Observation),
+                                        correction_ppm => maps:get(correction_ppm,Correction),max_absolute_ppm => 50})})
+                            end;
+                        _ -> ok = parvi_audio_engine:command(Engine,{presentation,Plan})
+                    end,
+                    D#{schedule_status => sink_clock_requested};
+                {error,Reason} -> invalidate_gstreamer(Reason,D)
+            end;
+        _ -> invalidate_gstreamer(source_or_receiver_clock_unavailable,D)
+    end.
+invalidate_gstreamer(Reason,#{engine := Engine} = D) ->
+    ok = parvi_audio_engine:command(Engine,{invalidate_schedule,atom_to_binary(Reason)}),
+    D#{schedule_status => Reason}.

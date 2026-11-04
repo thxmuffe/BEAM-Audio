@@ -43,7 +43,7 @@ capture(Position, Codec, S) ->
            mapping => <<"nominal_uncompensated">>}.
 
 report(Timeline, Stats, Clock) ->
-    presentation_report(Timeline,output_report(track_report(Timeline,Stats,Clock),Clock)).
+    scheduled_report(Timeline,presentation_report(Timeline,output_report(track_report(Timeline,Stats,Clock),Clock))).
 
 %% Report intent separately from observed delivery/output. The Opus handler does
 %% not execute this schedule yet; never label a target as a measured speaker time.
@@ -121,3 +121,16 @@ track_report(Timeline, Stats, Clock) ->
 unavailable(Reason,Stats) ->
     (maps:without([<<"estimated_capture_to_track_ms">>,<<"track_delivery_time_ns">>,
                    <<"native_clock_round_trip_ns">>],Stats))#{<<"capture_timing_status">> => Reason}.
+
+%% Schedule execution is a native sink-clock fact, not calibrated speaker timing.
+scheduled_report(#{continuous := true,presentation := Schedule},
+                 #{<<"sinkScheduleEnforced">> := true,<<"appliedSchedule">> := Applied} = Stats) ->
+    Same = lists:all(fun(K) -> maps:get(K,Schedule,undefined) =:=
+        maps:get(atom_to_binary(K),Applied,undefined) end,[stream_id,revision,clock_timeline]),
+    case Same of
+        true -> Stats#{<<"output_schedule_enforced">> => true,
+            <<"presentation_status">> => <<"scheduled_sink_clock_uncompensated">>,
+            <<"output_timing_status">> => <<"decoded_rtp_to_sink_clock_nominal">>};
+        false -> Stats
+    end;
+scheduled_report(_,Stats) -> Stats.

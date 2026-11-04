@@ -1,5 +1,33 @@
 # Progress
 
+## 2026-11-04 — Step 4 iPhone native scheduling integration; device trial pending
+
+Connected the native iPhone GStreamer receiver to the real Erlang-owned source
+presentation schedule and receiver/native clock bridge. Promoted the proven
+sink-offset/rate arithmetic into Audio/src; the standalone proof now compiles
+that same module. Added pure shared target/segment/clock validation and bounded
+±50 ppm proportional correction policy on the existing OTP media session.
+Native code matches post-jitter RTP and decoder PTS, reports bounded timing
+observations, executes future generation-checked offsets and phase-continuous
+clock calibration, and uses the existing audio-sink resampling machinery. New
+segment/unmatched/GAP observations invalidate/mute playback. The automatic iOS
+jitter latency is 100 ms to leave control margin in the nominal 250 ms source
+budget. Fixed minimum-delay replies to retain their requested value.
+
+Only the iPhone host opts into schedule/rate capability; Windows/libwebrtc remain
+unchanged. Reports/UI distinguish native sink-clock execution from calibrated
+speaker timing; no cluster-synchronized playback claim is enabled. The source
+RTP packet schedule is nominal: content/codec/route calibration, real DAC-rate
+behavior and impairment/relock recovery remain unproved. Physical cross-device
+alignment remains a subsequent measurement, not a compilation result.
+
+Core checks pass: 24 focused engine/timing/schedule/control tests, existing proof
+escript startup using the promoted module, unsigned iPhone compile/link, and Mac
+capture-helper syntax. No app deployment or device execution was performed.
+At the user's steering, changed the temporary pre-encode Mac reduction from
+−12 dB to **−6 dB**. Rebuild both apps and follow the iPhone timing trial guide.
+
+
 ## 2026-11-04 — Temporary −12 dB pre-encode broadcast test
 
 At the user's request, the Mac Opus capture worker now attenuates converted

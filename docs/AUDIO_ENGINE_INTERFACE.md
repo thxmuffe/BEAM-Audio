@@ -1,8 +1,10 @@
 # Receiver media engine interface
 
 Implemented 2026-11-03 as step 2 of the simultaneous-playback plan. This is a
-local execution boundary inside BEAM Audio. Both current implementations still
-use independently timed playback. It does not implement a synchronized engine.
+local execution boundary inside BEAM Audio. Updated November 4: the iPhone
+GStreamer host explicitly enables native sink scheduling and bounded clock-rate
+execution. Windows/libwebrtc keep their existing adaptive paths. Physical output
+synchronization remains unqualified.
 
 ## Ownership
 
@@ -102,12 +104,22 @@ is nonnegative, and a native implementation must reject out-of-bound corrections
 or stale/unmappable schedules rather than reinterpret them as buffering requests.
 Positive correction means consume source samples faster per local elapsed time.
 
-Both current engines advertise `presentation_schedule_execution=false` and
-`rate_correction_control=false`. The common dispatcher rejects either operation
-with `{error,{unsupported_output_control,Capability}}` before sending native
-bytes. No map is reported accepted or applied by this increment. Step 3 must
-implement and validate these command semantics, revision handling and explicit
-native apply/failure acknowledgements before advertising either capability.
+The iPhone host opts in with local `PARVI_GSTREAMER_SCHEDULE=1`; only that
+GStreamer execution path advertises scheduling/rate support. The session sends
+a native `schedule` plan with decoded generation, sink offset, future native
+target and stream/reference/revision identity. Native code acknowledges apply or
+stale/late rejection. A dedicated clock accepts bounded calibration plans only
+for the observed clock generation. A native `pipeline_observation` event carries
+actual matched RTP/running time, native/pipeline clocks, base time, sink latency
+and calibration. Native `invalidate_schedule` mutes pending a fresh plan.
+
+The current trial targets the nominal packet/decoder timeline at the GStreamer
+sink clock boundary. `calibrated_output_latency_ns=null` explicitly denotes an
+uncalibrated path; it is not an assumed zero speaker delay. Output remains muted
+until a future plan is accepted, and packet/segment association loss invalidates
+it. The public UI keeps cluster synchronization unverified. Automatic iOS jitter
+latency is 100 ms; other backends retain their existing defaults. Unsupported
+platforms reject schedule/rate commands before sending native bytes.
 
 ## Common output report
 
@@ -115,8 +127,9 @@ Existing native statistics and timing fields are retained. Receiver statistics
 add `output_engine` and `output_status`; session status also includes `engine`.
 The output report preserves a `source_anchor` with the source's sample position,
 capture segment, RTP association and presentation stream/revision. It explicitly
-reports `source_output_mapping=unavailable`: an anchor or recent packet timestamp
-is not an association to the samples inside a device callback.
+reports `source_output_mapping=unavailable` without a valid applied plan. The
+scheduled iPhone path reports `decoded_rtp_nominal`; this is a decoder-buffer
+association, not a physical output callback or calibrated speaker sample.
 
 The report separately exposes callback host/sample observations, their existing
 `output_timing_status`, reported route latency, dropped buffers, packet loss and

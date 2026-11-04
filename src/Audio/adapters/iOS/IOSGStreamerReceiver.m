@@ -4,6 +4,8 @@
 #endif
 #include <gst/gst.h>
 #include <gst/sdp/sdp.h>
+#include <gst/rtp/rtp.h>
+#include <gst/audio/gstaudiobasesink.h>
 #define GST_USE_UNSTABLE_API
 #include <gst/webrtc/webrtc.h>
 #include <mach/mach_time.h>
@@ -52,6 +54,18 @@ static guint64 hostNS(void) {
 @public // File-local C callbacks use these; none appear in the public header.
     GstElement *_pipeline, *_peer, *_volume, *_output;
     GSource *_busSource;
+    GstClock *_scheduleClock;
+    NSLock *_mappingLock;
+    struct { GstClockTime pts; guint32 rtp; BOOL valid; } _packets[128];
+    guint _packetIndex;
+    GstSegment _segment;
+    BOOL _segmentValid, _pairValid, _scheduled;
+    guint32 _pairRTP;
+    GstClockTime _pairRunning;
+    guint64 _generation, _lastObservationHost, _clockGeneration;
+    NSDictionary *_appliedSchedule;
+    NSString *_scheduleReason;
+    double _correctionPPM;
     BOOL _closed, _playing, _remoteReady, _offered;
     NSMutableArray<NSDictionary *> *_candidates;
     id _minimumDelay;
@@ -64,7 +78,70 @@ static guint64 hostNS(void) {
 - (void)prepare:(NSDictionary *)command;
 - (void)offer;
 - (void)statistics;
+- (void)pipelineObservation;
+- (void)invalidateSchedule:(NSString *)reason;
+- (void)applySchedule:(NSDictionary *)plan;
+- (void)applyRate:(NSDictionary *)plan;
 @end
+
+// Exact post-jitter RTP PTS -> decoder PTS association. No latest-packet guess.
+static GstPadProbeReturn receivedRTP(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
+    IOSGStreamerReceiver *self = (__bridge id)data;
+    GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+    GstRTPBuffer rtp = GST_RTP_BUFFER_INIT;
+    if (buffer && GST_BUFFER_PTS_IS_VALID(buffer) && gst_rtp_buffer_map(buffer, GST_MAP_READ, &rtp)) {
+        [self->_mappingLock lock];
+        guint index = self->_packetIndex++ % 128;
+        self->_packets[index].pts = GST_BUFFER_PTS(buffer);
+        self->_packets[index].rtp = gst_rtp_buffer_get_timestamp(&rtp);
+        self->_packets[index].valid = YES;
+        [self->_mappingLock unlock];
+        gst_rtp_buffer_unmap(&rtp);
+    }
+    return GST_PAD_PROBE_OK;
+}
+static GstPadProbeReturn decodedAudio(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
+    @autoreleasepool {
+        IOSGStreamerReceiver *self = (__bridge id)data;
+        [self->_mappingLock lock];
+        if (GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM) {
+            GstEvent *event = GST_PAD_PROBE_INFO_EVENT(info);
+            if (GST_EVENT_TYPE(event) == GST_EVENT_SEGMENT) {
+                const GstSegment *segment = NULL; gst_event_parse_segment(event, &segment);
+                self->_segment = *segment; self->_segmentValid = segment->format == GST_FORMAT_TIME;
+                self->_generation++; self->_pairValid = NO;
+                enqueue(^{ [self invalidateSchedule:@"decoded_segment_changed"]; });
+            }
+            [self->_mappingLock unlock]; return GST_PAD_PROBE_OK;
+        }
+        GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+        BOOL matched = NO; guint32 rtp = 0;
+        if (buffer && GST_BUFFER_PTS_IS_VALID(buffer) && !GST_BUFFER_FLAG_IS_SET(buffer,GST_BUFFER_FLAG_GAP)) {
+            for (guint i = 0; i < 128; i++) if (self->_packets[i].valid && self->_packets[i].pts == GST_BUFFER_PTS(buffer)) {
+                rtp = self->_packets[i].rtp; self->_packets[i].valid = NO; matched = YES; break;
+            }
+        }
+        GstClockTime running = matched && self->_segmentValid
+            ? gst_segment_to_running_time(&self->_segment,GST_FORMAT_TIME,GST_BUFFER_PTS(buffer)) : GST_CLOCK_TIME_NONE;
+        if (!GST_CLOCK_TIME_IS_VALID(running)) {
+            self->_generation++; self->_pairValid = NO;
+            [self->_mappingLock unlock];
+            enqueue(^{ [self invalidateSchedule:@"decoded_source_mapping_lost"]; });
+            return GST_PAD_PROBE_DROP;
+        }
+        self->_pairValid = YES; self->_pairRTP = rtp; self->_pairRunning = running;
+        guint64 now = hostNS();
+        BOOL observe = now - self->_lastObservationHost >= 100000000;
+        if (observe) self->_lastObservationHost = now;
+        [self->_mappingLock unlock];
+        if (observe) enqueue(^{ [self pipelineObservation]; });
+        return GST_PAD_PROBE_OK;
+    }
+}
+static void jitterCreated(GstElement *rtpbin, GstElement *jitter, guint session, guint ssrc, gpointer data) {
+    // Erlang's output servo is the only rate authority for the scheduled path.
+    g_object_set(jitter,"mode",0,"do-lost",TRUE,NULL);
+}
 
 static GstPromise *promiseFor(GstPromiseChangeFunc callback, IOSGStreamerReceiver *self) {
     return gst_promise_new_with_change_func(callback, (void *)CFBridgingRetain(self), releaseObject);
@@ -209,7 +286,11 @@ static void statsReceived(GstPromise *promise, gpointer data) {
                 self->_levels = nil;
             }
             stats[@"event"] = @"stats"; stats[@"backend"] = @"gstreamer_webrtc";
-            stats[@"outputTrackEnabled"] = @(self->_playing);
+            stats[@"outputTrackEnabled"] = @(self->_playing && self->_scheduled);
+            stats[@"sinkScheduleEnforced"] = @(self->_scheduled);
+            stats[@"sinkScheduleStatus"] = self->_scheduleReason;
+            stats[@"appliedSchedule"] = self->_appliedSchedule ?: @{};
+            stats[@"clockCorrectionPpm"] = @(self->_correctionPPM);
             stats[@"outputSourceSampleMappingAvailable"] = @NO;
             stats[@"estimatedPlayoutTimestampAvailable"] = @NO;
             stats[@"minimumDelayControlAvailable"] = @YES;
@@ -259,7 +340,7 @@ static void statsReceived(GstPromise *promise, gpointer data) {
     return YES;
 }
 - (instancetype)initWithEvents:(void (^)(NSDictionary *))events {
-    if ((self = [super init])) { _events = [events copy]; _candidates = [NSMutableArray array]; _minimumDelay = NSNull.null; }
+    if ((self = [super init])) { _events = [events copy]; _candidates = [NSMutableArray array]; _minimumDelay = NSNull.null; _mappingLock = [NSLock new]; _scheduleReason = @"waiting_for_schedule"; }
     return self;
 }
 - (void)send:(NSDictionary *)event { if (!_closed) _events(event); }
@@ -267,8 +348,8 @@ static void statsReceived(GstPromise *promise, gpointer data) {
 - (void)prepare:(NSDictionary *)command {
     if (_pipeline) return;
     GError *error = NULL;
-    _pipeline = gst_parse_launch("webrtcbin name=peer bundle-policy=max-bundle latency=200 "
-        "queue name=audio_queue ! rtpopusdepay ! opusdec plc=true ! audioconvert ! audioresample ! "
+    _pipeline = gst_parse_launch("webrtcbin name=peer bundle-policy=max-bundle latency=100 "
+        "queue name=audio_queue ! rtpopusdepay name=depay ! opusdec name=decode plc=true ! audioconvert ! audioresample ! "
         "audio/x-raw,format=F32LE,rate=48000,channels=2 ! volume name=volume mute=true ! "
         "level name=meter interval=100000000 post-messages=true ! "
         "osxaudiosink name=output sync=true async=false enable-last-sample=false", &error);
@@ -276,6 +357,21 @@ static void statsReceived(GstPromise *promise, gpointer data) {
     _peer = gst_bin_get_by_name(GST_BIN(_pipeline), "peer");
     _volume = gst_bin_get_by_name(GST_BIN(_pipeline), "volume");
     _output = gst_bin_get_by_name(GST_BIN(_pipeline), "output");
+    _scheduleClock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "parvi-scheduled-output", NULL);
+    gst_pipeline_use_clock(GST_PIPELINE(_pipeline),_scheduleClock);
+    g_object_set(_output,"slave-method",GST_AUDIO_BASE_SINK_SLAVE_RESAMPLE,NULL);
+    GstElement *depay = gst_bin_get_by_name(GST_BIN(_pipeline),"depay");
+    GstPad *packetPad = gst_element_get_static_pad(depay,"sink");
+    gst_pad_add_probe(packetPad,GST_PAD_PROBE_TYPE_BUFFER,receivedRTP,(__bridge void *)self,NULL);
+    gst_object_unref(packetPad); gst_object_unref(depay);
+    GstElement *decode = gst_bin_get_by_name(GST_BIN(_pipeline),"decode");
+    GstPad *decodedPad = gst_element_get_static_pad(decode,"src");
+    gst_pad_add_probe(decodedPad,GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+        decodedAudio,(__bridge void *)self,NULL);
+    gst_object_unref(decodedPad); gst_object_unref(decode);
+    GstElement *rtpbin = gst_bin_get_by_name(GST_BIN(_peer),"rtpbin");
+    g_signal_connect(rtpbin,"new-jitterbuffer",G_CALLBACK(jitterCreated),NULL);
+    gst_object_unref(rtpbin);
     for (NSDictionary *server in command[@"ice_servers"]) {
         id urls = server[@"urls"]; if ([urls isKindOfClass:NSString.class]) urls = @[urls];
         for (NSString *url in urls) if ([url hasPrefix:@"stun:"]) {
@@ -315,7 +411,10 @@ static void statsReceived(GstPromise *promise, gpointer data) {
         NSString *op = command[@"op"];
         if ([op isEqual:@"prepare"]) { [self prepare:command]; return; }
         if (!self->_pipeline) { [self fail:@"GStreamer receiver is not prepared"]; return; }
-        if ([op isEqual:@"answer"]) {
+        if ([op isEqual:@"invalidate_schedule"]) { [self invalidateSchedule:command[@"reason"]];
+        } else if ([op isEqual:@"schedule"]) { [self applySchedule:command[@"plan"]];
+        } else if ([op isEqual:@"rate"]) { [self applyRate:command[@"plan"]];
+        } else if ([op isEqual:@"answer"]) {
             GstSDPMessage *sdp = NULL;
             if (gst_sdp_message_new_from_text([command[@"sdp"] UTF8String], &sdp) != GST_SDP_OK) {
                 [self fail:@"Invalid SDP answer"]; return;
@@ -331,7 +430,7 @@ static void statsReceived(GstPromise *promise, gpointer data) {
             else [self->_candidates addObject:c];
         } else if ([op isEqual:@"play"] || [op isEqual:@"pause"]) {
             self->_playing = [op isEqual:@"play"];
-            g_object_set(self->_volume, "mute", !self->_playing, NULL);
+            g_object_set(self->_volume, "mute", !(self->_playing && self->_scheduled), NULL);
             [self send:@{@"event": self->_playing ? @"playing" : @"paused"}];
         } else if ([op isEqual:@"minimum_delay"]) {
             id value = command[@"delay_ms"];
@@ -340,13 +439,69 @@ static void statsReceived(GstPromise *promise, gpointer data) {
                 && isfinite([value doubleValue]) && [value doubleValue] >= 0 && [value doubleValue] <= 10000);
             if (valid) {
                 self->_minimumDelay = value;
-                g_object_set(self->_peer, "latency", value == NSNull.null ? 200u : (guint)llround([value doubleValue]), NULL);
+                g_object_set(self->_peer, "latency", value == NSNull.null ? 100u : (guint)llround([value doubleValue]), NULL);
             }
-            [self send:@{@"event": @"minimum_delay", @"configured": @(valid), @"request_id": command[@"request_id"] ?: NSNull.null}];
+            [self send:@{@"event": @"minimum_delay", @"configured": @(valid), @"request_id": command[@"request_id"] ?: NSNull.null, @"requested_ms": value ?: NSNull.null}];
         } else if ([op isEqual:@"clock"]) {
             [self send:@{@"event": @"clock", @"sent_ns": command[@"sent_ns"], @"host_ns": @(hostNS())}];
         } else if ([op isEqual:@"stats"]) [self statistics];
     });
+}
+- (void)invalidateSchedule:(NSString *)reason {
+    if (_closed || !_pipeline) return;
+    _scheduled = NO; _appliedSchedule = nil; _scheduleReason = reason;
+    g_object_set(_volume,"mute",TRUE,NULL);
+}
+- (void)pipelineObservation {
+    if (_closed || !_pipeline) return;
+    [_mappingLock lock];
+    if (!_pairValid) { [_mappingLock unlock]; return; }
+    guint32 rtp = _pairRTP; guint64 running = _pairRunning, generation = _generation;
+    [_mappingLock unlock];
+    guint64 before = hostNS();
+    guint64 clock = gst_clock_get_time(_scheduleClock);
+    guint64 after = hostNS();
+    GstClockTime base = gst_element_get_base_time(_pipeline);
+    GstClockTime latency = gst_base_sink_get_latency(GST_BASE_SINK(_output));
+    if (!GST_CLOCK_TIME_IS_VALID(base) || !GST_CLOCK_TIME_IS_VALID(latency)) return;
+    guint64 i0,e0,n,d;
+    gst_clock_get_calibration(_scheduleClock,&i0,&e0,&n,&d);
+    [self send:@{@"event": @"pipeline_observation", @"rtp_timestamp": @(rtp),
+        @"host_ns": @(before+(after-before)/2), @"pipeline_clock_ns": @(clock),
+        @"base_time_ns": @(base), @"running_time_ns": @(running),
+        @"pipeline_latency_ns": @(latency), @"render_delay_ns": @(gst_base_sink_get_render_delay(GST_BASE_SINK(_output))),
+        @"observation_uncertainty_ns": @(after-before), @"generation": @(generation),
+        @"scheduled": @(_scheduled), @"applied_schedule": _appliedSchedule ?: @{},
+        @"ts_offset_ns": @(gst_base_sink_get_ts_offset(GST_BASE_SINK(_output))),
+        @"internal_ns": @(gst_clock_get_internal_time(_scheduleClock)),
+        @"calibration_internal_ns": @(i0), @"calibration_external_ns": @(e0),
+        @"rate_numerator": @(n), @"rate_denominator": @(d), @"clock_generation": @(_clockGeneration)}];
+}
+- (void)applySchedule:(NSDictionary *)plan {
+    [_mappingLock lock];
+    BOOL valid = _pairValid && [plan[@"generation"] unsignedLongLongValue] == _generation;
+    [_mappingLock unlock];
+    valid = valid && [plan[@"native_target_ns"] unsignedLongLongValue] > hostNS();
+    if (!valid) {
+        [self send:@{@"event": @"schedule", @"applied": @NO, @"reason": @"stale_mapping_or_late_plan"}];
+        return;
+    }
+    g_object_set(_output,"ts-offset",[plan[@"ts_offset_ns"] longLongValue],NULL);
+    _appliedSchedule = [plan copy]; _scheduled = YES;
+    _scheduleReason = @"scheduled_sink_clock_uncompensated";
+    g_object_set(_volume,"mute",!_playing,NULL);
+    [self send:@{@"event": @"schedule", @"applied": @YES, @"generation": plan[@"generation"]}];
+}
+- (void)applyRate:(NSDictionary *)plan {
+    double ppm = [plan[@"correction_ppm"] doubleValue];
+    guint64 n = [plan[@"rate_numerator"] unsignedLongLongValue];
+    guint64 d = [plan[@"rate_denominator"] unsignedLongLongValue];
+    if (!_scheduled || [plan[@"clock_generation"] unsignedLongLongValue] != _clockGeneration ||
+        !isfinite(ppm) || fabs(ppm) > 50 || d != 1000000000 || n < 999950000 || n > 1000050000) return;
+    gst_clock_set_calibration(_scheduleClock,[plan[@"internal_ns"] unsignedLongLongValue],
+        [plan[@"external_ns"] unsignedLongLongValue],n,d);
+    _clockGeneration++; _correctionPPM = ppm;
+    [self send:@{@"event": @"rate", @"applied": @YES, @"correction_ppm": @(ppm)}];
 }
 - (void)close {
     enqueue(^{
@@ -359,6 +514,7 @@ static void statsReceived(GstPromise *promise, gpointer data) {
             if (self->_volume) gst_object_unref(self->_volume);
             if (self->_output) gst_object_unref(self->_output);
             gst_object_unref(self->_pipeline);
+            gst_object_unref(self->_scheduleClock); self->_scheduleClock = NULL;
             self->_pipeline = self->_peer = self->_volume = self->_output = NULL;
         }
         self->_events = nil;

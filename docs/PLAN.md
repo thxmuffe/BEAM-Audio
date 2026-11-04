@@ -2,49 +2,16 @@
 
 ## Active increment — revised 2026-11-04
 
-A temporary −12 dB pre-encode Mac broadcast reduction is ready for the user to
-build and listen to at unchanged device volumes. Compare matching song passages
-and source/output readings before deciding whether to retain any gain policy.
-
-The iPhone meter crash was localized in the paused Xcode debugger to an Objective-C
-ownership error. ARC is now explicit and enforced; ORC uses its iOS-safe fallback.
-Next: user rebuild/deploy and check launch, controls and playback; then compare
-source/output peak and RMS for the outstanding harshness report.
-
-Live user playback confirms GStreamer on iPhone. Loud/harsh output is now under
-investigation: a passive Mac Opus check shows no full-scale samples, while the
-iPhone PCM level/gain is unmeasured and its displayed meters use missing data.
-Source and GStreamer output peak/RMS meters are now implemented for the next
-user build. Compare those readings before attributing this to sender gain or
-changing playback levels; effective hardware/sink gain diagnostics remain open. See the November 4 live inspection in PROGRESS.md.
-
-The iPhone GStreamer receiver is now wired into the app as the default for the
-requested device trial; explicit libwebrtc selection remains available. Device
-compilation/linking passes. Next is user deployment/listening and stop/play/
-resubscribe verification, then real schedule integration and physical alignment.
-This does not enable simultaneous playback. See [iPhone instructions](apps/iOS/README.md).
-
-Follow [Make playback simultaneous](SIMULTANEOUS_PLAYBACK_PLAN.md). Source
-extraction and core/Mac/signed-iPhone builds pass. The user confirms normal
-Mac-to-iPhone playback after the move. Windows packaging/playback and stop/play
-recovery remain open; Windows was Offline during inspection. The receiver-engine
-contract is now implemented in source with focused checks and unsigned iPhone
-compilation; it has not been deployed. Next attempt Erlang-directed GStreamer
-scheduling: the isolated Mac WebRTC/Opus proof now passes, with 18 policy/engine/
-timing checks. Windows/WASAPI checks are prepared and deferred by the user to
-November 4. App integration and physical output measurements remain pending;
-then continue iPhone integration and measured two-output alignment. The explicit repository
-split now precedes the previous cinema gate. The priorities below retain the
-quality/recovery/multichannel/DSP backlog; older sequencing does not override
-this subplan.
-
-Same-Mac receiver comparison is now implemented and exercised silently; see
-[commands, results and limits](../src/Audio/experiments/gstreamer/README.md).
-Clean-tone output does not establish a GStreamer quality improvement. Controlled
-loss favors GStreamer on the synthetic sine residual metric; CPU is similar in
-these fixtures. Retain both backends. Next: user-run Windows silent/WASAPI
-scheduling check, then actual app clock/schedule integration and physical
-alignment; do not enable app capabilities based on these offline results.
+Continue the original [simultaneous-playback subplan](SIMULTANEOUS_PLAYBACK_PLAN.md).
+Step 4 now has an implemented iPhone GStreamer sink-clock scheduling path under
+Erlang control, including bounded ±50 ppm correction. Core checks (24) and the
+unsigned iPhone build pass. Next is user deployment and verification that the
+shared schedule applies, followed by output/codec calibration, real drift and
+recovery measurements and Windows schedule integration. Do not describe this
+as simultaneous physical sound until measured. Mac capture/libopus is unchanged
+apart from the user's requested temporary **−6 dB** gain. Harshness/quality is
+tracked separately and does not block this timing increment. See
+[device trial instructions](apps/iOS/README.md).
 
 ## Previous priorities — revised 2026-11-02
 

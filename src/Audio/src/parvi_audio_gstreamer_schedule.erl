@@ -1,4 +1,4 @@
-%% Scheduling arithmetic for the isolated GStreamer proof; not enabled in apps.
+%% Shared Erlang scheduling arithmetic for GStreamer sink-clock execution.
 %% Erlang chooses the target. Native code executes the returned sink offset.
 -module(parvi_audio_gstreamer_schedule).
 -export([plan/3, source_position/3, rate_plan/2]).

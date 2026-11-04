@@ -29,6 +29,9 @@ command(Socket, {signal, candidate, Fields}) -> send(Socket, Fields#{op => <<"ca
 command(Socket, {minimum_delay, Delay, Id}) ->
     Value = case Delay of automatic -> null; _ -> Delay end,
     send(Socket, #{op => <<"minimum_delay">>, delay_ms => Value, request_id => Id});
+command(Socket, {presentation, Plan}) -> send(Socket, #{op => <<"schedule">>, plan => Plan});
+command(Socket, {rate_correction, Plan}) -> send(Socket, #{op => <<"rate">>, plan => Plan});
+command(Socket, {invalidate_schedule, Reason}) -> send(Socket, #{op => <<"invalidate_schedule">>, reason => Reason});
 command(_, _) -> {error, unsupported_output_control}.
 
 event(Socket, {tcp, Socket, Bytes}) ->

@@ -96,3 +96,14 @@ assert_no_estimate(Report) ->
     ?assertEqual(10,maps:get(<<"packetsReceived">>,Report)),
     [?assertNot(maps:is_key(K,Report)) || K <- [<<"estimated_capture_to_track_ms">>,
         <<"track_delivery_time_ns">>,<<"native_clock_round_trip_ns">>]], ok.
+
+nominal_sink_schedule_is_not_a_speaker_measurement_test() ->
+    Schedule = #{stream_id => <<"source">>,revision => 2,clock_timeline => <<"reference">>},
+    Source = #{continuous => true,presentation => Schedule},
+    Native = #{<<"sinkScheduleEnforced">> => true,<<"appliedSchedule">> =>
+        #{<<"stream_id">> => <<"source">>,<<"revision">> => 2,<<"clock_timeline">> => <<"reference">>}},
+    Report = parvi_webrtc_audio_timing:report(Source,Native,undefined),
+    ?assertEqual(true,maps:get(<<"output_schedule_enforced">>,Report)),
+    ?assertEqual(<<"scheduled_sink_clock_uncompensated">>,maps:get(<<"presentation_status">>,Report)),
+    Old = parvi_webrtc_audio_timing:report(Source#{presentation := Schedule#{revision := 3}},Native,undefined),
+    ?assertEqual(false,maps:get(<<"output_schedule_enforced">>,Old)).
