@@ -1,5 +1,37 @@
 # Progress
 
+## 2026-11-04 — Event-driven Windows UI and watcher cleanup
+
+Completed the Windows UI invalidation path: runtime/OTP notifications replace
+the unconditional 100 ms audio-input and 600 ms main-interface refresh loops.
+Snapshots coalesce event bursts; unchanged controls retain their contents and
+selection. The Nodes tab is a list without graph simulation. Input levels follow
+active capture reports; receiver age/status refreshes run only while subscribed.
+Shared network heartbeat, reconnect and clock sampling policies are unchanged.
+
+Removed the custom ReadDirectoryChangesW C helper and its compiler step. The
+Windows Rebar profile pins Erlang `fs` 11.4.1, and packaging includes its supplied
+Windows `inotifywait.exe` backend and actual license. The library's own native
+notifications trigger the existing OTP code-loading path after a 100 ms debounce.
+Removed the unused graph adapter and old node-status/topology polling workers;
+builds remove their obsolete BEAM files from existing bundles. Window startup
+notifies the host directly, including supervisor restarts, instead of relying
+on reload polling to discover the replacement process.
+
+Validation: complete native Windows packaging with warnings-as-errors for project
+Erlang sources and all 15 package/core/model EUnit tests pass. The dependency has
+an upstream deprecated-catch warning; no dependency sources were patched. The
+isolated real-wx reload smoke passes automatic file-triggered reload, invalid
+output, broken-build recovery, window-crash recovery, drafts, pending sends and
+peer/status continuity. The installed bundle boots with native transport,
+GStreamer output helper, temporary identity and a standalone cluster. During a
+10-second idle interval after startup, its model issued zero snapshots and the
+UI process used zero reductions; Windows process CPU time recorded 0.00% of eight
+logical processors. This measurement excludes a connected desk/remote peers and
+child-helper CPU, so it does not establish connected-cluster idle cost. The probe
+closed cleanly without touching the user's identity/membership. User will launch
+the rebuilt app from Explorer and test idle CPU, connectivity and playback.
+
 ## 2026-11-04 — Windows build, state recovery and connection diagnostics
 
 Built the split checkouts from empty Windows caches with pinned private tools.

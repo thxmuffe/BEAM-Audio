@@ -16,7 +16,7 @@ try {
     $env:REBAR_CACHE_DIR = Join-Path $tools 'rebar-cache'
     Push-Location (Join-Path $repoRoot 'src/control')
     try {
-        & "$OtpRoot\bin\escript.exe" $rebar compile
+        & "$OtpRoot\bin\escript.exe" $rebar as windows compile
         if ($LASTEXITCODE) { throw 'Shared Erlang dependency build failed.' }
     } finally { Pop-Location }
 } finally { $env:PATH = $oldPath }

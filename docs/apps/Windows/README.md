@@ -24,7 +24,7 @@ The November 4 repair restored the original Windows membership/routes with a
 backup. After reopening from Explorer, the user confirmed Mac, iPhone and
 Windows Running in the cluster.
 
-Core/workspace compilation, native dependency compilation/loading, 14 app/core
+Core/workspace compilation, native dependency compilation/loading, 15 app/core
 model tests, the existing wx reload smoke and isolated native app startup pass.
 WASAPI loopback capture opens at 48 kHz stereo and stops cleanly. The separate
 silent GStreamer scheduling proof passes; it does not enable scheduled output
@@ -40,6 +40,21 @@ physical speaker synchronization remain unqualified.
 The dated legacy/native-build-incomplete notes below are historical. Their old
 monorepo setup paths and statements that native dependencies or network playback
 are unavailable do not describe the verified November 4 package.
+
+## Lightweight Windows UI — 2026-11-04
+
+The Nodes tab contains a status list, without a graph simulation. UI state is
+invalidated by local runtime notifications and OTP node/process-group events;
+bursts are coalesced into a single snapshot. Controls update only when their
+displayed values change. There is no idle UI, audio-input or code-reload polling.
+Audio receive age/status refreshes run every 500 ms only while subscribed, and
+input meters follow capture reports only while capturing. Network heartbeat,
+reconnect and clock synchronization policies are unchanged.
+
+Code-reload notifications use the pinned Erlang `fs` library and its packaged
+Windows backend. The former custom C watcher, graph adapter and unused UI
+status/topology polling workers have been removed. Rebuild and restart once to
+replace the old polling UI; committing sources does not update the app bundle.
 
 ## Earlier Windows implementation notes
 
@@ -284,16 +299,17 @@ There is no rollback. Incomplete BEAM output is ignored; valid code that fails t
 start leaves the UI unavailable until a corrected build arrives. Ordinary window
 crashes use normal OTP supervision.
 
-The same 750 ms loop also reloads every changed, already-loaded project module
-in the app's `ebin/`, including the backend, model and reloader itself. It uses
+The `fs` library watches the app's `ebin/` directory. BEAM file events trigger
+a reload after a 100 ms debounce, without an idle polling loop. The host reloads
+every changed, already-loaded project module, including the backend and model. It uses
 OTP's `code:module_status/1`, purges old code and loads the replacement. This is
 always enabled, with no development/testing mode, compatibility checks, state
 migration or rollback. Existing process state is kept; incompatible changes can
 crash processes, and purging can kill processes still executing old code. Load
-failures are logged and retried on the next poll. Newly referenced modules load
+failures are logged and retried on the next file event. Newly referenced modules load
 normally through OTP. Native libraries, runtime and launch settings still need
-their own upgrade/restart. Restart an app running the earlier UI-only reloader
-once to install this behavior; subsequent compiled backend changes reload too.
+their own upgrade/restart. Incompatible process-state changes also require a
+restart. Ordinary window restarts notify the host directly through OTP messages.
 
 ## Checks
 

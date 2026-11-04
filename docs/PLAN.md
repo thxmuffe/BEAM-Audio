@@ -2,6 +2,12 @@
 
 ## Windows verification and recovery — 2026-11-04
 
+The rebuilt Windows UI uses runtime invalidations rather than idle polling, with
+a Nodes list instead of an animated graph. Pinned Erlang `fs` notifications
+replace the custom C watcher; unused graph/status workers are removed. Model,
+reload and native startup checks pass. Next: user tests connected-cluster idle
+CPU and playback on the rebuilt app. Network/clock policies remain unchanged.
+
 Windows core/native builds and the restored cluster connection are verified.
 The user confirmed Mac, iPhone and Windows online after restoring the matching
 policy/routes from Codex's redirected AppData to the Explorer-launched app's
