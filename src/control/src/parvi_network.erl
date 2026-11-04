@@ -53,14 +53,16 @@ handle_call(snapshot, _, #{entries := Entries, reports := Reports} = S) ->
 
 handle_cast(_, S) -> {noreply, S}.
 
-handle_info(poll, S) ->
+handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
+
+handle_info_event(poll, S) ->
     erlang:send_after(3000, self(), poll),
     {noreply, lists:foldl(fun probe/2, S, [node() | nodes()])};
-handle_info({nodeup, Node, _}, S) ->
+handle_info_event({nodeup, Node, _}, S) ->
     {noreply, probe(Node, invalidate(Node, checking, S))};
-handle_info({nodedown, Node, _}, S) ->
+handle_info_event({nodedown, Node, _}, S) ->
     {noreply, invalidate(Node, down, S)};
-handle_info({probe_result, Node, Ref, Status, Peers},
+handle_info_event({probe_result, Node, Ref, Status, Peers},
             #{entries := Entries, reports := Reports, pending := Pending} = S) ->
     case maps:find(Node, Pending) of
         {ok, Ref} ->
@@ -72,7 +74,7 @@ handle_info({probe_result, Node, Ref, Status, Peers},
                         pending := maps:remove(Node, Pending)}};
         _ -> {noreply, S}
     end;
-handle_info(_, S) -> {noreply, S}.
+handle_info_event(_, S) -> {noreply, S}.
 
 probe(Node, #{pending := Pending} = S) ->
     case maps:is_key(Node, Pending) of
@@ -103,3 +105,12 @@ row(Node, {State, Detail}) ->
 
 pair(A, B) ->
     [First, Second] = lists:sort([atom_to_binary(A), atom_to_binary(B)]), {First, Second}.
+
+changed({noreply,Next}, Old) ->
+    notify_changed(Old,Next), {noreply,Next};
+changed(Result, _) -> Result.
+notify_changed(Old,Next) ->
+    View = fun(S) -> maps:with([entries,reports],S) end,
+    case View(Old) =:= View(Next) of
+        true -> ok; false -> parvi_events:notify(network)
+    end.

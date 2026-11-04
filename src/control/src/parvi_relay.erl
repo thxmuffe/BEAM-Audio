@@ -66,7 +66,9 @@ handle_cast({watch, Nodes}, S) ->
     Next = S#{watch := lists:sublist(lists:usort([N || N <- Nodes, is_binary(N)]), 256)},
     maybe_ws(#{op => <<"watch">>, nodes => maps:get(watch, Next)}, Next), {noreply, Next};
 handle_cast(_, S) -> {noreply, S}.
-handle_info(connect, #{conn := undefined, url := URL} = S) when is_binary(URL) ->
+handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
+
+handle_info_event(connect, #{conn := undefined, url := URL} = S) when is_binary(URL) ->
     #{scheme := Scheme, host := Host} = U = uri_string:parse(URL),
     TLS = Scheme =:= <<"wss">>, Port = maps:get(port, U, case TLS of true -> 443; false -> 80 end),
     try
@@ -84,20 +86,20 @@ handle_info(connect, #{conn := undefined, url := URL} = S) when is_binary(URL) -
         erlang:send_after(10000, self(), {handshake_timeout, Pid}),
         {noreply, S#{conn := Pid}}
     catch _:_ -> {noreply, retry(S)} end;
-handle_info({gun_up, Pid, http}, #{conn := Pid} = S) ->
+handle_info_event({gun_up, Pid, http}, #{conn := Pid} = S) ->
     Stream = gun:ws_upgrade(Pid, "/relay/v1", [],
         #{max_frame_size => 131072, compress => false}),
     {noreply, S#{stream := Stream}};
-handle_info({gun_upgrade, Pid, Stream, [<<"websocket">>], _}, #{conn := Pid, stream := Stream} = S) -> {noreply, S};
-handle_info({gun_ws, Pid, Stream, {text, Text}}, #{conn := Pid, stream := Stream} = S) when byte_size(Text) =< 131072 ->
+handle_info_event({gun_upgrade, Pid, Stream, [<<"websocket">>], _}, #{conn := Pid, stream := Stream} = S) -> {noreply, S};
+handle_info_event({gun_ws, Pid, Stream, {text, Text}}, #{conn := Pid, stream := Stream} = S) when byte_size(Text) =< 131072 ->
     try {noreply, incoming(json:decode(Text), S)} catch _:_ -> {noreply, retry(S)} end;
-handle_info({gun_down, Pid, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info({'DOWN', _, process, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info({handshake_timeout, Pid}, #{conn := Pid, ready := false} = S) -> {noreply, retry(S)};
-handle_info({gun_error, Pid, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info({gun_error, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info({gun_response, Pid, _, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info(_, S) -> {noreply, S}.
+handle_info_event({gun_down, Pid, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
+handle_info_event({'DOWN', _, process, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
+handle_info_event({handshake_timeout, Pid}, #{conn := Pid, ready := false} = S) -> {noreply, retry(S)};
+handle_info_event({gun_error, Pid, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
+handle_info_event({gun_error, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
+handle_info_event({gun_response, Pid, _, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
+handle_info_event(_, S) -> {noreply, S}.
 incoming(#{<<"op">> := <<"challenge">>, <<"v">> := 1, <<"nonce">> := Nonce}, S)
         when is_binary(Nonce), byte_size(Nonce) =:= 64 ->
     Sig = crypto:sign(eddsa, none, <<"parvi-desk/v1:", Nonce/binary>>, [maps:get(private, S), ed25519]),
@@ -163,3 +165,12 @@ tls_options() ->
     [{verify, verify_peer}, {depth, 10},
      {customize_hostname_check, [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]} | CA].
 terminate(_, #{conn := Pid}) -> case Pid of undefined -> ok; _ -> try gun:close(Pid) catch _:_ -> ok end end, ok.
+
+changed({noreply,Next}, Old) ->
+    notify_changed(Old,Next), {noreply,Next};
+changed(Result, _) -> Result.
+notify_changed(Old,Next) ->
+    View = fun(S) -> maps:with([ready,error,online],S) end,
+    case View(Old) =:= View(Next) of
+        true -> ok; false -> parvi_events:notify(relay)
+    end.

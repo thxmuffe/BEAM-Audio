@@ -26,12 +26,14 @@ init([]) ->
     Initial = new_swarm(<<>>),
     {ok, #{swarms => #{maps:get(id, Initial) => Initial}, order => [maps:get(id, Initial)], next => 2, pending => #{}}}.
 
-handle_call(health, _, State) -> {reply, #{node => identity()}, State};
-handle_call(snapshot, _, #{swarms := Swarms, order := Order} = State) ->
+handle_call(Request, From, S) -> changed(handle_call_event(Request, From, S), S).
+
+handle_call_event(health, _, State) -> {reply, #{node => identity()}, State};
+handle_call_event(snapshot, _, #{swarms := Swarms, order := Order} = State) ->
     {reply, [view(maps:get(Id, Swarms)) || Id <- Order, active(maps:get(Id, Swarms))], State};
-handle_call({create, _}, _, #{swarms := Swarms} = State) when map_size(Swarms) >= 64 ->
+handle_call_event({create, _}, _, #{swarms := Swarms} = State) when map_size(Swarms) >= 64 ->
     {reply, {error, <<"This prototype supports 64 swarm sessions per node. Restart for a fresh session.">>}, State};
-handle_call({create, Name}, _, #{swarms := Swarms, order := Order, next := Next} = State) ->
+handle_call_event({create, Name}, _, #{swarms := Swarms, order := Order, next := Next} = State) ->
     Title = case Name of
         <<>> -> iolist_to_binary(io_lib:format("Swarm ~B", [Next]));
         _ -> Name
@@ -42,7 +44,7 @@ handle_call({create, Name}, _, #{swarms := Swarms, order := Order, next := Next}
             {reply, {ok, Id}, State#{swarms := Swarms#{Id => Swarm}, order := Order ++ [Id], next := Next + 1}};
         false -> {reply, {error, <<"Use a swarm name of 1–80 UTF-8 bytes.">>}, State}
     end;
-handle_call({join_relay, #{node := Owner, swarm := Id, token := Token, mailbox := Cap}}, From, #{pending := Pending, swarms := Swarms} = State) ->
+handle_call_event({join_relay, #{node := Owner, swarm := Id, token := Token, mailbox := Cap}}, From, #{pending := Pending, swarms := Swarms} = State) ->
     case find_active(Id, State) of
         {ok, _} -> {reply, {ok, Id}, State};
         error when map_size(Pending) < 16, map_size(Swarms) < 64; map_size(Pending) < 16, is_map_key(Id, Swarms) ->
@@ -57,7 +59,7 @@ handle_call({join_relay, #{node := Owner, swarm := Id, token := Token, mailbox :
             end;
         error -> {reply, {error, <<"Swarm session or pending admission limit reached.">>}, State}
     end;
-handle_call({join, Node, Id, Token}, _, State) ->
+handle_call_event({join, Node, Id, Token}, _, State) ->
     case find_active(Id, State) of
         {ok, _} -> {reply, {ok, Id}, State};
         error ->
@@ -82,7 +84,7 @@ handle_call({join, Node, Id, Token}, _, State) ->
                 _ -> {reply, {error, <<"The invitation was not accepted.">>}, State}
             end
     end;
-handle_call({admit, Id, Token, Member}, {Caller, _}, State) ->
+handle_call_event({admit, Id, Token, Member}, {Caller, _}, State) ->
     case find_active(Id, State) of
         {ok, #{token := Token} = Swarm} when node(Caller) =:= map_get(node, Member) ->
             case valid_member(Member) andalso not lists:member(Token, maps:get(revoked, Swarm)) of
@@ -102,7 +104,7 @@ handle_call({admit, Id, Token, Member}, {Caller, _}, State) ->
             end;
         _ -> {reply, expired(), State}
     end;
-handle_call({send, Id, Text}, _, State) ->
+handle_call_event({send, Id, Text}, _, State) ->
     case {find_active(Id, State), valid_text(Text, 4096)} of
         {{ok, Swarm}, true} ->
             Message = #{version => 1, id => fresh(), sender => identity(), text => Text,
@@ -112,12 +114,12 @@ handle_call({send, Id, Text}, _, State) ->
         {error, _} -> {reply, {error, <<"You are no longer in this swarm.">>}, State};
         _ -> {reply, {error, <<"Use 1–4096 bytes of UTF-8 text.">>}, State}
     end;
-handle_call({leave, Id}, _, State) ->
+handle_call_event({leave, Id}, _, State) ->
     case find_active(Id, State) of
         {ok, Swarm} -> depart(Swarm, [own_id(Swarm)], [], State);
         error -> {reply, {error, <<"You are no longer in this swarm.">>}, State}
     end;
-handle_call({remove_both, Id, Target}, _, State) ->
+handle_call_event({remove_both, Id, Target}, _, State) ->
     case find_active(Id, State) of
         {ok, Swarm} ->
             Members = maps:get(members, Swarm),
@@ -132,9 +134,11 @@ handle_call({remove_both, Id, Target}, _, State) ->
             end;
         error -> {reply, {error, <<"You are no longer in this swarm.">>}, State}
     end;
-handle_call(_, _, State) -> {reply, {error, unsupported_request}, State}.
+handle_call_event(_, _, State) -> {reply, {error, unsupported_request}, State}.
 
-handle_cast({membership, Sender, Shared}, State) ->
+handle_cast(Message, S) -> changed(handle_cast_event(Message, S), S).
+
+handle_cast_event({membership, Sender, Shared}, State) ->
     Id = maps:get(id, Shared),
     case find_active(Id, State) of
         {ok, Swarm} ->
@@ -144,7 +148,7 @@ handle_cast({membership, Sender, Shared}, State) ->
             end;
         error -> {noreply, State}
     end;
-handle_cast({departure, Id, Sender, Removed, Revoked}, State) ->
+handle_cast_event({departure, Id, Sender, Removed, Revoked}, State) ->
     case find_active(Id, State) of
         {ok, Swarm} ->
             case known(Sender, Swarm) andalso lists:member(Sender, Removed) of
@@ -155,7 +159,7 @@ handle_cast({departure, Id, Sender, Removed, Revoked}, State) ->
             end;
         error -> {noreply, State}
     end;
-handle_cast({chat, Id, Sender, #{sender := Node, text := Text} = Message}, State) ->
+handle_cast_event({chat, Id, Sender, #{sender := Node, text := Text} = Message}, State) ->
     case find_active(Id, State) of
         {ok, Swarm} ->
             case maps:find(Node, maps:get(members, Swarm)) of
@@ -168,11 +172,13 @@ handle_cast({chat, Id, Sender, #{sender := Node, text := Text} = Message}, State
             end;
         error -> {noreply, State}
     end;
-handle_cast(_, State) -> {noreply, State}.
-handle_info({relay, connected}, #{swarms := Swarms} = State) ->
+handle_cast_event(_, State) -> {noreply, State}.
+handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
+
+handle_info_event({relay, connected}, #{swarms := Swarms} = State) ->
     [broadcast(W, {membership, own_id(W), public(W)}) || W <- maps:values(Swarms), active(W)],
     {noreply, State};
-handle_info({relay, {delivery, Source, {join_request, Id, Request, Token, #{node := Source} = Member}}}, State) ->
+handle_info_event({relay, {delivery, Source, {join_request, Id, Request, Token, #{node := Source} = Member}}}, State) ->
     case find_active(Id, State) of
         {ok, #{token := Token} = Swarm} ->
             Members = maps:get(members, Swarm),
@@ -192,30 +198,30 @@ handle_info({relay, {delivery, Source, {join_request, Id, Request, Token, #{node
             end;
         _ -> relay_send(Source, maps:get(mailbox, Member), Id, {join_reply, Request, expired()}), {noreply, State}
     end;
-handle_info({relay, {delivery, Source, {join_reply, Id, Request, Reply}}}, #{pending := Pending} = State) ->
+handle_info_event({relay, {delivery, Source, {join_reply, Id, Request, Reply}}}, #{pending := Pending} = State) ->
     case maps:find(Request, Pending) of
         {ok, #{owner := Source, swarm := Id} = Entry} -> finish_join(Request, Entry, Reply, State);
         _ -> {noreply, State}
     end;
-handle_info({relay, {delivery, Source, {rtc, Id, Sender, Signal}}}, State) ->
+handle_info_event({relay, {delivery, Source, {rtc, Id, Sender, Signal}}}, State) ->
     case source_member(Source, Sender, Id, State) of
         true -> parvi_direct:incoming(Source, Signal);
         false -> ok
     end,
     {noreply, State};
-handle_info({relay, {delivery, Source, Event}}, State) ->
+handle_info_event({relay, {delivery, Source, Event}}, State) ->
     case authenticated_event(Source, Event, State) of true -> handle_cast(Event, State); false -> {noreply, State} end;
-handle_info({relay, {error, Request, _}}, #{pending := Pending} = State) ->
+handle_info_event({relay, {error, Request, _}}, #{pending := Pending} = State) ->
     case maps:find(Request, Pending) of
         {ok, Entry} -> finish_join(Request, Entry, {error, <<"Inviting node or mailbox is unavailable.">>}, State);
         error -> {noreply, State}
     end;
-handle_info({join_timeout, Request}, #{pending := Pending} = State) ->
+handle_info_event({join_timeout, Request}, #{pending := Pending} = State) ->
     case maps:find(Request, Pending) of
         {ok, Entry} -> finish_join(Request, Entry, {error, <<"Invitation timed out. Ask a connected member for a fresh invitation.">>}, State);
         error -> {noreply, State}
     end;
-handle_info(_, State) -> {noreply, State}.
+handle_info_event(_, State) -> {noreply, State}.
 
 finish_join(Request, #{from := From, member := Member, timer := Timer, swarm := Id}, Reply, #{pending := Pending} = State) ->
     erlang:cancel_timer(Timer), S = State#{pending := maps:remove(Request, Pending)},
@@ -382,4 +388,15 @@ connect_member(Link) ->
             erlang:set_cookie(Node, binary_to_atom(Cookie, utf8)),
             net_adm:ping(Node);
         _ -> unavailable
+    end.
+
+changed({reply,Reply,Next}, Old) ->
+    notify_changed(Old,Next), {reply,Reply,Next};
+changed({noreply,Next}, Old) ->
+    notify_changed(Old,Next), {noreply,Next};
+changed(Result, _) -> Result.
+notify_changed(Old,Next) ->
+    View = fun(S) -> S end,
+    case View(Old) =:= View(Next) of
+        true -> ok; false -> parvi_events:notify(swarms)
     end.

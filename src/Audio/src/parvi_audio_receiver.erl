@@ -34,14 +34,16 @@ init([]) ->
     {ok, discover(Sources, S)}.
 idle() -> #{state => stopped, session => undefined, packets => 0, frames => 0, bytes => 0}.
 
-handle_call(refresh,_,S) -> connect_sources(), {reply,ok,S};
-handle_call(snapshot, _, #{offers := Offers, receive_state := R, handler := Handler} = S) ->
+handle_call(Request, From, S) -> changed(handle_call_event(Request, From, S), S).
+
+handle_call_event(refresh,_,S) -> connect_sources(), {reply,ok,S};
+handle_call_event(snapshot, _, #{offers := Offers, receive_state := R, handler := Handler} = S) ->
     Rows = [public_offer(Pid, Offer) || {Pid, #{name := _} = Offer} <- maps:to_list(Offers)],
     {reply, #{offers => lists:sort(fun(A,B) -> maps:get(id,A) < maps:get(id,B) end, Rows),
               receiver => public_receive(R), backend => Handler:info(), handler => maps:get(id,Handler:info()),
               native_statistics => maps:get(native_statistics,S,null),
               playback => (maps:get(playback,S))#{available => Handler:output_available()}}, S};
-handle_call({playback, start}, _, #{output := undefined,
+handle_call_event({playback, start}, _, #{output := undefined,
                                  handler := Handler, receive_state := #{profile := channel, descriptor := D, session := Session}} = S) ->
     case Handler:start_output(self(), D#{session => Session}) of
         {ok, Pid} ->
@@ -49,16 +51,16 @@ handle_call({playback, start}, _, #{output := undefined,
             {reply, ok, S#{output := {Pid,Ref}, playback := #{state => <<"starting">>}}};
         Error -> {reply, Error, S}
     end;
-handle_call({playback, stop}, _, S) ->
+handle_call_event({playback, stop}, _, S) ->
     {reply, ok, stop_output(S)};
-handle_call({playback, _}, _, S) ->
+handle_call_event({playback, _}, _, S) ->
     {reply, {error, <<"Subscribe to a mono or stereo channel stream before playback.">>}, S};
-handle_call({output_control, Command}, _,
+handle_call_event({output_control, Command}, _,
             #{handler := Handler, receive_state := #{state := active, session := Session}} = S) ->
     {reply,Handler:output_control(Session,Command),S};
-handle_call({output_control, _}, _, S) ->
+handle_call_event({output_control, _}, _, S) ->
     {reply,{error,<<"Subscribe to audio before controlling its output.">>},S};
-handle_call({subscribe, Id, Profile}, _, #{offers := Offers, receive_state := R} = S) ->
+handle_call_event({subscribe, Id, Profile}, _, #{offers := Offers, receive_state := R} = S) ->
     Matches = [{Pid,O} || {Pid, #{id := I, profiles := Ps} = O} <- maps:to_list(Offers),
                           I =:= Id, maps:is_key(Profile, Ps)],
     case {maps:get(session, R), Matches} of
@@ -74,17 +76,19 @@ handle_call({subscribe, Id, Profile}, _, #{offers := Offers, receive_state := R}
         {undefined, _} -> {reply, {error, source_unavailable}, S};
         _ -> {reply, {error, <<"Stop the current subscription before selecting another.">>}, S}
     end;
-handle_call(stop, _, #{receive_state := R} = S) ->
+handle_call_event(stop, _, #{receive_state := R} = S) ->
     close(R),
     {reply, ok, (stop_output(S))#{receive_state := idle()}};
-handle_call(_, _, S) -> {reply, {error, unsupported_request}, S}.
+handle_call_event(_, _, S) -> {reply, {error, unsupported_request}, S}.
 handle_cast(_, S) -> {noreply, S}.
 
-handle_info({nodeup,_},S) -> connect_sources(), {noreply,S};
-handle_info({Watch, join, ?GROUP, Pids}, #{watch := Watch} = S) -> {noreply, discover(Pids, S)};
-handle_info({Watch, leave, ?GROUP, Pids}, #{watch := Watch, offers := Offers} = S) ->
+handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
+
+handle_info_event({nodeup,_},S) -> connect_sources(), {noreply,S};
+handle_info_event({Watch, join, ?GROUP, Pids}, #{watch := Watch} = S) -> {noreply, discover(Pids, S)};
+handle_info_event({Watch, leave, ?GROUP, Pids}, #{watch := Watch, offers := Offers} = S) ->
     {noreply, S#{offers := maps:without(Pids, Offers)}};
-handle_info({parvi_audio, Session, Header, PCM},
+handle_info_event({parvi_audio, Session, Header, PCM},
             #{receive_state := #{session := Session, descriptor := D} = R, handler := Handler} = S) ->
     Levels = parvi_audio_meter:levels(parvi_audio_meter:accumulate(
         maps:get(sample_format, D), PCM, parvi_audio_meter:new())),
@@ -96,7 +100,7 @@ handle_info({parvi_audio, Session, Header, PCM},
         undefined -> ok
     end,
     {noreply, S#{receive_state := Next}};
-handle_info({parvi_native_audio, Session, Stats}, #{receive_state := #{session := Session} = R} = S) ->
+handle_info_event({parvi_native_audio, Session, Stats}, #{receive_state := #{session := Session} = R} = S) ->
     Packets = maps:get(<<"packetsReceived">>,Stats,0),
     Meter = case {maps:get(<<"samplePeakDb">>,Stats,undefined), maps:get(<<"sampleRmsDb">>,Stats,undefined)} of
         {Peak, RMS} when is_number(Peak), is_number(RMS) ->
@@ -109,20 +113,20 @@ handle_info({parvi_native_audio, Session, Stats}, #{receive_state := #{session :
         true -> Next#{last_packet => erlang:monotonic_time(millisecond)}; false -> Next end,
     Report = recent_native_timing(native_timing(Stats),maps:get(native_statistics,S,#{})),
     {noreply,S#{receive_state := WithTime, native_statistics => Report}};
-handle_info({parvi_audio_output, Pid, Status}, #{output := {Pid,_},playback := Previous} = S) ->
+handle_info_event({parvi_audio_output, Pid, Status}, #{output := {Pid,_},playback := Previous} = S) ->
     case {maps:get(state,Status),maps:get(state,Previous)} of
         {<<"playing">>,Old} when Old =/= <<"playing">> ->
             parvi_chat:system(info,audio_playback,<<"[Audio] Playback started.">>,#{});
         _ -> ok
     end,
     {noreply, S#{playback := Status}};
-handle_info({'DOWN', Ref, process, _, Reason}, #{output := {_,Ref}} = S) ->
+handle_info_event({'DOWN', Ref, process, _, Reason}, #{output := {_,Ref}} = S) ->
     Text = <<"Playback stopped. Check the audio route and try Play again.">>,
     parvi_chat:system(error, audio_playback, <<"[Audio] ",Text/binary>>, #{reason => Reason}),
     {noreply, S#{output := undefined, playback := #{state => <<"error">>, error => Text}}};
-handle_info({'DOWN', Ref, process, _, Reason}, #{receive_state := #{monitor := Ref}} = S) ->
+handle_info_event({'DOWN', Ref, process, _, Reason}, #{receive_state := #{monitor := Ref}} = S) ->
     {noreply, failed({subscription_closed, Reason}, S)};
-handle_info(Message, #{receive_state := R} = S) ->
+handle_info_event(Message, #{receive_state := R} = S) ->
     Response = case maps:find(pending, R) of
         {ok, Id} -> gen_statem:check_response(Message, Id);
         error -> no_reply
@@ -248,3 +252,14 @@ recent_native_timing(#{<<"jitterBufferDelay">> := Delay, <<"jitterBufferEmittedC
     Stats#{<<"recent_jitter_buffer_delay_ms">> => 1000*(Delay-PreviousDelay)/(Count-PreviousCount)};
 recent_native_timing(Stats,_) -> Stats.
 terminate(_, #{receive_state := R} = S) -> stop_output(S), close(R).
+
+changed({reply,Reply,Next}, Old) ->
+    notify_changed(Old,Next), {reply,Reply,Next};
+changed({noreply,Next}, Old) ->
+    notify_changed(Old,Next), {noreply,Next};
+changed(Result, _) -> Result.
+notify_changed(Old,Next) ->
+    View = fun(S) -> S end,
+    case View(Old) =:= View(Next) of
+        true -> ok; false -> parvi_events:notify(audio_receive)
+    end.

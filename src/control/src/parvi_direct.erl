@@ -30,34 +30,38 @@ handle_call({send, Peer, Payload}, _, #{ready := Ready, connections := PCs} = S)
     end,
     {reply, Reply, S};
 handle_call(_, _, S) -> {reply, {error, unsupported}, S}.
-handle_cast({sync, Routes}, #{routes := Old, ready := Ready, connections := PCs} = S) ->
+handle_cast(Message, S) -> changed(handle_cast_event(Message, S), S).
+
+handle_cast_event({sync, Routes}, #{routes := Old, ready := Ready, connections := PCs} = S) ->
     Removed = maps:keys(Old) -- maps:keys(Routes),
     [close(maps:get(P, PCs, undefined)) || P <- Removed],
     Next = S#{routes := Routes, ready := Ready -- Removed, connections := maps:without(Removed, PCs)},
     {noreply, lists:foldl(fun connect/2, Next, maps:keys(Routes) -- maps:keys(Old))};
-handle_cast({incoming, Peer, Signal}, #{connections := PCs} = S) ->
+handle_cast_event({incoming, Peer, Signal}, #{connections := PCs} = S) ->
     case maps:find(Peer, PCs) of
         {ok, Pid} -> parvi_peer_connection:signal(Pid, Signal);
         error -> ok
     end,
     {noreply, S};
-handle_cast(_, S) -> {noreply, S}.
-handle_info({parvi_direct, Pid, Event}, #{connections := PCs} = S) ->
+handle_cast_event(_, S) -> {noreply, S}.
+handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
+
+handle_info_event({parvi_direct, Pid, Event}, #{connections := PCs} = S) ->
     case [N || {N, P} <- maps:to_list(PCs), P =:= Pid] of
         [Peer] -> {noreply, event(Peer, Event, S)};
         [] -> {noreply, S}
     end;
-handle_info({'EXIT', Pid, _}, #{connections := PCs, ready := Ready} = S) ->
+handle_info_event({'EXIT', Pid, _}, #{connections := PCs, ready := Ready} = S) ->
     Gone = [N || {N, P} <- maps:to_list(PCs), P =:= Pid],
     {noreply, S#{connections := maps:without(Gone, PCs), ready := Ready -- Gone}};
-handle_info(retry, #{enabled := Enabled, routes := Routes, ready := Ready, connections := PCs} = S) ->
+handle_info_event(retry, #{enabled := Enabled, routes := Routes, ready := Ready, connections := PCs} = S) ->
     erlang:send_after(30000, self(), retry),
     Retry = case Enabled andalso maps:get(connected, parvi_relay:status()) of
         true -> maps:keys(Routes) -- Ready; false -> []
     end,
     [close(maps:get(P, PCs, undefined)) || P <- Retry],
     {noreply, lists:foldl(fun connect/2, S#{connections := maps:without(Retry, PCs)}, Retry)};
-handle_info(_, S) -> {noreply, S}.
+handle_info_event(_, S) -> {noreply, S}.
 connect(Peer, #{enabled := true, connections := PCs} = S) ->
     case parvi_peer_connection:start_link(self(), parvi_relay:id() < Peer,
             application:get_env(parvi, direct_stun_urls, [])) of
@@ -85,3 +89,12 @@ event(Peer, {packet, Data}, #{ready := Ready} = S) when byte_size(Data) =< 13107
 event(_, _, S) -> S.
 close(undefined) -> ok;
 close(Pid) -> parvi_peer_connection:close(Pid).
+
+changed({noreply,Next}, Old) ->
+    notify_changed(Old,Next), {noreply,Next};
+changed(Result, _) -> Result.
+notify_changed(Old,Next) ->
+    View = fun(S) -> maps:with([enabled,ready],S) end,
+    case View(Old) =:= View(Next) of
+        true -> ok; false -> parvi_events:notify(network)
+    end.

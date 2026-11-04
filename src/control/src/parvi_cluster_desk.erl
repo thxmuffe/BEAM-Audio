@@ -32,10 +32,12 @@ init([]) ->
         online => [], retry => undefined, backoff => 500},
     {ok, refresh(State)}.
 
-handle_call(create, _, #{cluster := undefined} = S) ->
+handle_call(Request, From, S) -> changed(handle_call_event(Request, From, S), S).
+
+handle_call_event(create, _, #{cluster := undefined} = S) ->
     {ok, Policy} = parvi_cluster_trust:create(),
     {reply, {ok, Policy}, mailbox(maps:get(<<"cluster">>, Policy), S)};
-handle_call(invitation, _, S) ->
+handle_call_event(invitation, _, S) ->
     Policy = parvi_cluster_trust:policy(),
     case {Policy, maps:get(connected, parvi_relay:status()), authority_online(Policy)} of
         {#{<<"cluster">> := Cluster, <<"epoch">> := Epoch}, true, true} ->
@@ -50,7 +52,7 @@ handle_call(invitation, _, S) ->
             end;
         _ -> {reply, {error, not_ready}, S}
     end;
-handle_call({invite, TTL}, _, #{cluster := Cluster} = S) when is_binary(Cluster) ->
+handle_call_event({invite, TTL}, _, #{cluster := Cluster} = S) when is_binary(Cluster) ->
     Reply = case {maps:get(connected, parvi_relay:status()), authority_online(parvi_cluster_trust:policy())} of
         {false, _} -> {error, desk_disconnected};
         {true, false} -> {error, authority_offline};
@@ -58,7 +60,7 @@ handle_call({invite, TTL}, _, #{cluster := Cluster} = S) when is_binary(Cluster)
             make_invitation(TTL, S)
     end,
     {reply, Reply, S};
-handle_call({join, Link}, _, #{cluster := undefined} = S) ->
+handle_call_event({join, Link}, _, #{cluster := undefined} = S) ->
     case parse_link(Link) of
         {ok, Peer, Cap, Cluster, Invitation} ->
             case maps:get(connected, parvi_relay:status()) of
@@ -75,14 +77,14 @@ handle_call({join, Link}, _, #{cluster := undefined} = S) ->
             end;
         Error -> {reply, Error, S}
     end;
-handle_call({join, Link}, From, #{sessions := Sessions} = S) when map_size(Sessions) =:= 0 ->
+handle_call_event({join, Link}, From, #{sessions := Sessions} = S) when map_size(Sessions) =:= 0 ->
     %% A timed-out first admission reserved a mailbox, not membership. Release
     %% that failed attempt so the user can retry after the desk/peer recovers.
     case parvi_cluster_trust:policy() of
         undefined -> handle_call({join, Link}, From, refresh(S));
         _ -> {reply, {error, already_clustered_or_not_created}, S}
     end;
-handle_call({connect_member,Link}, _, #{sessions := Sessions} = S) ->
+handle_call_event({connect_member,Link}, _, #{sessions := Sessions} = S) ->
     try
         #{<<"cluster">> := Cluster,<<"members">> := Members} = parvi_cluster_trust:policy(),
         {ok,Peer,Cap,Cluster,_} = parse_link(Link),
@@ -99,46 +101,48 @@ handle_call({connect_member,Link}, _, #{sessions := Sessions} = S) ->
                 end
         end
     catch _:_ -> {reply,{error,source_member_unavailable},S} end;
-handle_call(status, _, S) ->
+handle_call_event(status, _, S) ->
     {reply, #{desk => parvi_relay:status(), connected_nodes => nodes(),
               policy => parvi_cluster_trust:policy(), event => maps:get(event, S),
               last_rejection => maps:get(last_rejection,S,null)}, S};
-handle_call(forget, _, S) ->
+handle_call_event(forget, _, S) ->
     ok = parvi_cluster_trust:retire(),
     {reply, ok, refresh(S)};
-handle_call(_, _, S) -> {reply, {error, already_clustered_or_not_created}, S}.
+handle_call_event(_, _, S) -> {reply, {error, already_clustered_or_not_created}, S}.
 handle_cast(_, S) -> {noreply, S}.
 
-handle_info({relay, {delivery, From, Cap, Payload}}, #{mailbox := Cap} = S) ->
+handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
+
+handle_info_event({relay, {delivery, From, Cap, Payload}}, #{mailbox := Cap} = S) ->
     {noreply, incoming(From, Payload, S)};
-handle_info({relay, {presence, Online}}, S) ->
+handle_info_event({relay, {presence, Online}}, S) ->
     {noreply, reconnect(S#{online := Online, backoff := 500})};
-handle_info({relay, connected}, S) ->
+handle_info_event({relay, connected}, S) ->
     {noreply, refresh(S#{event := {desk, connected}})};
-handle_info({relay, disconnected}, S) ->
+handle_info_event({relay, disconnected}, S) ->
     {noreply, S#{online := [], event := {desk, disconnected}}};
-handle_info({relay, {error, Id, <<"unavailable">>}}, #{sessions := Sessions} = S) ->
+handle_info_event({relay, {error, Id, <<"unavailable">>}}, #{sessions := Sessions} = S) ->
     case maps:find(Id, Sessions) of
         {ok, #{ctrl := Ctrl}} ->
             exit(Ctrl, {shutdown, peer_unavailable}), {noreply, S};
         error -> {noreply, S#{event := {desk, {error, Id, <<"unavailable">>}}}}
     end;
-handle_info({relay, Event}, S) -> {noreply, S#{event := {desk, Event}}};
-handle_info({trust, policy_changed}, S) -> {noreply, refresh(S)};
-handle_info(reconnect, S) -> {noreply, reconnect(S#{retry := undefined})};
-handle_info({nodedown, Node}, #{sessions := Sessions} = S) ->
+handle_info_event({relay, Event}, S) -> {noreply, S#{event := {desk, Event}}};
+handle_info_event({trust, policy_changed}, S) -> {noreply, refresh(S)};
+handle_info_event(reconnect, S) -> {noreply, reconnect(S#{retry := undefined})};
+handle_info_event({nodedown, Node}, #{sessions := Sessions} = S) ->
     %% Distribution reports failure; permission and remembered routes survive.
     [exit(Ctrl, {shutdown, nodedown}) || #{ctrl := Ctrl, node := N} <- maps:values(Sessions), N =:= Node],
     {noreply, schedule(S)};
-handle_info({nodeup, Node}, S) -> {noreply, S#{event := {native_connected, Node, true}}};
-handle_info({channel, Ctrl, {signal, Signal}}, #{sessions := Sessions} = S) ->
+handle_info_event({nodeup, Node}, S) -> {noreply, S#{event := {native_connected, Node, true}}};
+handle_info_event({channel, Ctrl, {signal, Signal}}, #{sessions := Sessions} = S) ->
     case route(Ctrl, Sessions) of
         [#{id := Id, peer := Peer, mailbox := Cap}] ->
             Result = send(Peer, Cap, Id, Signal, S),
             {noreply, S#{event := {signalling, Result}}};
         [] -> {noreply, S}
     end;
-handle_info({trust, Ctrl, authorized, Node}, #{sessions := Sessions} = S) ->
+handle_info_event({trust, Ctrl, authorized, Node}, #{sessions := Sessions} = S) ->
     case route(Ctrl, Sessions) of
         [#{role := server}] -> ok = parvi_webrtc_dist:admit(Ctrl);
         [#{role := Role}] when element(1, Role) =:= join; element(1, Role) =:= member ->
@@ -147,8 +151,8 @@ handle_info({trust, Ctrl, authorized, Node}, #{sessions := Sessions} = S) ->
         [] -> ok
     end,
     {noreply, remember(Ctrl, Node, S#{event := {authorized, Node}})};
-handle_info({trust, _, rejected, Reason}, S) -> {noreply, S#{event := {rejected, Reason}, last_rejection => Reason}};
-handle_info({native_connected, Ctrl, Node, Result}, #{sessions := Sessions} = S) ->
+handle_info_event({trust, _, rejected, Reason}, S) -> {noreply, S#{event := {rejected, Reason}, last_rejection => Reason}};
+handle_info_event({native_connected, Ctrl, Node, Result}, #{sessions := Sessions} = S) ->
     %% An older attempt must not close a replacement session or overwrite its
     %% nodeup status. The controller identifies the exact connection attempt.
     case route(Ctrl, Sessions) of
@@ -162,9 +166,9 @@ handle_info({native_connected, Ctrl, Node, Result}, #{sessions := Sessions} = S)
             {noreply, schedule(S#{event := Event})};
         [_] -> {noreply, S#{event := {native_connected, Node, Result}}}
     end;
-handle_info({'EXIT', Pid, Reason}, #{trust := Pid} = S) -> {stop, {trust_stopped, Reason}, S};
-handle_info({'EXIT', Pid, Reason}, #{relay := Pid} = S) -> {stop, {relay_stopped, Reason}, S};
-handle_info({'EXIT', Pid, Reason}, #{sessions := Sessions} = S) ->
+handle_info_event({'EXIT', Pid, Reason}, #{trust := Pid} = S) -> {stop, {trust_stopped, Reason}, S};
+handle_info_event({'EXIT', Pid, Reason}, #{relay := Pid} = S) -> {stop, {relay_stopped, Reason}, S};
+handle_info_event({'EXIT', Pid, Reason}, #{sessions := Sessions} = S) ->
     case route(Pid, Sessions) of
         [] -> {noreply, S};
         [#{peer := Peer} = Route] ->
@@ -176,7 +180,7 @@ handle_info({'EXIT', Pid, Reason}, #{sessions := Sessions} = S) ->
             Event = {channel_stopped, Node, Reason},
             {noreply, schedule(S#{sessions := Kept, event := Event})}
     end;
-handle_info(_, S) -> {noreply, S}.
+handle_info_event(_, S) -> {noreply, S}.
 
 mailbox(Cluster, S) ->
     parvi_relay:open(Cluster, maps:get(mailbox, S)), S#{cluster := Cluster}.
@@ -297,3 +301,14 @@ schedule(S) -> S.
 authority_online(#{<<"authority">> := Authority}) ->
     lists:member(Authority, [atom_to_binary(N) || N <- [node() | nodes()]]);
 authority_online(_) -> false.
+
+changed({reply,Reply,Next}, Old) ->
+    notify_changed(Old,Next), {reply,Reply,Next};
+changed({noreply,Next}, Old) ->
+    notify_changed(Old,Next), {noreply,Next};
+changed(Result, _) -> Result.
+notify_changed(Old,Next) ->
+    View = fun(S) -> maps:with([event,cluster,peers],S) end,
+    case View(Old) =:= View(Next) of
+        true -> ok; false -> parvi_events:notify(cluster)
+    end.

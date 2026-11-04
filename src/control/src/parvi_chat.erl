@@ -122,6 +122,7 @@ text(Text) when is_binary(Text), byte_size(Text) > 0, byte_size(Text) =< ?MAX_BY
 text(_) -> {error, expected_utf8_binary_1_to_4096_bytes}.
 
 record_message(Message, #{history := History, count := Count} = State) ->
+    parvi_events:notify(chat),
     Added = queue:in(Message, History),
     {Kept, NewCount} = case Count < ?HISTORY_LIMIT of
         true -> {Added, Count + 1};

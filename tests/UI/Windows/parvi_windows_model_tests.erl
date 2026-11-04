@@ -64,3 +64,54 @@ session_test_() ->
 request(Command, Kind) ->
     Ref = make_ref(), parvi_windows_model:request(Command, Kind, self(), Ref),
     receive {reply, Ref, Kind, Reply} -> Reply after 3000 -> error(model_timeout) end.
+
+runtime_notifications_test_() ->
+    {setup,fun() ->
+        Keys=[reception_desk_url,clock_reference,clock_upstream],
+        Saved=[{K,application:get_env(parvi,K)} || K<-Keys],
+        application:set_env(parvi,reception_desk_url,undefined),
+        application:set_env(parvi,clock_reference,system),
+        application:set_env(parvi,clock_upstream,system),
+        {ok,_}=parvi:start(),
+        {ok,Model}=parvi_windows_model:start_link(#{}),
+        {Model,Saved}
+    end,fun({Model,Saved}) ->
+        gen_server:stop(Model),application:stop(parvi),
+        [case V of undefined->application:unset_env(parvi,K);
+            {ok,X}->application:set_env(parvi,K,X) end || {K,V}<-Saved]
+    end,fun() ->
+        _=parvi_windows_model:watch(),
+        await_model(fun(S)->map_size(maps:get(snapshot,S))>0 andalso settled(S) end),
+        timer:sleep(350),
+        await_model(fun settled/1),
+        Before=maps:get(serial,parvi_windows_model:get()),
+        timer:sleep(900),
+        Idle=parvi_windows_model:get(),
+        ?assertEqual(Before,maps:get(serial,Idle)),
+        ?assertEqual(undefined,maps:get(audio_timer,Idle)),
+        [parvi_events:notify(test) || _<-lists:seq(1,100)],
+        await_model(fun(S)->maps:get(serial,S)>Before andalso settled(S) end),
+        ?assert(maps:get(serial,parvi_windows_model:get())-Before=<2),
+        {ok,Id}=parvi_swarms:create(<<"External change">>),
+        await_model(fun(S)->lists:any(fun(#{<<"id">>:=I})->I=:=Id end,
+            maps:get(<<"swarms">>,maps:get(snapshot,S),[])) end),
+        ok=parvi_swarms:send(Id,<<"Event-driven history">>),
+        await_model(fun(S)->lists:any(fun(Swarm)->
+            lists:any(fun(#{<<"text">>:=T})->T=:=<<"Event-driven history">> end,
+                maps:get(<<"messages">>,Swarm,[])) end,
+            maps:get(<<"swarms">>,maps:get(snapshot,S),[])) end),
+        OldPg=whereis(parvi_pg),exit(OldPg,kill),
+        await_model(fun(S)->is_reference(maps:get(runtime_monitor,S)) andalso
+            is_pid(whereis(parvi_pg)) andalso whereis(parvi_pg)=/=OldPg andalso settled(S) end),
+        {ok,NewId}=parvi_swarms:create(<<"After scope restart">>),
+        await_model(fun(S)->lists:any(fun(#{<<"id">>:=I})->I=:=NewId end,
+            maps:get(<<"swarms">>,maps:get(snapshot,S),[])) end)
+    end}.
+
+settled(S) -> map_size(maps:get(pending,S))=:=0 andalso maps:get(refresh_timer,S)=:=undefined.
+await_model(Fun) -> await_model(Fun,300).
+await_model(_,0) -> error(model_did_not_converge);
+await_model(Fun,N) ->
+    case Fun(parvi_windows_model:get()) of
+        true->ok;false->timer:sleep(10),await_model(Fun,N-1)
+    end.

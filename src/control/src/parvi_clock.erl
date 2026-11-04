@@ -430,7 +430,12 @@ log_correction(true,Error,Revision,Old,D) ->
         #{correction_ns => Error,revision => Revision,reference => maps:get(reference,D)}), ok.
 
 failed(Reason, #{clock := D} = S) -> save(S,D#{last_error := Reason}).
-save(S,D) -> ets:insert(?MODULE,{clock,D}), S#{clock := D}.
+save(S,D) ->
+    Keys = [role,master,coverage,revision,filter_ready,last_error],
+    case maps:with(Keys,maps:get(clock,S,#{})) =:= maps:with(Keys,D) of
+        true -> ok; false -> parvi_events:notify(clock)
+    end,
+    ets:insert(?MODULE,{clock,D}), S#{clock := D}.
 retry(Delay, #{retry_timer := undefined} = S) -> S#{retry_timer := erlang:send_after(Delay,self(),retry)};
 retry(_,S) -> S.
 clear_retry(#{retry_timer := undefined} = S) -> S;

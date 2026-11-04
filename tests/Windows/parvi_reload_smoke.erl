@@ -41,8 +41,7 @@ exercise() ->
     Scoped = parvi_windows_model:network(parvi_windows_model:get()),
     false = lists:keymember(atom_to_binary(Other), 1, maps:get(nodes, Scoped)),
     [_, ViewState, parvi_windows, _] = sys:get_state(First),
-    FirstGraph = maps:get(pid, maps:get(graph, ViewState)),
-    true = is_process_alive(FirstGraph),
+    false = maps:is_key(graph,ViewState),
     ok = erpc:call(Peer, sys, suspend, [parvi_swarms]),
     try
         await(fun() -> node_state(Peer) =:= unresponsive end),
@@ -67,7 +66,6 @@ exercise() ->
     ok = file:write_file(Path, Good),
     Second = await_generation(1),
     true = First =/= Second,
-    false = is_process_alive(FirstGraph),
     check_state(Second, Baseline),
     true = Worker =:= whereis(parvi_chat), true = Pg =:= whereis(parvi_pg),
     true = SwarmWorker =:= whereis(parvi_swarms),

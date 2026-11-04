@@ -19,6 +19,7 @@ def main():
         ebin = Path(temp) / 'ebin'
         shutil.copytree(EBIN, ebin)
         shutil.copytree(EBIN.parent / 'relay_lib', Path(temp) / 'relay_lib')
+        shutil.copy2(EBIN.parent / 'parvi_file_watch.exe', Path(temp) / 'parvi_file_watch.exe')
         subprocess.run([str(erlc), '-Werror', '-o', str(ebin), str(tests)], check=True)
         gui_cookie = secrets.token_hex(24)
         # One ephemeral cookie for this test cluster keeps UI/reload checks

@@ -53,6 +53,7 @@ init(Owner) ->
     Id = binary:encode_hex(Pub),
     Public = restore_policy(Id),
     ets:insert(?MODULE, {policy, Public}),
+    parvi_events:notify(policy),
     {ok, #{owner => Owner, id => Id, private => Private,
         policy => Public, sessions => #{}, grants => #{}, known => #{node() => true}, credentials => 0}}.
 handle_call(identity, _, S) ->
@@ -304,6 +305,7 @@ authority(Command, #{<<"authority">> := Node}) ->
 checkpoint(#{policy := Public, owner := Owner} = S) ->
     ok = parvi_cluster_store:save(policy, Public),
     ets:insert(?MODULE, {policy, Public}),
+    parvi_events:notify(policy),
     case whereis(parvi_clock) of undefined -> ok; Clock -> Clock ! membership_changed end,
     Owner ! {trust, policy_changed}, S.
 
