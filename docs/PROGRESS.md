@@ -1,5 +1,16 @@
 # Progress
 
+## 2026-11-04 — User accepts current playback baseline
+
+User reports volume and playback now sound good and explicitly asks to retain
+this state. No lasting volume fix was established by the Sound Check comparison;
+its setting was restored on, and −6 dB broadcast gain remains. Park additional
+volume changes unless the issue returns. Deferred items remain explicit in
+PLAN.md: current per-packet recovery/long-run checks, Windows target execution,
+then original step 5 two-output timing/quality verification. Saved subscription
+restoration is still an idea, not implemented. No app code, build or deployment
+was changed by this checkpoint update.
+
 ## 2026-11-04 — Approved Sound Check comparison completed and restored
 
 User approved temporarily disabling Music's Sound Check, measuring and restoring

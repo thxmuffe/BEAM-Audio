@@ -1,6 +1,19 @@
 # Development plan
 
-## Current follow-up — labels, volume and resume
+## Current checkpoint — preserve the working playback baseline
+
+User reports current volume and playback sound good and asks to keep this state.
+Park further volume changes; the above-full-scale cause is not proven fixed.
+Sound Check was restored on, and broadcast gain remains −6 dB. No outstanding
+Music setting restoration or deployment action remains from the diagnostic.
+Immediate validation still needed: Stop/Play, unsubscribe/resubscribe and long-run
+per-packet rejection/drop behavior. Subscription restoration after iPhone
+resume/relaunch is not implemented. The next platform implementation is Windows
+per-packet target execution; it currently rejects the scheduled path. Original
+step 5 then verifies two physical outputs, timing/drift and recovery. Its acoustic
+measurement method remains a separate design task, not inferred from counters.
+
+## Earlier follow-up — labels, volume and resume
 
 Use Offset for the shared playback setting and cluster throughout visible UI;
 OpenSound replaces legacy visible Parvi branding. Keep protocol/module names,
@@ -13,8 +26,8 @@ conversion/gain. Device-wide and Music-only tap variants agree. EQ and Sound
 Enhancer are off; Sound Check is enabled. The approved on/off/on comparison is
 complete and the setting is restored/verified on. No phase reproduced overload;
 different musical passages make it inconclusive, not a Sound Check diagnosis.
-Next isolate a repeatable source/passage under the overload condition, comparing
-raw tap samples against encoder input. Do not infer exact Music gain from
+If volume work is resumed, isolate a repeatable source/passage under the overload
+condition, comparing raw tap samples against encoder input. Do not infer exact Music gain from
 unmatched source/capture windows or hide the issue with arbitrary attenuation.
 Subscription restoration on iPhone is feasible but absent; design recorded in
 IDEAS.md for a separate increment, not implemented as part of text corrections.
@@ -35,8 +48,9 @@ decoded buffers and late/rejected plans are counted and discarded explicitly.
 Keep −6 dB gain and the existing cluster playback target offset.
 
 Packet independence passes the actual pinned ExWebRTC RTP sender check; 33
-focused Erlang tests and Mac/iPhone compilation pass. Next user installs both updated
-apps and checks playback, target-offset changes and diagnostic counters.
+focused Erlang tests and Mac/iPhone compilation pass. User reports playback
+and volume sound good. Recovery, long-run counters and Windows execution remain
+to be verified.
 Compilation is not device verification or proof of physical speaker alignment.
 Windows GStreamer and libwebrtc have no implemented per-packet executor yet:
 reject subscription explicitly rather than silently use adaptive playback.
