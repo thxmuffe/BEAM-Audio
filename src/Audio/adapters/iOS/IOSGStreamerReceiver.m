@@ -6,6 +6,7 @@
 #include <gst/sdp/sdp.h>
 #include <gst/rtp/rtp.h>
 #include <gst/audio/gstaudiobasesink.h>
+#include <gst/audio/audio.h>
 #define GST_USE_UNSTABLE_API
 #include <gst/webrtc/webrtc.h>
 #include <mach/mach_time.h>
@@ -62,7 +63,7 @@ static guint64 hostNS(void) {
     BOOL _segmentValid, _pairValid, _scheduled;
     guint32 _pairRTP;
     GstClockTime _pairRunning;
-    guint64 _generation, _lastObservationHost, _clockGeneration;
+    guint64 _generation, _lastObservationHost, _clockGeneration, _decodedFrames;
     NSDictionary *_appliedSchedule;
     NSString *_scheduleReason;
     double _correctionPPM;
@@ -115,13 +116,19 @@ static GstPadProbeReturn decodedAudio(GstPad *pad, GstPadProbeInfo *info, gpoint
             [self->_mappingLock unlock]; return GST_PAD_PROBE_OK;
         }
         GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+        GstAudioInfo audio; gst_audio_info_init(&audio);
+        GstCaps *caps = gst_pad_get_current_caps(pad);
+        BOOL formatOK = caps && gst_audio_info_from_caps(&audio,caps) &&
+            GST_AUDIO_INFO_RATE(&audio) == 48000 && GST_AUDIO_INFO_CHANNELS(&audio) == 2;
+        if (caps) gst_caps_unref(caps);
+        if (formatOK && buffer) self->_decodedFrames += gst_buffer_get_size(buffer) / GST_AUDIO_INFO_BPF(&audio);
         BOOL matched = NO; guint32 rtp = 0;
         if (buffer && GST_BUFFER_PTS_IS_VALID(buffer) && !GST_BUFFER_FLAG_IS_SET(buffer,GST_BUFFER_FLAG_GAP)) {
             for (guint i = 0; i < 128; i++) if (self->_packets[i].valid && self->_packets[i].pts == GST_BUFFER_PTS(buffer)) {
                 rtp = self->_packets[i].rtp; self->_packets[i].valid = NO; matched = YES; break;
             }
         }
-        GstClockTime running = matched && self->_segmentValid
+        GstClockTime running = matched && formatOK && self->_segmentValid
             ? gst_segment_to_running_time(&self->_segment,GST_FORMAT_TIME,GST_BUFFER_PTS(buffer)) : GST_CLOCK_TIME_NONE;
         if (!GST_CLOCK_TIME_IS_VALID(running)) {
             self->_generation++; self->_pairValid = NO;
@@ -287,6 +294,9 @@ static void statsReceived(GstPromise *promise, gpointer data) {
             }
             stats[@"event"] = @"stats"; stats[@"backend"] = @"gstreamer_webrtc";
             stats[@"outputTrackEnabled"] = @(self->_playing && self->_scheduled);
+            [self->_mappingLock lock];
+            stats[@"totalSamplesReceived"] = @(self->_decodedFrames);
+            [self->_mappingLock unlock];
             stats[@"sinkScheduleEnforced"] = @(self->_scheduled);
             stats[@"sinkScheduleStatus"] = self->_scheduleReason;
             stats[@"appliedSchedule"] = self->_appliedSchedule ?: @{};
@@ -352,7 +362,7 @@ static void statsReceived(GstPromise *promise, gpointer data) {
         "queue name=audio_queue ! rtpopusdepay name=depay ! opusdec name=decode plc=true ! audioconvert ! audioresample ! "
         "audio/x-raw,format=F32LE,rate=48000,channels=2 ! volume name=volume mute=true ! "
         "level name=meter interval=100000000 post-messages=true ! "
-        "osxaudiosink name=output sync=true async=false enable-last-sample=false", &error);
+        "osxaudiosink name=output sync=true async=false enable-last-sample=false max-lateness=20000000", &error);
     if (error) { [self fail:@(error->message)]; g_clear_error(&error); return; }
     _peer = gst_bin_get_by_name(GST_BIN(_pipeline), "peer");
     _volume = gst_bin_get_by_name(GST_BIN(_pipeline), "volume");
@@ -451,6 +461,7 @@ static void statsReceived(GstPromise *promise, gpointer data) {
     if (_closed || !_pipeline) return;
     _scheduled = NO; _appliedSchedule = nil; _scheduleReason = reason;
     g_object_set(_volume,"mute",TRUE,NULL);
+    g_object_set(_output,"ts-offset",(gint64)0,NULL);
 }
 - (void)pipelineObservation {
     if (_closed || !_pipeline) return;

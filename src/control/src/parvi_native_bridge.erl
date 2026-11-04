@@ -48,11 +48,8 @@ command(#{<<"method">> := <<"broadcast_default_output">>}) ->
 command(#{<<"method">> := <<"stop_broadcast">>}) -> parvi_mac_opus_audio:stop(), parvi_mac_audio:stop();
 command(#{<<"method">> := <<"set_audio_presentation_delay">>, <<"delay_ms">> := Value}) ->
     try binary_to_integer(Value) of
-        Delay when Delay >= 50, Delay =< 1000 ->
-            ok = application:set_env(parvi, audio_presentation_delay_ms, Delay),
-            ok;
-        _ -> {error, <<"Playback delay must be a whole number from 50 to 1000 ms.">>}
-    catch error:badarg -> {error, <<"Playback delay must be a whole number from 50 to 1000 ms.">>} end;
+        Delay -> parvi_cluster_trust:set_audio_sync_delay(Delay)
+    catch error:badarg -> {error, <<"Playback sync delay must be 50-30000 ms.">>} end;
 command(#{<<"method">> := <<"create_swarm">>}) ->
     case parvi_cluster_desk:create() of
         {ok, #{<<"cluster">> := Id}} -> {ok, #{swarm_id => Id}};
@@ -163,7 +160,7 @@ audio_snapshot() ->
     F = maps:get(format, S, #{}), Meter = maps:get(meter, S, #{}),
     #{available => maps:get(available, S), state => atom_to_binary(maps:get(state, S)),
       handler => maps:get(handler,S,<<"legacy_webrtc">>),
-      presentation_delay_ms => application:get_env(parvi, audio_presentation_delay_ms, 250),
+      presentation_delay_ms => parvi_cluster_trust:audio_sync_delay(),
       frames => maps:get(frames, S, 0), blocks => maps:get(blocks, S, 0),
       dropped_callbacks => maps:get(dropped_callbacks, S, 0),
       skipped_frames => maps:get(skipped_frames, S, 0), send_errors => maps:get(send_errors, S, 0),

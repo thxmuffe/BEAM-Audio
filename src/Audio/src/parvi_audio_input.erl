@@ -35,7 +35,7 @@ captured(PCM, Mono, #{descriptor := #{sample_format := Encoding} = Descriptor, h
     %% Use one immutable mapping for both times, including an active clock slew.
     case parvi_clock:map_times([Mono, erlang:monotonic_time(nanosecond)]) of
         {ok, [UTC, Now]} ->
-            Lead = application:get_env(parvi, audio_presentation_delay_ms, 250) * 1000000,
+            Lead = parvi_cluster_trust:audio_sync_delay() * 1000000,
             case UTC + Lead > Now of
                 true ->
                     {Blocks, Errors} = send_blocks(PCM, UTC + Lead, 0, S),

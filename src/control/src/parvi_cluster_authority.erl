@@ -6,11 +6,26 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
 start_link(State) -> gen_server:start_link({local, ?MODULE}, ?MODULE, State, []).
-public(S) -> maps:with([<<"cluster">>, <<"authority">>, <<"revision">>, <<"epoch">>, <<"members">>], S).
+public(S) -> maps:with([<<"cluster">>, <<"authority">>, <<"revision">>, <<"epoch">>, <<"members">>, <<"audio_sync_delay_ms">>], S).
 init(State) ->
     ok = parvi_cluster_store:save(authority, maps:remove(finalize, State)),
     case maps:get(finalize, State, false) of true -> self() ! publish; false -> ok end,
     {ok, maps:remove(finalize, State)}.
+handle_call({audio_sync_delay,Actor,Delay}, {Caller,_}, S)
+        when is_integer(Delay),Delay >= 50,Delay =< 30000 ->
+    case caller(Actor,Caller,S) of
+        false -> {reply,{error,not_a_member},S};
+        true ->
+            Next = S#{<<"audio_sync_delay_ms">> => Delay,
+                <<"revision">> := maps:get(<<"revision">>,S)+1},
+            Connected = [atom_to_binary(N) || N <- [node()|nodes(connected)]],
+            Recipients = [P || {P,#{<<"node">> := N}} <- maps:to_list(maps:get(<<"members">>,S)),
+                               lists:member(N,Connected)],
+            Reply = case publish(Next,Recipients) of
+                ok -> ok; error -> {error,policy_sync_incomplete}
+            end,
+            {reply,Reply,Next}
+    end;
 handle_call({invite, Issuer, TTL}, {Caller, _}, S) when is_integer(TTL), TTL > 0, TTL =< 604800 ->
     case caller(Issuer, Caller, S) of
         false -> {reply, {error, not_a_member}, S};

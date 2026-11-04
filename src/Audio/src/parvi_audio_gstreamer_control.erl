@@ -4,15 +4,26 @@
 
 target(#{continuous := true, presentation := #{clock_timeline := Timeline} = Schedule,
          segment_start_position := Start} = Source,
-       #{rtp_timestamp := RTP}, #{state := synchronized, timeline := Timeline}) ->
+       #{rtp_timestamp := RTP}, #{timeline := Timeline} = Reference) ->
+    %% A master owns this reference even when offline members make coverage
+    %% partial. Followers need an acquired mapping; coverage is not admission.
+    case clock_ready(Reference) of
+        false -> {error,source_or_receiver_clock_unavailable};
+        true -> target_position(Source,Schedule,Start,RTP)
+    end;
+target(_,_,_) -> {error,source_or_receiver_clock_unavailable}.
+clock_ready(#{role := master}) -> true;
+clock_ready(#{state := synchronized}) -> true;
+clock_ready(#{role := follower,filter_ready := true,state := holdover}) -> true;
+clock_ready(_) -> false.
+target_position(Source,Schedule,Start,RTP) ->
     case parvi_audio_gstreamer_schedule:source_position(Source,RTP,0) of
         {ok,Position} when Position >= Start ->
             {ok,Schedule#{sample_position => Position,
                 target_output_time_ns => parvi_audio_presentation:target(Schedule,Position)}};
         {ok,_} -> {error,previous_capture_segment};
         Error -> Error
-    end;
-target(_,_,_) -> {error,source_or_receiver_clock_unavailable}.
+    end.
 
 %% Correct small phase errors with a slow clock servo; large changes relock.
 %% Positive offset error means output must be later, so slow the reference.

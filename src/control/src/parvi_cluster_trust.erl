@@ -2,8 +2,24 @@
 -module(parvi_cluster_trust).
 -behaviour(gen_server).
 -export([start_link/1, identity/0, policy/0, snapshot/0, create/0, invite/1, remove_both/1,
-         attach/2, authorize/2, activate/2, install/1, retire/0, take_over/1]).
+         attach/2, authorize/2, activate/2, install/1, retire/0, take_over/1, audio_sync_delay/0, set_audio_sync_delay/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
+
+%% Persisted cluster setting; readable without a synchronous authority RPC.
+audio_sync_delay() ->
+    case snapshot() of
+        P when is_map(P) -> maps:get(<<"audio_sync_delay_ms">>,P,1000);
+        _ -> 1000
+    end.
+set_audio_sync_delay(Delay) when is_integer(Delay),Delay >= 50,Delay =< 30000 ->
+    #{id := Id} = identity(),
+    case policy() of
+        P when is_map(P) ->
+            try authority({audio_sync_delay,Id,Delay},P)
+            catch exit:_ -> {error,authority_unavailable} end;
+        _ -> {error,not_a_member}
+    end;
+set_audio_sync_delay(_) -> {error,<<"Playback sync delay must be 50-30000 ms.">>}.
 
 start_link(Owner) -> gen_server:start_link({local, ?MODULE}, ?MODULE, Owner, []).
 identity() -> gen_server:call(?MODULE, identity).
@@ -44,7 +60,7 @@ handle_call(identity, _, S) ->
 handle_call(policy, _, S) -> {reply, maps:get(policy, S), S};
 handle_call(create, _, #{policy := undefined, id := Id} = S) ->
     Public = #{<<"cluster">> => parvi_cluster_auth:fresh(16), <<"authority">> => atom_to_binary(node()),
-        <<"revision">> => 1, <<"epoch">> => 1, <<"members">> => #{Id => #{<<"node">> => atom_to_binary(node()),
+        <<"revision">> => 1, <<"epoch">> => 1, <<"audio_sync_delay_ms">> => 1000, <<"members">> => #{Id => #{<<"node">> => atom_to_binary(node()),
         <<"membership">> => parvi_cluster_auth:fresh(16), <<"via">> => null}}},
     {ok, _} = parvi_cluster_authority:start_link(Public#{invitations => #{}}),
     {reply, {ok, Public}, checkpoint(S#{policy := Public})};

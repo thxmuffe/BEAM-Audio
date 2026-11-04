@@ -29,3 +29,12 @@ bounded_servo_has_correct_direction_and_relocks_test() ->
     ?assertMatch(#{correction_ppm := P} when abs(P) < 0.001,
         parvi_audio_gstreamer_control:correction(100,100)),
     ?assertEqual(relock,parvi_audio_gstreamer_control:correction(21000000,0)).
+
+master_with_partial_cluster_coverage_can_schedule_test() ->
+    ?assertMatch({ok,_},parvi_audio_gstreamer_control:target(source(),#{rtp_timestamp => 1000},
+        #{role => master,state => holdover,coverage => partial,filter_ready => false,timeline => <<"reference">>})),
+    ?assertMatch({ok,_},parvi_audio_gstreamer_control:target(source(),#{rtp_timestamp => 1000},
+        #{role => follower,state => holdover,filter_ready => true,timeline => <<"reference">>})),
+    ?assertEqual({error,source_or_receiver_clock_unavailable},
+        parvi_audio_gstreamer_control:target(source(),#{rtp_timestamp => 1000},
+            #{role => follower,state => holdover,filter_ready => false,timeline => <<"reference">>})).

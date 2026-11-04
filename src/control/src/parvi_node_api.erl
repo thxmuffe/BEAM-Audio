@@ -36,6 +36,10 @@ request(#{<<"op">> := <<"subscribe">>, <<"node">> := Node, <<"source_id">> := Id
 request(#{<<"op">> := <<"play">>, <<"node">> := Node}) -> call(Node,parvi_audio_receiver,playback,[start]);
 request(#{<<"op">> := <<"pause">>, <<"node">> := Node}) -> call(Node,parvi_audio_receiver,playback,[stop]);
 request(#{<<"op">> := <<"unsubscribe">>, <<"node">> := Node}) -> call(Node,parvi_audio_receiver,stop,[]);
+request(#{<<"op">> := <<"sync_delay">>, <<"node">> := Node, <<"delay_ms">> := Delay}) ->
+    call(Node,parvi_cluster_trust,set_audio_sync_delay,[Delay]);
+request(#{<<"op">> := <<"sync_delay">>, <<"node">> := Node}) ->
+    remote(Node,parvi_cluster_trust,audio_sync_delay,[],1000);
 request(#{<<"op">> := <<"minimum_delay">>, <<"node">> := Node, <<"delay_ms">> := null}) ->
     call(Node,parvi_audio_receiver,minimum_playout_delay,[automatic]);
 request(#{<<"op">> := <<"minimum_delay">>, <<"node">> := Node, <<"delay_ms">> := Delay})

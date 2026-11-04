@@ -1,5 +1,29 @@
 # Parvi for iPhone
 
+## Current timing controls — 2026-11-04 correction
+
+Rebuild/relaunch both Mac and iPhone, then start a fresh broadcast/subscription.
+The initial silent-playback condition was a scheduling check that rejected the
+current clock master when offline cluster members caused “holdover” status.
+A matching master is now accepted; followers still need an acquired mapping.
+The frame count now counts actual decoded frames even while playback is muted.
+
+**Cluster playback sync delay** is the shared sender-to-playback budget, editable
+on either app before or during playback. Current value is displayed on both.
+Default: 1000 ms; accepted range: 50–30000 ms. The cluster authority persists and
+replicates updates, and active senders assign new target output times using that
+value. Changing it can briefly pause/relock playback. Test Apply from iPhone and
+check the Mac's current value changes too. When testing away from home, the
+sender/authority must be reachable through existing admitted cluster networking;
+no desktop mouse access is needed. Offline authority changes return an error.
+
+The earlier “Minimum buffering” field was a per-device jitter-buffer control;
+it is removed from ordinary app UI. The advanced CLI control remains separate.
+The fixed 100 ms native jitter buffer is not the cluster playback delay. Earlier
+250 ms/default/minimum-buffer instructions below are historical. Source gain
+remains −6 dB. Physical speaker alignment and Windows scheduling are still open.
+
+
 ## Step 4 timing trial — 2026-11-04
 
 Rebuild/relaunch both Mac and iPhone. Mac broadcast attenuation is now **−6 dB**

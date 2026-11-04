@@ -1,5 +1,41 @@
 # Progress
 
+## 2026-11-04 — Silent iPhone playback and cluster sync-delay correction
+
+Read the live nodes during the reported failure. The iPhone was the selected
+clock master on the same source timeline, but reported holdover because coverage
+was partial (offline known members). The new schedule policy incorrectly required
+state=synchronized and muted this usable master reference. It now accepts a
+matching master mapping regardless of coverage; a follower in holdover still
+needs an acquired/filter-ready mapping. An unacquired follower or a different
+reference remains rejected. Added regression coverage for these cases. The old
+session had also ended by inspection time; no live playback recovery is claimed.
+
+Added real decoder frame counting from negotiated GstAudioInfo rather than
+assuming the decoder's sample precision or leaving frames=0. Invalidating a
+schedule now resets the old sink offset while muted, with bounded late-buffer
+dropping so a reduced target delay can catch up instead of retaining old backlog.
+
+At the user's clarification, replaced the app's local buffering control with
+**Cluster playback sync delay** on Mac and iPhone. The admitted member forwards
+writes to the existing cluster authority, which persists the value in policy,
+increments its revision (not membership epoch), and publishes to connected
+members. Rejoin already reconciles later policy revisions. Active Mac Opus and
+shared PCM senders read the value and stamp new source target times; speakers
+do not independently select their target delay. Default 1000 ms, range 50–30000
+ms. Changes may briefly mute/relock. Disconnected authority returns an error;
+no speculative offline edits or separate settings service was added. Inspector
+sync_delay read/write commands are documented. Existing −6 dB gain is retained.
+
+Validation: 28 focused tests pass, including authority authorization/checkpoint/
+publication and the live clock-state regression; unsigned iPhone build passes.
+Mac shared UI is type checked separately. A duplicate-path Swift module-cache
+failure was avoided using a fresh canonical cache. Device listening/relock and
+remote-office operation remain for the user; no app was deployed or restarted.
+Both app/core checkouts must be updated so the authority and sender understand
+the setting. This does not establish calibrated physical speaker alignment.
+
+
 ## 2026-11-04 — Step 4 iPhone native scheduling integration; device trial pending
 
 Connected the native iPhone GStreamer receiver to the real Erlang-owned source

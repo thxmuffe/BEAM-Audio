@@ -16,7 +16,7 @@ status() -> case whereis(?MODULE) of undefined -> #{state => stopped}; Pid -> ge
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #{state => stopped, frames => 0, blocks => 0, dropped_callbacks => 0, capture_timing => #{},
     presentation_state => #{stream_id => binary:encode_hex(crypto:strong_rand_bytes(16))},
-    presentation_delay_ns => application:get_env(parvi,audio_presentation_delay_ms,250)*1000000,
+    presentation_delay_ns => parvi_cluster_trust:audio_sync_delay()*1000000,
     skipped_frames => 0, send_errors => 0, available => os:getenv("PARVI_MAC_OPUS_HELPER") =/= false}}.
 handle_call(start, _, #{state := stopped} = S) ->
     case os:getenv("PARVI_MAC_OPUS_HELPER") of
@@ -65,7 +65,7 @@ handle_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
           capture_clock_round_trip_ns => maps:get(best_round_trip,S,null)},Timing),
     ClockTimeline = maps:get(timeline,parvi_clock:status(),undefined),
     {Header,Presentation} = parvi_audio_presentation:stamp(CaptureHeader,
-        maps:get(presentation_delay_ns,S),ClockTimeline,maps:get(presentation_state,S)),
+        parvi_cluster_trust:audio_sync_delay()*1000000,ClockTimeline,maps:get(presentation_state,S)),
     ok = gen_server:call(Source, {push_encoded, Header, Packet}),
     {noreply, S#{frames := maps:get(frames,S)+960, blocks := maps:get(blocks,S)+1,
                 timeline => Header, presentation_state := Presentation}};

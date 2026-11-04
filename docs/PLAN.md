@@ -2,16 +2,20 @@
 
 ## Active increment — revised 2026-11-04
 
-Continue the original [simultaneous-playback subplan](SIMULTANEOUS_PLAYBACK_PLAN.md).
-Step 4 now has an implemented iPhone GStreamer sink-clock scheduling path under
-Erlang control, including bounded ±50 ppm correction. Core checks (24) and the
-unsigned iPhone build pass. Next is user deployment and verification that the
-shared schedule applies, followed by output/codec calibration, real drift and
-recovery measurements and Windows schedule integration. Do not describe this
-as simultaneous physical sound until measured. Mac capture/libopus is unchanged
-apart from the user's requested temporary **−6 dB** gain. Harshness/quality is
-tracked separately and does not block this timing increment. See
-[device trial instructions](apps/iOS/README.md).
+Original [simultaneous-playback subplan](SIMULTANEOUS_PLAYBACK_PLAN.md), step 4.
+The scheduled iPhone path is ready for another device check after correcting a
+mute condition: a matching clock master in partial-coverage holdover is usable.
+Decoded frame counts are now reported. **Playback sync delay is a persisted
+cluster setting**, editable from Mac or iPhone through the current authority,
+and applied by active senders. Default 1000 ms, range 50–30000 ms. The former
+per-device jitter-buffer field is removed from ordinary app UI.
+
+Next: user rebuild/relaunch of Mac and iPhone, fresh subscription/Play, verify
+schedule execution and frame counts, then change the cluster delay from iPhone
+and confirm the Mac's value and source presentation revision update. Authority
+must be reachable; remote-office testing is still pending. Then continue real
+output calibration/drift/recovery and Windows schedule integration. The temporary
+−6 dB source reduction remains; quality work stays separate.
 
 ## Previous priorities — revised 2026-11-02
 
