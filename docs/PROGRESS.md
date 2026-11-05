@@ -1,5 +1,39 @@
 # Progress
 
+## 2026-11-05 — Larger, compact dark Windows presentation
+
+Used the requested larger-default alternative to browser-style +/- zoom. The
+frame supplies a 12-point inherited body font; headings are slightly larger,
+buttons have a 34-pixel minimum height, status icons grow from 16 to 24 pixels
+and chart nodes from 17 to 22 pixels radius. The common sizer helper halves
+ordinary margins/padding, capped at eight pixels. Chat metadata wraps within
+the available width instead of pushing long node identities past the viewport.
+
+Replaced the two Windows notebook controls with the existing wx AUI notebook
+and built-in SimpleTabArt provider. Outlined/slanted tabs use distinct inactive
+and selected surfaces, larger labels and bold selection. No custom tab drawing,
+new dependency, animation or polling was added. Selection handlers retain the
+model's chosen destination during programmatic tab restoration and reload.
+
+A small presentation module centralizes charcoal backgrounds, light text,
+teal chat accents and high-contrast errors, approximating the Apple app's dark
+system colours. Native fields remain selectable. Replaced the native status bar,
+whose text did not follow the dark palette, with a standard themed static footer
+showing desk/node/clock state. The bundled wxWidgets is 3.2.9 and the native
+dark-mode probe retained white system colours; the app does not upgrade wx or
+change Windows theme settings. Some system-drawn controls/title chrome therefore
+retain platform styling. This is an approximate app palette, not identical native
+Apple rendering or complete native Windows dark mode.
+
+Validation: project compilation with warnings as errors, complete native Windows
+packaging and all 17 existing package/core/model tests pass. The real-wx reload
+and chart integration smoke also passes against the final styled package,
+including tab/model restoration, peer/send continuity, callback checks and
+bounded/hidden/idle chart behavior. The dark chat preview was visually inspected
+at 1000x760 using an isolated native cluster. User should check final readability,
+native-control contrast and their normal display scaling. No audio, membership,
+clock policy or background update interval changed.
+
 ## 2026-11-05 — Windows cluster tabs and lightweight chart
 
 Replaced the Windows sidebar/audio-above-everything layout with a top-level

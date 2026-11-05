@@ -43,6 +43,16 @@ are unavailable do not describe the verified November 4 package.
 
 ## Cluster workspace — 2026-11-05
 
+The default presentation now uses 12-point body text, 24-pixel node-status icons,
+larger chart nodes and tighter layout margins. There is no application zoom
+control. Built-in wx AUI tabs provide outlined/slanted tab edges, a raised-looking
+selected surface and bold selected labels. Panels, text fields, chat bubbles and
+chart use an Apple-like charcoal/teal palette with light text and visible errors.
+The bundled wxWidgets 3.2.9 lacks complete native Windows dark-mode support;
+some controls and the title bar retain their Windows system appearance. This is
+app styling, not a change to Windows theme settings. No polling or animation was
+added. The dark-compatible footer shows desk, node-count and shared-clock state.
+
 Cluster selection is now a top-level tab strip. **+ Add cluster** contains create,
 join and desk setup; the selected cluster owns its invitation field and
 **Forget cluster** operation (local forget in the native runtime). The shared

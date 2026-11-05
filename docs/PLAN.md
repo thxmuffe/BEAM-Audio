@@ -1,5 +1,16 @@
 # Development plan
 
+## Windows readability and dark styling — 2026-11-05
+
+Use larger default content instead of implementing custom browser-style zoom:
+12-point body text, larger status icons/chart nodes and tighter spacing. Use the
+existing wx AUI notebook/tab-art provider for visible tab edges and distinct
+selected tabs, plus an Apple-like charcoal/teal palette. Keep native selectable
+fields and the event-driven update model. The bundled wxWidgets 3.2.9 does not
+provide complete native Windows dark mode; retain platform styling where needed
+for readable native controls. Next: user checks readability and dark contrast
+on the rebuilt app with their normal display scaling.
+
 ## Windows cluster workspace — 2026-11-05
 
 Reorganize the Windows UI into top-level cluster tabs, with Chat, Audio and Chart
