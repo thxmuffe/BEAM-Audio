@@ -1,7 +1,7 @@
 %% Outbound, authenticated WebSocket transport. No distribution ports required.
 -module(parvi_relay).
 -behaviour(gen_server).
--export([start_link/0, start_link/1, id/0, enabled/0, url/0, valid_url/1, open/2, close/1, send/3, watch/1, status/0]).
+-export([start_link/0, start_link/1, id/0, enabled/0, url/0, valid_url/1, open/2, close/1, send/3, watch/1, status/0, reconnect/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 start_link() -> start_link(#{owner => parvi_swarms, delivery => swarm}).
 %% A native connector can receive mailbox envelopes without the swarm decoder.
@@ -14,6 +14,7 @@ close(Cap) -> gen_server:cast(?MODULE, {close, Cap}).
 watch(Nodes) -> gen_server:cast(?MODULE, {watch, Nodes}).
 send(To, Cap, Payload) -> gen_server:call(?MODULE, {send, To, Cap, Payload}, 2000).
 status() -> gen_server:call(?MODULE, status).
+reconnect() -> gen_server:cast(?MODULE, reconnect).
 valid_url(URL) when is_binary(URL), byte_size(URL) =< 512 ->
     try
         #{scheme := Scheme, host := Host} = Map = uri_string:parse(URL),
@@ -65,6 +66,12 @@ handle_cast({close, Cap}, #{boxes := Boxes} = S) ->
 handle_cast({watch, Nodes}, S) ->
     Next = S#{watch := lists:sublist(lists:usort([N || N <- Nodes, is_binary(N)]), 256)},
     maybe_ws(#{op => <<"watch">>, nodes => maps:get(watch, Next)}, Next), {noreply, Next};
+handle_cast(reconnect, #{conn := Pid} = S) ->
+    case Pid of undefined -> ok; _ -> try gun:close(Pid) catch _:_ -> ok end end,
+    notify(disconnected,S),
+    self() ! connect,
+    changed({noreply,S#{conn := undefined,stream := undefined,ready := false,
+        online := [],backoff := 500,error := null}},S);
 handle_cast(_, S) -> {noreply, S}.
 handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
 

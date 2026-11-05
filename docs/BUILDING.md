@@ -136,3 +136,15 @@ rejoin and real cross-platform playback still need your manual check. See the
 these builds preserve adaptive playback and do not yet synchronize the speakers.
 The moved Render configuration is ready for the core repository layout; the live
 service's repository selection/deployment has not been changed.
+
+## Release analysis and packaged dependencies — 2026-11-05
+
+Desktop relx analysis runs before the native transport packager adds ExWebRTC,
+ExRTP, ExSDP and Elixir dependencies under `runtime/native_lib`. Thus its unresolved
+call warnings describe the thin intermediate release. They are not disabled.
+`scripts/check-runtime-calls.escript RUNTIME_ROOT` validates core BEAM imports
+against exports in both `lib` and `native_lib` without loading target NIFs. Mac
+product packaging and native iOS runtime preparation now fail on missing calls.
+This validates static exports, not native ABI compatibility or connection success.
+Desktop relx now includes SASL for OTP release-handler support, resolving the
+missing-SASL warning; this does not implement hot upgrades or appup files.

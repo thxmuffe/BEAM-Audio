@@ -1,5 +1,55 @@
 # Progress
 
+## 2026-11-05 — Background playback, path changes and release validation
+
+Follow-up deployment diagnosis: the iPhone was unavailable while off Wi-Fi and
+became connected again after the user's response. A signed generic-device build
+succeeds using the existing development profile. All three workspace schemes now
+use dependency-order builds instead of deprecated manual ordering. The remaining
+array-folding warning comes from Unifex's fixed six-character boolean buffer in
+third-party source; no dependency source was edited. Mac library relocation is
+followed by re-signing: the final app and all 19 relocated dylib/NIF signatures
+verify successfully. Those transient install_name_tool warnings are not evidence
+of a broken final signature. The signed app was installed and launched successfully through devicectl;
+background playback and network handover still require user listening checks.
+
+User confirms persistent subscriptions work on iPhone. Persistence is shared
+Erlang receiver/store behavior, not iOS-only. Windows has the same intent flow
+but its scheduled playback executor remains unimplemented/unverified; the current
+contract rejects that path rather than silently using adaptive timing.
+
+Offset minimum is 5 ms (default 1000, maximum 30000) in policy validation and native
+command errors. Tests exercise the boundary and invalid values. This permits
+experiments without relaxing per-packet target requirements.
+
+iOS declares the audio background mode, reusing its existing AVAudioSession
+playback category. Erlang keeps healthy playing sessions across background and
+foreground, releases idle/paused sessions, and refreshes stale sessions/clock.
+NWPathMonitor sends subsequent usable network-path changes through the bridge.
+The desk coalesces notifications for 500 ms, cancels its old retry, disconnects
+old peer controllers, and reconnects the Reception Desk immediately with its
+existing identity/mailboxes/watch list. Saved membership and subscription intent
+are untouched. The receiver replaces its old media session and requests fresh
+clock sampling before restoration. This is reconnect/recovery, not gapless
+handover, and does not claim acoustic timing or OS background guarantees.
+
+The relx undefined ExWebRTC/ExRTP/ExSDP call warnings were traced to analysis before
+native dependencies are copied into native_lib. Final Mac/iOS runtime import
+checks now fail builds on unresolved core imports; the current completed bundles
+resolve all 500 unique imports across 63 core modules. A deliberately missing
+ExRTP fixture makes the checker fail as expected. Thin-release warnings remain
+visible; they are not suppressed. SASL was added to the desktop release to fix
+its separate missing-release-handler warning. Hot upgrades are not implemented.
+
+Validation: 43 focused EUnit tests pass, including background continuity, paused
+release, stale-session refresh, network-event coalescing and intent preservation.
+Local socket tests required running outside the filesystem/network sandbox.
+Final Mac and unsigned physical-iPhone product builds pass through product
+`./build.sh all`, including the handover binding and packaged-runtime checks.
+Device background/
+Wi-Fi/cellular behavior still requires user testing. Gain stays −6 dB and Sound Check stays on.
+
+
 ## 2026-11-04 — Persistent subscriptions and synchronized Offset controls
 
 The supervised Erlang receiver now checkpoints subscription intent through the

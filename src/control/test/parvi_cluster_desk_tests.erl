@@ -1,6 +1,20 @@
 -module(parvi_cluster_desk_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+network_change_coalesces_and_keeps_membership_test() ->
+    S = #{sessions => #{},online => [<<"peer">>],retry => undefined,backoff => 10000,
+        peers => #{<<"peer">> => #{node => <<"peer@device">>}},mailbox => <<"cap">>,
+        cluster => <<"cluster">>,event => starting},
+    {noreply,Pending} = parvi_cluster_desk:handle_cast(network_changed,S),
+    ?assertEqual({noreply,Pending},parvi_cluster_desk:handle_cast(network_changed,Pending)),
+    receive {network_changed,Tag} = Event ->
+        ?assertEqual(Tag,maps:get(network_change,Pending)),
+        {noreply,Next} = parvi_cluster_desk:handle_info(Event,Pending),
+        ?assertEqual(maps:with([peers,mailbox,cluster],S),maps:with([peers,mailbox,cluster],Next)),
+        ?assertMatch(#{online := [],sessions := #{},backoff := 500,network_change := undefined},Next),
+        ?assertEqual({noreply,Next},parvi_cluster_desk:handle_info(Event,Next))
+    after 1500 -> error(no_network_event) end.
+
 unavailable_closes_only_matching_attempt_test() ->
     {Target,TargetRef}=spawn_monitor(fun wait/0),
     {Other,OtherRef}=spawn_monitor(fun wait/0),

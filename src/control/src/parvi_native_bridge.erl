@@ -28,6 +28,7 @@ command(#{<<"method">> := <<"subscribe_audio">>, <<"source_id">> := Id, <<"profi
     end;
 command(#{<<"method">> := <<"suspend_audio">>}) -> parvi_audio_receiver:suspend();
 command(#{<<"method">> := <<"resume_audio">>}) -> parvi_audio_receiver:resume();
+command(#{<<"method">> := <<"network_changed">>}) -> parvi_cluster_desk:network_changed();
 command(#{<<"method">> := <<"refresh_audio_sources">>}) -> parvi_audio_receiver:refresh();
 command(#{<<"method">> := <<"stop_audio_subscription">>}) -> parvi_audio_receiver:stop();
 command(#{<<"method">> := <<"start_audio_output">>}) -> parvi_audio_receiver:playback(start);
@@ -51,7 +52,7 @@ command(#{<<"method">> := <<"stop_broadcast">>}) -> parvi_mac_opus_audio:stop(),
 command(#{<<"method">> := <<"set_audio_presentation_delay">>, <<"delay_ms">> := Value}) ->
     try binary_to_integer(Value) of
         Delay -> parvi_cluster_trust:set_audio_sync_delay(Delay)
-    catch error:badarg -> {error, <<"Playback sync delay must be 50-30000 ms.">>} end;
+    catch error:badarg -> {error, <<"Offset must be 5-30000 ms.">>} end;
 command(#{<<"method">> := <<"create_swarm">>}) ->
     case parvi_cluster_desk:create() of
         {ok, #{<<"cluster">> := Id}} -> {ok, #{swarm_id => Id}};

@@ -1,5 +1,53 @@
 # Parvi for iPhone
 
+## Command-line installation — 2026-11-05
+
+A successful root build prepares an **unsigned** verification app; it does not
+install it. A disconnected wireless iPhone cannot receive an installation. Use
+USB when testing cellular without the Mac's Wi-Fi connection. With the existing
+signing profile configured, run from the OpenSound product checkout:
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcrun devicectl list devices
+xcrun xcodebuild -project src/Apps/iOS/Parvi.xcodeproj -scheme Parvi \
+  -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' \
+  -derivedDataPath "$PWD/builds/intermediates/iOS/Xcode-device" \
+  CONFIGURATION_BUILD_DIR="$PWD/builds/iOS/Signed-iphoneos" \
+  CODE_SIGNING_ALLOWED=YES build
+xcrun devicectl device install app --device DEVICE_ID --timeout 60 \
+  builds/iOS/Signed-iphoneos/Parvi.app
+xcrun devicectl device process launch --device DEVICE_ID \
+  --terminate-existing org.opensound.parvi.ios.prototype
+```
+
+Replace DEVICE_ID with the connected iPhone's identifier. First prepare current
+core resources with `./build.sh ios`; the direct project build uses those prepared
+resources. Build, installation and launch each report their own result. The
+workspace schemes now use dependency-order builds. The Unifex array-folding
+warning concerns a six-character C buffer in a third-party dependency; it does
+not prevent compilation. Mac install_name_tool warnings precede explicit
+re-signing; verify the finished bundle rather than intermediate library edits.
+
+## Background playback and network changes — 2026-11-05
+
+Active playback now uses iOS background audio with the existing playback audio
+session. Switching apps or locking the screen retains a healthy stream; pausing
+releases it normally. Returning after stale reception refreshes the clock and
+recreates the session from saved intent. This requires physical-device testing;
+compilation does not prove background execution or interruption recovery.
+
+Wi-Fi/cellular path changes notify Erlang through NWPathMonitor. Erlang coalesces
+events for 500 ms, replaces stale peer/Reception Desk connections and restores
+saved playback using current source discovery and fresh packet targets. Identity
+and cluster membership remain unchanged. Recovery may include an audible gap;
+it is not a gapless network migration. Test both switch directions without
+relaunching, including while background playback is active.
+
+Offset minimum is now 5 ms for experiments (default 1000, maximum 30000). An
+accepted setting does not guarantee that a device can meet such a short target.
+
+
 ## Persistent subscription and Offset — 2026-11-04
 
 The current receive subscription is remembered automatically after selecting a
@@ -8,8 +56,8 @@ relaunch or returning from the background, the runtime reconnects the saved
 cluster, discovers the same publisher/source and recreates the subscription. It
 waits for a usable clock (a fresh follower sample after resume), then restores
 playback if it was enabled. Waiting is displayed while source/clock is unavailable.
-No old packets or expired targets are restored. Background audio itself remains
-outside this increment. This replaces older transient-subscription notes below.
+No old packets or expired targets are restored. Background audio support is
+added in the November 5 increment below. This replaces older transient-subscription notes below.
 
 **Stop subscription** clears the saved choice, including while waiting to restore;
 **Stop playback** retains it paused. **Forget cluster** clears it. One receive
@@ -20,7 +68,7 @@ that changes its name without providing a stable source key must be reselected.
 Offset is shared cluster policy. Its edit field follows remote updates; Apply,
 Return/Enter, keyboard Done and field blur submit through the same setter. Updates
 need the authority connection; offline members catch up through existing policy
-reconciliation. Invalid values show the runtime error. The range remains 50–30000
+reconciliation. Invalid values show the runtime error. The range remains 5–30000
 ms. No individual-speaker offset is introduced.
 
 Build both updated apps through product `./build.sh all`, then deploy the iPhone
@@ -107,7 +155,7 @@ The frame count now counts actual decoded frames even while playback is muted.
 
 **Cluster playback sync delay** is the shared sender-to-playback budget, editable
 on either app before or during playback. Current value is displayed on both.
-Default: 1000 ms; accepted range: 50–30000 ms. The cluster authority persists and
+Default: 1000 ms; accepted range: 5–30000 ms. The cluster authority persists and
 replicates updates, and active senders assign new target output times using that
 value. Changing it can briefly pause/relock playback. Test Apply from iPhone and
 check the Mac's current value changes too. When testing away from home, the

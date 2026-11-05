@@ -90,4 +90,6 @@ shutil.copy2(ROOT / 'scripts/platforms/iOS/MOB-LICENSE', resources / 'MOB-LICENS
 shutil.copy2(ROOT / 'builds/intermediates/webrtc-audio/WebRTC.xcframework/LICENSE', resources / 'WEBRTC-LICENSE')
 shutil.copy2(ROOT / 'builds/intermediates/webrtc-audio/native-headers/third_party/abseil-cpp/LICENSE', resources / 'ABSEIL-LICENSE')
 shutil.copy2(ROOT / 'builds/intermediates/webrtc-audio/native-headers/PATENTS', resources / 'WEBRTC-PATENTS')
+if args.transport == 'native':
+    subprocess.run(['escript', str(ROOT / 'scripts/check-runtime-calls.escript'), str(resources)], check=True)
 print(f'Prepared {target}: {resources}', flush=True)

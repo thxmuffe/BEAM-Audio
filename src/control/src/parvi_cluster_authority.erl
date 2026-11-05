@@ -12,7 +12,7 @@ init(State) ->
     case maps:get(finalize, State, false) of true -> self() ! publish; false -> ok end,
     {ok, maps:remove(finalize, State)}.
 handle_call({audio_sync_delay,Actor,Delay}, {Caller,_}, S)
-        when is_integer(Delay),Delay >= 50,Delay =< 30000 ->
+        when is_integer(Delay),Delay >= 5,Delay =< 30000 ->
     case caller(Actor,Caller,S) of
         false -> {reply,{error,not_a_member},S};
         true ->

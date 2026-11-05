@@ -1,6 +1,6 @@
 -module(parvi_audio_subscription_intent_tests).
 -include_lib("eunit/include/eunit.hrl").
--export([start_output/2]).
+-export([start_output/2,stop_output/1]).
 
 intent() -> parvi_audio_subscription_intent:new(<<"cluster">>,<<"publisher">>,offer(),channel).
 offer() -> #{id => <<"temporary-id">>,name => <<"Music">>,source_key => <<"default-output">>,
@@ -59,7 +59,8 @@ forget_clears_saved_intent_test() ->
         ?assertEqual(undefined,parvi_audio_subscription_intent:load())
     end).
 
-state(I) -> #{intent => I,suspended => false,handler => parvi_audio_stream_handler_webrtc,
+state(I) -> #{intent => I,suspended => false,background => false,resume_after => undefined,
+    retry_at => erlang:monotonic_time(millisecond),handler => parvi_audio_stream_handler_webrtc,
     receive_state => #{state => stopped,session => undefined,packets => 0,frames => 0,bytes => 0},
     output => undefined,playback => #{state => <<"stopped">>}}.
 with_store(Fun) ->
@@ -125,3 +126,64 @@ ready_restore(Playing) ->
         end
     after exit(Chat,kill),exit(Session,kill) end.
 start_output(_,_) -> self() ! restore_output_called,{ok,self()}.
+
+background_playback_and_foreground_keep_healthy_session_test() ->
+    with_store(fun() -> with_output(fun(S,Session) ->
+        {reply,ok,Bg} = parvi_audio_receiver:handle_call(suspend,ignored,S),
+        ?assertEqual(true,maps:get(background,Bg)),
+        ?assertEqual(false,maps:get(suspended,Bg)),
+        ?assertEqual(maps:get(output,S),maps:get(output,Bg)),
+        {reply,ok,Fg} = parvi_audio_receiver:handle_call(resume,ignored,Bg),
+        ?assertEqual(false,maps:get(background,Fg)),
+        ?assertEqual(Session,maps:get(session,maps:get(receive_state,Fg))),
+        ?assert(is_process_alive(Session))
+    end) end).
+
+background_pause_releases_audio_but_keeps_saved_subscription_test() ->
+    with_store(fun() -> with_output(fun(S,Session) ->
+        {reply,ok,Paused} = parvi_audio_receiver:handle_call({playback,stop},ignored,S#{background => true}),
+        ?assertEqual(true,maps:get(suspended,Paused)),
+        ?assertEqual(undefined,maps:get(session,maps:get(receive_state,Paused))),
+        ?assertNot(is_process_alive(Session)),
+        ?assertMatch(#{playing := false},parvi_audio_subscription_intent:load()),
+        receive stopped_test_output -> ok after 1000 -> error(output_not_paused) end
+    end) end).
+
+stale_background_session_is_recreated_on_return_test() ->
+    with_store(fun() -> with_output(fun(S,Session) ->
+        R = (maps:get(receive_state,S))#{last_packet := erlang:monotonic_time(millisecond)-3000},
+        {reply,ok,Resuming} = parvi_audio_receiver:handle_call(resume,ignored,
+            S#{background => true,receive_state := R,native_statistics => #{expired_target => 1}}),
+        ?assertEqual(undefined,maps:get(session,maps:get(receive_state,Resuming))),
+        ?assertNot(is_process_alive(Session)),
+        ?assertNot(maps:is_key(native_statistics,Resuming)),
+        ?assert(is_integer(maps:get(resume_after,Resuming))),
+        ?assertEqual(true,maps:get(playing,maps:get(intent,Resuming))),
+        receive stopped_test_output -> ok after 1000 -> error(output_not_closed) end
+    end) end).
+
+with_output(Fun) ->
+    {ok,Session} = parvi_webrtc_audio_session:start_link({receiver,self()}),
+    Ref = monitor(process,Session),
+    I = (intent())#{playing := true},
+    ok = parvi_audio_subscription_intent:save(I),
+    S = state(I), R = (maps:get(receive_state,S))#{state := active,session := Session,
+        last_packet => erlang:monotonic_time(millisecond)},
+    try Fun(S#{handler := ?MODULE,output := {Session,Ref},
+        playback := #{state => <<"playing">>},receive_state := R},Session)
+    after
+        demonitor(Ref,[flush]),
+        case is_process_alive(Session) of true -> gen_statem:stop(Session); false -> ok end
+    end.
+network_handover_replaces_even_recent_audio_and_keeps_intent_test() ->
+    with_store(fun() -> with_output(fun(S,Session) ->
+        {noreply,Next} = parvi_audio_receiver:handle_cast(network_changed,S#{background => true}),
+        ?assertNot(is_process_alive(Session)),
+        ?assertEqual(undefined,maps:get(session,maps:get(receive_state,Next))),
+        ?assertEqual(true,maps:get(background,Next)),
+        ?assertEqual(maps:get(intent,S),parvi_audio_subscription_intent:load()),
+        ?assert(is_integer(maps:get(resume_after,Next))),
+        receive stopped_test_output -> ok after 1000 -> error(output_not_closed) end
+    end) end).
+
+stop_output(_) -> self() ! stopped_test_output,ok.

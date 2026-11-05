@@ -2,7 +2,7 @@
 %% Start after net_kernel; supervised by the Mac native runtime profile.
 -module(parvi_cluster_desk).
 -behaviour(gen_server).
--export([start_link/0, create/0, invite/1, invitation/0, join/1, connect_member/1, forget/0, status/0]).
+-export([start_link/0, create/0, invite/1, invitation/0, join/1, connect_member/1, forget/0, status/0, network_changed/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -17,6 +17,7 @@ connect_member(Name) ->
     end.
 forget() -> gen_server:call(?MODULE, forget).
 status() -> gen_server:call(?MODULE, status).
+network_changed() -> gen_server:cast(?MODULE, network_changed).
 
 init([]) ->
     process_flag(trap_exit, true),
@@ -109,10 +110,33 @@ handle_call_event(forget, _, S) ->
     ok = parvi_cluster_trust:retire(),
     {reply, ok, refresh(S)};
 handle_call_event(_, _, S) -> {reply, {error, already_clustered_or_not_created}, S}.
+handle_cast(network_changed, S) ->
+    %% Coalesce path updates; retain all durable membership and identity state.
+    case maps:get(network_change,S,undefined) of
+        undefined ->
+            Tag = make_ref(),
+            erlang:send_after(500,self(),{network_changed,Tag}),
+            {noreply,S#{network_change => Tag}};
+        _ -> {noreply,S}
+    end;
 handle_cast(_, S) -> {noreply, S}.
 
 handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
 
+handle_info_event({network_changed,Tag}, #{network_change := Tag,sessions := Sessions} = S) ->
+    case maps:get(retry,S) of undefined -> ok; Ref -> erlang:cancel_timer(Ref) end,
+    maps:foreach(fun(_,Route) ->
+        case maps:get(node,Route,undefined) of
+            undefined -> ok; Node -> erlang:disconnect_node(Node)
+        end,
+        exit(maps:get(ctrl,Route),{shutdown,network_changed})
+    end,Sessions),
+    parvi_relay:reconnect(),
+    case whereis(parvi_audio_receiver) of
+        undefined -> ok; _ -> parvi_audio_receiver:network_changed()
+    end,
+    {noreply,S#{network_change := undefined,sessions := #{},online := [],
+        retry := undefined,backoff := 500,event := network_changed}};
 handle_info_event({relay, {delivery, From, Cap, Payload}}, #{mailbox := Cap} = S) ->
     {noreply, incoming(From, Payload, S)};
 handle_info_event({relay, {presence, Online}}, S) ->

@@ -14,15 +14,20 @@ cluster_setting_is_checkpointed_and_published_test() ->
     Dir = filename:join("/tmp","parvi-audio-setting-"++integer_to_list(erlang:unique_integer([positive]))),
     Saved = [{K,os:getenv(K)} || K <- ["PARVI_STATE_DIR","PARVI_IDENTITY_SEED"]],
     Parent = self(),
-    Trust = spawn(fun() -> receive {'$gen_call',From,{install,Public}} ->
-        Parent ! {installed,Public},gen_server:reply(From,ok) end end),
+    Trust = spawn(fun Loop() -> receive {'$gen_call',From,{install,Public}} ->
+        Parent ! {installed,Public},gen_server:reply(From,ok),Loop() end end),
     true = register(parvi_cluster_trust,Trust),
     try
         os:putenv("PARVI_STATE_DIR",Dir),os:putenv("PARVI_IDENTITY_SEED","test-only"),
+        {reply,ok,Minimum} = parvi_cluster_authority:handle_call(
+            {audio_sync_delay,<<"actor">>,5},{self(),make_ref()},policy()),
+        ?assertEqual(5,maps:get(<<"audio_sync_delay_ms">>,Minimum)),
+        receive {installed,AtMinimum} -> ?assertEqual(5,maps:get(<<"audio_sync_delay_ms">>,AtMinimum))
+        after 1000 -> error(minimum_not_published) end,
         {reply,ok,Next} = parvi_cluster_authority:handle_call(
-            {audio_sync_delay,<<"actor">>,2400},{self(),make_ref()},policy()),
+            {audio_sync_delay,<<"actor">>,2400},{self(),make_ref()},Minimum),
         ?assertEqual(2400,maps:get(<<"audio_sync_delay_ms">>,Next)),
-        ?assertEqual(2,maps:get(<<"revision">>,Next)),
+        ?assertEqual(3,maps:get(<<"revision">>,Next)),
         ?assertEqual(1,maps:get(<<"epoch">>,Next)),
         ?assertEqual(Next,parvi_cluster_store:load(authority,undefined)),
         receive {installed,Public} -> ?assertEqual(2400,maps:get(<<"audio_sync_delay_ms">>,Public))
@@ -34,4 +39,4 @@ cluster_setting_is_checkpointed_and_published_test() ->
     end.
 
 invalid_sync_delay_is_rejected_test() ->
-    [?assertMatch({error,_},parvi_cluster_trust:set_audio_sync_delay(N)) || N <- [-1,0,49,30001,1.2]].
+    [?assertMatch({error,_},parvi_cluster_trust:set_audio_sync_delay(N)) || N <- [-1,0,4,30001,1.2]].

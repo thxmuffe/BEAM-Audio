@@ -11,7 +11,7 @@ audio_sync_delay() ->
         P when is_map(P) -> maps:get(<<"audio_sync_delay_ms">>,P,1000);
         _ -> 1000
     end.
-set_audio_sync_delay(Delay) when is_integer(Delay),Delay >= 50,Delay =< 30000 ->
+set_audio_sync_delay(Delay) when is_integer(Delay),Delay >= 5,Delay =< 30000 ->
     #{id := Id} = identity(),
     case policy() of
         P when is_map(P) ->
@@ -19,7 +19,7 @@ set_audio_sync_delay(Delay) when is_integer(Delay),Delay >= 50,Delay =< 30000 ->
             catch exit:_ -> {error,authority_unavailable} end;
         _ -> {error,not_a_member}
     end;
-set_audio_sync_delay(_) -> {error,<<"Offset must be 50-30000 ms.">>}.
+set_audio_sync_delay(_) -> {error,<<"Offset must be 5-30000 ms.">>}.
 
 start_link(Owner) -> gen_server:start_link({local, ?MODULE}, ?MODULE, Owner, []).
 identity() -> gen_server:call(?MODULE, identity).

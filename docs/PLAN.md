@@ -1,5 +1,28 @@
 # Development plan
 
+## Current increment — background playback and network handover (2026-11-05)
+
+Offset now accepts 5–30000 ms for testing; default remains 1000 ms. Small offsets
+remain subject to actual delivery/preparation time and explicit late rejection.
+The user confirms persistent subscription restoration works on iPhone. Intent
+storage/restoration is shared Erlang code on all hosts; Windows scheduled output
+still needs its per-packet executor before end-to-end playback can be verified.
+
+iOS declares background audio and retains a healthy playing session on background
+and foreground transitions. Idle/paused sessions are released. Stale foreground
+sessions are recreated with clock refresh and fresh targets. An iOS NWPathMonitor
+binding sends usable path changes to Erlang. The existing desk coalesces events,
+closes stale peer transports, immediately reconnects the Reception Desk and lets
+existing membership/source discovery restore the saved subscription. Identity,
+membership and subscription intent are retained; no VM restart or new protocol.
+
+Next device checks: play through background and screen lock, foreground return,
+then Wi-Fi/cellular switches in both directions. Confirm eventual cluster and
+subscription recovery without relaunch. This reconnects after a handover; it does
+not promise gapless audio or prevent iOS termination/suspension when audio stops.
+Keep gain, Sound Check and packet-target semantics unchanged.
+
+
 ## Current increment — persistent subscription and shared Offset editing
 
 Implemented in source: save the current subscription and playback-enabled intent
@@ -29,7 +52,7 @@ Sound Check was restored on, and broadcast gain remains −6 dB. No outstanding
 Music setting restoration or deployment action remains from the diagnostic.
 Immediate validation still needed: Stop/Play, unsubscribe/resubscribe and long-run
 per-packet rejection/drop behavior. Subscription restoration after iPhone
-resume/relaunch is not implemented. The next platform implementation is Windows
+resume/relaunch is implemented and user-confirmed. The next platform implementation is Windows
 per-packet target execution; it currently rejects the scheduled path. Original
 step 5 then verifies two physical outputs, timing/drift and recovery. Its acoustic
 measurement method remains a separate design task, not inferred from counters.

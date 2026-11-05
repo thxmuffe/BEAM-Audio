@@ -1,6 +1,16 @@
 -module(parvi_relay_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+network_reconnect_keeps_identity_and_mailboxes_test() ->
+    S = #{owner => self(),conn => undefined,stream => old,ready => true,
+        online => [<<"peer">>],backoff => 10000,error => null,
+        private => <<"identity">>,boxes => #{<<"cap">> => <<"cluster">>},watch => [<<"peer">>]},
+    {noreply,Next} = parvi_relay:handle_cast(reconnect,S),
+    ?assertEqual(maps:with([private,boxes,watch],S),maps:with([private,boxes,watch],Next)),
+    ?assertMatch(#{ready := false,conn := undefined,stream := undefined,online := [],backoff := 500},Next),
+    receive {relay,disconnected} -> ok after 1000 -> error(no_disconnect) end,
+    receive connect -> ok after 1000 -> error(no_reconnect) end.
+
 desk_url_validation_test() ->
     ?assert(parvi_relay:valid_url(<<"wss://desk.example/relay/v1">>)),
     ?assert(parvi_relay:valid_url(<<"ws://127.0.0.1:8765/relay/v1">>)),

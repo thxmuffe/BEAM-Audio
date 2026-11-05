@@ -1,7 +1,7 @@
 %% Runtime-owned source catalogue and one received-audio meter; no device I/O.
 -module(parvi_audio_receiver).
 -behaviour(gen_server).
--export([snapshot/0, refresh/0, suspend/0, resume/0, subscribe/2, stop/0, playback/1, minimum_playout_delay/1, control_output/1, start_link/0]).
+-export([snapshot/0, refresh/0, suspend/0, resume/0, network_changed/0, subscribe/2, stop/0, playback/1, minimum_playout_delay/1, control_output/1, start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -define(GROUP, {parvi, audio, sources}).
 
@@ -9,6 +9,7 @@ snapshot() -> call(snapshot).
 refresh() -> call(refresh).
 suspend() -> call(suspend).
 resume() -> call(resume).
+network_changed() -> gen_server:cast(?MODULE, network_changed).
 subscribe(Id, Profile) -> call({subscribe, Id, Profile}).
 stop() -> call(stop).
 playback(Action) -> call({playback, Action}).
@@ -29,7 +30,7 @@ init([]) ->
     S = #{handler => parvi_audio_stream_handler:default(), watch => Watch, offers => #{},
           requests => gen_server:reqids_new(), receive_state => idle(),
           output => undefined, playback => #{state => <<"stopped">>},
-          intent => parvi_audio_subscription_intent:load(),suspended => false,
+          intent => parvi_audio_subscription_intent:load(),suspended => false,background => false,
           resume_after => undefined,retry_at => erlang:monotonic_time(millisecond)},
     {ok, discover(Sources, S)}.
 idle() -> #{state => stopped, session => undefined, packets => 0, frames => 0, bytes => 0}.
@@ -41,12 +42,20 @@ handle_call_event(forget_subscription,_,S) ->
     ok = parvi_audio_subscription_intent:save(undefined),
     {reply,ok,disconnect(S#{intent := undefined})};
 handle_call_event(suspend,_,S) ->
-    {reply,ok,disconnect(S#{suspended := true})};
+    %% iOS background audio keeps the real media path alive. Idle/paused clients
+    %% release their native session and let the OS suspend them normally.
+    Next = S#{background => true},
+    case playing_output(S) of
+        true -> {reply,ok,Next};
+        false -> {reply,ok,disconnect(Next#{suspended := true})}
+    end;
 handle_call_event(resume,_,S) ->
-    After = erlang:monotonic_time(nanosecond),
-    _ = try parvi_clock:resync() catch exit:_ -> unavailable end,
-    connect_sources(),
-    {reply,ok,disconnect(S#{suspended := false,resume_after := After,retry_at := erlang:monotonic_time(millisecond)})};
+    Next = S#{background => false},
+    case playing_output(S) andalso recent_audio(S) of
+        true -> {reply,ok,Next}; % Continuous playback: do not tear down a healthy stream.
+        false ->
+            {reply,ok,refresh_connection(Next)}
+    end;
 handle_call_event(snapshot, _, #{offers := Offers, receive_state := R, handler := Handler} = S) ->
     Rows = [public_offer(Pid, Offer) || {Pid, #{name := _} = Offer} <- maps:to_list(Offers)],
     {reply, #{offers => lists:sort(fun(A,B) -> maps:get(id,A) < maps:get(id,B) end, Rows),
@@ -62,7 +71,11 @@ handle_call_event({playback, start}, _, #{output := undefined,
         Error -> {reply, Error, S}
     end;
 handle_call_event({playback, stop}, _, S) ->
-    {reply, ok, remember_playback(false,stop_output(S))};
+    Next = remember_playback(false,stop_output(S)),
+    case maps:get(background,S,false) of
+        true -> {reply,ok,disconnect(Next#{suspended := true})};
+        false -> {reply,ok,Next}
+    end;
 handle_call_event({playback, _}, _, S) ->
     {reply, {error, <<"Subscribe to a mono or stereo channel stream before playback.">>}, S};
 handle_call_event({output_control, Command}, _,
@@ -85,6 +98,7 @@ handle_call_event(stop, _, #{receive_state := R} = S) ->
     ok = parvi_audio_subscription_intent:save(undefined),
     {reply, ok, (stop_output(S))#{receive_state := idle(),intent := undefined}};
 handle_call_event(_, _, S) -> {reply, {error, unsupported_request}, S}.
+handle_cast(network_changed, S) -> changed({noreply,refresh_connection(S)},S);
 handle_cast(_, S) -> {noreply, S}.
 
 handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
@@ -146,6 +160,13 @@ handle_info_event(Message, #{receive_state := R} = S) ->
         _ -> {noreply, response(Response, S)}
     end.
 
+refresh_connection(S) ->
+    After = erlang:monotonic_time(nanosecond),
+    _ = try parvi_clock:resync() catch exit:_ -> unavailable end,
+    connect_sources(),
+    disconnect(S#{suspended := false,resume_after := After,
+        retry_at := erlang:monotonic_time(millisecond)}).
+
 %% pg supplies offers once a publisher is directly connected. Ask existing
 %% trusted neighbors for source PIDs, then reuse normal member authentication
 %% for just those publishers; do not connect the entire cluster into a mesh.
@@ -206,6 +227,13 @@ response({reply, {error, Reason}}, S) -> failed(Reason, S);
 response({error, Reason}, S) -> failed(Reason, S);
 response(_, S) -> failed(invalid_subscription_reply, S).
 
+
+playing_output(#{intent := #{playing := true},output := {Pid,_},playback := #{state := State}})
+        when State =:= <<"playing">>; State =:= <<"starting">> -> is_process_alive(Pid);
+playing_output(_) -> false.
+recent_audio(#{receive_state := #{last_packet := Time}}) ->
+    erlang:monotonic_time(millisecond)-Time =< 2500;
+recent_audio(_) -> false.
 
 begin_subscription(Source,Offer,Profile,S) ->
     Handler = parvi_audio_stream_handler:for_descriptor(maps:get(Profile,maps:get(profiles,Offer))),

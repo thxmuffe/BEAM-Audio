@@ -137,7 +137,7 @@ not proof of physical emission timing or a request to retime packets.
 
 `{"op":"sync_delay","node":"FULL_NODE_NAME"}` reads that member's replicated
 cluster delay. Add `"delay_ms":1500` to set the shared value through the cluster
-authority from any admitted device. Range: 50–30000 ms; default: 1000 ms.
+authority from any admitted device. Range: 5–30000 ms; default: 1000 ms.
 Updated senders read the shared setting while broadcasting and publish new target
 times. The authority must be reachable to change it; offline members reconcile
 policy on reconnect. `minimum_delay` remains an advanced **local jitter-buffer**
