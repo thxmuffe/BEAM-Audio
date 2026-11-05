@@ -1,6 +1,37 @@
 # Progress
 
+## 2026-11-05 — Event-driven subscription restoration
+
+Receiver restoration now runs when a source description completes, a node
+connects, policy changes or a clock update arrives. The 1-second timer remains
+a fallback. Missing-source discovery keeps its 5-second request throttle in a
+separate discover_at field; it no longer blocks restoration when a source/clock
+becomes ready. Actual subscription failures still observe their existing
+5-second cooldown, and suspension, membership, fresh-clock and single-session
+gates remain in force. No network timeout, packet target, gain or Offset change.
+Clock state is inserted into ETS before observer notification, and last_sync
+changes notify even when the other status fields are unchanged.
+
+Validation: 52 focused EUnit checks pass, including new immediate-description
+and fresh-clock restore tests, duplicate-event single-session behavior, real
+failure cooldown and suspension preservation, plus existing clock checks.
+Mac and unsigned physical-iPhone builds pass through product `./build.sh all`,
+including final runtime import checks. Signed installation is pending iPhone
+availability. No improved device recovery time is claimed
+until the user repeats the handover test.
+
+
 ## 2026-11-05 — Background playback, path changes and release validation
+
+User device feedback: background playback works; 120 ms Offset was insufficient
+in this test, while 300 ms appeared stable. Wi-Fi-to-cellular recovered playback
+after roughly 20 seconds without relaunch. No timestamped handover trace was
+captured, so the time spent in OS path availability, relay/peer setup, clock
+acquisition and subscription retry is not yet attributable. Source inspection
+shows 500 ms path-event coalescing, 1 s restoration polling, 5 s restoration
+cooldowns, relay retries up to 10 s and connection/handshake timeouts. Prefer
+waking restoration on actual source/clock readiness over globally shortening
+network timeouts; leave the per-packet timing contract unchanged.
 
 Follow-up deployment diagnosis: the iPhone was unavailable while off Wi-Fi and
 became connected again after the user's response. A signed generic-device build

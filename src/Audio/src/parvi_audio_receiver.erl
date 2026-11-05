@@ -107,8 +107,9 @@ handle_info_event(restore_subscription,S) ->
     erlang:send_after(1000,self(),restore_subscription),
     {noreply,restore_subscription(S)};
 handle_info_event({parvi_changed,policy},S) ->
-    {noreply,reconcile_policy(S)};
-handle_info_event({nodeup,_},S) -> connect_sources(), {noreply,S};
+    {noreply,restore_subscription(reconcile_policy(S))};
+handle_info_event({parvi_changed,clock},S) -> {noreply,restore_subscription(S)};
+handle_info_event({nodeup,_},S) -> connect_sources(), {noreply,restore_subscription(S)};
 handle_info_event({Watch, join, ?GROUP, Pids}, #{watch := Watch} = S) -> {noreply, discover(Pids, S)};
 handle_info_event({Watch, leave, ?GROUP, Pids}, #{watch := Watch, offers := Offers} = S) ->
     {noreply, S#{offers := maps:without(Pids, Offers)}};
@@ -205,7 +206,7 @@ description(Message, #{requests := Requests, offers := Offers} = S) ->
                     Supported = maps:filter(fun(P,D) ->
                         Selected = parvi_audio_stream_handler:for_descriptor(D),
                         Selected:validate_descriptor(P,D) =:= ok end, Profiles),
-                    S#{requests := Next, offers := Offers#{Pid := Offer#{name => Name,source_key => maps:get(source_key,Description,Name), profiles => Supported}}};
+                    restore_subscription(S#{requests := Next, offers := Offers#{Pid := Offer#{name => Name,source_key => maps:get(source_key,Description,Name), profiles => Supported}}});
                 error -> S#{requests := Next}
             end;
         {_, Pid, Next} -> S#{requests := Next, offers := maps:remove(Pid, Offers)};
@@ -291,7 +292,13 @@ restore_subscription(#{intent := #{cluster := Cluster} = I,receive_state := #{se
                         false -> S
                     end;
                 {_,[]} when Ready ->
-                    connect_sources(), S#{retry_at := erlang:monotonic_time(millisecond)+5000};
+                    %% Throttle discovery, not readiness: a source description or
+                    %% fresh clock sample can restore immediately when it arrives.
+                    Now = erlang:monotonic_time(millisecond),
+                    case Now >= maps:get(discover_at,S,Now) of
+                        true -> connect_sources(), S#{discover_at => Now+5000};
+                        false -> S
+                    end;
                 _ -> S
             end;
         undefined -> S;

@@ -31,6 +31,14 @@ re-signing; verify the finished bundle rather than intermediate library edits.
 
 ## Background playback and network changes — 2026-11-05
 
+Follow-up: source descriptions and clock/policy/connection events now wake saved
+subscription restoration immediately. A missing-source discovery cooldown no
+longer delays a source that has already arrived. Timer fallback and real failure
+backoff remain. User reports background playback works with 300 ms Offset and
+Wi-Fi-to-cellular recovery previously took about 20 seconds; repeat with this
+increment to establish whether the gap improves. No fixed recovery bound is
+promised and transport timeouts are unchanged.
+
 Active playback now uses iOS background audio with the existing playback audio
 session. Switching apps or locking the screen retains a healthy stream; pausing
 releases it normally. Returning after stale reception refreshes the clock and

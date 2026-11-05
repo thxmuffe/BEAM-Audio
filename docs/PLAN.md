@@ -1,5 +1,22 @@
 # Development plan
 
+## Current increment — prompt subscription restoration (2026-11-05)
+
+User confirms background playback works at 300 ms Offset, with roughly 20-second
+Wi-Fi-to-cellular playback recovery. Restore immediately on completed source
+description, clock and policy updates and node connection events, retaining the
+1-second timer fallback. Separate 5-second source-discovery throttling from the
+actual subscription-failure cooldown: arriving source/clock readiness must not
+wait behind a discovery retry. Preserve real failure backoff, fresh-clock gates
+and packet-target semantics. Clock snapshots must be published before notifying
+observers; new samples also notify when other readiness fields stay unchanged.
+
+Next user check: repeat both network-switch directions with the same 300 ms
+Offset and compare recovery time. A shorter gap is not yet established; if still
+slow, capture timestamped path/relay/peer/clock/subscription stages before changing
+network timeouts. Keep transport timeouts, gain and Sound Check unchanged.
+
+
 ## Current increment — background playback and network handover (2026-11-05)
 
 Offset now accepts 5–30000 ms for testing; default remains 1000 ms. Small offsets

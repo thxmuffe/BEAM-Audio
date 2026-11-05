@@ -431,11 +431,13 @@ log_correction(true,Error,Revision,Old,D) ->
 
 failed(Reason, #{clock := D} = S) -> save(S,D#{last_error := Reason}).
 save(S,D) ->
-    Keys = [role,master,coverage,revision,filter_ready,last_error],
+    Keys = [role,master,coverage,revision,filter_ready,last_sync,last_error],
+    %% Publish before invalidating: observers must see the sample that woke them.
+    ets:insert(?MODULE,{clock,D}),
     case maps:with(Keys,maps:get(clock,S,#{})) =:= maps:with(Keys,D) of
         true -> ok; false -> parvi_events:notify(clock)
     end,
-    ets:insert(?MODULE,{clock,D}), S#{clock := D}.
+    S#{clock := D}.
 retry(Delay, #{retry_timer := undefined} = S) -> S#{retry_timer := erlang:send_after(Delay,self(),retry)};
 retry(_,S) -> S.
 clear_retry(#{retry_timer := undefined} = S) -> S;
