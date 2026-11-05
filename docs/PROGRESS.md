@@ -1,5 +1,44 @@
 # Progress
 
+## 2026-11-05 — Windows cluster tabs and lightweight chart
+
+Replaced the Windows sidebar/audio-above-everything layout with a top-level
+cluster notebook and an Add cluster page. Each selected cluster has Chat, Audio
+and Chart destinations. Invitation and local native Forget cluster sit above
+those destinations. Enabled forgetting through the existing shared bridge,
+with a confirmation explaining its local effect. Existing identity, membership,
+protocols and audio scheduling semantics are unchanged. The shared native
+runtime still remembers one cluster at a time; the UI does not implement
+concurrent native cluster VMs. Legacy memberships each get a tab.
+
+Chat now filters system messages at Trace/Info/Warning/Error or Chat only,
+retaining ordinary chat and handling older clock events without explicit levels
+the same way as the Apple UI. The model keeps filter state across window reloads.
+Audio owns Offset, subscriptions/play/pause/unsubscribe, the local capture meter,
+packet/frame/byte counts and receiver/playback/native diagnostic fields. Errors
+and diagnostics remain native selectable read-only text controls. Audio-operation
+errors appear in Audio; cluster/admission errors remain outside the destinations.
+
+Chart combines the existing node-status list with a resizable static circular
+topology drawing using wx primitives. There is no force simulation or ticker.
+Data/selection/size changes coalesce into at most four application redraw
+requests per second. Hidden destinations cancel pending redraws and retain the
+latest state. OS paint/exposure events redraw on demand. Node clicks display the
+full identity in a copyable field. The chart is owned by its disposable window.
+
+Validation: the native Windows package builds and all 17 package/core/model
+checks pass. The extended isolated real-wx smoke passes cluster chooser retention,
+severity filtering unit coverage, chart redraw bursts, hidden/idle chart state,
+peer/status continuity, drafts/in-flight sends and reload/crash recovery. The
+runner also rejects wx paint callback failures; this caught and corrected a
+callback return-value issue during native preview. Audio layout was inspected
+in an isolated native preview; no saved user cluster state was used or changed.
+With Chart visible, a 10-second standalone native idle measurement recorded
+0.137% Erlang process CPU across eight logical CPUs, zero model snapshots and
+zero UI-process reductions. This excludes child-helper CPU and connected remote
+peers. User still needs to check the reorganized UI, live connected-cluster CPU,
+Offset/subscription controls and actual streaming on the installed build.
+
 ## 2026-11-05 — Event-driven subscription restoration
 
 Receiver restoration now runs when a source description completes, a node

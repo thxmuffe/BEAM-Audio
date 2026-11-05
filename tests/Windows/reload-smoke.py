@@ -33,12 +33,16 @@ def main():
                    'PARVI_TEST_PEER': peer.name, 'PARVI_TEST_PEER_COOKIE': peer.cookie,
                    'PARVI_TEST_OTHER': other.name,
                    'PARVI_TEST_UI_SOURCE': str(APP_REPO / 'src/Apps/Windows/src/parvi_windows.erl')}
-            subprocess.run([str(ERL), '-noshell', '-noinput',
+            result = subprocess.run([str(ERL), '-noshell', '-noinput',
                             '-name', f'parvi_windows_{os.getpid()}9@127.0.0.1',
                             '-setcookie', gui_cookie,
                             '-kernel', 'inet_dist_use_interface', '{127,0,0,1}',
                             '-pa', str(ebin), '-s', 'parvi_reload_smoke', 'main'],
-                           check=True, timeout=60, env=env)
+                           timeout=60, env=env, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True)
+            print(result.stdout)
+            result.check_returncode()
+            assert 'Callback fun crashed' not in result.stdout, 'wx paint callback failed'
         finally:
             peer.close()
             other.close()

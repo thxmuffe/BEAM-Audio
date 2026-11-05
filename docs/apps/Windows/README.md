@@ -41,7 +41,35 @@ The dated legacy/native-build-incomplete notes below are historical. Their old
 monorepo setup paths and statements that native dependencies or network playback
 are unavailable do not describe the verified November 4 package.
 
-## Lightweight Windows UI — 2026-11-04
+## Cluster workspace — 2026-11-05
+
+Cluster selection is now a top-level tab strip. **+ Add cluster** contains create,
+join and desk setup; the selected cluster owns its invitation field and
+**Forget cluster** operation (local forget in the native runtime). The shared
+native runtime still remembers one cluster at a time. Concurrent native clusters
+in separate windows/VMs remain future work; the legacy multi-cluster model uses
+one tab per membership.
+
+Each cluster has **Chat**, **Audio** and **Chart** tabs. Chat filters system
+notices at Trace, Info, Warning or Error severity, or hides them with Chat only;
+ordinary chat is always visible. The filter survives window reloads. Audio owns
+the shared Offset editor, source/subscription and playback controls, local input,
+packet/frame/byte counts and copyable receiver/playback/native statistics and
+errors. Offset and playback semantics remain those of the shared runtime.
+
+Chart combines a resizable node list and a static topology drawing. Node clicks
+show the full identity in a selectable field. Topology/status/selection/resize
+changes coalesce into at most four application redraw requests per second. The
+chart has no physics simulation, animation loop or idle timer. Hidden tabs retain
+the latest state and cancel pending redraws; OS exposure paints still work.
+
+The Windows native package and 17 package/core/model checks pass, including log
+filtering. The isolated real-wx test covers redraw bursts, hidden/idle chart state,
+cluster chooser retention, peer status, draft/send continuity and reload/crash
+recovery, and rejects wx callback failures. Real connected-cluster streaming and
+the reorganized layout still need the user's manual check.
+
+## Previous lightweight Windows UI — 2026-11-04
 
 The Nodes tab contains a status list, without a graph simulation. UI state is
 invalidated by local runtime notifications and OTP node/process-group events;

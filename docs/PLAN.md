@@ -1,5 +1,21 @@
 # Development plan
 
+## Windows cluster workspace — 2026-11-05
+
+Reorganize the Windows UI into top-level cluster tabs, with Chat, Audio and Chart
+destinations. Keep invitation/forget at cluster level, system-message severity
+filtering in Chat and Offset/subscriptions/copyable diagnostics in Audio. Restore
+the chart using static wx drawing, invalidated by topology/status/selection/size
+changes, with a maximum of four application redraw requests per second and no
+idle/hidden-tab ticker. Keep identity, membership, transport and audio policy
+unchanged. The current shared native runtime still remembers one cluster at a
+time; the new tab layout does not add concurrent native trust domains.
+
+Windows package, model, real-wx reload/chart and isolated native idle checks pass.
+With Chart visible, the standalone measurement records about 0.14% Erlang CPU
+and no idle UI snapshot requests. Next: user exercises the rebuilt UI with their
+existing cluster and stream, including connected-cluster CPU and Offset controls.
+
 ## Current increment — prompt subscription restoration (2026-11-05)
 
 User confirms background playback works at 300 ms Offset, with roughly 20-second

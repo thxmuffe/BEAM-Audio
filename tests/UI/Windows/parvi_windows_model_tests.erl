@@ -1,6 +1,20 @@
 -module(parvi_windows_model_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+message_level_filter_test() ->
+    Chat = #{<<"text">> => <<"Chat">>, <<"kind">> => <<"user">>},
+    Trace = #{<<"text">> => <<"Clock">>, <<"kind">> => <<"system">>,
+              <<"event">> => <<"clock_adjusted">>, <<"level">> => null},
+    Info = #{<<"text">> => <<"Info">>, <<"kind">> => <<"system">>, <<"level">> => <<"info">>},
+    Warning = Info#{<<"text">> := <<"Warning">>, <<"level">> := <<"warning">>},
+    Error = Info#{<<"text">> := <<"Error">>, <<"level">> := <<"error">>},
+    Messages = [Chat,Trace,Info,Warning,Error],
+    ?assertEqual(Messages,parvi_windows_model:filter_messages(Messages,<<"trace">>)),
+    ?assertEqual([Chat,Info,Warning,Error],parvi_windows_model:filter_messages(Messages,<<"info">>)),
+    ?assertEqual([Chat,Warning,Error],parvi_windows_model:filter_messages(Messages,<<"warning">>)),
+    ?assertEqual([Chat,Error],parvi_windows_model:filter_messages(Messages,<<"error">>)),
+    ?assertEqual([Chat],parvi_windows_model:filter_messages(Messages,<<"none">>)).
+
 membership_filters_graph_test() ->
     A = <<"a@localhost">>, B = <<"b@localhost">>, C = <<"c@localhost">>,
     State = #{selected => <<"one">>, drafts => #{}, snapshot => #{

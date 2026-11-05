@@ -41,7 +41,11 @@ exercise() ->
     Scoped = parvi_windows_model:network(parvi_windows_model:get()),
     false = lists:keymember(atom_to_binary(Other), 1, maps:get(nodes, Scoped)),
     [_, ViewState, parvi_windows, _] = sys:get_state(First),
-    false = maps:is_key(graph,ViewState),
+    Chart = maps:get(chart,ViewState),
+    true = lists:keymember(Swarm,1,maps:get(cluster_pages,ViewState)),
+    %% The chart is inactive on other destinations, bounded on bursts, then idle.
+    chart_checks(Chart,Swarm,Node,Peer),
+    ok = parvi_windows_model:put(#{view => 1}),
     ok = erpc:call(Peer, sys, suspend, [parvi_swarms]),
     try
         await(fun() -> node_state(Peer) =:= unresponsive end),
@@ -62,7 +66,8 @@ exercise() ->
     timer:sleep(1100),
     #{pid := First, generation := 0} = parvi_windows_host:status(),
     %% An actual BEAM change must automatically replace the wx process.
-    Good = build(binary:replace(Source, <<"Choose a swarm">>, <<"Choose your swarm">>), Path),
+    true = binary:match(Source, <<"Your clusters">>) =/= nomatch,
+    Good = build(binary:replace(Source, <<"Your clusters">>, <<"Your clusters (reload test)">>), Path),
     ok = file:write_file(Path, Good),
     Second = await_generation(1),
     true = First =/= Second,
@@ -134,6 +139,32 @@ build(Source, BeamPath) ->
         {ok, parvi_windows, Binary, []} -> Binary;
         _ -> error(test_compilation_failed)
     end.
+
+chart_checks(Chart,Swarm,Local,Peer) ->
+    ok = parvi_windows_model:put(#{view => 2}),
+    await(fun() -> maps:get(visible,chart_state(Chart)) end),
+    timer:sleep(350),
+    Network = #{nodes => [{atom_to_binary(Local),running,observed},
+                          {atom_to_binary(Peer),down,observed}],
+                edges => [{atom_to_binary(Local),atom_to_binary(Peer)}]},
+    Before = maps:get(redraws,chart_state(Chart)),
+    [parvi_windows_chart:update(Chart,Network,integer_to_binary(I),atom_to_binary(Local)) || I <- lists:seq(1,100)],
+    timer:sleep(600),
+    Stable = chart_state(Chart),
+    true = maps:get(redraws,Stable)-Before =< 2,
+    undefined = maps:get(timer,Stable),
+    timer:sleep(500),
+    true = maps:get(redraws,Stable) =:= maps:get(redraws,chart_state(Chart)),
+    ok = parvi_windows_model:put(#{view => 0,adding_cluster => true}),
+    await(fun() -> not maps:get(visible,chart_state(Chart)) end),
+    parvi_windows_chart:update(Chart,Network,undefined,atom_to_binary(Local)),
+    timer:sleep(100),
+    undefined = maps:get(timer,chart_state(Chart)),
+    Swarm = maps:get(selected,parvi_windows_model:get()),
+    ok = parvi_windows_model:put(#{adding_cluster => false}).
+
+chart_state(Pid) ->
+    [_,State,parvi_windows_chart,_] = sys:get_state(Pid), State.
 
 check_state(_, Baseline) ->
     Saved = parvi_windows_model:get(),
