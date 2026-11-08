@@ -3,9 +3,9 @@
 ## Accepted direction — secure Swarm architecture (2026-11-08)
 
 This is the **next architecture roadmap** for BEAM Audio. It supersedes the older
-trusted-cross-device-OTP-cluster design as the *target architecture*; existing
-playable Mac/iPhone code and the Windows work remain valuable and must not be
-broken merely to rename concepts. Superseded plans and exploratory proposals
+trusted-cross-device-OTP-cluster design as the *target architecture*. Reuse useful
+Mac/iPhone and Windows code without preserving old architecture solely for
+compatibility. Superseded plans and exploratory proposals
 are preserved in [old-ideas/](old-ideas/README.md). Build in small independently
 verifiable increments; do not attempt a large-scale network optimization in
 this phase.
@@ -19,13 +19,18 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Current step: 1 — boundaries and contracts; not yet implemented.** This review
-only reconciles documentation. Existing apps still use the older trusted OTP
-control path; they have not become secure Swarm participants through this edit.
+**Step 1 complete as design; next: step 2 — secure Swarm messaging.** The
+[boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
+authorization, ownership, local APIs and independent lifecycles. No new runtime
+security boundary is implemented yet. Existing apps still use the older trusted
+OTP control path; they have not become secure Swarm participants through this edit.
 Mac-to-iPhone playback and retained subscription intent have user-reported
 working evidence. The receiver still has one receive slot; Windows per-packet
 schedule execution and physical output alignment remain unverified/incomplete.
-Keep the current playback baseline, −6 dB broadcast gain and Sound Check setting.
+Migration may temporarily break apps, connections and playback; the user accepts
+this. Do not add a parallel legacy stack or compatibility shims just to keep the
+system working between steps. Preserve stored identity and the per-packet timing
+contract; gain and Music settings are outside this architecture change.
 
 ### Vocabulary and ownership
 
@@ -137,17 +142,18 @@ formats and stored identities until deliberate compatibility migrations.
    failure, worker crash, reconnect, independent streams, pause/resume,
    clock/Offset updates and cross-device output timing. Verify Mac/iPhone and
    Windows paths against their actual current support, with explicit limitations.
-   **Exit:** repeatable scripted checks plus real listening/timing evidence and
-   documented remaining gaps; only then retire the old cross-device
-   Distributed Erlang control path.
+   **Exit:** repeatable scripted checks plus real listening/timing evidence,
+   documented remaining gaps and no remaining dependency on the old cross-device
+   Distributed Erlang control path. Obsolete pieces may be retired earlier when
+   their replacements are verified; keeping old apps working is not a gate.
 
 ### Scope constraints and immediate milestone
 
 - Keep BEAM/OTP local for supervision and decisions; use authenticated,
   capability-limited messages at Device trust boundaries. A valid Passport does
   **not** automatically authorize active microphone, playback or job operations.
-- Preserve existing WebRTC/Opus and optional GStreamer media engine boundaries,
-  per-packet playback timing and current working app behavior.
+- Reuse existing WebRTC/Opus and GStreamer media engine boundaries and preserve
+  per-packet playback timing. Working app behavior between steps is not required.
 - Paused Streams retain logical subscriptions; idle transports may remain open
   for simplicity. Multiplexing, packet bundling, RabbitMQ, MQTT/EMQX, Redis,
   PostgreSQL, federation and large-scale routing are **not required** now.
@@ -162,24 +168,25 @@ formats and stored identities until deliberate compatibility migrations.
   step 2. Step 2 reuses existing Ed25519 identity and fresh challenge/response;
   the complete Passport/rejoin and multi-Desk behavior is implemented in step 5.
   Membership proof authenticates a relationship; it never grants all operations.
-- Steps 2–4 run as a small separate proof between independent runtimes with no
-  cross-device Distributed Erlang connection. Step 3 uses predefined local test
+- Steps 2–4 establish a small proof between independent runtimes with no
+  cross-device Distributed Erlang connection. No parallel compatibility path is
+  required. Step 3 uses predefined local test
   workers; mentioning DSP Workers does not require a DSP engine or algorithm.
 - Step 5 connects multiple Desks to **one** Swarm. Federation of different Swarms
   and automatic Director failover are outside this roadmap. A Desk introduces
   devices; membership/revocation policy belongs to the explicit Swarm authority
   defined in step 1, independently of where a Desk is hosted.
-- Step 6 may exercise audio collections on the existing trusted baseline while
-  step 7 replaces clock/Offset control. The migration is not ready for untrusted
+- Step 6 implements independent audio collections; full playback may remain
+  incomplete until step 7 replaces clock/Offset control. The migration is not ready for untrusted
   devices while any required discovery, subscription, diagnostics, clock or
   policy operation still crosses a device boundary through OTP distribution.
-  Preserving that baseline until step 8 does not authorize untrusted OTP peers.
+  Temporary broken consumers do not justify granting untrusted OTP connectivity.
 - Publisher pause retains subscriptions. Receiver pause retains its subscription
   while stopping local output; Unsubscribe removes that intent. Disappearance
   changes availability and releases live resources, without silently revoking
   membership or deleting subscription intent. Restored intent is reauthorized
   against current Contracts before any new playback session is enabled.
-- Step 8 verifies the complete replacement before retiring the legacy path.
+- Step 8 verifies the complete replacement and removal of legacy dependencies.
   Clock quality, software deadline execution and measured physical output timing
   remain separate evidence. No new numerical alignment guarantee is implied.
 
@@ -191,5 +198,6 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Resume at step 1: write the small boundary contract and migration map grounded
-in current code, then implement the step-2 secure messaging proof.
+Resume at step 2: implement the secure messaging proof described in
+[SWARM_CONTRACT.md](SWARM_CONTRACT.md#exit-and-next-increment). Step 1 is complete
+as a design deliverable; message schemas/code and runtime evidence are still pending.

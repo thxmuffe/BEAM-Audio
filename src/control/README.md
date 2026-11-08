@@ -5,6 +5,16 @@
 > trusted baseline, not the new untrusted Device boundary. Follow the
 > [eight-step Swarm plan](../../docs/PLAN.md) for migration and work order.
 
+## Secure Swarm migration
+
+Step 1's [boundary contract and code migration map](../../docs/SWARM_CONTRACT.md)
+defines Device identity, message/session permissions, local Handler/Worker
+responsibilities and the replacement of remote OTP dependencies. These are target
+interfaces; they are not available runtime APIs yet. Next is step 2's restricted
+status request/reply between independent runtimes without OTP connectivity.
+Temporary broken app/control paths during migration are accepted; preserving the
+old runtime alongside the replacement is not required.
+
 ## Automatic chat notices
 
 Info-level system messages appear automatically for peer connect/reconnect/

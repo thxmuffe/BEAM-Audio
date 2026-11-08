@@ -1,5 +1,36 @@
 # Progress
 
+## 2026-11-08 — Step 1: Swarm boundary contract and migration map
+
+Added [SWARM_CONTRACT.md](SWARM_CONTRACT.md) covering stable identity and authority,
+separate membership/session credentials, message authentication/authorization and
+replay rules, state owners, local Device Handler/Worker API, independent job and
+subscription lifecycles, and clock/Offset ownership. A source-linked migration
+table identifies remote PIDs/monitors, pg discovery, erpc/registered-server calls,
+cookie grants, distribution-bound media authorization and UI/inspector assumptions.
+Existing signed admission proves identity but still grants OTP access; it is not
+the new Swarm permission boundary. Current cached same-epoch policy reconciliation
+cannot establish fresh non-revocation. Those dependencies are explicitly mapped.
+
+Use one designated authority/Director arrangement initially, local OTP process
+ownership and fixed installed Workers. Step 2 proves signed, bounded status
+request/reply before jobs; steps 3–4 add local workers and job acceptance. Step 5
+adds full Passport/rejoin and multi-Desk behavior. Rich DSP, federation, generic
+RPC and a new messaging broker are not introduced by this contract.
+
+User clarification: temporary system/app/playback breakage during the migration
+is acceptable. Updated PLAN.md accordingly: no requirement for a parallel old
+stack, compatibility shim or continuous playback between steps. Stored identities
+and packet-target semantics remain invariants; verified obsolete pieces may be
+removed before the final migration checks. This supersedes the earlier baseline
+preservation requirement in the reconciliation entry below.
+
+Validation: reviewed the linked source dependencies and OTP primary documentation;
+checked document links, section references and whitespace. Step 1 is complete as
+a design deliverable only. No runtime source changes, compilation, app builds,
+device execution or deployment; secure messaging/permission enforcement remains
+unimplemented. Next: step 2's status-only exchange and rejection checks.
+
 ## 2026-11-08 — Reconciled the active roadmap and archived older proposals
 
 PLAN.md now contains only the approved eight-step secure Swarm roadmap, its
