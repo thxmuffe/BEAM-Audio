@@ -1,8 +1,10 @@
 # Secure Swarm boundary and migration contract
 
-Date: 2026-11-08. Step 1 design contract for the [eight-step roadmap](PLAN.md).
-This specifies target behavior; it does not describe an implemented security
-boundary. Existing implementation evidence stays in [PROGRESS.md](PROGRESS.md).
+Date: 2026-11-08. Step 1 design contract for the [nine-step roadmap](PLAN.md).
+This specifies the whole target boundary. Step 2's restricted signed status
+exchange is now implemented; [its guide](SWARM_CONTROL_PROTOCOL.md) records the
+actual scope and limits. Other Handler/job/Passport/audio contracts remain targets.
+Existing implementation evidence stays in [PROGRESS.md](PROGRESS.md).
 The vocabulary in PLAN.md applies here.
 
 ## Trust boundary and ownership
@@ -234,12 +236,14 @@ parallel legacy stack, compatibility shim or playback-preservation gate is neede
 Preserve stored identity and the final packet timing semantics. Obsolete code can
 be removed when its replacement is verified, no later than step 8's final checks.
 
-Next is step 2: implement the bounded signed control protocol and two independent
-runtimes exchanging only authorized status messages, initially through the
-existing Desk/mailbox path. Verify allowed request/reply, forbidden operations,
+Step 2 now supplies the bounded signed control protocol and two independent
+runtimes exchanging authorized status messages through the existing Desk/mailbox
+path. Its checks cover allowed request/reply, forbidden operations,
 forged signer/recipient, stale session/sequence replay, expiry and oversize input;
-none may create an OTP connection or worker. A Desk or WebRTC connection alone
-does not satisfy that exit. Jobs and new workers remain steps 3–4.
+none may create an OTP connection or job/audio worker. The real-Desk proof and
+focused tests pass; WebRTC control is not integrated. Next is step 3's local
+Handler and predefined Worker lifecycle; jobs remain step 4. Product apps and
+their device/listening checks are step 9, macOS then Windows then iOS.
 
 OTP references checked 2026-11-08: [security](https://www.erlang.org/doc/system/secure_coding.html),
 [supervision](https://www.erlang.org/doc/system/sup_princ.html),

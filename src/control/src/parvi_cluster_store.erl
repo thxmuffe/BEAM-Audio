@@ -24,7 +24,13 @@ load(Name, Default) ->
             case file:read_file(Path) of
                 {error, enoent} -> Default;
                 {ok, Bytes} ->
-                    #{version := 1, data := Data} = binary_to_term(Bytes, [safe]), Data;
+                    case binary_to_term(Bytes, [safe]) of
+                        #{version := 2, data := Data} -> Data;
+                        %% User-requested clean start for the Swarm migration.
+                        %% Device identity is held separately in secure storage.
+                        #{version := 1} -> Default;
+                        _ -> error({unsupported_cluster_state,Name})
+                    end;
                 {error, Reason} -> error({cluster_state_read_failed, Name, Reason})
             end
     end.
@@ -38,7 +44,7 @@ save(Name, Data) ->
             {ok, File} = file:open(Temp, [write, binary, raw]),
             try
                 ok = file:change_mode(Temp, 8#600),
-                ok = file:write(File, term_to_binary(#{version => 1, data => Data})),
+                ok = file:write(File, term_to_binary(#{version => 2, data => Data})),
                 ok = file:sync(File)
             after
                 ok = file:close(File)

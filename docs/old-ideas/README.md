@@ -3,7 +3,7 @@
 Archived/reconciled 2026-11-08. Preserve these documents as design history and
 possible future inspiration. Their original instructions, priorities, dates,
 product promises and performance claims are not current requirements or proof
-of implementation. Nothing here overrides the [active eight-step plan](../PLAN.md).
+of implementation. Nothing here overrides the [active nine-step plan](../PLAN.md).
 The [future ideas list](../IDEAS.md) identifies possibilities worth revisiting.
 
 ## Archive contents
@@ -15,7 +15,7 @@ The [future ideas list](../IDEAS.md) identifies possibilities worth revisiting.
 | [Media-provider specification](BEAM_Audio_Codex_Implementation_Spec.md) | Proposed provider, three backends and general negotiation that the current incremental architecture does not require. |
 | [Trust and coordination discussion](audio-system-trust-and-coordination.md) | Exploratory recursive groups, RabbitMQ and assignment/reconnect alternatives; no broker was selected. |
 | [Risk/security proposal](RISK_MANAGEMENT.md) | Conflicting VIP/Crowd trust model, mDNS-first roadmap and mandatory native policy; threat concerns remain useful input, proposed solutions are not adopted. Legal assertions need independent review if revisited. |
-| [Cinema vision](CINEMA_SYSTEMS.md) | Spatial rendering, multichannel cinema, DSP and calibration ambitions beyond the eight steps. |
+| [Cinema vision](CINEMA_SYSTEMS.md) | Spatial rendering, multichannel cinema, DSP and calibration ambitions beyond the nine steps. |
 | [Business/product ideas](BUSINESS_MODEL.md) | Speculative tiers, pricing, hardware and capacity claims; not current capabilities or commitments. |
 | [Original handover](notes%2020261026.md) | Early Finnish vision/chat-first instructions and future scaling concepts. |
 
@@ -25,7 +25,7 @@ The [future ideas list](../IDEAS.md) identifies possibilities worth revisiting.
 | --- | --- |
 | Trusted cross-device OTP, unrestricted RPC/remote workers, and VIP/Crowd tiers versus independent untrusted Devices | OTP supervision stays local; device boundaries use authenticated, allowlisted operations. Existing trusted code is a migration baseline, never a guest security boundary. |
 | “Cluster” preferred over “Swarm” in older product guidance | Use Swarm/Desk/Offset for new design; preserve internal names, identity storage and protocols until deliberate migration. |
-| Several “current/next” steps: Windows styling, volume, timing, cinema, repository extraction and DSP | One active eight-step sequence. Preserve completed work and validation limits in PROGRESS.md; older resume instructions stay here. |
+| Several “current/next” steps: Windows styling, volume, timing, cinema, repository extraction and DSP | One active nine-step sequence. Preserve completed work and validation limits in PROGRESS.md; older resume instructions stay here. |
 | RTP anchors/adaptive retiming versus independent packet targets | Every packet retains its broadcaster-assigned target; unsupported execution fails explicitly. Physical speaker timing still requires measurement. |
 | GStreamer deferred, NetEq-only default, and later GStreamer integration | Preserve current handler/engine boundaries and the working baseline; no backend replacement is scheduled by an old proposal. AUDIO_ENGINE_INTERFACE.md describes the packet executor and platform limits. |
 | A new provider/negotiation framework or three backends required first | Reuse existing owners and supervisors. The next integrated proof is one authorized non-audio job after secure messaging. |

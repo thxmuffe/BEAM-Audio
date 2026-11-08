@@ -1,6 +1,6 @@
 # Ideas for later
 
-These are deferred possibilities, outside the [active eight-step Swarm
+These are deferred possibilities, outside the [active nine-step Swarm
 plan](PLAN.md). They add no prerequisites or implementation commitments.
 Original discussions are preserved in [old-ideas/](old-ideas/README.md).
 

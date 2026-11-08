@@ -1,5 +1,11 @@
 # Integration checks
 
+`python3 tests/control/swarm-control-smoke.py` checks the step-2 secure Swarm
+profile using two disposable non-distributed command-line runtimes and the
+existing public Reception Desk. It never launches a product app or loads saved
+Swarm/subscription state. See [the protocol guide](../docs/SWARM_CONTROL_PROTOCOL.md)
+for compilation and checks. Network access is required.
+
 Existing checks spanning runtime processes, apps or services live here. These
 scripts can start local processes, open windows or contact the public Reception
 Desk; run the relevant check deliberately after building its components.

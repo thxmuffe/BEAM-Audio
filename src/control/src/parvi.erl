@@ -8,12 +8,12 @@ start() ->
     Root = filename:dirname(filename:dirname(code:which(?MODULE))),
     code:add_paths(filelib:wildcard(filename:join([Root, "relay_lib", "*", "ebin"]))),
     application:ensure_all_started(parvi).
-%% Opt-in native foundation. Existing app startup keeps its compatibility path.
-start(native_cluster) ->
+%% Explicit runtime profiles. Swarm control must use a non-distributed VM.
+start(Profile) when Profile =:= native_cluster; Profile =:= swarm_control ->
     case whereis(parvi_sup) of
         undefined ->
             application:load(parvi),
-            application:set_env(parvi, runtime_profile, native_cluster),
+            application:set_env(parvi, runtime_profile, Profile),
             start();
         _ -> {error, {already_started, parvi}}
     end.

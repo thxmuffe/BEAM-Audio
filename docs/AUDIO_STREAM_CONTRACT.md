@@ -5,7 +5,7 @@
 > Every packet independently carries its authoritative target as specified in
 > [AUDIO_ENGINE_INTERFACE.md](AUDIO_ENGINE_INTERFACE.md); older media-position
 > mappings here cannot replace a missing packet target. Rich spatial formats
-> remain outside the current eight steps.
+> remain outside the current nine steps.
 
 Date: 2026-11-01. Status: semantic draft with a first implemented PCM/WebRTC
 binding below. This is not an interoperability or synchronized-playback claim.

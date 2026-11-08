@@ -1,6 +1,17 @@
 -module(parvi_relay_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+bounded_raw_delivery_test() ->
+    Frame = iolist_to_binary(json:encode(#{op => <<"delivery">>,from => <<"peer">>,
+        mailbox => <<"cap">>,payload => #{swarm => <<"swarm">>}})),
+    S = #{owner => self(),delivery => raw,max_owner_queue => 0,
+          conn => self(),stream => stream,boxes => #{<<"cap">> => <<"swarm">>}},
+    ?assertMatch({noreply,S},parvi_relay:handle_info({gun_ws,self(),stream,{text,Frame}},S)),
+    receive {relay,{delivery,_,_,_}} -> error(unbounded_delivery) after 0 -> ok end,
+    Allowed = S#{max_owner_queue := 64},
+    ?assertMatch({noreply,Allowed},parvi_relay:handle_info({gun_ws,self(),stream,{text,Frame}},Allowed)),
+    receive {relay,{delivery,<<"peer">>,<<"cap">>,_}} -> ok after 1000 -> error(no_delivery) end.
+
 network_reconnect_keeps_identity_and_mailboxes_test() ->
     S = #{owner => self(),conn => undefined,stream => old,ready => true,
         online => [<<"peer">>],backoff => 10000,error => null,

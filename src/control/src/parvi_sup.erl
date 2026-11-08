@@ -5,6 +5,14 @@
 start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
+    case application:get_env(parvi,runtime_profile,legacy_apps) of
+        swarm_control ->
+            {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
+                 [#{id => parvi_swarm_control,start => {parvi_swarm_control,start_link,[]}}]}};
+        _ -> existing_profile()
+    end.
+
+existing_profile() ->
     %% Restart chat too if its process-group scope disappears.
     Core = [
         #{id => parvi_pg, start => {pg, start_link, [parvi_pg]}},

@@ -1,5 +1,54 @@
 # Progress
 
+## 2026-11-08 — Step 2: restricted authenticated Swarm control
+
+Implemented `parvi_swarm_control_protocol` (pure validation/session transitions)
+and supervised `parvi_swarm_control` (Desk I/O, timers and waiting callers).
+`parvi:start(swarm_control)` uses an unnamed, non-distributed runtime and starts
+only control plus its linked existing relay. It never starts the old trust/OTP
+carrier, chat/clock/audio branches, Device Handler or job Workers. No new library,
+broker, service deployment or product UI was introduced.
+
+Versioned exact-shape JSON envelopes use OTP Ed25519 with a separate signature
+domain, both identities, recipient/Swarm, pinned authority/policy version, fresh
+session/nonces, sequences and request correlation. Only status.read and correlated
+status.reply/status.error are dispatched after mutual challenge/proof. Added
+32 KiB envelopes, 32 configured peers/sessions, 10-second handshakes, 60-second
+sessions, 5-second requests and bounded relay-to-control delivery. Rejected input
+does not advance replay state. OTP diagnostics redact signing keys/internal state.
+Configuration is an explicitly installed local policy fixture, not the full
+Passport/admission/revocation implementation planned for step 5. WebRTC control,
+automatic renewal/reconnect and general commands remain unimplemented.
+
+At the user's request, shared store reads ignore old version-1 membership,
+authority, Desk routes and subscription intent; new writes use version 2.
+Device identity keys are unaffected. Old files/bundles were not opened, erased,
+rebuilt or installed; new core code will not restore their old relationships.
+This is an intentional clean start, not revocation elsewhere in the Swarm.
+
+Validation: component warnings-as-errors compilation and 35 focused EUnit checks
+pass, covering authentication/replay, permission/correlation/expiry, malformed and
+oversized input, duplicate keys, queue bounds, key redaction, old-state reset and
+relevant existing supervision/subscription/settings behavior. The new scripted
+real-Desk check passed bidirectional status between two disposable unnamed BEAM
+runtimes over public WSS, then rejected a signed forbidden command, forged signer
+and stale sequence. Both reported no OTP peers and no old/audio branches. Initial
+connection attempts failed before authentication; after the existing Desk's GET
+/health was confirmed healthy, the exchange passed, including the authority-bound
+final protocol. Network checks required unsandboxed network access.
+
+No product app, saved app identity or saved app state was used by the proof;
+no device listening/timing or app deployment is claimed. Added
+[protocol/configuration/check instructions](SWARM_CONTROL_PROTOCOL.md).
+Step 2 is complete within this status-only scope; next is step 3's local Handler
+and predefined Worker lifecycle, then step 4's job proof.
+
+User sequencing update: added step 9 for all native app integration and real
+app/device checks, macOS first, Windows second, then iOS. Step 8 now verifies the
+headless backend; physical listening/output evidence follows with app integration.
+Supporting Mac/iOS changes are allowed earlier if needed, but product apps must
+not be launched during these backend steps to restore old relationships/audio.
+
 ## 2026-11-08 — Step 1: Swarm boundary contract and migration map
 
 Added [SWARM_CONTRACT.md](SWARM_CONTRACT.md) covering stable identity and authority,

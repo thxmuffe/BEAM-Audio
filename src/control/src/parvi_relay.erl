@@ -2,7 +2,7 @@
 -module(parvi_relay).
 -behaviour(gen_server).
 -export([start_link/0, start_link/1, id/0, enabled/0, url/0, valid_url/1, open/2, close/1, send/3, watch/1, status/0, reconnect/0]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 start_link() -> start_link(#{owner => parvi_swarms, delivery => swarm}).
 %% A native connector can receive mailbox envelopes without the swarm decoder.
 start_link(Options) -> gen_server:start_link({local, ?MODULE}, ?MODULE, Options, []).
@@ -27,7 +27,7 @@ valid_url(URL) when is_binary(URL), byte_size(URL) =< 512 ->
         true
     catch _:_ -> false end;
 valid_url(_) -> false.
-init(#{owner := Owner, delivery := Delivery}) ->
+init(#{owner := Owner, delivery := Delivery} = Options) ->
     URL = case application:get_env(parvi, reception_desk_url) of
         {ok, U} -> U;
         undefined -> case os:getenv("PARVI_RECEPTION_DESK_URL") of
@@ -41,7 +41,10 @@ init(#{owner := Owner, delivery := Delivery}) ->
         _ ->
             true = valid_url(URL),
             {Pub, Priv} = case Delivery of
-                raw -> parvi_cluster_store:identity();
+                raw -> case maps:find(identity,Options) of
+                    {ok,Keys} -> Keys;
+                    error -> parvi_cluster_store:identity()
+                end;
                 swarm -> crypto:generate_key(eddsa, ed25519)
             end,
             {binary:encode_hex(Pub), Priv}
@@ -49,6 +52,7 @@ init(#{owner := Owner, delivery := Delivery}) ->
     persistent_term:put({?MODULE, id}, Identity), persistent_term:put({?MODULE, url}, URL),
     case URL of undefined -> ok; _ -> self() ! connect end,
     {ok, #{owner => Owner, delivery => Delivery,
+           max_owner_queue => maps:get(max_owner_queue,Options,infinity),
            url => URL, private => Private, conn => undefined, stream => undefined,
            ready => false, boxes => #{}, watch => [], online => [], backoff => 500, error => null}}.
 handle_call(status, _, S) ->
@@ -155,6 +159,12 @@ ws(Msg, #{conn := Pid, stream := Stream}) ->
             end;
         false -> {error, too_large}
     end.
+notify({delivery,_,_,_} = Event, #{owner := Owner} = S) when is_pid(Owner) ->
+    Limit = maps:get(max_owner_queue,S,infinity),
+    case process_info(Owner,message_queue_len) of
+        {message_queue_len,N} when N < Limit -> Owner ! {relay, Event};
+        _ -> {error,overloaded}
+    end;
 notify(Event, #{owner := Owner}) when is_pid(Owner) -> Owner ! {relay, Event};
 notify(Event, #{owner := Name}) ->
     case whereis(Name) of undefined -> ok; Pid -> Pid ! {relay, Event} end.
@@ -172,6 +182,10 @@ tls_options() ->
     [{verify, verify_peer}, {depth, 10},
      {customize_hostname_check, [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]} | CA].
 terminate(_, #{conn := Pid}) -> case Pid of undefined -> ok; _ -> try gun:close(Pid) catch _:_ -> ok end end, ok.
+
+format_status(Status) ->
+    maps:map(fun(state,S) -> maps:with([url,ready,backoff,error],S);
+                (log,_) -> []; (_,_) -> redacted end,Status).
 
 changed({noreply,Next}, Old) ->
     notify_changed(Old,Next), {noreply,Next};

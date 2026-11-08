@@ -19,11 +19,14 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Step 1 complete as design; next: step 2 — secure Swarm messaging.** The
+**Steps 1–2 complete within their defined scope; next: step 3 — Device Handlers
+and Workers.** The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
-authorization, ownership, local APIs and independent lifecycles. No new runtime
-security boundary is implemented yet. Existing apps still use the older trusted
-OTP control path; they have not become secure Swarm participants through this edit.
+authorization, ownership, local APIs and independent lifecycles. The opt-in
+`swarm_control` runtime now provides signed, bounded status messaging through the
+existing Desk without Distributed Erlang. Two disposable runtimes passed the
+real WSS exchange/rejection proof. This is not general admission or app migration:
+existing app bundles still use the older trusted OTP control path.
 Mac-to-iPhone playback and retained subscription intent have user-reported
 working evidence. The receiver still has one receive slot; Windows per-packet
 schedule execution and physical output alignment remain unverified/incomplete.
@@ -31,6 +34,9 @@ Migration may temporarily break apps, connections and playback; the user accepts
 this. Do not add a parallel legacy stack or compatibility shims just to keep the
 system working between steps. Preserve stored identity and the per-packet timing
 contract; gain and Music settings are outside this architecture change.
+Old version-1 Swarm/membership/Desk/subscription records are intentionally ignored
+by new builds; identity keys remain separate and unchanged. No existing app was
+launched, rebuilt or installed to perform that reset.
 
 ### Vocabulary and ownership
 
@@ -137,15 +143,27 @@ formats and stored identities until deliberate compatibility migrations.
    recover after reconnect, and reject stale/unauthorized updates; separate
    software scheduling from physical-speaker alignment claims.
 
-8. **End-to-end verification and migration.** Run two-device/one-Desk and
+8. **Backend end-to-end verification and migration.** Run two-device/one-Desk and
    multi-Desk tests: join, retained membership, revoked Passport, Director/job
    failure, worker crash, reconnect, independent streams, pause/resume,
-   clock/Offset updates and cross-device output timing. Verify Mac/iPhone and
-   Windows paths against their actual current support, with explicit limitations.
-   **Exit:** repeatable scripted checks plus real listening/timing evidence,
-   documented remaining gaps and no remaining dependency on the old cross-device
+   clock/Offset updates and backend scheduling boundaries. Use headless runtimes;
+   app launches and physical listening/output evidence belong to step 9.
+   **Exit:** repeatable scripted backend checks, explicit platform/measurement
+   limitations and no remaining dependency on the old cross-device
    Distributed Erlang control path. Obsolete pieces may be retired earlier when
    their replacements are verified; keeping old apps working is not a gate.
+
+9. **Update and verify the applications — macOS, then Windows, then iOS.**
+   Integrate the new runtime and permission/state model into each app in that
+   order. Adapt UI commands, status, invitations, subscriptions and diagnostics;
+   start with forgotten old Swarms/subscriptions rather than restoring them.
+   Supporting platform code may change earlier when needed, but do not launch
+   product apps during backend development: installed versions can auto-restore
+   old connections/audio. Build/install/launch for this explicit app phase.
+   **Exit:** app/device checks establish join/rejoin, authorized jobs, independent
+   streams, pause/resume, clock/Offset behavior and real listening/output-timing
+   evidence, with actual platform limitations recorded. Software tests alone do
+   not qualify physical speaker alignment.
 
 ### Scope constraints and immediate milestone
 
@@ -190,7 +208,7 @@ formats and stored identities until deliberate compatibility migrations.
   Clock quality, software deadline execution and measured physical output timing
   remain separate evidence. No new numerical alignment guarantee is implied.
 
-### Outside the eight steps
+### Outside the nine steps
 
 The [future ideas list](IDEAS.md) keeps longer-term possibilities separate from
 this roadmap. Cinema/5.1, spatial rendering, DSP algorithms, acoustic calibration,
@@ -198,6 +216,7 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Resume at step 2: implement the secure messaging proof described in
-[SWARM_CONTRACT.md](SWARM_CONTRACT.md#exit-and-next-increment). Step 1 is complete
-as a design deliverable; message schemas/code and runtime evidence are still pending.
+Resume at step 3: add the local Device Handler and predefined Worker lifecycle
+behind the verified status-only control boundary. Full jobs/Contracts remain
+step 4; Passport/rejoin and multi-Desk behavior remain step 5. See the implemented
+[control protocol and usage](SWARM_CONTROL_PROTOCOL.md).
