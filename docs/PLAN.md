@@ -19,8 +19,8 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–4 complete within their defined scope; next: step 5 — Desks, Passports
-and rejoin.** The
+**Steps 1–5 complete within their defined scope; next: step 6 — independent Streams
+and Subscriptions.** The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
 `swarm_control` runtime now provides signed, bounded status messaging through the
@@ -28,8 +28,10 @@ existing Desk without Distributed Erlang. The [local Handler/test Worker
 lifecycle](DEVICE_HANDLER.md) and authenticated capability reads are implemented.
 The [Contract/job proof](SWARM_JOBS.md) now covers a designated Director's offer,
 local acceptance, completion/retry, cancellation/expiry and bounded failure cleanup.
-Local checks and the real two-runtime WSS proof pass. This is not general
-admission, arbitrary remote execution or app migration:
+The [Passport/rejoin and multi-Desk proof](SWARM_MEMBERSHIP.md) now adds durable
+membership, current authority permissions and revocation. Local checks, the real
+two-runtime WSS job proof and the two-service loopback Desk proof pass. This is
+not arbitrary remote execution or app migration:
 existing app bundles still use the older trusted OTP control path.
 Mac-to-iPhone playback and retained subscription intent have user-reported
 working evidence. The receiver still has one receive slot; Windows per-packet
@@ -127,6 +129,9 @@ formats and stored identities until deliberate compatibility migrations.
    merely starting isolated replicas does not suffice.
    **Exit:** two Desks admit/reconnect devices to one Swarm; a previously admitted
    device rejoins without a new invitation, while a revoked device cannot.
+   **Complete:** [membership implementation and limits](SWARM_MEMBERSHIP.md);
+   two independent temporary Desk services share one durable authority and route
+   devices across Desks. Authority/member restarts and revoked return are verified.
 
 6. **Independent Streams and Subscriptions.** Refactor the current receiver's
    **single** receive slot and stored intent into a collection keyed by
@@ -221,9 +226,9 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Resume at step 5: extend persistent identity and current membership policy into
-Passports and fresh rejoin authorization, then make multiple Desks introduce
-Devices to the same Swarm. Keep Passport membership distinct from Contract/job
-permission; do not restore old Swarms/subscriptions or replay uncertain jobs.
-See the implemented [job proof](SWARM_JOBS.md), [Handler lifecycle](DEVICE_HANDLER.md)
-and [control protocol](SWARM_CONTROL_PROTOCOL.md).
+Resume at step 6: replace the receiver's single receive slot/intent with independent
+Streams and Subscriptions, retaining local lifecycle and bounded mixing. Full
+playback may remain incomplete until step 7 replaces clock/Offset control. Do not
+launch product apps, restore old Swarms/subscriptions or replay uncertain jobs.
+See [membership](SWARM_MEMBERSHIP.md), [jobs](SWARM_JOBS.md),
+[Handler lifecycle](DEVICE_HANDLER.md) and [control protocol](SWARM_CONTROL_PROTOCOL.md).

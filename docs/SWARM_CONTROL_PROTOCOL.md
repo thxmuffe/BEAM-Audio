@@ -1,49 +1,25 @@
-# Swarm control protocol v1 — steps 2–4
+# Swarm control protocol v1 — steps 2–5
 
 Implemented 2026-11-08 under the [Swarm plan](PLAN.md) and
 [boundary contract](SWARM_CONTRACT.md). This implements authenticated status
 and capability reads plus the [bounded test-job flow](SWARM_JOBS.md).
-Admission/Passports, WebRTC control and audio are not implemented here.
+[Admission/Passports](SWARM_MEMBERSHIP.md) are implemented separately; WebRTC control and audio remain later work.
 
 ## Runtime and local configuration
 
-`parvi:start(swarm_control)` starts `parvi_swarm_control` and the local
-`parvi_device_sup` branch under `parvi_sup`. Control owns a linked `parvi_relay`
-using the same local Ed25519 key. The Device branch owns the Handler and its
-initially empty temporary-worker supervisor. This profile rejects a named/
-distributed runtime and starts no old chat, clock, trust/distribution carrier or
-audio supervisor. [The Handler guide](DEVICE_HANDLER.md) describes local consent
-and the predefined test Worker. Do not launch product apps for this increment.
+`parvi:start(swarm_control)` now uses the [step-5 membership configuration](SWARM_MEMBERSHIP.md).
+The earlier locally provisioned peer-policy fixture has been replaced by
+nonce-bound authority admission and signed current policy. `parvi_swarm_desks`
+owns independent relay connections; the membership owner installs policy/routes
+into control. The local Device branch owns the Handler and its initially empty
+Worker supervisor. This profile starts no old chat, clock, trust/distribution
+carrier or audio supervisor. Both stable identity seed and private state directory
+are required. Product app integration remains step 9.
 
-A local host installs `application:set_env(parvi,swarm_control,Config)` before
-startup; variables below are locally provisioned public values:
-
-```erlang
-#{policy => #{swarm => SwarmId, authority => AuthorityDeviceId,
-              director => DirectorDeviceId, epoch => 1, revision => 1,
-              peers => #{PeerDeviceId => [capabilities_read,job_offer,status_read]}},
-  mailbox => LocalMailbox,
-  routes => #{PeerDeviceId => PeerMailbox}}
-```
-
-Both ends use the same Swarm/authority/Director/epoch/revision. Device IDs are Ed25519
-public keys as 64 uppercase hex characters; Swarm/mailbox IDs are 32 uppercase
-hex characters. The authority must be local or a configured peer. Up to 32 peers
-are accepted; routes must exactly match them. Each peer's grant is a sorted,
-unique subset of `[capabilities_read,job_offer,status_read]`, meaning permission
-to read this Device's capabilities/status or offer test work as the designated
-Director. `job_offer` still requires explicit local Contract and consent; read
-permissions never grant execution. Director and authority are independently
-pinned Device IDs, each local or a configured peer. Upgrade both proof runtimes
-and their configuration: the experimental schema now requires the Director field.
-The local host
-supplies `PARVI_IDENTITY_SEED` securely for stable identity; without it the runtime
-generates a disposable identity. No private key is printed by the snapshot API.
-
-This explicit local fixture is the only admission mechanism in step 2. It does
-not implement authority-signed Passports or fresh global revocation. There is no
-remote policy-update API; restart with deliberately installed current local
-policy for this proof. Full policy/rejoin behavior belongs to step 5.
+Current runtime policy pins Swarm, authority, Director, epoch/revision and per-sender
+operation grants. Membership alone grants no operations. `job_offer` additionally
+requires the designated Director and recipient's local Contract/consent.
+The [Handler guide](DEVICE_HANDLER.md) describes that local lifecycle.
 
 Call `parvi_swarm_control:connect(PeerId)` on one endpoint, then wait until both
 `snapshot/0` results show `stage => authorized` for the peer. Both endpoints can
@@ -161,7 +137,7 @@ python3 tests/control/swarm-control-smoke.py
 ```
 
 This starts two disposable `erl -noshell` runtimes without names/cookies, with
-fresh test seeds and no app state directory. It uses the existing public Desk,
+fresh test seeds and isolated temporary state directories. It uses the existing public Desk,
 not another service or a GUI. It checks status/capability reads, local Contract
 acceptance/rejection, test-job completion/retry/cancel/expiry, Worker failure and
 lease-bounded Director-loss cleanup. Forbidden raw start, forged signer and replay

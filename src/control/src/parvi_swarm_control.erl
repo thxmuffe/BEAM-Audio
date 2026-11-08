@@ -19,26 +19,25 @@ init([]) ->
     %% This profile must be run without -name/-sname or a prestarted net_kernel.
     nonode@nohost = node(), undefined = whereis(net_kernel),
     process_flag(trap_exit,true),
-    {ok,#{policy := Policy,mailbox := Mailbox,routes := Routes} = Config} =
-        application:get_env(parvi,swarm_control),
-    [mailbox,policy,routes] = lists:sort(maps:keys(Config)),
-    Identity = parvi_cluster_store:identity(),
-    Protocol = parvi_swarm_control_protocol:new(Identity,Policy),
-    true = valid_cap(Mailbox),
-    true = lists:sort(maps:keys(Routes)) =:= lists:sort(maps:keys(maps:get(peers,Policy))),
-    maps:foreach(fun(_,Cap) -> true = valid_cap(Cap) end,Routes),
-    {ok,Relay} = parvi_relay:start_link(#{owner => self(),delivery => raw,identity => Identity,
-                                        max_owner_queue => 64}),
-    parvi_relay:open(maps:get(swarm,Policy),Mailbox),
-    parvi_relay:watch(maps:keys(Routes)),
+    Identity = {Pub,_} = parvi_cluster_store:identity(),
+    Id = binary:encode_hex(Pub),
+    Empty = #{swarm => binary:copy(<<"0">>,32),authority => Id,director => Id,
+              epoch => 1,revision => 1,peers => #{}},
+    View = case parvi_swarm_membership:current() of
+        {ok,V} -> V;
+        _ -> #{policy => Empty,routes => #{},until => now_ms()}
+    end,
+    Config = maps:with([policy,routes],View),
+    Protocol = (parvi_swarm_control_protocol:new(Identity,maps:get(policy,View)))#{
+        membership_deadline => maps:get(until,View)},
     erlang:send_after(250,self(),expire),
-    {ok,#{protocol => Protocol,relay => Relay,config => Config,callers => #{},jobs => #{},
+    {ok,#{protocol => Protocol,config => Config,callers => #{},jobs => #{},
           handler_requests => gen_server:reqids_new(),handler_monitor => monitor(process,whereis(parvi_device_handler)),
           rejected => 0,last_rejection => null}}.
 
 handle_call(snapshot,_,S) ->
     Public = parvi_swarm_control_protocol:snapshot(maps:get(protocol,S)),
-    {reply,Public#{relay => parvi_relay:status(),rejected => maps:get(rejected,S),
+    {reply,Public#{relay => parvi_swarm_desks:status(),membership => parvi_swarm_membership:status(),rejected => maps:get(rejected,S),
         last_rejection => maps:get(last_rejection,S),jobs => maps:map(fun(_,J) -> public_job(J) end,maps:get(jobs,S))},S};
 handle_call({job_status,Id},_,#{jobs := Jobs} = S) ->
     Result = case maps:find(Id,Jobs) of {ok,J} -> {ok,public_job(J)}; error -> {error,unknown_job} end,
@@ -99,11 +98,22 @@ handle_call({Operation,Peer},From,#{callers := Callers} = S)
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(_,S) -> {noreply,S}.
 
-handle_info({relay,{delivery,Peer,Cap,Payload}},#{config := #{mailbox := Cap,
-            policy := #{swarm := Swarm}}} = S) ->
-    case Payload of
-        #{<<"type">> := <<"swarm_control">>,<<"swarm">> := Swarm,<<"packet">> := Packet}
-                when map_size(Payload) =:= 3 ->
+handle_info({membership_authorized,View},S) ->
+    Config = maps:with([policy,routes],View),
+    Next = case Config =:= maps:get(config,S) of
+        true -> S;
+        false ->
+            Cleared = reset(policy_changed,S),
+            Cleared#{config := Config,protocol := parvi_swarm_control_protocol:new(
+                parvi_cluster_store:identity(),maps:get(policy,View))}
+    end,
+    {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => maps:get(until,View)}}};
+handle_info(membership_invalidated,S) ->
+    Next = reset(membership_invalidated,S),
+    {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => now_ms()}}};
+handle_info({desk_delivery,_,Peer,Packet},S) ->
+    case now_ms() < maps:get(membership_deadline,maps:get(protocol,S)) of
+        true ->
             case parvi_swarm_control_protocol:receive_packet(Peer,Packet,now_ms(),maps:get(protocol,S)) of
                 {ok,Packets,Events,Protocol} ->
                     Applied = lists:foldl(fun(E,Acc) -> event(Peer,E,Acc) end,S#{protocol := Protocol},Events),
@@ -121,15 +131,21 @@ handle_info({relay,{delivery,Peer,Cap,Payload}},#{config := #{mailbox := Cap,
                     end;
                 {error,Reason,_} -> {noreply,rejected(Reason,S)}
             end;
-        _ -> {noreply,rejected(invalid_route,S)}
+        false -> {noreply,rejected(membership_expired,S)}
     end;
-handle_info({relay,disconnected},S) -> {noreply,reset(disconnected,S)};
-handle_info({relay,{presence,Online}},S) ->
+handle_info({desk_event,_,disconnected},S) -> {noreply,reset(disconnected,S)};
+handle_info({desk_event,URL,{presence,Online}},#{config := #{routes := Routes}} = S) ->
     Peers = maps:keys(maps:get(sessions,maps:get(protocol,S))),
-    {noreply,lists:foldl(fun(Peer,Acc) ->
-        case lists:member(Peer,Online) of true -> Acc; false -> close_peer(Peer,peer_disconnected,Acc) end
-    end,S,Peers)};
-handle_info({relay,_},S) -> {noreply,S};
+    Next = lists:foldl(fun(Peer,Acc) ->
+        case maps:find(Peer,Routes) of
+            {ok,#{<<"desk">> := URL}} ->
+                case lists:member(Peer,Online) of
+                    true -> Acc;false -> close_peer(Peer,peer_disconnected,Acc)
+                end;
+            _ -> Acc
+        end
+    end,S,Peers),{noreply,Next};
+handle_info({desk_event,_,_},S) -> {noreply,S};
 handle_info(expire,S) ->
     {Events,Protocol} = parvi_swarm_control_protocol:expire(now_ms(),maps:get(protocol,S)),
     Next = lists:foldl(fun({Peer,Reason},Acc) ->
@@ -150,7 +166,6 @@ handle_info({job_report,Handler,Context,Id,Report},S) ->
         true -> {noreply,send_job_report(Context,Id,Report,S)};
         false -> {noreply,S}
     end;
-handle_info({'EXIT',Relay,Reason},#{relay := Relay} = S) -> {stop,{relay_stopped,Reason},S};
 handle_info(Message,#{handler_requests := Requests} = S) ->
     case gen_server:check_response(Message,Requests,true) of
         {{reply,{ok,Report}},{Context,Id},Rest} ->
@@ -160,9 +175,7 @@ handle_info(Message,#{handler_requests := Requests} = S) ->
         _ -> {noreply,S}
     end.
 
-send(Peer,Packet,#{config := #{routes := Routes,policy := #{swarm := Swarm}}}) ->
-    parvi_relay:send(Peer,maps:get(Peer,Routes),
-        #{<<"type">> => <<"swarm_control">>,<<"swarm">> => Swarm,<<"packet">> => Packet}).
+send(Peer,Packet,_) -> parvi_swarm_desks:send(Peer,<<"swarm_control">>,Packet).
 event(Peer,{reply,<<"status.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
 event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
 event(Peer,{reply,<<"capabilities.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
@@ -206,13 +219,9 @@ reset(Reason,#{callers := Callers,protocol := Protocol} = S) ->
     S#{callers := #{},protocol := parvi_swarm_control_protocol:reset(Protocol),
        handler_requests := gen_server:reqids_new(),jobs := Jobs}.
 rejected(Reason,S) -> S#{rejected := maps:get(rejected,S)+1,last_rejection := Reason}.
-valid_cap(B) when is_binary(B),byte_size(B) =:= 32 ->
-    re:run(B,<<"^[0-9A-F]+$">>,[{capture,none}]) =:= match;
-valid_cap(_) -> false.
 now_ms() -> erlang:monotonic_time(millisecond).
 terminate(_,S) ->
-    _ = reset(stopped,S),
-    try gen_server:stop(maps:get(relay,S)) catch exit:_ -> ok end, ok.
+    _ = reset(stopped,S), ok.
 
 %% OTP diagnostics must not dump the signing key or replay/handshake state.
 format_status(Status) ->

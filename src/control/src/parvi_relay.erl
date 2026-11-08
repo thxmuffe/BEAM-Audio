@@ -5,7 +5,11 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 start_link() -> start_link(#{owner => parvi_swarms, delivery => swarm}).
 %% A native connector can receive mailbox envelopes without the swarm decoder.
-start_link(Options) -> gen_server:start_link({local, ?MODULE}, ?MODULE, Options, []).
+start_link(Options) ->
+    case maps:get(register,Options,true) of
+        true -> gen_server:start_link({local,?MODULE},?MODULE,Options,[]);
+        false -> gen_server:start_link(?MODULE,Options,[])
+    end.
 id() -> persistent_term:get({?MODULE, id}, node()).
 enabled() -> is_binary(id()).
 url() -> persistent_term:get({?MODULE, url}, undefined).
@@ -28,7 +32,7 @@ valid_url(URL) when is_binary(URL), byte_size(URL) =< 512 ->
     catch _:_ -> false end;
 valid_url(_) -> false.
 init(#{owner := Owner, delivery := Delivery} = Options) ->
-    URL = case application:get_env(parvi, reception_desk_url) of
+    DefaultURL = case application:get_env(parvi, reception_desk_url) of
         {ok, U} -> U;
         undefined -> case os:getenv("PARVI_RECEPTION_DESK_URL") of
             false -> application:get_env(parvi, default_reception_desk_url, undefined);
@@ -36,6 +40,7 @@ init(#{owner := Owner, delivery := Delivery} = Options) ->
             V -> list_to_binary(V)
         end
     end,
+    URL = maps:get(url,Options,DefaultURL),
     {Identity, Private} = case URL of
         undefined -> {node(), undefined};
         _ ->
@@ -49,14 +54,18 @@ init(#{owner := Owner, delivery := Delivery} = Options) ->
             end,
             {binary:encode_hex(Pub), Priv}
     end,
-    persistent_term:put({?MODULE, id}, Identity), persistent_term:put({?MODULE, url}, URL),
+    case maps:get(register,Options,true) of
+        true -> persistent_term:put({?MODULE,id},Identity),persistent_term:put({?MODULE,url},URL);
+        false -> ok
+    end,
     case URL of undefined -> ok; _ -> self() ! connect end,
     {ok, #{owner => Owner, delivery => Delivery,
            max_owner_queue => maps:get(max_owner_queue,Options,infinity),
+           identity => Identity,tag => maps:get(tag,Options,undefined),
            url => URL, private => Private, conn => undefined, stream => undefined,
            ready => false, boxes => #{}, watch => [], online => [], backoff => 500, error => null}}.
 handle_call(status, _, S) ->
-    {reply, #{id => name(id()), url => case url() of undefined -> null; U -> U end,
+    {reply, #{id => name(maps:get(identity,S)),url => case maps:get(url,S) of undefined -> null; U -> U end,
               connected => maps:get(ready, S), online => maps:get(online, S), watched => maps:get(watch, S), error => maps:get(error, S)}, S};
 handle_call({send, To, Cap, Payload}, _, #{ready := true} = S) ->
     Frame = #{op => <<"send">>, to => To, mailbox => Cap, payload => Payload,
@@ -114,9 +123,9 @@ handle_info_event(_, S) -> {noreply, S}.
 incoming(#{<<"op">> := <<"challenge">>, <<"v">> := 1, <<"nonce">> := Nonce}, S)
         when is_binary(Nonce), byte_size(Nonce) =:= 64 ->
     Sig = crypto:sign(eddsa, none, <<"parvi-desk/v1:", Nonce/binary>>, [maps:get(private, S), ed25519]),
-    ok = ws(#{op => <<"hello">>, v => 1, id => id(), signature => binary:encode_hex(Sig)}, S), S;
+    ok = ws(#{op => <<"hello">>,v => 1,id => maps:get(identity,S),signature => binary:encode_hex(Sig)},S),S;
 incoming(#{<<"op">> := <<"ready">>, <<"v">> := 1, <<"id">> := Id}, S) ->
-    Id = id(), Next = S#{ready := true, backoff := 500, error := null},
+    Id = maps:get(identity,S), Next = S#{ready := true, backoff := 500, error := null},
     [ws(#{op => <<"open">>, swarm => Swarm, mailbox => Cap}, Next) || {Cap, Swarm} <- maps:to_list(maps:get(boxes, S))],
     ws(#{op => <<"watch">>, nodes => maps:get(watch, S)}, Next),
     notify(connected, Next), Next;
@@ -162,12 +171,14 @@ ws(Msg, #{conn := Pid, stream := Stream}) ->
 notify({delivery,_,_,_} = Event, #{owner := Owner} = S) when is_pid(Owner) ->
     Limit = maps:get(max_owner_queue,S,infinity),
     case process_info(Owner,message_queue_len) of
-        {message_queue_len,N} when N < Limit -> Owner ! {relay, Event};
+        {message_queue_len,N} when N < Limit -> Owner ! owner_message(Event,S);
         _ -> {error,overloaded}
     end;
-notify(Event, #{owner := Owner}) when is_pid(Owner) -> Owner ! {relay, Event};
-notify(Event, #{owner := Name}) ->
-    case whereis(Name) of undefined -> ok; Pid -> Pid ! {relay, Event} end.
+notify(Event,#{owner := Owner} = S) when is_pid(Owner) -> Owner ! owner_message(Event,S);
+notify(Event,#{owner := Name} = S) ->
+    case whereis(Name) of undefined -> ok; Pid -> Pid ! owner_message(Event,S) end.
+owner_message(Event,S) ->
+    case maps:get(tag,S,undefined) of undefined -> {relay,Event}; Tag -> {relay,Tag,Event} end.
 name(N) when is_atom(N) -> atom_to_binary(N);
 name(N) -> N.
 tls_options() ->

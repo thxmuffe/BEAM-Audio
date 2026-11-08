@@ -1,5 +1,48 @@
 # Progress
 
+
+## 2026-11-09 — Step 5: durable Passports and multi-Desk rejoin
+
+Added one durable OTP membership authority, signed v3 invitations/Passports and
+fresh nonce-bound current policy grants. New membership has zero operation grants;
+local authority changes permissions explicitly. Passport subject/membership/Swarm
+and current registry checks reject revoked return; revocation advances epoch and
+revision, invalidates claimed invitations and clears affected sessions/jobs.
+Returning devices retain identity/Passport while obtaining fresh authorization.
+Authority registry, claims, member credentials/version floor and mailbox persist;
+keys, sessions, local test consent/Contracts and uncertain jobs are not restored.
+The profile requires stable seed/private state directory and replaces the former
+locally supplied peer-policy bootstrap, without a compatibility path.
+
+Added a bounded adapter over existing relay clients, with per-instance identity
+and URL state. Each device connects to the authority-permitted Desks. A signed
+directory selects recipient primary Desk/mailbox, permitting devices introduced
+through different independent Desks to communicate in the same Swarm. OTP
+rest_for_one ordering resets dependent runtime branches after owner failure;
+ordinary relay reconnects retain declarative credentials and clear live sessions.
+
+Validation: warnings-as-errors compilation and 46 focused EUnit checks passed.
+The real public Desk WSS regression passed through actual Passport admission:
+status/capabilities, forged/replayed/forbidden messages, local Contract acceptance,
+job completion/retry/cancel/expiry, Worker crash and bounded Director-loss cleanup.
+Initial WSS attempts failed before authentication although HTTPS health worked;
+a later retry passed. No specific service/network cause is established.
+Two temporary instances of the existing Phoenix Desk service on loopback passed
+zero-grant admission, explicit permissions, cross-Desk status, alternate-Desk
+retained rejoin, active-job cleanup on revocation, authority restart and revoked
+Passport rejection after both authority and member restarts. All runtimes were
+unnamed, without OTP peers or product app/audio startup; test state/seeds isolated.
+
+Limits: one online authority, 16 members/4 Desks; no election, federation, shared
+Desk database or automatic route discovery. Fresh operation grants last at most
+60 local monotonic seconds from request start and refresh with 30 seconds left;
+missed revocation notifications can leave existing authorized work alive until
+that bound, while returning/offline devices cannot authorize from cached Passport.
+Packets are signed rather than end-to-end encrypted. Multi-Desk evidence is local
+WS service routing, not two hosted Internet Desks. No app, audio, physical timing
+or deployment evidence is claimed. [Usage/limits](SWARM_MEMBERSHIP.md).
+Next: step 6, independent Streams/Subscriptions; app integration remains step 9.
+
 ## 2026-11-09 — Step 4: bounded Contract and Job proof
 
 Implemented one designated Director in the existing control actor and the fixed

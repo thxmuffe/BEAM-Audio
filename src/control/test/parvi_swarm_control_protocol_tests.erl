@@ -201,3 +201,12 @@ resign(Packet,{_,Private},Fun) -> p(seal,[Fun(body(Packet)),Private]).
 raw_seal(Data,Private) ->
     Sig = crypto:sign(eddsa,none,[<<"parvi-swarm-control/v1:">>,Data],[Private,ed25519]),
     iolist_to_binary(json:encode(#{<<"body">> => base64:encode(Data),<<"signature">> => binary:encode_hex(Sig)})).
+
+membership_deadline_is_synchronous_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    Expired = SA#{membership_deadline => 5},
+    ?assertMatch({error,_,_},p(request_status,[B,5,Expired])),
+    {ok,Packet,_} = p(request_status,[A,5,SB]),
+    ?assertMatch({error,_,_},p(receive_packet,[B,Packet,5,Expired])),
+    {_,Peer,_,_,Fresh,_} = fixture(),
+    ?assertMatch({error,_,_},p(connect,[Peer,5,Fresh#{membership_deadline => 5}])).

@@ -15,8 +15,9 @@ Step 4 now adds the [Director/Contract/job proof](../../docs/SWARM_JOBS.md), wit
 local acceptance, leases, idempotent retry and correlated outcomes. Step 2's
 [restricted status protocol](../../docs/SWARM_CONTROL_PROTOCOL.md) is implemented
 and verified between independent runtimes through the real Desk without OTP
-connectivity. Use `parvi:start(swarm_control)` with explicit local peer policy;
-the protocol guide gives configuration, limits and the headless check command.
+connectivity. Step 5 adds [durable Passports, current permissions and multi-Desk rejoin](../../docs/SWARM_MEMBERSHIP.md).
+Use `parvi:start(swarm_control)` with that membership configuration; the old explicit
+peer-policy fixture is replaced. The guides give limits and headless check commands.
 New builds ignore old version-1 membership/route/subscription records while
 retaining device keys. Step 3 adds scoped `capabilities.read` queries with their
 own `capabilities_read` grant; they do not grant Worker execution. A separate

@@ -8,18 +8,22 @@ import secrets
 import shutil
 import subprocess
 import threading
+import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class Runtime:
-    def __init__(self, paths):
+    def __init__(self, paths, seed=None, state=None):
         env = dict(os.environ)
         # Never load app identities or remembered memberships/subscriptions.
         for key in ("PARVI_STATE_DIR", "PARVI_RELAY_CA_FILE", "PARVI_RECEPTION_DESK_URL"):
             env.pop(key, None)
-        env["PARVI_IDENTITY_SEED"] = secrets.token_hex(32).upper()
+        self.state = tempfile.TemporaryDirectory() if state is None else None
+        env["PARVI_STATE_DIR"] = state or self.state.name
+        self.seed = seed or secrets.token_hex(32).upper()
+        env["PARVI_IDENTITY_SEED"] = self.seed
         self.messages = queue.Queue()
         self.process = subprocess.Popen(
             [shutil.which("erl"), "+S", "2", "-noshell", "-pa", *map(str, paths),
@@ -42,6 +46,8 @@ class Runtime:
         return self.messages.get(timeout=10)
 
     def close(self):
+        if self.process.poll() is not None:
+            return
         self.process.stdin.close()
         try:
             self.process.wait(timeout=3)
@@ -87,11 +93,16 @@ def main():
         for _ in range(2):
             runtimes.append(Runtime([output, *paths]))
         a, b = runtimes
-        swarm = secrets.token_hex(16).upper()
-        for local, remote in ((a, b), (b, a)):
-            assert local.request("configure", peer=remote.identity["id"],
-                                 mailbox=remote.identity["mailbox"], swarm=swarm, url=args.url) == {"ok": True}
-            wait(local, lambda s: s["relay"]["connected"])
+        assert a.request("create", desks=[args.url])["ok"]
+        wait(a, lambda s: all(d["connected"] for d in s["relay"]["desks"].values()))
+        invitation = a.request("invite")["value"]
+        assert b.request("join", invitation=invitation, desk=args.url)["ok"]
+        wait(b, lambda s: s["membership"]["state"] == "authorized")
+        assert a.request("grant", peer=b.identity["id"],
+                         permissions=["capabilities_read", "status_read"])["ok"]
+        revision = a.request("snapshot")["membership"]["revision"]
+        wait(b, lambda s: s["membership"]["state"] == "authorized" and
+             s["membership"]["revision"] == revision)
         assert a.request("connect", peer=b.identity["id"]) == {"ok": True}
         for local, remote in ((a, b), (b, a)):
             peer = remote.identity["id"]
@@ -112,8 +123,8 @@ def main():
             s = runtime.request("snapshot")
             assert s["node"] == "nonode@nohost" and s["nodes"] == []
             assert not s["legacy_started"] and s["workers"] == 0
-            assert s["children"] == ["parvi_device_sup", "parvi_swarm_control"]
-        director, receiver = sorted(runtimes, key=lambda r: r.identity["id"])
+            assert s["children"] == ["parvi_device_sup", "parvi_swarm_control", "parvi_swarm_desks", "parvi_swarm_membership"]
+        director, receiver = a, b
         contract = secrets.token_hex(16).upper()
         assert receiver.request("enable_test")["ok"]
         assert receiver.request("allow_jobs", director=director.identity["id"], contract=contract)["ok"]

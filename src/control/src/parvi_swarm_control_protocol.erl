@@ -30,6 +30,7 @@ new({Public, Private}, #{swarm := Swarm, authority := Authority,director := Dire
 
 connect(Peer, Now, S) ->
     attempt(fun() ->
+        true = Now < maps:get(membership_deadline,S,infinity),
         true = maps:is_key(Peer,maps:get(peers,maps:get(policy,S))),
         false = maps:is_key(Peer,maps:get(sessions,S)),
         Session = #{id => fresh(16), a => fresh(32), b => null, stage => hello,
@@ -67,6 +68,7 @@ reply_capabilities(Peer,Request,Value,Now,S) ->
 
 receive_packet(From, Packet, Now, S) ->
     attempt(fun() ->
+        true = Now < maps:get(membership_deadline,S,infinity),
         #{peers := Peers,swarm := Swarm,authority := Authority,director := Director,
           epoch := Epoch,revision := Revision} = maps:get(policy,S),
         true = maps:is_key(From,Peers),
@@ -116,10 +118,10 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := 0,<<"session">> := Id,
             {<<"proof">>,Session#{b := B,stage := proof}};
         {<<"proof">>,challenge} ->
             Payload = nonces(Session),
-            {<<"ready">>,Session#{stage := authorized,deadline := Now+60000}};
+            {<<"ready">>,Session#{stage := authorized,deadline := min(Now+60000,maps:get(membership_deadline,S,infinity))}};
         {<<"ready">>,proof} ->
             Payload = nonces(Session),
-            {none,Session#{stage := authorized,deadline := Now+60000}}
+            {none,Session#{stage := authorized,deadline := min(Now+60000,maps:get(membership_deadline,S,infinity))}}
     end,
     case Reply of
         none -> {ok,[],[authorized],put(Peer,Updated,S)};
@@ -174,7 +176,7 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
 
 active(Peer, Now, S) ->
     #{stage := authorized,deadline := Deadline} = Session = maps:get(Peer,maps:get(sessions,S)),
-    true = Now < Deadline, Session.
+    true = Now < Deadline,true = Now < maps:get(membership_deadline,S,infinity), Session.
 
 %% Expiry is also checked synchronously on every receive/request, never just by a timer.
 expire(Now, #{sessions := Sessions} = S) ->

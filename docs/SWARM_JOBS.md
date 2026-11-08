@@ -28,8 +28,8 @@ Contract IDs are 128-bit/32-uppercase-hex values; revisions are positive bounded
 integers. The Contract permits only the installed `test` capability, at most
 two active Workers with durations/leases of 20–10000 ms. IDs/revisions are explicitly
 provisioned to the two proof runtimes; automatic Contract discovery/negotiation
-is not implemented. The policy fixture is not Passport issuance or fresh global
-revocation, which remain step 5.
+is not implemented. [Step-5 membership](SWARM_MEMBERSHIP.md) now supplies current authority policy and
+revocation checks; a Passport still never supplies local Contract/consent.
 
 The Handler checks the verified sender, Director, Contract ID/revision, local
 consent, capacity and session lifetime before acceptance. Evaluation and acceptance
@@ -153,8 +153,8 @@ cancellation, expiry, Worker crash and bounded cleanup after Director loss, plus
 the earlier status/capability/authentication checks. No product app, saved app
 state, private app identity, separate Desk, audio or GUI is used.
 
-Passports, current policy/revocation on return and multi-Desk introductions follow
-in step 5. Audio subscriptions are step 6; applications remain step 9 in the
+[Passports, current policy/revocation on return and multi-Desk introductions](SWARM_MEMBERSHIP.md)
+are implemented in step 5. Audio subscriptions are step 6; applications remain step 9 in the
 macOS → Windows → iOS order. No app build/deployment is part of this increment.
 
 Primary references: [OTP asynchronous requests](https://www.erlang.org/doc/apps/stdlib/gen_server.html#send_request/2)
