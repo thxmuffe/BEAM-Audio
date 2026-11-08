@@ -19,13 +19,15 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–2 complete within their defined scope; next: step 3 — Device Handlers
-and Workers.** The
+**Steps 1–3 complete within their defined scope; next: step 4 — Contracts and
+Jobs.** The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
 `swarm_control` runtime now provides signed, bounded status messaging through the
-existing Desk without Distributed Erlang. Two disposable runtimes passed the
-real WSS exchange/rejection proof. This is not general admission or app migration:
+existing Desk without Distributed Erlang. The [local Handler/test Worker
+lifecycle](DEVICE_HANDLER.md) and authenticated capability reads are implemented.
+Local crash checks and the two-runtime WSS capability/rejection proof pass.
+This is not general admission, remote job execution or app migration:
 existing app bundles still use the older trusted OTP control path.
 Mac-to-iPhone playback and retained subscription intent have user-reported
 working evidence. The receiver still has one receive slot; Windows per-packet
@@ -216,7 +218,9 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Resume at step 3: add the local Device Handler and predefined Worker lifecycle
-behind the verified status-only control boundary. Full jobs/Contracts remain
-step 4; Passport/rejoin and multi-Desk behavior remain step 5. See the implemented
-[control protocol and usage](SWARM_CONTROL_PROTOCOL.md).
+Resume at step 4: add a Director's finite non-audio job offer, local Handler
+evaluation/acceptance, cancellation/expiry and correlated completion over secure
+Swarm messaging. Reuse the predefined test Worker and local capacity/consent
+checks; remote messages still cannot supply a process/module start specification.
+Passport/rejoin and multi-Desk behavior remain step 5. See the implemented
+[Handler lifecycle](DEVICE_HANDLER.md) and [control protocol](SWARM_CONTROL_PROTOCOL.md).

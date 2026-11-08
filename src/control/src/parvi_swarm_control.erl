@@ -1,13 +1,14 @@
-%% Step-2 Desk adapter. Owns application sessions, never OTP distribution or audio.
+%% Desk adapter. Owns application sessions, never OTP distribution or audio.
 -module(parvi_swarm_control).
 -behaviour(gen_server).
--export([start_link/0, snapshot/0, connect/1, read_status/1]).
+-export([start_link/0, snapshot/0, connect/1, read_status/1,read_capabilities/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 snapshot() -> gen_server:call(?MODULE,snapshot).
 connect(Peer) -> gen_server:call(?MODULE,{connect,Peer}).
 read_status(Peer) -> gen_server:call(?MODULE,{read_status,Peer},7000).
+read_capabilities(Peer) -> gen_server:call(?MODULE,{read_capabilities,Peer},7000).
 
 init([]) ->
     %% This profile must be run without -name/-sname or a prestarted net_kernel.
@@ -42,8 +43,13 @@ handle_call({connect,Peer},_,S) ->
             end;
         {error,Reason,_} -> {reply,{error,Reason},S}
     end;
-handle_call({read_status,Peer},From,#{callers := Callers} = S) ->
-    case parvi_swarm_control_protocol:request_status(Peer,now_ms(),maps:get(protocol,S)) of
+handle_call({Operation,Peer},From,#{callers := Callers} = S)
+        when Operation =:= read_status; Operation =:= read_capabilities ->
+    Result = case Operation of
+        read_status -> parvi_swarm_control_protocol:request_status(Peer,now_ms(),maps:get(protocol,S));
+        read_capabilities -> parvi_swarm_control_protocol:request_capabilities(Peer,now_ms(),maps:get(protocol,S))
+    end,
+    case Result of
         {ok,Packet,Protocol} ->
             case send(Peer,Packet,S) of
                 ok -> {noreply,S#{protocol := Protocol,callers := Callers#{Peer => From}}};
@@ -85,6 +91,20 @@ send(Peer,Packet,#{config := #{routes := Routes,policy := #{swarm := Swarm}}}) -
         #{<<"type">> => <<"swarm_control">>,<<"swarm">> => Swarm,<<"packet">> => Packet}).
 event(Peer,{reply,<<"status.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
 event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
+event(Peer,{reply,<<"capabilities.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
+event(Peer,{reply,<<"capabilities.error">>,#{<<"reason">> := Reason}},S) ->
+    Error = case Reason of <<"forbidden">> -> forbidden; <<"unavailable">> -> unavailable end,
+    reply(Peer,{error,Error},S);
+event(Peer,{capabilities_read,Request},S) ->
+    Value = try parvi_device_handler:capabilities() catch exit:_ -> unavailable end,
+    case parvi_swarm_control_protocol:reply_capabilities(Peer,Request,Value,now_ms(),maps:get(protocol,S)) of
+        {ok,Packet,Protocol} ->
+            case send(Peer,Packet,S) of
+                ok -> S#{protocol := Protocol};
+                _ -> reset(transport_failed,S)
+            end;
+        {error,_,_} -> reset(capability_reply_failed,S)
+    end;
 event(_,authorized,S) -> S.
 reply(Peer,Result,#{callers := Callers} = S) ->
     case maps:take(Peer,Callers) of

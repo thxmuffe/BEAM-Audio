@@ -1,5 +1,39 @@
 # Progress
 
+## Step 3 — Local Device Handler, test Workers and capability discovery
+
+Added a permanent `parvi_device_handler` and temporary predefined timer Workers
+under a local `rest_for_one` Device supervision branch. Local opt-in, two active
+slots, bounded arguments, cancellation/consent withdrawal and a 16-record outcome
+history are enforced. Worker events bind PID/ID/attempt; capacity is released only
+after process termination. Worker crashes leave the Handler/other Workers alive,
+and a new local decision can start a fresh attempt. Handler failure shuts down
+its Worker branch before replacement; consent and attempts are not restored.
+
+Added signed, grant-scoped capabilities.read/reply/error messages with exact
+snapshot validation and operation/request correlation. Capability queries read
+the Handler only after authentication/authorization, with a bounded local timeout.
+Instance/revision, actual local consent/availability, active/capacity counts and
+the test Worker's duration limit are discoverable without activating anything.
+Status-only grants do not authorize capability queries; neither permits execution.
+No remote Worker-start command, uploaded module, microphone, speaker or DSP
+capability is added. Existing audio workers are not migrated or duplicated here.
+
+Validation: warnings-as-errors compilation and 29 focused EUnit checks pass,
+including nine local lifecycle/crash tests and capability permission/correlation
+regressions. The updated real-Desk WSS check passes authenticated bidirectional
+status/capability reads and reflects a local consent change, then rejects a
+forbidden start, forged signer and replay. Both runtimes retain zero active
+Workers after those messages, no OTP peers and no old/audio branches. Network
+validation used disposable command-line runtimes, no saved app state and no GUI.
+No product app build/install/launch, native audio recovery or physical timing
+claim. [Usage and remaining limits](DEVICE_HANDLER.md).
+
+Step 3 is complete for the planned local test capability. Next is step 4's
+Director offer → local evaluation/acceptance → Worker completion over secure
+control, with job IDs, expiry/cancellation and idempotent retry. Full app work
+remains step 9 in the agreed macOS → Windows → iOS order.
+
 ## 2026-11-08 — Step 2: restricted authenticated Swarm control
 
 Implemented `parvi_swarm_control_protocol` (pure validation/session transitions)

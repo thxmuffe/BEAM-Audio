@@ -8,7 +8,9 @@ init([]) ->
     case application:get_env(parvi,runtime_profile,legacy_apps) of
         swarm_control ->
             {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
-                 [#{id => parvi_swarm_control,start => {parvi_swarm_control,start_link,[]}}]}};
+                 [#{id => parvi_device_sup,start => {parvi_device_sup,start_link,[]},
+                    type => supervisor,shutdown => infinity},
+                  #{id => parvi_swarm_control,start => {parvi_swarm_control,start_link,[]}}]}};
         _ -> existing_profile()
     end.
 

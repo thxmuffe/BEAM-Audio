@@ -3,7 +3,8 @@
 Date: 2026-11-08. Step 1 design contract for the [nine-step roadmap](PLAN.md).
 This specifies the whole target boundary. Step 2's restricted signed status
 exchange is now implemented; [its guide](SWARM_CONTROL_PROTOCOL.md) records the
-actual scope and limits. Other Handler/job/Passport/audio contracts remain targets.
+actual scope and limits. Step 3's [local Handler/test Worker lifecycle](DEVICE_HANDLER.md)
+and capability reads are implemented. Job/Passport/audio contracts remain targets.
 Existing implementation evidence stays in [PROGRESS.md](PROGRESS.md).
 The vocabulary in PLAN.md applies here.
 
@@ -124,8 +125,10 @@ Consent/OS permission withdrawal stops affected work and invalidates its grants.
 
 ## Local Handler/Worker API
 
-These are local Erlang API responsibilities, not remotely callable functions or
-an already implemented behaviour. Reuse `gen_server`, existing session
+These are local Erlang API responsibilities, not remotely callable functions.
+Step 3 implements local test capability/consent/start/cancel and bounded status;
+job evaluate/accept and the general audio Worker integration remain later steps.
+Reuse `gen_server`, existing session
 `gen_statem`s and supervisor child specifications rather than another framework.
 
 | Local operation/event | Required behavior |
@@ -241,8 +244,9 @@ runtimes exchanging authorized status messages through the existing Desk/mailbox
 path. Its checks cover allowed request/reply, forbidden operations,
 forged signer/recipient, stale session/sequence replay, expiry and oversize input;
 none may create an OTP connection or job/audio worker. The real-Desk proof and
-focused tests pass; WebRTC control is not integrated. Next is step 3's local
-Handler and predefined Worker lifecycle; jobs remain step 4. Product apps and
+focused tests pass; WebRTC control is not integrated. Step 3 adds the local
+Handler/test Worker and authenticated capability queries, retaining the ban on
+remote Worker start. Next is step 4's scoped job offer/acceptance. Product apps and
 their device/listening checks are step 9, macOS then Windows then iOS.
 
 OTP references checked 2026-11-08: [security](https://www.erlang.org/doc/system/secure_coding.html),

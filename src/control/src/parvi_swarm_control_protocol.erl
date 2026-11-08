@@ -1,6 +1,7 @@
 %% Pure, bounded application sessions. No OTP distribution, processes or device I/O.
 -module(parvi_swarm_control_protocol).
--export([new/2, connect/3, request_status/3, receive_packet/4, expire/2, reset/1,
+-export([new/2, connect/3, request_status/3, request_capabilities/3, reply_capabilities/5,
+         receive_packet/4, expire/2, reset/1,
          snapshot/1, seal/2]).
 -define(DOMAIN, <<"parvi-swarm-control/v1:">>).
 -define(MAX, 32768).
@@ -17,7 +18,9 @@ new({Public, Private}, #{swarm := Swarm, authority := Authority, epoch := Epoch,
     true = Authority =:= Id orelse maps:is_key(Authority,Peers),
     maps:foreach(fun(Peer, Permissions) ->
         true = hex(Peer,64) andalso Peer =/= Id,
-        true = Permissions =:= [] orelse Permissions =:= [status_read]
+        true = is_list(Permissions) andalso length(Permissions) =< 2,
+        true = lists:usort(Permissions) =:= Permissions,
+        true = lists:all(fun(P) -> P =:= status_read orelse P =:= capabilities_read end,Permissions)
     end,Peers),
     %% Reject an accidentally mismatched local key before opening a Desk route.
     Probe = crypto:sign(eddsa,none,?DOMAIN,[Private,ed25519]),
@@ -36,12 +39,28 @@ connect(Peer, Now, S) ->
     end,S).
 
 request_status(Peer, Now, S) ->
+    request(Peer,status,<<"status.read">>,Now,S).
+request_capabilities(Peer, Now, S) ->
+    request(Peer,capabilities,<<"capabilities.read">>,Now,S).
+request(Peer,Kind,Operation,Now,S) ->
     attempt(fun() ->
         Session = active(Peer,Now,S),
         false = maps:is_key(pending,Session),
         Request = fresh(16),
-        {Packet,Next} = outgoing(Peer,<<"status.read">>,Request,#{},
-            Session#{pending => Request, request_deadline => Now+5000},S),
+        {Packet,Next} = outgoing(Peer,Operation,Request,#{},
+            Session#{pending => Request,pending_kind => Kind,request_deadline => Now+5000},S),
+        {ok,Packet,Next}
+    end,S).
+
+%% Only the local adapter supplies capability data, after verified dispatch.
+reply_capabilities(Peer,Request,Value,Now,S) ->
+    attempt(fun() ->
+        #{capability_request := Request} = Session = active(Peer,Now,S),
+        {Op,Payload} = case Value of
+            unavailable -> {<<"capabilities.error">>,#{<<"reason">> => <<"unavailable">>}};
+            _ -> capability_payload(Value), {<<"capabilities.reply">>,Value}
+        end,
+        {Packet,Next} = outgoing(Peer,Op,Request,Payload,maps:remove(capability_request,Session),S),
         {ok,Packet,Next}
     end,S).
 
@@ -102,10 +121,27 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
             end,
             {Packet,Next} = outgoing(Peer,Reply,Request,Value,Received,S),
             {ok,[Packet],[],Next};
-        _ when Op =:= <<"status.reply">>; Op =:= <<"status.error">> ->
+        <<"capabilities.read">> ->
+            Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
+            case lists:member(capabilities_read,Permissions) of
+                true ->
+                    false = maps:is_key(capability_request,Session),
+                    {ok,[],[{capabilities_read,Request}],put(Peer,Received#{capability_request => Request},S)};
+                false ->
+                    {Packet,Next} = outgoing(Peer,<<"capabilities.error">>,Request,
+                        #{<<"reason">> => <<"forbidden">>},Received,S),
+                    {ok,[Packet],[],Next}
+            end;
+        _ when Op =:= <<"status.reply">>; Op =:= <<"status.error">>;
+               Op =:= <<"capabilities.reply">>; Op =:= <<"capabilities.error">> ->
             Request = maps:get(pending,Session),
+            Kind = case Op of
+                <<"status.",_/binary>> -> status;
+                _ -> capabilities
+            end,
+            Kind = maps:get(pending_kind,Session),
             true = Now < maps:get(request_deadline,Session),
-            Next = put(Peer,maps:without([pending,request_deadline],Received),S),
+            Next = put(Peer,maps:without([pending,pending_kind,request_deadline],Received),S),
             {ok,[],[{reply,Op,Payload}],Next}
     end.
 
@@ -120,7 +156,7 @@ expire(Now, #{sessions := Sessions} = S) ->
             true -> {Acc,[{Peer,session_expired}|Es]};
             false ->
                 case maps:get(request_deadline,Session,infinity) =< Now of
-                    true -> {Acc#{Peer => maps:without([pending,request_deadline],Session)},
+                    true -> {Acc#{Peer => maps:without([pending,pending_kind,request_deadline],Session)},
                              [{Peer,request_timeout}|Es]};
                     false -> {Acc#{Peer => Session},Es}
                 end
@@ -178,7 +214,25 @@ payload(<<"status.reply">>,P) ->
     #{<<"protocol">> := 1,<<"session">> := <<"authorized">>} = P;
 payload(<<"status.error">>,P) ->
     exact(P,[<<"reason">>]), #{<<"reason">> := <<"forbidden">>} = P;
+payload(<<"capabilities.read">>,P) -> exact(P,[]);
+payload(<<"capabilities.reply">>,P) -> capability_payload(P);
+payload(<<"capabilities.error">>,P) ->
+    exact(P,[<<"reason">>]),
+    Reason = maps:get(<<"reason">>,P),
+    true = Reason =:= <<"forbidden">> orelse Reason =:= <<"unavailable">>;
 payload(_,_) -> throw(forbidden_operation).
+
+capability_payload(P) ->
+    exact(P,[<<"instance">>,<<"revision">>,<<"test">>]),
+    true = hex(maps:get(<<"instance">>,P),32),true = uint(maps:get(<<"revision">>,P)),
+    Test = maps:get(<<"test">>,P),
+    exact(Test,[<<"supported">>,<<"available">>,<<"requires_consent">>,<<"consent">>,
+                <<"capacity">>,<<"active">>,<<"max_duration_ms">>]),
+    #{<<"supported">> := true,<<"requires_consent">> := true,
+      <<"capacity">> := 2,<<"max_duration_ms">> := 10000} = Test,
+    true = is_boolean(maps:get(<<"available">>,Test)),
+    true = is_boolean(maps:get(<<"consent">>,Test)),
+    Active = maps:get(<<"active">>,Test), true = is_integer(Active) andalso Active >= 0 andalso Active =< 2.
 
 %% Reject duplicate keys, arrays, excess nesting and oversized number strings.
 decode(Data) ->

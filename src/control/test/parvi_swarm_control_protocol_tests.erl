@@ -36,6 +36,32 @@ status_roundtrip_and_replay_test() ->
     ?assertMatch({error,_,B1},p(receive_packet,[A,Request,8,B1])),
     ?assertMatch({error,_,A2},p(receive_packet,[B,Response,8,A2])).
 
+capability_permissions_and_reply_test() ->
+    {A,B,_,KB,SA,SB,_,_,_,_} = handshake(),
+    {ok,Denied,A0} = p(request_capabilities,[B,5,SA]),
+    {ok,[Error],[],_} = p(receive_packet,[A,Denied,6,SB]),
+    ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"forbidden">>}}],_},
+        p(receive_packet,[B,Error,7,A0])),
+    Policy = maps:get(policy,SB),
+    Granted = SB#{policy := Policy#{peers := #{A => [capabilities_read,status_read]}}},
+    {ok,Query,A1} = p(request_capabilities,[B,5,SA]),
+    {ok,[],[{capabilities_read,Request}],B1} = p(receive_packet,[A,Query,6,Granted]),
+    Caps = #{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0,<<"test">> => #{
+        <<"supported">> => true,<<"available">> => false,<<"requires_consent">> => true,
+        <<"consent">> => false,<<"capacity">> => 2,<<"active">> => 0,<<"max_duration_ms">> => 10000}},
+    {ok,Reply,B2} = p(reply_capabilities,[A,Request,Caps,7,B1]),
+    WrongKind = resign(Reply,KB,fun(M) -> M#{<<"op">> := <<"status.reply">>,
+        <<"payload">> := #{<<"protocol">> => 1,<<"session">> => <<"authorized">>}} end),
+    ?assertMatch({error,_,A1},p(receive_packet,[B,WrongKind,8,A1])),
+    BadCaps = resign(Reply,KB,fun(M) -> M#{<<"payload">> := Caps#{<<"module">> => <<"os">>}} end),
+    ?assertMatch({error,_,A1},p(receive_packet,[B,BadCaps,8,A1])),
+    {ok,[],[{reply,<<"capabilities.reply">>,Caps}],A2} = p(receive_packet,[B,Reply,8,A1]),
+    ?assertMatch({error,_,A2},p(receive_packet,[B,Reply,9,A2])),
+    ?assertMatch({error,_,B2},p(reply_capabilities,[A,Request,Caps,9,B2])),
+    {ok,Unavailable,_} = p(reply_capabilities,[A,Request,unavailable,7,B1]),
+    ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"unavailable">>}}],_},
+        p(receive_packet,[B,Unavailable,8,A1])).
+
 preauth_and_nonce_replay_test() ->
     {A,B,KA,_,SA,SB,Hello,Challenge,Proof,Ready} = handshake(),
     {_,_,_,_,_,FreshB} = fixture(),

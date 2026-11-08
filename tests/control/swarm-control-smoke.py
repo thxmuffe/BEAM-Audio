@@ -87,6 +87,12 @@ def main():
             wait(local, lambda s: s["sessions"].get(peer, {}).get("stage") == "authorized")
             assert local.request("read", peer=peer) == {
                 "ok": True, "value": {"protocol": 1, "session": "authorized"}}
+            caps = local.request("capabilities", peer=peer)
+            assert caps["ok"] and caps["value"]["test"] == {
+                "supported": True, "available": False, "requires_consent": True,
+                "consent": False, "capacity": 2, "active": 0, "max_duration_ms": 10000}
+        assert b.request("enable_test") == {"ok": True}
+        assert a.request("capabilities", peer=b.identity["id"])["value"]["test"]["available"]
         before = b.request("snapshot")["rejected"]
         assert a.request("attack", peer=b.identity["id"]) == {"ok": True}
         wait(b, lambda s: s["rejected"] >= before + 3)
@@ -94,9 +100,11 @@ def main():
         for runtime in runtimes:
             s = runtime.request("snapshot")
             assert s["node"] == "nonode@nohost" and s["nodes"] == []
-            assert not s["legacy_started"] and s["children"] == ["parvi_swarm_control"]
-        print("PASS: two independent runtimes, real Desk WSS, mutual authentication, bidirectional status; "
-              "forbidden command, forged signer and replay rejected; no OTP peers, audio or GUI")
+            assert not s["legacy_started"] and s["workers"] == 0
+            assert s["children"] == ["parvi_device_sup", "parvi_swarm_control"]
+        print("PASS: two independent runtimes, real Desk WSS, authenticated status and capability reads; "
+              "local consent reflected; forbidden command, forged signer and replay rejected; "
+              "no remote worker creation, OTP peers, audio or GUI")
     finally:
         for runtime in runtimes:
             runtime.close()

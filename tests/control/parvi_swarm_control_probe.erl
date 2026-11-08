@@ -20,7 +20,7 @@ loop(Id,Cap) ->
 command(#{<<"op">> := <<"configure">>,<<"peer">> := Peer,<<"mailbox">> := PeerCap,
           <<"swarm">> := Swarm,<<"url">> := URL},Id,Cap) ->
     Policy = #{swarm => Swarm,authority => min(Id,Peer),epoch => 1,revision => 1,
-               peers => #{Peer => [status_read]}},
+               peers => #{Peer => [capabilities_read,status_read]}},
     application:load(parvi),
     application:set_env(parvi,reception_desk_url,URL),
     application:set_env(parvi,swarm_control,#{policy => Policy,mailbox => Cap,routes => #{Peer => PeerCap}}),
@@ -30,11 +30,16 @@ command(#{<<"op">> := <<"snapshot">>},_,_) ->
         nodes => [atom_to_binary(N) || N <- nodes()],
         legacy_started => lists:any(fun(N) -> whereis(N) =/= undefined end,
             [parvi_cluster_desk,parvi_cluster_trust,parvi_chat,parvi_clock,parvi_audio_sup]),
-        children => [atom_to_binary(N) || {N,_,_,_} <- supervisor:which_children(parvi_sup)]};
+        workers => proplists:get_value(active,supervisor:count_children(parvi_device_worker_sup)),
+        children => lists:sort([atom_to_binary(N) || {N,_,_,_} <- supervisor:which_children(parvi_sup)])};
 command(#{<<"op">> := <<"connect">>,<<"peer">> := Peer},_,_) ->
     result(parvi_swarm_control:connect(Peer));
 command(#{<<"op">> := <<"read">>,<<"peer">> := Peer},_,_) ->
     result(parvi_swarm_control:read_status(Peer));
+command(#{<<"op">> := <<"capabilities">>,<<"peer">> := Peer},_,_) ->
+    result(parvi_swarm_control:read_capabilities(Peer));
+command(#{<<"op">> := <<"enable_test">>},_,_) ->
+    result(parvi_device_handler:enable_test(true));
 command(#{<<"op">> := <<"attack">>,<<"peer">> := Peer},Id,_) ->
     %% Local harness access only: sign forbidden/replayed packets as the real sender.
     #{protocol := P,config := #{policy := #{swarm := Swarm,authority := Authority},routes := Routes}} =
