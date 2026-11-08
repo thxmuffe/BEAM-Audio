@@ -2,25 +2,26 @@
 -module(parvi_swarm_control_protocol).
 -export([new/2, connect/3, request_status/3, request_capabilities/3, reply_capabilities/5,
          receive_packet/4, expire/2, reset/1,
-         snapshot/1, seal/2]).
+         snapshot/1, seal/2,job_message/6,context/3]).
 -define(DOMAIN, <<"parvi-swarm-control/v1:">>).
 -define(MAX, 32768).
 -define(INT, 9007199254740991).
 
 %% Policy is explicitly installed local configuration, not a peer-supplied grant.
-new({Public, Private}, #{swarm := Swarm, authority := Authority, epoch := Epoch,
+new({Public, Private}, #{swarm := Swarm, authority := Authority,director := Director,epoch := Epoch,
                        revision := Revision, peers := Peers} = Policy) ->
-    true = lists:sort(maps:keys(Policy)) =:= [authority,epoch,peers,revision,swarm],
+    true = lists:sort(maps:keys(Policy)) =:= [authority,director,epoch,peers,revision,swarm],
     Id = binary:encode_hex(Public), true = hex(Id,64) andalso hex(Swarm,32),
     true = hex(Authority,64) andalso uint(Epoch) andalso Epoch > 0 andalso
            uint(Revision) andalso Revision > 0,
     true = is_map(Peers) andalso map_size(Peers) =< 32,
     true = Authority =:= Id orelse maps:is_key(Authority,Peers),
+    true = hex(Director,64) andalso (Director =:= Id orelse maps:is_key(Director,Peers)),
     maps:foreach(fun(Peer, Permissions) ->
         true = hex(Peer,64) andalso Peer =/= Id,
-        true = is_list(Permissions) andalso length(Permissions) =< 2,
+        true = is_list(Permissions) andalso length(Permissions) =< 3,
         true = lists:usort(Permissions) =:= Permissions,
-        true = lists:all(fun(P) -> P =:= status_read orelse P =:= capabilities_read end,Permissions)
+        true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer]) end,Permissions)
     end,Peers),
     %% Reject an accidentally mismatched local key before opening a Desk route.
     Probe = crypto:sign(eddsa,none,?DOMAIN,[Private,ed25519]),
@@ -66,14 +67,33 @@ reply_capabilities(Peer,Request,Value,Now,S) ->
 
 receive_packet(From, Packet, Now, S) ->
     attempt(fun() ->
-        #{peers := Peers,swarm := Swarm,authority := Authority,
+        #{peers := Peers,swarm := Swarm,authority := Authority,director := Director,
           epoch := Epoch,revision := Revision} = maps:get(policy,S),
         true = maps:is_key(From,Peers),
         Body = verify(Packet,From),
         #{<<"v">> := 1, <<"from">> := From, <<"to">> := To, <<"swarm">> := Swarm,
-          <<"authority">> := Authority,<<"epoch">> := Epoch, <<"revision">> := Revision} = Body,
+          <<"authority">> := Authority,<<"director">> := Director,
+          <<"epoch">> := Epoch, <<"revision">> := Revision} = Body,
         To = maps:get(id,S),
         dispatch(From,Body,Now,S)
+    end,S).
+
+context(Peer,Now,S) ->
+    Session = active(Peer,Now,S),
+    #{swarm := Swarm,director := Director} = maps:get(policy,S),
+    #{peer => Peer,session => maps:get(id,Session),deadline => maps:get(deadline,Session),
+      swarm => Swarm,director => Director}.
+job_message(Peer,Op,Id,Payload,Now,S) ->
+    attempt(fun() ->
+        true = hex(Id,32),
+        true = lists:member(Op,[<<"job.offer">>,<<"job.cancel">>,<<"job.report">>]),
+        case Op of
+            <<"job.report">> -> ok;
+            _ -> true = maps:get(id,S) =:= maps:get(director,maps:get(policy,S))
+        end,
+        payload(Op,Payload),
+        {Packet,Next} = outgoing(Peer,Op,Id,Payload,active(Peer,Now,S),S),
+        {ok,Packet,Next}
     end,S).
 
 dispatch(Peer, #{<<"op">> := <<"hello">>,<<"seq">> := 0,<<"session">> := Id,
@@ -113,6 +133,13 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
     true = Sequence > Last,
     Received = Session#{received := Sequence},
     case Op of
+        _ when Op =:= <<"job.offer">>; Op =:= <<"job.cancel">> ->
+            Policy = maps:get(policy,S),
+            true = Peer =:= maps:get(director,Policy),
+            true = lists:member(job_offer,maps:get(Peer,maps:get(peers,Policy))),
+            {ok,[],[{job,Op,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
+        <<"job.report">> ->
+            {ok,[],[{job_report,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
         <<"status.read">> ->
             Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
             {Reply,Value} = case lists:member(status_read,Permissions) of
@@ -169,14 +196,15 @@ snapshot(S) ->
         maps:with([stage],V) end,maps:get(sessions,S))}.
 
 outgoing(Peer, Op, Request, Payload, Session, S) ->
-    #{swarm := Swarm,authority := Authority,epoch := Epoch,revision := Revision} = maps:get(policy,S),
+    #{swarm := Swarm,authority := Authority,director := Director,epoch := Epoch,revision := Revision} = maps:get(policy,S),
     Sequence = case maps:get(stage,Session) of
         authorized when Op =/= <<"ready">> -> maps:get(sent,Session)+1;
         _ -> 0
     end,
     true = uint(Sequence),
     Body = #{<<"v">> => 1,<<"from">> => maps:get(id,S),<<"to">> => Peer,
-        <<"swarm">> => Swarm,<<"authority">> => Authority,<<"epoch">> => Epoch,<<"revision">> => Revision,
+        <<"swarm">> => Swarm,<<"authority">> => Authority,<<"director">> => Director,
+        <<"epoch">> => Epoch,<<"revision">> => Revision,
         <<"session">> => maps:get(id,Session),<<"seq">> => Sequence,
         <<"op">> => Op,<<"request">> => Request,<<"payload">> => Payload},
     {seal(Body,maps:get(private,S)),put(Peer,Session#{sent := Sequence},S)}.
@@ -196,10 +224,10 @@ verify(Packet, From) when is_binary(Packet), byte_size(Packet) =< ?MAX ->
     true = crypto:verify(eddsa,none,[?DOMAIN,Data],binary:decode_hex(Sig),
                          [binary:decode_hex(From),ed25519]),
     Body = decode(Data),
-    exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"swarm">>,<<"authority">>,<<"epoch">>,<<"revision">>,
+    exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"swarm">>,<<"authority">>,<<"director">>,<<"epoch">>,<<"revision">>,
                 <<"session">>,<<"seq">>,<<"op">>,<<"request">>,<<"payload">>]),
     [true = hex(maps:get(K,Body),N) || {K,N} <-
-        [{<<"from">>,64},{<<"to">>,64},{<<"authority">>,64},{<<"swarm">>,32},
+        [{<<"from">>,64},{<<"to">>,64},{<<"authority">>,64},{<<"director">>,64},{<<"swarm">>,32},
          {<<"session">>,32},{<<"request">>,32}]],
     [true = uint(maps:get(K,Body)) || K <- [<<"seq">>,<<"epoch">>,<<"revision">>]],
     payload(maps:get(<<"op">>,Body),maps:get(<<"payload">>,Body)), Body.
@@ -220,6 +248,9 @@ payload(<<"capabilities.error">>,P) ->
     exact(P,[<<"reason">>]),
     Reason = maps:get(<<"reason">>,P),
     true = Reason =:= <<"forbidden">> orelse Reason =:= <<"unavailable">>;
+payload(<<"job.offer">>,P) -> parvi_swarm_job:validate_offer(P);
+payload(<<"job.cancel">>,P) -> exact(P,[]);
+payload(<<"job.report">>,P) -> parvi_swarm_job:validate_report(P);
 payload(_,_) -> throw(forbidden_operation).
 
 capability_payload(P) ->

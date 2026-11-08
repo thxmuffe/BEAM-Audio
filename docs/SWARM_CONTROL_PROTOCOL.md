@@ -1,8 +1,9 @@
-# Swarm control protocol v1 — steps 2–3
+# Swarm control protocol v1 — steps 2–4
 
 Implemented 2026-11-08 under the [Swarm plan](PLAN.md) and
 [boundary contract](SWARM_CONTRACT.md). This implements authenticated status
-and capability reads, not admission, Passports, jobs, WebRTC control or audio.
+and capability reads plus the [bounded test-job flow](SWARM_JOBS.md).
+Admission/Passports, WebRTC control and audio are not implemented here.
 
 ## Runtime and local configuration
 
@@ -19,18 +20,22 @@ startup; variables below are locally provisioned public values:
 
 ```erlang
 #{policy => #{swarm => SwarmId, authority => AuthorityDeviceId,
-              epoch => 1, revision => 1,
-              peers => #{PeerDeviceId => [capabilities_read,status_read]}},
+              director => DirectorDeviceId, epoch => 1, revision => 1,
+              peers => #{PeerDeviceId => [capabilities_read,job_offer,status_read]}},
   mailbox => LocalMailbox,
   routes => #{PeerDeviceId => PeerMailbox}}
 ```
 
-Both ends use the same Swarm/authority/epoch/revision. Device IDs are Ed25519
+Both ends use the same Swarm/authority/Director/epoch/revision. Device IDs are Ed25519
 public keys as 64 uppercase hex characters; Swarm/mailbox IDs are 32 uppercase
 hex characters. The authority must be local or a configured peer. Up to 32 peers
 are accepted; routes must exactly match them. Each peer's grant is a sorted,
-unique subset of `[capabilities_read,status_read]`, meaning permission to read
-**this** Device's capabilities/status, respectively. Neither grants execution.
+unique subset of `[capabilities_read,job_offer,status_read]`, meaning permission
+to read this Device's capabilities/status or offer test work as the designated
+Director. `job_offer` still requires explicit local Contract and consent; read
+permissions never grant execution. Director and authority are independently
+pinned Device IDs, each local or a configured peer. Upgrade both proof runtimes
+and their configuration: the experimental schema now requires the Director field.
 The local host
 supplies `PARVI_IDENTITY_SEED` securely for stable identity; without it the runtime
 generates a disposable identity. No private key is printed by the snapshot API.
@@ -65,7 +70,7 @@ with `parvi-swarm-control/v1:`. The body has these exact fields:
 | --- | --- |
 | `v` | Integer 1. |
 | `from`, `to`, `swarm` | Sender, intended recipient, Swarm. Desk `from` must match the signer; recipient must be local. |
-| `authority`, `epoch`, `revision` | Pinned authority Device ID and exact locally installed policy version. |
+| `authority`, `director`, `epoch`, `revision` | Pinned authority/Director Device IDs and exact locally installed policy version. |
 | `session` | Fresh 128-bit/32-hex session ID. |
 | `seq` | Nonnegative integer up to 9007199254740991; strictly increasing per application-message direction. |
 | `op`, `request`, `payload` | Fixed operation, 128-bit/32-hex correlation ID, exact operation-specific object. |
@@ -82,6 +87,9 @@ with `parvi-swarm-control/v1:`. The body has these exact fields:
 | `capabilities.read` | Empty object. Authorized session/new sequence and a `capabilities_read` grant. |
 | `capabilities.reply` | Exact Handler instance/revision and test capability described in [DEVICE_HANDLER.md](DEVICE_HANDLER.md#capability-advertisement). Must match a pending capability query. |
 | `capabilities.error` | `reason`: `forbidden` or `unavailable`. Matching pending capability query. |
+| `job.offer` | Exact test capability/Contract/duration/lease fields; designated Director plus job_offer grant. Header request is the Job ID. Handler independently accepts/rejects. |
+| `job.cancel` | Empty object; designated Director, same grant and owned Job/session scope. |
+| `job.report` | Exact attempt/state/reason object. Adapter checks the Director record's assignee, session, Job ID, attempt and result fence. |
 
 Handshake messages use sequence 0 and `request == session`; application messages
 start at 1. All messages bind both identities, Swarm, session and policy version;
@@ -91,9 +99,12 @@ fresh challenge after an old session is gone, but captured proof cannot answer i
 Reject unknown fields/versions/operations, duplicate keys, arrays, extra JSON
 values, excess nesting, malformed IDs/types and wrong policy/recipient. Size is
 checked before envelope decoding; signature verification precedes body dispatch.
-No network string becomes an atom. Invalid input changes no replay/pending state.
+No network string becomes an atom. Invalid input changes no replay/pending state;
+the adapter also rolls back a job report's sequence if its local correlation check fails.
 No executable terms, arbitrary diagnostics, module/function calls, credentials
-or audio are accepted. OTP-admission signatures use a different domain.
+or audio are accepted. The separate bounded test job is fixed data, not a module/
+function invocation; its Worker is selected by the local Handler. OTP-admission
+signatures use a different domain.
 
 Transport is currently ordered Desk WSS with verified public TLS. The Desk can
 observe payloads; signing does not supply end-to-end encryption. WebRTC control
@@ -114,7 +125,9 @@ messages; outgoing traffic retains existing relay queue/frame bounds. The Desk
 retains its own limits. Local send acceptance is not remote receipt; overload/drop
 may produce a request timeout. This is bounded prototype behavior, not a public
 capacity claim. The pure protocol module owns validation/transitions; the control
-process owns timers, waiting local callers and Desk I/O. An authorized capability
+process owns timers, waiting local callers, Director job records and Desk I/O.
+Verified job offers/cancels use bounded OTP asynchronous Handler requests, not a
+blocking remote/local execution wait. An authorized capability
 request triggers a bounded 100 ms local Handler read; failure produces unavailable.
 Capability responses include a signed instance/revision, fixed support/consent/
 availability flags and bounded capacity/duration counts, without process IDs.
@@ -138,7 +151,7 @@ From `src/control`:
 
 ```sh
 rebar3 compile
-rebar3 eunit --module=parvi_device_handler_tests,parvi_swarm_control_protocol_tests,parvi_relay_tests,parvi_native_tests
+rebar3 eunit --module=parvi_swarm_job_tests,parvi_device_handler_tests,parvi_swarm_control_protocol_tests,parvi_relay_tests,parvi_native_tests
 ```
 
 From the core root, explicitly run the real-Desk check:
@@ -149,12 +162,14 @@ python3 tests/control/swarm-control-smoke.py
 
 This starts two disposable `erl -noshell` runtimes without names/cookies, with
 fresh test seeds and no app state directory. It uses the existing public Desk,
-not another service or a GUI. It checks both status/capability directions, local
-consent changes, forbidden command, forged signer, replay and absence of remote
-Worker creation, old/audio processes and OTP connections. EUnit additionally
-covers local Worker lifecycle/crashes, expiry/correlation, permission/policy/
-recipient mismatch and malformed/oversize input. The earlier state-reset check
-remains in `parvi_cluster_store_tests`; that storage path is unchanged by step 3.
+not another service or a GUI. It checks status/capability reads, local Contract
+acceptance/rejection, test-job completion/retry/cancel/expiry, Worker failure and
+lease-bounded Director-loss cleanup. Forbidden raw start, forged signer and replay
+checks remain; no arbitrary spawn, old/audio processes or OTP connections are
+allowed. EUnit additionally covers local lifecycle, Contract/grant/role boundaries,
+unchanged retry deadlines, bounded caches and malformed/oversize input. The earlier
+state-reset check remains in `parvi_cluster_store_tests`; that storage path is
+unchanged by steps 3–4. See [the job guide](SWARM_JOBS.md) for failure limits.
 No app build, installation, listening or physical timing claim follows.
 
 Uses OTP's [JSON decoder callbacks](https://www.erlang.org/doc/apps/stdlib/json.html)

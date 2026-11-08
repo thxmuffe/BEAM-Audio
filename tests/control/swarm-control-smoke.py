@@ -60,6 +60,17 @@ def wait(runtime, predicate):
     raise AssertionError("State did not converge: " + json.dumps(snapshot))
 
 
+def job_state(runtime, identity, state):
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        reply = runtime.request("job_status", id=identity)
+        assert reply["ok"], reply
+        if reply["value"]["state"] == state:
+            return reply["value"]
+        time.sleep(0.02)
+    raise AssertionError("Job did not reach " + state + ": " + json.dumps(reply))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="wss://parvi-reception-desk.onrender.com/relay/v1")
@@ -102,9 +113,46 @@ def main():
             assert s["node"] == "nonode@nohost" and s["nodes"] == []
             assert not s["legacy_started"] and s["workers"] == 0
             assert s["children"] == ["parvi_device_sup", "parvi_swarm_control"]
-        print("PASS: two independent runtimes, real Desk WSS, authenticated status and capability reads; "
-              "local consent reflected; forbidden command, forged signer and replay rejected; "
-              "no remote worker creation, OTP peers, audio or GUI")
+        director, receiver = sorted(runtimes, key=lambda r: r.identity["id"])
+        contract = secrets.token_hex(16).upper()
+        assert receiver.request("enable_test")["ok"]
+        assert receiver.request("allow_jobs", director=director.identity["id"], contract=contract)["ok"]
+
+        def offer(duration=10000, lease=10000, contract_id=contract):
+            reply = director.request("offer_job", peer=receiver.identity["id"], contract=contract_id,
+                                     duration_ms=duration, lease_ms=lease)
+            assert reply["ok"], reply
+            return reply["value"]
+
+        denied = offer(contract_id=secrets.token_hex(16).upper())
+        assert job_state(director, denied, "rejected")["report"]["reason"] == "contract_mismatch"
+        assert receiver.request("snapshot")["workers"] == 0
+        completed = offer(duration=1000)
+        accepted = job_state(director, completed, "accepted")
+        assert director.request("retry_job", id=completed)["ok"]
+        done = job_state(director, completed, "completed")
+        assert accepted["attempt"] == done["attempt"]
+        assert director.request("retry_job", id=completed)["ok"]
+        assert receiver.request("snapshot")["workers"] == 0
+        cancelled = offer()
+        job_state(director, cancelled, "accepted")
+        assert director.request("cancel_job", id=cancelled)["ok"]
+        job_state(director, cancelled, "cancelled")
+        expired = offer(lease=100)
+        job_state(director, expired, "expired")
+        failed = offer()
+        job_state(director, failed, "accepted")
+        assert receiver.request("crash_worker")["ok"]
+        job_state(director, failed, "failed")
+        abandoned = offer(lease=1000)
+        job_state(director, abandoned, "accepted")
+        director.close()
+        stopped = wait(receiver, lambda s: s["workers"] == 0 and
+                       s["worker_outcomes"][0] in ("session_lost", "expired"))
+        assert stopped["nodes"] == [] and not stopped["legacy_started"]
+        print("PASS: real Desk WSS status/capabilities; Director offer, local Contract/consent acceptance, "
+              "completion and idempotent retry; unauthorized Contract, cancellation, lease expiry, "
+              "Worker crash and bounded Director-loss cleanup; no arbitrary spawn, OTP peers, audio or GUI")
     finally:
         for runtime in runtimes:
             runtime.close()

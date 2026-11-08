@@ -2,6 +2,7 @@
 -module(parvi_device_handler).
 -behaviour(gen_server).
 -export([start_link/0,capabilities/0,status/0,enable_test/1,start/2,cancel/1]).
+-export([set_test_contract/3,clear_test_contract/0,accept_job/3,cancel_job/2,session_down/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
 -define(CAPACITY,2).
 -define(HISTORY,16).
@@ -12,13 +13,52 @@ status() -> gen_server:call(?MODULE,status).
 enable_test(Enabled) -> gen_server:call(?MODULE,{enable_test,Enabled}).
 start(Capability,Args) -> gen_server:call(?MODULE,{start,Capability,Args}).
 cancel(Id) -> gen_server:call(?MODULE,{cancel,Id}).
+set_test_contract(Director,Id,Revision) -> gen_server:call(?MODULE,{test_contract,Director,Id,Revision}).
+clear_test_contract() -> gen_server:call(?MODULE,clear_test_contract).
+accept_job(Context,Id,Offer) -> gen_server:call(?MODULE,{accept_job,Context,Id,Offer}).
+cancel_job(Context,Id) -> gen_server:call(?MODULE,{cancel_job,Context,Id}).
+session_down(Peer,Session) -> gen_server:call(?MODULE,{session_down,Peer,Session}).
 init([]) ->
-    {ok,#{instance => fresh(),revision => 0,enabled => false,active => #{},history => []}}.
+    {ok,#{instance => fresh(),revision => 0,enabled => false,active => #{},history => [],
+          contract => undefined,jobs => #{},control => undefined,control_monitor => undefined}}.
 
 handle_call(capabilities,_,S) -> {reply,capability_snapshot(S),S};
 handle_call(status,_,S) ->
     {reply,#{capabilities => capability_snapshot(S),active =>
-        maps:map(fun(_,W) -> public(W) end,maps:get(active,S)),history => maps:get(history,S)},S};
+        maps:map(fun(_,W) -> public(W) end,maps:get(active,S)),history => maps:get(history,S),
+        jobs => maps:map(fun(_,J) -> maps:get(report,J) end,maps:get(jobs,S)),contract => maps:get(contract,S)},S};
+handle_call({test_contract,Director,Id,Revision},_,S) ->
+    case parvi_swarm_job:hex(Director,64) andalso parvi_swarm_job:hex(Id,32) andalso
+         is_integer(Revision) andalso Revision > 0 andalso Revision =< 9007199254740991 of
+        false -> {reply,{error,invalid_contract},S};
+        true ->
+            New = #{director => Director,id => Id,revision => Revision},
+            case maps:get(contract,S) of
+                New -> {reply,ok,S};
+                #{id := Id,revision := Old} when Revision =< Old -> {reply,{error,stale_contract},S};
+                _ -> {reply,ok,changed((stop_jobs(fun(_) -> true end,contract_revoked,S))#{contract := New})}
+            end
+    end;
+handle_call(clear_test_contract,_,S) ->
+    {reply,ok,changed((stop_jobs(fun(_) -> true end,contract_revoked,S))#{contract := undefined})};
+handle_call({accept_job,Context,Id,Offer},{Caller,_},S) ->
+    case Caller =:= whereis(parvi_swarm_control) of
+        true -> evaluate_job(Context,Id,Offer,watch_control(Caller,S));
+        false -> {reply,{error,not_control},S}
+    end;
+handle_call({cancel_job,Context,Id},{Caller,_},S) ->
+    case Caller =:= whereis(parvi_swarm_control) of
+        true -> cancel_network_job(Context,Id,watch_control(Caller,S));
+        false -> {reply,{error,not_control},S}
+    end;
+handle_call({session_down,Peer,Session},{Caller,_},S) ->
+    case Caller =:= whereis(parvi_swarm_control) of
+        true ->
+            Match = fun(#{context := C}) -> maps:get(peer,C) =:= Peer andalso maps:get(session,C) =:= Session end,
+            Next = stop_jobs(Match,session_lost,S),
+            {reply,ok,Next#{jobs := maps:filter(fun(_,J) -> not Match(J) end,maps:get(jobs,Next))}};
+        false -> {reply,{error,not_control},S}
+    end;
 handle_call({enable_test,Enabled},_,S) when is_boolean(Enabled) ->
     Next = case Enabled of
         true -> S;
@@ -42,6 +82,15 @@ handle_call({cancel,Id},_,#{active := Active,history := History} = S) ->
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(_,S) -> {noreply,S}.
 
+handle_info({'DOWN',Ref,process,_,_},#{control_monitor := Ref} = S) ->
+    Next = stop_jobs(fun(_) -> true end,session_lost,S),
+    {noreply,Next#{jobs := #{},control := undefined,control_monitor := undefined}};
+handle_info({job_expire,Id,Attempt},#{jobs := Jobs} = S) ->
+    case maps:find(Id,Jobs) of
+        {ok,#{worker := Worker,report := #{<<"state">> := <<"accepted">>,<<"attempt">> := Attempt}}} ->
+            {noreply,stop(Worker,expired,S)};
+        _ -> {noreply,S}
+    end;
 handle_info({worker_event,Pid,Id,Attempt,Event},#{active := Active} = S) ->
     case maps:find(Id,Active) of
         {ok,#{pid := Pid,attempt := Attempt,state := State} = W} ->
@@ -92,7 +141,8 @@ stop(Id,Outcome,#{active := Active} = S) ->
     end.
 finish(Id,Outcome,#{active := Active,history := History} = S) ->
     {W,Rest} = maps:take(Id,Active),
-    changed(S#{active := Rest,history := lists:sublist([(public(W))#{state := Outcome}|History],?HISTORY)}).
+    {Final,Next} = finish_job(W,Outcome,S),
+    changed(Next#{active := Rest,history := lists:sublist([(public(W))#{state := Final}|History],?HISTORY)}).
 public(W) -> maps:with([id,attempt,state],W).
 changed(S) -> S#{revision := maps:get(revision,S)+1}.
 capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,revision := Revision}) ->
@@ -103,3 +153,107 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
         <<"requires_consent">> => true,<<"consent">> => Enabled,
         <<"capacity">> => ?CAPACITY,<<"active">> => Count,<<"max_duration_ms">> => 10000}}.
 fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
+
+watch_control(Pid,#{control := undefined} = S) ->
+    S#{control := Pid,control_monitor := monitor(process,Pid)};
+watch_control(Pid,#{control := Pid} = S) -> S;
+watch_control(Pid,S) ->
+    Next = stop_jobs(fun(_) -> true end,session_lost,S),
+    demonitor(maps:get(control_monitor,S),[flush]),
+    Next#{jobs := #{},control := Pid,control_monitor := monitor(process,Pid)}.
+
+evaluate_job(Context,Id,Offer,#{jobs := Jobs} = S) ->
+    case maps:find(Id,Jobs) of
+        {ok,#{context := Old,offer := Offer}} ->
+            case same_context(Old,Context) of
+                true ->
+                    Next = expire_job(Id,S),
+                    {reply,{ok,maps:get(report,maps:get(Id,maps:get(jobs,Next)))},Next};
+                false -> {reply,{ok,rejected(conflicting_offer)},S}
+            end;
+        {ok,_} -> {reply,{ok,rejected(conflicting_offer)},S};
+        error when map_size(Jobs) >= 32 -> {reply,{ok,rejected(job_limit)},S};
+        error ->
+            Reason = job_permission(Context,Offer,S),
+            case Reason of
+                ok -> accept_test_job(Context,Id,Offer,S);
+                _ ->
+                    Report = rejected(Reason),
+                    J = #{context => Context,offer => Offer,report => Report},
+                    {reply,{ok,Report},S#{jobs := Jobs#{Id => J}}}
+            end
+    end.
+job_permission(#{peer := Peer,director := Peer,deadline := Deadline},Offer,S) ->
+    try
+        ok = parvi_swarm_job:validate_offer(Offer),
+        true = erlang:monotonic_time(millisecond) < Deadline,
+        #{director := Peer,id := Contract,revision := Revision} = maps:get(contract,S),
+        Contract = maps:get(<<"contract">>,Offer), Revision = maps:get(<<"contract_revision">>,Offer),
+        case {maps:get(enabled,S),map_size(maps:get(active,S)) < ?CAPACITY} of
+            {false,_} -> consent_required;
+            {true,false} -> capacity_exceeded;
+            _ -> ok
+        end
+    catch _:_ -> contract_mismatch end;
+job_permission(_,_,_) -> contract_mismatch.
+accept_test_job(Context,Id,Offer,S) ->
+    Now = erlang:monotonic_time(millisecond),
+    Deadline = min(maps:get(deadline,Context),Now+maps:get(<<"lease_ms">>,Offer)),
+    case start_test(maps:get(<<"duration_ms">>,Offer),S) of
+        {reply,{ok,Worker},#{active := Active,jobs := Jobs} = Next} ->
+            W = maps:get(Worker,Active), Attempt = maps:get(attempt,W),
+            Report = parvi_swarm_job:report(Attempt,<<"accepted">>,<<"none">>),
+            Timer = erlang:send_after(max(0,Deadline-erlang:monotonic_time(millisecond)),self(),{job_expire,Id,Attempt}),
+            J = #{context => Context,offer => Offer,report => Report,worker => Worker,deadline => Deadline,timer => Timer},
+            {reply,{ok,Report},Next#{active := Active#{Worker := W#{job => Id}},jobs := Jobs#{Id => J}}};
+        {reply,_,_} -> {reply,{ok,rejected(handler_unavailable)},S}
+    end.
+cancel_network_job(Context,Id,#{jobs := Jobs} = S) ->
+    case maps:find(Id,Jobs) of
+        {ok,#{context := Old} = J} ->
+            case same_context(Old,Context) of
+                false -> {reply,{ok,rejected(conflicting_offer)},S};
+                true ->
+                    Next = case maps:get(<<"state">>,maps:get(report,J)) of
+                        <<"accepted">> -> stop(maps:get(worker,J),cancelled,S);
+                        _ -> S
+                    end,
+                    {reply,{ok,maps:get(report,maps:get(Id,maps:get(jobs,Next)))},Next}
+            end;
+        error when map_size(Jobs) >= 32 -> {reply,{ok,rejected(job_limit)},S};
+        error ->
+            Report = parvi_swarm_job:report(null,<<"cancelled">>,<<"cancelled">>),
+            {reply,{ok,Report},S#{jobs := Jobs#{Id => #{context => Context,report => Report}}}}
+    end.
+expire_job(Id,#{jobs := Jobs} = S) ->
+    case maps:get(Id,Jobs) of
+        #{worker := Worker,deadline := Deadline,report := #{<<"state">> := <<"accepted">>}} ->
+            case erlang:monotonic_time(millisecond) >= Deadline of true -> stop(Worker,expired,S); false -> S end;
+        _ -> S
+    end.
+stop_jobs(Predicate,Outcome,#{jobs := Jobs} = S) ->
+    lists:foldl(fun({_,J},Acc) ->
+        case {Predicate(J),maps:get(<<"state">>,maps:get(report,J))} of
+            {true,<<"accepted">>} -> stop(maps:get(worker,J),Outcome,Acc);
+            _ -> Acc
+        end
+    end,S,maps:to_list(Jobs)).
+finish_job(#{job := Id,attempt := Attempt},Outcome,#{jobs := Jobs,control := Control} = S) ->
+    J = maps:get(Id,Jobs), erlang:cancel_timer(maps:get(timer,J)),
+    Final = case erlang:monotonic_time(millisecond) >= maps:get(deadline,J) of
+        true -> expired; false -> Outcome end,
+    {State,Reason} = case Final of
+        completed -> {<<"completed">>,<<"none">>};
+        failed -> {<<"failed">>,<<"worker_failed">>};
+        expired -> {<<"expired">>,<<"lease_expired">>};
+        cancelled -> {<<"cancelled">>,<<"cancelled">>};
+        consent_revoked -> {<<"cancelled">>,<<"consent_revoked">>};
+        contract_revoked -> {<<"cancelled">>,<<"contract_revoked">>};
+        session_lost -> {<<"cancelled">>,<<"session_lost">>}
+    end,
+    Report = parvi_swarm_job:report(Attempt,State,Reason),
+    Control ! {job_report,self(),maps:get(context,J),Id,Report},
+    {Final,S#{jobs := Jobs#{Id := (maps:without([timer,worker],J))#{report := Report}}}};
+finish_job(_,Outcome,S) -> {Outcome,S}.
+same_context(A,B) -> maps:with([peer,session,swarm],A) =:= maps:with([peer,session,swarm],B).
+rejected(Reason) -> parvi_swarm_job:report(null,<<"rejected">>,atom_to_binary(Reason)).

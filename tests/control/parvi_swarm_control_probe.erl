@@ -19,8 +19,8 @@ loop(Id,Cap) ->
     end.
 command(#{<<"op">> := <<"configure">>,<<"peer">> := Peer,<<"mailbox">> := PeerCap,
           <<"swarm">> := Swarm,<<"url">> := URL},Id,Cap) ->
-    Policy = #{swarm => Swarm,authority => min(Id,Peer),epoch => 1,revision => 1,
-               peers => #{Peer => [capabilities_read,status_read]}},
+    Policy = #{swarm => Swarm,authority => min(Id,Peer),director => min(Id,Peer),epoch => 1,revision => 1,
+               peers => #{Peer => [capabilities_read,job_offer,status_read]}},
     application:load(parvi),
     application:set_env(parvi,reception_desk_url,URL),
     application:set_env(parvi,swarm_control,#{policy => Policy,mailbox => Cap,routes => #{Peer => PeerCap}}),
@@ -31,6 +31,7 @@ command(#{<<"op">> := <<"snapshot">>},_,_) ->
         legacy_started => lists:any(fun(N) -> whereis(N) =/= undefined end,
             [parvi_cluster_desk,parvi_cluster_trust,parvi_chat,parvi_clock,parvi_audio_sup]),
         workers => proplists:get_value(active,supervisor:count_children(parvi_device_worker_sup)),
+        worker_outcomes => [maps:get(state,W) || W <- maps:get(history,parvi_device_handler:status())],
         children => lists:sort([atom_to_binary(N) || {N,_,_,_} <- supervisor:which_children(parvi_sup)])};
 command(#{<<"op">> := <<"connect">>,<<"peer">> := Peer},_,_) ->
     result(parvi_swarm_control:connect(Peer));
@@ -40,13 +41,24 @@ command(#{<<"op">> := <<"capabilities">>,<<"peer">> := Peer},_,_) ->
     result(parvi_swarm_control:read_capabilities(Peer));
 command(#{<<"op">> := <<"enable_test">>},_,_) ->
     result(parvi_device_handler:enable_test(true));
+command(#{<<"op">> := <<"allow_jobs">>,<<"director">> := Director,<<"contract">> := Contract},_,_) ->
+    result(parvi_device_handler:set_test_contract(Director,Contract,1));
+command(#{<<"op">> := <<"offer_job">>,<<"peer">> := Peer,<<"contract">> := Contract,
+          <<"duration_ms">> := Duration,<<"lease_ms">> := Lease},_,_) ->
+    result(parvi_swarm_control:offer_job(Peer,#{<<"contract">> => Contract,<<"contract_revision">> => 1,
+        <<"capability">> => <<"test">>,<<"duration_ms">> => Duration,<<"lease_ms">> => Lease}));
+command(#{<<"op">> := <<"retry_job">>,<<"id">> := Id},_,_) -> result(parvi_swarm_control:retry_job(Id));
+command(#{<<"op">> := <<"cancel_job">>,<<"id">> := Id},_,_) -> result(parvi_swarm_control:cancel_job(Id));
+command(#{<<"op">> := <<"job_status">>,<<"id">> := Id},_,_) -> result(parvi_swarm_control:job_status(Id));
+command(#{<<"op">> := <<"crash_worker">>},_,_) ->
+    [{_,Pid,_,_}] = supervisor:which_children(parvi_device_worker_sup),exit(Pid,kill),#{ok => true};
 command(#{<<"op">> := <<"attack">>,<<"peer">> := Peer},Id,_) ->
     %% Local harness access only: sign forbidden/replayed packets as the real sender.
-    #{protocol := P,config := #{policy := #{swarm := Swarm,authority := Authority},routes := Routes}} =
+    #{protocol := P,config := #{policy := #{swarm := Swarm,authority := Authority,director := Director},routes := Routes}} =
         sys:get_state(parvi_swarm_control),
     #{id := Session,sent := Seq} = maps:get(Peer,maps:get(sessions,P)),
     Body = #{<<"v">> => 1,<<"from">> => Id,<<"to">> => Peer,<<"swarm">> => Swarm,
-        <<"authority">> => Authority,<<"epoch">> => 1,<<"revision">> => 1,
+        <<"authority">> => Authority,<<"director">> => Director,<<"epoch">> => 1,<<"revision">> => 1,
         <<"session">> => Session,<<"seq">> => Seq+1,
         <<"request">> => binary:copy(<<"0">>,32),<<"op">> => <<"worker.start">>,<<"payload">> => #{}},
     Private = maps:get(private,P),

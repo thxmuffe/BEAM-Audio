@@ -5,7 +5,7 @@ fixture() ->
     KA = {PA,_} = crypto:generate_key(eddsa,ed25519),
     KB = {PB,_} = crypto:generate_key(eddsa,ed25519),
     A = binary:encode_hex(PA), B = binary:encode_hex(PB),
-    Common = #{swarm => binary:copy(<<"A">>,32),authority => A,epoch => 1,revision => 1},
+    Common = #{swarm => binary:copy(<<"A">>,32),authority => A,director => A,epoch => 1,revision => 1},
     {A,B,KA,KB,
      parvi_swarm_control_protocol:new(KA,Common#{peers => #{B => [status_read]}}),
      parvi_swarm_control_protocol:new(KB,Common#{peers => #{A => [status_read]}})}.
@@ -61,6 +61,40 @@ capability_permissions_and_reply_test() ->
     {ok,Unavailable,_} = p(reply_capabilities,[A,Request,unavailable,7,B1]),
     ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"unavailable">>}}],_},
         p(receive_packet,[B,Unavailable,8,A1])).
+
+director_and_job_grant_test() ->
+    {A,B,KA,KB,SA,SB,_,_,_,_} = handshake(),
+    Id = binary:copy(<<"C">>,32), Offer = job_offer(),
+    {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
+    ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
+    PolicyB = maps:get(policy,SB),
+    GrantedB = SB#{policy := PolicyB#{peers := #{A => [job_offer,status_read]}}},
+    ?assertMatch({ok,[],[{job,<<"job.offer">>,Id,Offer,#{peer := A,director := A}}],_},
+        p(receive_packet,[A,Packet,6,GrantedB])),
+    ?assertMatch({error,_,SB},p(job_message,[A,<<"job.offer">>,Id,Offer,5,SB])),
+    PolicyA = maps:get(policy,SA),
+    GrantedA = SA#{policy := PolicyA#{peers := #{B => [job_offer,status_read]}}},
+    Impostor = resign(Packet,KB,fun(M) -> M#{<<"from">> := B,<<"to">> := A} end),
+    ?assertMatch({error,_,GrantedA},p(receive_packet,[B,Impostor,6,GrantedA])),
+    BadDirector = resign(Packet,KA,fun(M) -> M#{<<"director">> := B} end),
+    ?assertMatch({error,_,GrantedB},p(receive_packet,[A,BadDirector,6,GrantedB])).
+
+job_schema_and_expiry_test() ->
+    {A,B,KA,_,SA,SB,_,_,_,_} = handshake(),
+    Id = binary:copy(<<"C">>,32), Offer = job_offer(),
+    Policy = maps:get(policy,SB), Granted = SB#{policy := Policy#{peers := #{A => [job_offer]}}},
+    {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
+    [?assertMatch({error,_,Granted},p(receive_packet,[A,
+        resign(Packet,KA,fun(M) -> M#{<<"payload">> := Bad} end),6,Granted])) || Bad <-
+        [Offer#{<<"module">> => <<"os">>},Offer#{<<"capability">> := <<"microphone">>},
+         Offer#{<<"lease_ms">> := 0},Offer#{<<"lease_ms">> := 10001},
+         Offer#{<<"contract_revision">> := 0},Offer#{<<"duration_ms">> := 20.5}]],
+    ?assertMatch({error,_,SA},p(job_message,[B,<<"job.offer">>,Id,Offer,60004,SA])),
+    ?assertException(error,_,parvi_swarm_job:validate_report(
+        #{<<"state">> => <<"accepted">>,<<"attempt">> => null,<<"reason">> => <<"none">>})).
+
+job_offer() -> #{<<"contract">> => binary:copy(<<"D">>,32),<<"contract_revision">> => 1,
+    <<"capability">> => <<"test">>,<<"duration_ms">> => 1000,<<"lease_ms">> => 5000}.
 
 preauth_and_nonce_replay_test() ->
     {A,B,KA,_,SA,SB,Hello,Challenge,Proof,Ready} = handshake(),

@@ -1,5 +1,47 @@
 # Progress
 
+## 2026-11-09 — Step 4: bounded Contract and Job proof
+
+Implemented one designated Director in the existing control actor and the fixed
+test-job schemas in `parvi_swarm_job`. Swarm policy now separately pins Director
+and authority IDs; signed headers bind both. Job offers/cancels require the
+Director role and job_offer grant. The recipient Handler separately checks its
+local test Contract ID/revision, consent, capacity and session lifetime, then
+creates the predefined temporary Worker. A raw worker.start command remains
+forbidden; no remote module/function/resource start specification is accepted.
+
+Added accepted/completed/rejected/failed/cancelled/expired reports bound to Job ID,
+assignee, session and Worker attempt. Identical retries return the original
+attempt/outcome without extending the receiver lease; changed offers under the
+same ID fail. Contracts can be revised/revoked locally. Cancellation tombstones,
+bounded deduplication, independent local monotonic leases and terminal result
+fencing prevent old requests/results from reviving an attempt. Director timeouts
+are reported as unconfirmed, not proof that nothing ran. There is no durable
+exactly-once execution or automatic uncertain-job replay across restart.
+
+Verified offers reach the Handler through OTP asynchronous request collections,
+keeping control/session timers available. Control death stops its network jobs
+without cancelling unrelated local tasks; Handler replacement fences old sessions.
+Observed Desk/peer/session loss stops affected jobs. Real relay detection of a
+killed Director was delayed; the receiver's independent lease stopped its Worker
+first. This is bounded lease cleanup, not instantaneous network-failure detection.
+
+Validation: warnings-as-errors compilation and 40 focused EUnit checks pass,
+including job acceptance/retry/cancellation, Contract/consent rejection, unchanged
+retry deadlines, conflicting IDs, owner/Worker failure, cleanup and bounded cache,
+plus signed Director/grant/schema/expiry rejection and earlier lifecycle/control
+regressions. The expanded real-Desk WSS script passes two disposable unnamed
+runtimes through offers, local Contract rejection, accepted/completed attempt
+identity, retries, cancellation, expiry, Worker crash and bounded Director-loss
+cleanup. An initial WSS attempt failed before authentication; GET /health then
+confirmed the existing Desk healthy. The final full job proof passed.
+
+No product apps, saved app identities/state, separate Desk, new service deployment
+or audio path were used. No app build/install/launch, physical timing, automatic
+Director failover or full Passport/rejoin claim. [APIs, protocol and limits](SWARM_JOBS.md).
+Step 4 is complete for the approved non-audio proof; next is step 5. App integration
+remains step 9 in macOS → Windows → iOS order.
+
 ## Step 3 — Local Device Handler, test Workers and capability discovery
 
 Added a permanent `parvi_device_handler` and temporary predefined timer Workers

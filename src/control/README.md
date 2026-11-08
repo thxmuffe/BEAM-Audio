@@ -11,14 +11,17 @@ Step 1's [boundary contract and code migration map](../../docs/SWARM_CONTRACT.md
 defines Device identity, message/session permissions, local Handler/Worker
 responsibilities and the replacement of remote OTP dependencies. These are target
 interfaces; step 3 now implements a [local Handler/test Worker lifecycle](../../docs/DEVICE_HANDLER.md).
-Full job/Contract acceptance remains step 4. Step 2's
+Step 4 now adds the [Director/Contract/job proof](../../docs/SWARM_JOBS.md), with
+local acceptance, leases, idempotent retry and correlated outcomes. Step 2's
 [restricted status protocol](../../docs/SWARM_CONTROL_PROTOCOL.md) is implemented
 and verified between independent runtimes through the real Desk without OTP
 connectivity. Use `parvi:start(swarm_control)` with explicit local peer policy;
 the protocol guide gives configuration, limits and the headless check command.
 New builds ignore old version-1 membership/route/subscription records while
 retaining device keys. Step 3 adds scoped `capabilities.read` queries with their
-own `capabilities_read` grant; they do not grant Worker execution. App integration
+own `capabilities_read` grant; they do not grant Worker execution. A separate
+`job_offer` grant, designated Director and explicit local test Contract/consent
+are required for the bounded test job. App integration
 is step 9: macOS, Windows, then iOS.
 Temporary broken app/control paths during migration are accepted; preserving the
 old runtime alongside the replacement is not required.

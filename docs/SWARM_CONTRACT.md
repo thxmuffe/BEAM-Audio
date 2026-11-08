@@ -4,7 +4,8 @@ Date: 2026-11-08. Step 1 design contract for the [nine-step roadmap](PLAN.md).
 This specifies the whole target boundary. Step 2's restricted signed status
 exchange is now implemented; [its guide](SWARM_CONTROL_PROTOCOL.md) records the
 actual scope and limits. Step 3's [local Handler/test Worker lifecycle](DEVICE_HANDLER.md)
-and capability reads are implemented. Job/Passport/audio contracts remain targets.
+and capability reads are implemented. Step 4's [test Contract/job flow](SWARM_JOBS.md)
+is implemented; Passport/rejoin and audio contracts remain targets.
 Existing implementation evidence stays in [PROGRESS.md](PROGRESS.md).
 The vocabulary in PLAN.md applies here.
 
@@ -127,7 +128,8 @@ Consent/OS permission withdrawal stops affected work and invalidates its grants.
 
 These are local Erlang API responsibilities, not remotely callable functions.
 Step 3 implements local test capability/consent/start/cancel and bounded status;
-job evaluate/accept and the general audio Worker integration remain later steps.
+step 4 adds atomic test-job evaluation/acceptance, explicit local Contracts and
+leases. General audio Worker integration remains a later step.
 Reuse `gen_server`, existing session
 `gen_statem`s and supervisor child specifications rather than another framework.
 
@@ -171,7 +173,8 @@ ID with a different offer is rejected. Cancellation/expiry fences later results.
 A messaging acknowledgement confirms a protocol step, not Worker completion.
 A timeout means an unknown outcome until reconciled. Do not claim exactly-once
 execution across crashes; the first job must be idempotent, with no automatic
-replay of uncertain side effects after restart. Detailed job schemas are step 4.
+replay of uncertain side effects after restart. The implemented step-4 schemas
+and limits are in [SWARM_JOBS.md](SWARM_JOBS.md).
 
 The initial control-outage rule is to close session-dependent media/jobs once
 their authorizing session is lost, rather than continue with uncertain grants.
@@ -246,7 +249,9 @@ forged signer/recipient, stale session/sequence replay, expiry and oversize inpu
 none may create an OTP connection or job/audio worker. The real-Desk proof and
 focused tests pass; WebRTC control is not integrated. Step 3 adds the local
 Handler/test Worker and authenticated capability queries, retaining the ban on
-remote Worker start. Next is step 4's scoped job offer/acceptance. Product apps and
+arbitrary remote Worker start. Step 4 implements the scoped offer/acceptance and
+non-audio Worker result proof. Next is step 5's Passport/rejoin and multi-Desk
+work, keeping membership separate from resource permission. Product apps and
 their device/listening checks are step 9, macOS then Windows then iOS.
 
 OTP references checked 2026-11-08: [security](https://www.erlang.org/doc/system/secure_coding.html),

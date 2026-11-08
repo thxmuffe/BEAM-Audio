@@ -3,7 +3,8 @@
 Implemented scope: a supervised local Handler, capability discovery and one
 installed non-audio test Worker. The [Swarm plan](PLAN.md) and
 [boundary contract](SWARM_CONTRACT.md) remain authoritative. Director job offers,
-Contract evaluation/acceptance and leases are step 4. No hardware capture,
+Contract evaluation/acceptance and leases are now implemented for that test
+capability in [step 4](SWARM_JOBS.md). No hardware capture,
 playback, DSP, app UI or arbitrary Worker module loading is implemented here.
 
 ## Supervision and ownership
@@ -61,8 +62,10 @@ unrecognized reports are ignored. Completion does not release a slot until the
 process is actually down. A Worker also monitors its owner.
 
 These are trusted **local** calls, not a sandbox against other loaded code.
-The new runtime has no cross-device OTP connectivity, and no remote operation
-maps to `enable_test`, `start`, `cancel` or `supervisor:start_child`.
+The new runtime has no cross-device OTP connectivity. No remote operation directly
+invokes `enable_test`, `start`, `cancel` or `supervisor:start_child`. A step-4 job
+offer goes through authenticated control and local Handler Contract/consent checks;
+only the Handler decides to instantiate or stop its fixed test Worker.
 
 ## Capability advertisement
 
@@ -85,7 +88,7 @@ outputs and DSP are not advertised as supported by this test capability.
 An authenticated peer may call
 `parvi_swarm_control:read_capabilities(PeerId)` only when the receiving Device's
 local policy grants that peer `capabilities_read`. Configure grants as sorted,
-unique subsets of `[capabilities_read,status_read]`. Status permission alone does
+unique subsets of `[capabilities_read,job_offer,status_read]`. Status permission alone does
 not grant capability access, and neither permission grants execution.
 
 The [control protocol](SWARM_CONTROL_PROTOCOL.md) adds exact-shape
@@ -95,7 +98,8 @@ The adapter queries the Handler only after verified/authorized dispatch, with a
 100 ms local read timeout. Reply operation and request ID must match the pending
 query. Status/capability reads share the existing one-pending-request-per-peer
 bound, session expiry and replay checks. There is no capability polling service
-or remote Worker creation. Jobs follow in step 4.
+or arbitrary remote Worker creation. The [job guide](SWARM_JOBS.md) describes the
+separate execution permission/Contract, asynchronous evaluation and failure cleanup.
 
 ## Checks and limits
 
