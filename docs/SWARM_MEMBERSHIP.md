@@ -36,9 +36,11 @@ ok = parvi_swarm_membership:grant(DeviceId,
 ok = parvi_swarm_membership:revoke(DeviceId).
 ```
 
-Permission lists are sorted and unique. `job_offer` additionally requires the
+Permission lists are sorted and unique. Step 6 adds separate `stream_read` and
+`stream_subscribe` grants, with local per-source Contracts; existing members do
+not receive them automatically. `job_offer` additionally requires the
 pinned Director role and the recipient's local Contract and consent. Initially
-the authority is also Director and explicitly has all three operation permissions.
+the authority is also Director and explicitly has the original three operation permissions.
 The authority and Director cannot be revoked by this initial API.
 
 For a returning member use `#{mode => resume,desk => DeskA}` and the same seed

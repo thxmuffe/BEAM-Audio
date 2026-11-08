@@ -2,8 +2,11 @@
 -module(parvi_swarm_control).
 -behaviour(gen_server).
 -export([start_link/0, snapshot/0, connect/1, read_status/1,read_capabilities/1]).
--export([offer_job/2,retry_job/1,cancel_job/1,job_status/1]).
+-export([offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,audio_context/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
+
+audio_message(Peer,Id,Payload) -> gen_server:call(?MODULE,{audio_message,Peer,Id,Payload}).
+audio_context(Peer) -> gen_server:call(?MODULE,{audio_context,Peer}).
 
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 snapshot() -> gen_server:call(?MODULE,snapshot).
@@ -39,6 +42,23 @@ handle_call(snapshot,_,S) ->
     Public = parvi_swarm_control_protocol:snapshot(maps:get(protocol,S)),
     {reply,Public#{relay => parvi_swarm_desks:status(),membership => parvi_swarm_membership:status(),rejected => maps:get(rejected,S),
         last_rejection => maps:get(last_rejection,S),jobs => maps:map(fun(_,J) -> public_job(J) end,maps:get(jobs,S))},S};
+handle_call({audio_context,Peer},_,S) ->
+    Result = try {ok,parvi_swarm_control_protocol:context(Peer,now_ms(),maps:get(protocol,S))}
+        catch _:_ -> {error,no_authorized_session} end,
+    {reply,Result,S};
+handle_call({audio_message,Peer,Id,Payload},{Owner,_},S) ->
+    case Owner =:= whereis(parvi_audio_receiver) of
+        false -> {reply,{error,not_audio_owner},S};
+        true ->
+            case parvi_swarm_control_protocol:audio_message(Peer,Id,Payload,now_ms(),maps:get(protocol,S)) of
+                {ok,Packet,Protocol} ->
+                    case send(Peer,Packet,S) of
+                        ok -> {reply,ok,S#{protocol := Protocol}};
+                        Error -> {reply,Error,S}
+                    end;
+                {error,R,_} -> {reply,{error,R},S}
+            end
+    end;
 handle_call({job_status,Id},_,#{jobs := Jobs} = S) ->
     Result = case maps:find(Id,Jobs) of {ok,J} -> {ok,public_job(J)}; error -> {error,unknown_job} end,
     {reply,Result,S};
@@ -192,6 +212,8 @@ event(Peer,{capabilities_read,Request},S) ->
             end;
         {error,_,_} -> reset(capability_reply_failed,S)
     end;
+event(_,{audio,Id,Payload,Context},S) ->
+    audio_notify({swarm_audio,Context,Id,Payload}),S;
 event(_,{job,Operation,Id,Payload,Context},#{handler_requests := Requests} = S) ->
     case gen_server:reqids_size(Requests) < 32 of
         false -> send_job_report(Context,Id,parvi_swarm_job:report(null,<<"rejected">>,<<"job_limit">>),S);
@@ -286,6 +308,7 @@ close_peer(Peer,Reason,#{protocol := Protocol} = S) ->
     end,
     fence_peer_jobs(Peer,reply(Peer,{error,Reason},S#{protocol := Protocol#{sessions := maps:remove(Peer,Sessions)}})).
 drop_session(Peer,Session) ->
+    audio_notify({audio_session_down,Peer,Session}),
     Ref = gen_server:send_request(parvi_device_handler,{session_down,Peer,Session}),
     try gen_server:receive_response(Ref,0) catch _:_ -> ok end, ok.
 ensure_handler_monitor(#{handler_monitor := undefined} = S) ->
@@ -304,3 +327,12 @@ expire_jobs(#{jobs := Jobs} = S) ->
             false -> Acc
         end
     end,S,maps:to_list(Jobs)).
+
+audio_notify(Event) ->
+    case whereis(parvi_audio_receiver) of
+        undefined -> ok;
+        Pid -> case process_info(Pid,message_queue_len) of
+            {message_queue_len,N} when N < 64 -> Pid ! Event;
+            _ -> ok
+        end
+    end.

@@ -6,8 +6,8 @@
 start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 ensure_started() ->
-    case whereis(parvi_sup) of
-        undefined -> {error, parvi_not_started};
+    case whereis(parvi_swarm_control) of
+        undefined -> {error, swarm_control_not_started};
         _ ->
             case supervisor:start_child(parvi_sup,
                     #{id => ?MODULE, start => {?MODULE, start_link, []},
@@ -19,12 +19,7 @@ ensure_started() ->
     end.
 
 start_source(Offer) -> start_child(source, parvi_audio_source, [Offer]).
-start_session({provider,_,_,_,D} = Args) ->
-    Handler = parvi_audio_stream_handler:for_descriptor(D),
-    start_child(subscription,Handler:session_module(),[Args]);
-start_session({receiver,Owner,Handler}) ->
-    start_child(subscription,Handler:session_module(),[{receiver,Owner}]);
-start_session(Args) -> start_child(subscription, parvi_audio_subscription, [Args]).
+start_session(Args) when is_map(Args) -> start_child(subscription,parvi_audio_subscription,[Args]).
 
 start_child(Kind, Module, Args) ->
     supervisor:start_child(?MODULE, #{id => {Kind, make_ref()},
@@ -36,5 +31,6 @@ sessions() ->
         _ -> [Pid || {{subscription, _}, Pid, _, _} <- supervisor:which_children(?MODULE), is_pid(Pid)]
     end.
 
-init([]) -> {ok, {#{strategy => one_for_one, intensity => 5, period => 10},
-    [#{id => audio_receiver,start => {parvi_audio_receiver,start_link,[]}}]}}.
+init([]) -> {ok, {#{strategy => rest_for_one, intensity => 5, period => 10},
+    [#{id => audio_mixer,start => {parvi_audio_mixer,start_link,[]}},
+     #{id => audio_receiver,start => {parvi_audio_receiver,start_link,[]}}]}}.

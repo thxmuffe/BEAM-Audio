@@ -10,12 +10,13 @@ import subprocess
 import threading
 import tempfile
 import time
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class Runtime:
-    def __init__(self, paths, seed=None, state=None):
+    def __init__(self, paths, seed=None, state=None, executable=None, extra_env=None):
         env = dict(os.environ)
         # Never load app identities or remembered memberships/subscriptions.
         for key in ("PARVI_STATE_DIR", "PARVI_RELAY_CA_FILE", "PARVI_RECEPTION_DESK_URL"):
@@ -24,9 +25,10 @@ class Runtime:
         env["PARVI_STATE_DIR"] = state or self.state.name
         self.seed = seed or secrets.token_hex(32).upper()
         env["PARVI_IDENTITY_SEED"] = self.seed
+        env.update(extra_env or {})
         self.messages = queue.Queue()
         self.process = subprocess.Popen(
-            [shutil.which("erl"), "+S", "2", "-noshell", "-pa", *map(str, paths),
+            [executable or shutil.which("erl"), "+S", "2", "-noshell", "-pa", *map(str, paths),
              "-s", "parvi_swarm_control_probe", "main"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, text=True, encoding="utf-8")
@@ -38,7 +40,8 @@ class Runtime:
             try:
                 self.messages.put(json.loads(line))
             except json.JSONDecodeError:
-                pass
+                if os.getenv("PARVI_TEST_VERBOSE"):
+                    print(line.rstrip(),file=sys.stderr)
 
     def request(self, op, **fields):
         self.process.stdin.write(json.dumps(dict(op=op, **fields)) + "\n")

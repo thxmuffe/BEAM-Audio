@@ -1,70 +1,37 @@
 -module(parvi_audio_restore_events_tests).
 -include_lib("eunit/include/eunit.hrl").
-
-source_description_restores_during_discovery_cooldown_test() ->
-    with_runtime(fun(S,Source,D) ->
-        {noreply,Waiting} = parvi_audio_receiver:handle_info({parvi_changed,clock},S),
-        ?assert(maps:get(discover_at,Waiting) > erlang:monotonic_time(millisecond)),
-        ?assertEqual(maps:get(retry_at,S),maps:get(retry_at,Waiting)),
-        Requests = gen_server:send_request(Source,describe,Source,gen_server:reqids_new()),
-        Reply = receive M -> M after 1000 -> error(no_description) end,
-        Pending = Waiting#{offers := #{Source => #{id => <<"source">>}},requests => Requests},
-        {noreply,Opening} = parvi_audio_receiver:handle_info(Reply,Pending),
-        assert_opening(Opening,Source),
-        ?assertEqual(#{channel => D},maps:get(profiles,maps:get(Source,maps:get(offers,Opening))))
+-export([status/0]).
+status() -> get(test_clock).
+restore_requires_fresh_clock_and_local_contract_test() ->
+    fixture(fun(S,Id) ->
+        put(test_clock,#{filter_ready => true,last_sync => 99,age_ns => 0}),
+        {noreply,NoClock} = parvi_audio_receiver:handle_info(tick,S),
+        ?assertEqual(waiting_for_source,maps:get(state,maps:get(Id,maps:get(subscriptions,NoClock)))),
+        no_attempt(),
+        put(test_clock,#{filter_ready => true,last_sync => 101,age_ns => 0}),
+        {noreply,_} = parvi_audio_receiver:handle_info(tick,S#{contracts := #{}}),no_attempt(),
+        {noreply,Opening} = parvi_audio_receiver:handle_info(tick,S),
+        receive {attempt,Id,#{<<"kind">> := <<"subscribe">>,<<"contract">> := C}} ->
+            ?assertEqual(binary:copy(<<"C">>,32),C) after 1000 -> error(no_authorized_attempt) end,
+        {noreply,_} = parvi_audio_receiver:handle_info(tick,Opening),no_attempt(),
+        {noreply,_} = parvi_audio_receiver:handle_info(tick,S#{suspended := true}),no_attempt()
     end).
-
-fresh_clock_restores_immediately_and_only_once_test() ->
-    with_runtime(fun(S,Source,D) ->
-        Now = erlang:monotonic_time(nanosecond),
-        ets:insert(parvi_clock,{clock,clock(Now-1)}),
-        Offered = S#{resume_after := Now,offers := #{Source => offer(D)},
-            discover_at => erlang:monotonic_time(millisecond)+5000},
-        ?assertEqual({noreply,Offered},parvi_audio_receiver:handle_info({parvi_changed,clock},Offered)),
-        ets:insert(parvi_clock,{clock,clock(Now+1)}),
-        {noreply,Opening} = parvi_audio_receiver:handle_info({parvi_changed,clock},Offered),
-        assert_opening(Opening,Source),
-        ?assertEqual({noreply,Opening},parvi_audio_receiver:handle_info({parvi_changed,clock},Opening))
-    end).
-
-readiness_events_preserve_failure_backoff_and_suspension_test() ->
-    with_runtime(fun(S,Source,D) ->
-        Offered = S#{offers := #{Source => offer(D)}},
-        Cooldown = Offered#{retry_at := erlang:monotonic_time(millisecond)+5000},
-        ?assertEqual({noreply,Cooldown},parvi_audio_receiver:handle_info({parvi_changed,clock},Cooldown)),
-        Paused = Offered#{suspended := true},
-        ?assertEqual({noreply,Paused},parvi_audio_receiver:handle_info({parvi_changed,clock},Paused)),
-        receive {opened,_} -> error(unexpected_open) after 0 -> ok end
-    end).
-
-clock(Sync) -> #{role => follower,filter_ready => true,last_sync => Sync,age_ns => 0}.
-offer(D) -> #{id => <<"source">>,name => <<"Music">>,source_key => <<"default-output">>,profiles => #{channel => D}}.
-assert_opening(S,Source) ->
-    ?assertMatch(#{state := opening,session := P} when is_pid(P),maps:get(receive_state,S)),
-    receive {opened,Source} -> ok after 1000 -> error(not_opened) end.
-
-%% Exercise the real restore/description code, substituting only the supervisor
-%% session-start boundary. No network, native device or sleep-based retry needed.
-with_runtime(Fun) ->
-    ets:new(parvi_cluster_trust,[named_table]),ets:new(parvi_clock,[named_table]),
-    Parent = self(),
-    D = #{encoding => pcm,sample_format => float32_le,sample_rate => 48000,
-        channel_count => 2,clock => <<"test">>},
-    Source = spawn(fun Loop() -> receive {'$gen_call',From,describe} ->
-        gen_server:reply(From,maps:without([id],offer(D))),Loop() end end),
-    Session = spawn(fun Loop() -> receive {'$gen_call',_,{open,P,_}} -> Parent ! {opened,P},Loop() end end),
-    Sup = spawn(fun Loop() -> receive {'$gen_call',From,{start_child,_}} ->
-        gen_server:reply(From,{ok,Session}),Loop() end end),
-    true = register(parvi_audio_sup,Sup),
-    ets:insert(parvi_cluster_trust,{policy,#{<<"cluster">> => <<"cluster">>,
-        <<"members">> => #{<<"member">> => #{<<"node">> => atom_to_binary(node(Source))}}}}),
-    ets:insert(parvi_clock,{clock,clock(erlang:monotonic_time(nanosecond))}),
-    I = parvi_audio_subscription_intent:new(<<"cluster">>,atom_to_binary(node(Source)),offer(D),channel),
-    S = #{intent => I,suspended => false,resume_after => undefined,handler => parvi_audio_stream_handler_legacy,
-        retry_at => erlang:monotonic_time(millisecond),offers => #{},requests => gen_server:reqids_new(),
-        receive_state => #{session => undefined}},
-    try Fun(S,Source,D)
-    after
-        exit(Source,kill),exit(Session,kill),exit(Sup,kill),
-        ets:delete(parvi_cluster_trust),ets:delete(parvi_clock)
+no_attempt() -> receive {attempt,_,_} -> error(unexpected_attempt) after 0 -> ok end.
+fixture(Fun) ->
+    I = parvi_audio_subscription_intent_tests:intent(<<"music">>),Id = maps:get(id,I),Peer = maps:get(device,I),
+    Context = #{peer => Peer,session => binary:copy(<<"D">>,32),swarm => maps:get(swarm,I),deadline => erlang:monotonic_time(millisecond)+10000},
+    Parent = self(),Control = spawn(fun Loop() -> receive
+        {'$gen_call',From,{audio_context,_}} -> gen_server:reply(From,{ok,Context}),Loop();
+        {'$gen_call',From,{audio_message,_,Request,P}} -> Parent ! {attempt,Request,P},gen_server:reply(From,ok),Loop()
+    end end),true = register(parvi_swarm_control,Control),
+    Old = application:get_env(parvi,audio_clock_adapter),application:set_env(parvi,audio_clock_adapter,?MODULE),
+    R = #{intent => I,state => waiting_for_source,session => undefined,retry_at => erlang:monotonic_time(millisecond)-1,packets => 0},
+    D = #{sample_rate => 48000,sample_format => float32_le,channel_count => 2,clock => <<"test">>},
+    S = #{subscriptions => #{Id => R},offers => #{{Peer,<<"music">>} => #{incarnation => binary:copy(<<"E">>,32),profiles => #{channel => D}}},
+        contracts => #{{receive_audio,Peer,<<"music">>} => #{id => binary:copy(<<"C">>,32),revision => 1}},
+        suspended => false,resume_after => 100,catalogs => #{},poll_at => erlang:monotonic_time(millisecond)+10000},
+    try Fun(S,Id) after
+        exit(Control,kill),unregister_if_present(parvi_swarm_control),
+        case Old of undefined -> application:unset_env(parvi,audio_clock_adapter);{ok,V} -> application:set_env(parvi,audio_clock_adapter,V) end
     end.
+unregister_if_present(Name) -> case whereis(Name) of undefined -> ok;_ -> unregister(Name) end.

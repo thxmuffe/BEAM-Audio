@@ -1,9 +1,10 @@
-# Swarm control protocol v1 — steps 2–5
+# Swarm control protocol v1 — steps 2–6
 
 Implemented 2026-11-08 under the [Swarm plan](PLAN.md) and
 [boundary contract](SWARM_CONTRACT.md). This implements authenticated status
 and capability reads plus the [bounded test-job flow](SWARM_JOBS.md).
-[Admission/Passports](SWARM_MEMBERSHIP.md) are implemented separately; WebRTC control and audio remain later work.
+[Admission/Passports](SWARM_MEMBERSHIP.md) and [scoped stream signaling](SWARM_STREAMS.md)
+are implemented separately; media does not travel through this Desk protocol.
 
 ## Runtime and local configuration
 
@@ -63,6 +64,7 @@ with `parvi-swarm-control/v1:`. The body has these exact fields:
 | `capabilities.read` | Empty object. Authorized session/new sequence and a `capabilities_read` grant. |
 | `capabilities.reply` | Exact Handler instance/revision and test capability described in [DEVICE_HANDLER.md](DEVICE_HANDLER.md#capability-advertisement). Must match a pending capability query. |
 | `capabilities.error` | `reason`: `forbidden` or `unavailable`. Matching pending capability query. |
+| `stream.message` | Exact flat catalogue/subscription/SDP/ICE schemas in the [stream guide](SWARM_STREAMS.md); requests require separate stream grants, responses must match a local attempt. |
 | `job.offer` | Exact test capability/Contract/duration/lease fields; designated Director plus job_offer grant. Header request is the Job ID. Handler independently accepts/rejects. |
 | `job.cancel` | Empty object; designated Director, same grant and owned Job/session scope. |
 | `job.report` | Exact attempt/state/reason object. Adapter checks the Director record's assignee, session, Job ID, attempt and result fence. |

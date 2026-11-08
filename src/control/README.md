@@ -1,5 +1,21 @@
 # Parvi chat: first prototype step
 
+
+## Current Swarm audio path — step 6
+
+[Independent Streams and Subscriptions](../../docs/SWARM_STREAMS.md) replaces the
+single receiver with a durable collection, scoped signed signaling, independent
+WebRTC PCM endpoints and one Erlang scheduled mixer. Local publication/receive
+Contracts and separate stream grants are required. Sources may pause or restart
+without removing intent or disturbing another stream. Old singular APIs and
+cross-device PID discovery are retired on this path.
+
+The headless proof uses real WebRTC media with a test clock/output sink. Default
+shared-clock/Offset integration is step 7. Mixed output currently supports PCM
+mono/stereo at one shared output rate/reference; native Opus mixing/platform
+handoff remains a backend/app integration gate. No product apps were launched.
+The historical checkpoints below do not provide the active receiver API.
+
 > **Reading status — 2026-11-08:** This guide describes the existing runtime and
 > earlier checkpoints. Its cross-device OTP/erpc/pg operations belong to the
 > trusted baseline, not the new untrusted Device boundary. Follow the

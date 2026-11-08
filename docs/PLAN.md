@@ -19,8 +19,8 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–5 complete within their defined scope; next: step 6 — independent Streams
-and Subscriptions.** The
+**Steps 1–5 complete; step 6 implements the headless PCM collection/mixer proof;
+next: step 7 — Time and Playback Offset.** The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
 `swarm_control` runtime now provides signed, bounded status messaging through the
@@ -34,8 +34,10 @@ two-runtime WSS job proof and the two-service loopback Desk proof pass. This is
 not arbitrary remote execution or app migration:
 existing app bundles still use the older trusted OTP control path.
 Mac-to-iPhone playback and retained subscription intent have user-reported
-working evidence. The receiver still has one receive slot; Windows per-packet
-schedule execution and physical output alignment remain unverified/incomplete.
+working evidence. The old single receive slot is replaced on the headless path by [independent PCM
+subscriptions and mixing](SWARM_STREAMS.md). Native Opus decoded-audio handoff/mixing
+is not integrated there yet and remains an explicit backend/app acceptance gate.
+Windows per-packet schedule execution and physical output alignment remain unverified/incomplete.
 Migration may temporarily break apps, connections and playback; the user accepts
 this. Do not add a parallel legacy stack or compatibility shims just to keep the
 system working between steps. Preserve stored identity and the per-packet timing
@@ -141,6 +143,12 @@ formats and stored identities until deliberate compatibility migrations.
    independent of media transports and preserve the proven packet-target rule.
    **Exit:** two sources play together on one receiver; either can pause, resume,
    unsubscribe or disappear without disturbing the other.
+   **Implemented for PCM:** [collection, scoped WebRTC control and mixer](SWARM_STREAMS.md).
+   A real two-publisher media proof uses a test clock/sink, including receiver
+   restart without restored Contracts. Concurrent output requires one common rate
+   and clock; incompatible output is explicit and does not remove its subscription.
+   Native Opus handoff/mixing is still required before complete backend/app acceptance;
+   this increment does not qualify the old native engine as a mixed output.
 
 7. **Time and Playback Offset over Swarm control.** Adapt clock discovery,
    sampling and policy updates that currently depend on `pg`, `erpc` or
@@ -226,9 +234,11 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Resume at step 6: replace the receiver's single receive slot/intent with independent
-Streams and Subscriptions, retaining local lifecycle and bounded mixing. Full
-playback may remain incomplete until step 7 replaces clock/Offset control. Do not
-launch product apps, restore old Swarms/subscriptions or replay uncertain jobs.
-See [membership](SWARM_MEMBERSHIP.md), [jobs](SWARM_JOBS.md),
-[Handler lifecycle](DEVICE_HANDLER.md) and [control protocol](SWARM_CONTROL_PROTOCOL.md).
+Resume at step 7: move clock discovery/sampling and revisioned Offset policy onto
+restricted Swarm control, then replace the test clock with an authenticated shared
+reference. The PCM collection/mixer proof is implemented; native Opus decoded-audio
+handoff/mixing and actual platform output remain open integration gates for
+complete backend/app acceptance. Preserve independent targets and subscriptions;
+do not launch product apps, restore old Swarms or replay uncertain jobs.
+See [streams](SWARM_STREAMS.md), [membership](SWARM_MEMBERSHIP.md),
+[jobs](SWARM_JOBS.md) and [control protocol](SWARM_CONTROL_PROTOCOL.md).

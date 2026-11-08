@@ -3,7 +3,7 @@
     {vsn, "0.1.0"},
     {registered, [parvi_sup, parvi_pg, parvi_chat, parvi_clock_sup, parvi_clock,
                   parvi_discovery, parvi_relay, parvi_direct, parvi_network, parvi_swarms,
-                  parvi_swarm_desks,parvi_swarm_membership,parvi_swarm_control,parvi_device_sup,parvi_device_handler,parvi_device_worker_sup]},
+                  parvi_audio_sup,parvi_audio_receiver,parvi_audio_mixer,parvi_swarm_desks,parvi_swarm_membership,parvi_swarm_control,parvi_device_sup,parvi_device_handler,parvi_device_worker_sup]},
     {mod, {parvi_app, []}},
     {applications, [kernel, stdlib, inets, crypto, gun]},
     {env, [{default_reception_desk_url, <<"wss://parvi-reception-desk.onrender.com/relay/v1">>},

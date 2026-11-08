@@ -12,9 +12,12 @@ loop(Id,Cap) ->
     case io:get_line("") of
         eof -> halt(0);
         Line ->
-            try command(json:decode(list_to_binary(Line)),Id,Cap) of
+            try command(json:decode(unicode:characters_to_binary(Line)),Id,Cap) of
                 Result -> emit(Result)
-            catch _:_ -> emit(#{error => probe_command_failed}) end,
+            catch Class:Reason:Stack ->
+                Tag = case Reason of T when is_tuple(T) -> element(1,T);A when is_atom(A) -> A;_ -> unknown end,
+                emit(#{error => probe_command_failed,class => Class,reason => Tag,
+                    functions => [<<(atom_to_binary(M))/binary,":",(atom_to_binary(F))/binary>> || {M,F,_,_} <- Stack]}) end,
             loop(Id,Cap)
     end.
 command(#{<<"op">> := <<"create">>,<<"desks">> := URLs},_,_) ->
@@ -68,7 +71,8 @@ command(#{<<"op">> := <<"attack">>,<<"peer">> := Peer},Id,_) ->
     Forged = parvi_swarm_control_protocol:seal(Body#{<<"op">> := <<"status.read">>},FakePriv),
     Replay = parvi_swarm_control_protocol:seal(Body#{<<"seq">> := 0,<<"op">> := <<"status.read">>},Private),
     [ok = parvi_swarm_desks:send(Peer,<<"swarm_control">>,Wire) || Wire <- [Forbidden,Forged,Replay]],
-    #{ok => true}.
+    #{ok => true};
+command(Other,_,_) -> parvi_audio_stream_probe:command(Other).
 start(Config) ->
     application:load(parvi),application:set_env(parvi,swarm_membership,Config),
     {ok,_} = parvi:start(swarm_control),#{ok => true}.

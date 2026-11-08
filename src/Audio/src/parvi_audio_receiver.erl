@@ -1,393 +1,393 @@
-%% Runtime-owned source catalogue and one received-audio meter; no device I/O.
+%% Owns independent durable subscriptions and local publication permissions.
 -module(parvi_audio_receiver).
 -behaviour(gen_server).
--export([snapshot/0, refresh/0, suspend/0, resume/0, network_changed/0, subscribe/2, stop/0, playback/1, minimum_playout_delay/1, control_output/1, start_link/0]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
--define(GROUP, {parvi, audio, sources}).
-
+-export([start_link/0,snapshot/0,refresh/0,refresh/1,subscribe/2,subscribe/3,stop/0,stop/1,
+         playback/1,playback/2,gain/2,set_contract/5,clear_contract/3,register_source/1,
+         suspend/0,resume/0,network_changed/0,minimum_playout_delay/1,control_output/1]).
+-export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
+start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 snapshot() -> call(snapshot).
 refresh() -> call(refresh).
+refresh(Peer) -> call({refresh,Peer}).
+subscribe({Peer,Source},Profile) -> subscribe(Peer,Source,Profile);
+subscribe(_,_) -> {error,publisher_and_source_required}.
+subscribe(Peer,Source,Profile) -> call({subscribe,Peer,Source,Profile}).
+stop() -> call(stop).
+stop(Id) -> call({stop,Id}).
+playback(_) -> {error,subscription_id_required}.
+playback(Id,Action) -> call({playback,Id,Action}).
+gain(Id,G) -> call({gain,Id,G}).
+set_contract(Direction,Peer,Source,Id,Revision) -> call({contract,Direction,Peer,Source,Id,Revision}).
+clear_contract(Direction,Peer,Source) -> call({clear_contract,Direction,Peer,Source}).
+register_source(Pid) -> call({register,Pid}).
 suspend() -> call(suspend).
 resume() -> call(resume).
-network_changed() -> gen_server:cast(?MODULE, network_changed).
-subscribe(Id, Profile) -> call({subscribe, Id, Profile}).
-stop() -> call(stop).
-playback(Action) -> call({playback, Action}).
-minimum_playout_delay(Delay) -> control_output({minimum_delay,Delay}).
-control_output(Command) -> call({output_control,Command}).
+network_changed() -> gen_server:cast(?MODULE,network_changed).
+minimum_playout_delay(_) -> {error,unsupported_mixer_output_control}.
+control_output(_) -> {error,unsupported_mixer_output_control}.
 call(Request) ->
-    case parvi_audio_sup:ensure_started() of
-        ok -> gen_server:call(?MODULE,Request);
+    case parvi_audio_sup:ensure_started() of ok -> gen_server:call(?MODULE,Request,10000);Error -> Error end.
+init([]) ->
+    Items = parvi_audio_subscription_intent:load(),
+    erlang:send_after(250,self(),tick),
+    Control = whereis(parvi_swarm_control),true = is_pid(Control),monitor(process,Control),
+    {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
+          providers => #{},catalogs => #{},contracts => #{},control => Control,
+          suspended => false,resume_after => undefined,rejected => 0,poll_at => now_ms()}}.
+waiting(I) -> #{intent => I,state => waiting_for_source,session => undefined,retry_at => now_ms(),packets => 0}.
+handle_call(snapshot,_,S) ->
+    View = maps:map(fun(_,R) ->
+        I = maps:get(intent,R),maps:merge(I,maps:with([state,packets,source_paused,error],R))
+    end,maps:get(subscriptions,S)),
+    Rows = [O#{device => Peer,source_key => Key} || {{Peer,Key},O} <- maps:to_list(maps:get(offers,S))],
+    {reply,#{subscriptions => View,offers => Rows,publications => map_size(maps:get(sources,S)),
+             providers => map_size(maps:get(providers,S)),mixer => parvi_audio_mixer:status(),
+             rejected => maps:get(rejected,S)},S};
+handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pid)=:=node(),map_size(Sources)<16 ->
+    try
+        Offer = gen_server:call(Pid,describe,100),Key = maps:get(source_key,Offer),
+        false = maps:is_key(Key,Sources),
+        _ = parvi_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer),
+        Ref = monitor(process,Pid),Entry = #{pid => Pid,monitor => Ref,offer => Offer},
+        {reply,ok,S#{sources := Sources#{Key => Entry}}}
+    catch _:_ -> {reply,{error,invalid_or_duplicate_publication},S} end;
+handle_call({contract,Direction,Peer,Key,Id,Revision},_,#{contracts := Contracts} = S) ->
+    try
+        true = Direction=:=publish orelse Direction=:=receive_audio,
+        true = parvi_swarm_job:hex(Peer,64),true = parvi_swarm_job:hex(Id,32),
+        true = is_binary(Key) andalso byte_size(Key)>0 andalso byte_size(Key)=<128,
+        true = is_integer(Revision) andalso Revision>0 andalso Revision=<9007199254740991,
+        ContractKey = {Direction,Peer,Key},
+        true = maps:is_key(ContractKey,Contracts) orelse map_size(Contracts)<32,
+        Next = stop_contract(ContractKey,S),
+        {reply,ok,Next#{contracts := Contracts#{ContractKey => #{id => Id,revision => Revision}}}}
+    catch _:_ -> {reply,{error,invalid_contract},S} end;
+handle_call({clear_contract,Direction,Peer,Key},_,S) when Direction=:=publish;Direction=:=receive_audio ->
+    C = {Direction,Peer,Key},Next = stop_contract(C,S),
+    {reply,ok,Next#{contracts := maps:remove(C,maps:get(contracts,S))}};
+handle_call({refresh,Peer},_,S) ->
+    {Reply,Next} = catalog(Peer,S),{reply,Reply,Next};
+handle_call(refresh,_,S) -> {reply,ok,refresh_all(S)};
+handle_call({subscribe,Peer,Key,channel},_,#{subscriptions := Items,offers := Offers} = S) when map_size(Items)<16 ->
+    Existing = lists:any(fun(R) -> I = maps:get(intent,R),maps:get(device,I)=:=Peer andalso maps:get(source_key,I)=:=Key end,maps:values(Items)),
+    case {Existing,maps:find({Peer,Key},Offers),context(Peer)} of
+        {false,{ok,O},{ok,#{swarm := Swarm}}} ->
+            I = parvi_audio_subscription_intent:new(Swarm,Peer,O,channel),Id = maps:get(id,I),
+            Next = persist(S#{subscriptions := Items#{Id => waiting(I)}}),
+            {reply,{ok,Id},restore_one(Id,false,Next)};
+        {true,_,_} -> {reply,{error,already_subscribed},S};
+        _ -> {reply,{error,source_or_session_unavailable},S}
+    end;
+handle_call({stop,Id},_,S) -> {reply,ok,unsubscribe(Id,S)};
+handle_call(stop,_,S) ->
+    Next = lists:foldl(fun unsubscribe/2,S,maps:keys(maps:get(subscriptions,S))),{reply,ok,Next};
+handle_call(forget_subscription,From,S) -> handle_call(stop,From,S);
+handle_call({playback,Id,Action},_,#{subscriptions := Items} = S) when Action=:=start;Action=:=stop ->
+    case maps:find(Id,Items) of
+        {ok,#{intent := I} = R} ->
+            Playing = Action=:=start,
+            Result = case {Playing,maps:get(state,R),maps:get(source_paused,R,false)} of
+                {false,_,_} -> parvi_audio_mixer:remove(Id),{ok,R#{mix_ready => false}};
+                {true,active,false} -> enable_output(Id,R);
+                {true,active,true} -> {ok,R#{mix_ready => false}};
+                _ -> {error,subscription_not_active}
+            end,
+            case Result of
+                {ok,NextR} -> {reply,ok,persist(S#{subscriptions := Items#{Id := NextR#{intent := I#{playing := Playing}}}})};
+                Error -> {reply,Error,S}
+            end;
+        error -> {reply,{error,unknown_subscription},S}
+    end;
+handle_call({gain,Id,G},_,#{subscriptions := Items} = S) when is_number(G),G>=0,G=<1 ->
+    case maps:find(Id,Items) of
+        {ok,#{intent := I} = R} ->
+            case maps:get(mix_ready,R,false) of true -> parvi_audio_mixer:gain(Id,G);false -> ok end,
+            {reply,ok,persist(S#{subscriptions := Items#{Id := R#{intent := I#{gain := G}}}})};
+        error -> {reply,{error,unknown_subscription},S}
+    end;
+handle_call(suspend,_,S) -> {reply,ok,disconnect_all(S#{suspended := true})};
+handle_call(resume,_,S) ->
+    {reply,ok,disconnect_all(S#{suspended := false,resume_after := erlang:monotonic_time(nanosecond)})};
+handle_call(_,_,S) -> {reply,{error,unsupported_request},S}.
+handle_cast(network_changed,S) -> {noreply,disconnect_all(S#{resume_after := erlang:monotonic_time(nanosecond)})};
+handle_cast(_,S) -> {noreply,S}.
+handle_info(tick,S) ->
+    erlang:send_after(250,self(),tick),
+    Catalogs = maps:filter(fun(_,C) -> maps:get(deadline,C)>now_ms() end,maps:get(catalogs,S)),
+    Next = case now_ms()>=maps:get(poll_at,S) of
+        true -> refresh_all(S#{catalogs := Catalogs,poll_at := now_ms()+5000});
+        false -> S#{catalogs := Catalogs}
+    end,
+    Final = lists:foldl(fun(Id,Acc) -> restore_one(Id,true,Acc) end,Next,maps:keys(maps:get(subscriptions,Next))),
+    {noreply,Final};
+handle_info({swarm_audio,Context,Id,P},S) ->
+    try
+        #{peer := Peer,session := Session,swarm := Swarm,deadline := Deadline} = Context,
+        true = now_ms()<Deadline,
+        {ok,#{session := Session,swarm := Swarm}} = context(Peer),
+        incoming(Context,Id,P,S)
+    of Next -> {noreply,Next}
+    catch _:_ -> {noreply,reject(S)} end;
+handle_info({audio_session_down,Peer,Session},S) ->
+    Next = stop_matching(fun(R) -> scoped(Peer,Session,R) end,S),
+    Offers = maps:filter(fun({P,_},_) -> P=/=Peer end,maps:get(offers,Next)),
+    {noreply,Next#{offers := Offers,catalogs := maps:remove(Peer,maps:get(catalogs,Next))}};
+handle_info({audio_signal,Pid,P},S) ->
+    case transport(Pid,S) of
+        {Side,Key,R} ->
+            Id = case Side of provider -> maps:get(subscription,R);receiver -> Key end,
+            case wire(R,Id,maps:merge(binding(R),P)) of
+                ok -> {noreply,S};
+                _ ->
+                    Next = case Side of receiver -> put_sub(Key,close_receiver(Key,R),S);provider -> close_provider(Key,R,S) end,
+                    {noreply,Next}
+            end;
+        none -> {noreply,reject(S)}
+    end;
+handle_info({audio_transport,Pid,open},S) ->
+    case transport(Pid,S) of
+        {receiver,Id,R} -> {noreply,put_sub(Id,start_playback(Id,R#{state := active}),S)};
+        {provider,_,_} -> {noreply,S};
+        none -> {noreply,reject(S)}
+    end;
+handle_info({audio_pcm,Pid,H,PCM},S) ->
+    case transport(Pid,S) of
+        {receiver,Id,#{intent := I,descriptor := D,context := #{deadline := Deadline}} = R} ->
+            case maps:get(playing,I) andalso maps:get(mix_ready,R,false) andalso not maps:get(source_paused,R,false) andalso now_ms()<Deadline of
+                true -> parvi_audio_mixer:push(Id,D,H,PCM);
+                false -> ok
+            end,
+            {noreply,put_sub(Id,R#{packets := maps:get(packets,R)+1},S)};
+        _ -> {noreply,reject(S)}
+    end;
+handle_info({publication_state,Pid,B},#{sources := Sources} = S) ->
+    Matches = [{Key,E} || {Key,#{pid := P}=E} <- maps:to_list(Sources),P=:=Pid],
+    case Matches of
+        [{Key,#{offer := O}=E}] ->
+            [wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"state">>,<<"paused">> => B})
+                || R <- maps:values(maps:get(providers,S)),maps:get(source,R)=:=Key],
+            Providers = maps:map(fun(_,R) ->
+                case maps:get(source,R)=:=Key of true -> R#{paused := B};false -> R end
+            end,maps:get(providers,S)),
+            {noreply,S#{sources := Sources#{Key := E#{offer := O#{paused := B}}},providers := Providers}};
+        _ -> {noreply,reject(S)}
+    end;
+handle_info({'DOWN',_,process,Pid,_},#{control := Pid} = S) -> {stop,normal,S};
+handle_info({'DOWN',Ref,process,Pid,_},S) ->
+    Next = case transport(Pid,S) of
+        {receiver,Id,R} -> put_sub(Id,closed(Id,R),S);
+        {provider,Key,R} -> _ = wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),
+            S#{providers := maps:remove(Key,maps:get(providers,S))};
+        none -> S
+    end,
+    Sources = maps:filter(fun(_,#{monitor := M}) -> M=/=Ref end,maps:get(sources,Next)),
+    {noreply,Next#{sources := Sources}};
+handle_info(_,S) -> {noreply,S}.
+
+incoming(#{peer := Peer} = Context,Id,#{<<"kind">> := <<"catalog.read">>},S) ->
+    maps:foreach(fun(Key,#{offer := Offer}) ->
+        send(Peer,Id,parvi_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer))
+    end,maps:get(sources,S)),send(Peer,Id,#{<<"kind">> => <<"catalog.end">>}),_ = Context,S;
+incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.offer">>} = P,#{catalogs := Cs} = S) ->
+    #{id := Id,session := Session,deadline := Deadline,offers := Offers} = C = maps:get(Peer,Cs),
+    true = now_ms()<Deadline,true = map_size(Offers)<16,
+    Key = maps:get(<<"source">>,P),false = maps:is_key(Key,Offers),
+    D = parvi_audio_stream_protocol:descriptor(P),
+    O = #{name => maps:get(<<"name">>,P),source_key => Key,incarnation => maps:get(<<"incarnation">>,P),
+          paused => maps:get(<<"paused">>,P),profiles => #{channel => D}},
+    S#{catalogs := Cs#{Peer := C#{offers := Offers#{Key => O}}}};
+incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.end">>},#{catalogs := Cs,offers := Old} = S) ->
+    #{id := Id,session := Session,deadline := Deadline,offers := Offers} = maps:get(Peer,Cs),true = now_ms()<Deadline,
+    Kept = maps:filter(fun({P,_},_) -> P=/=Peer end,Old),
+    Added = maps:from_list([{{Peer,K},O} || {K,O} <- maps:to_list(Offers)]),
+    S#{catalogs := maps:remove(Peer,Cs),offers := maps:merge(Kept,Added)};
+incoming(Context,Id,#{<<"kind">> := <<"subscribe">>} = P,S) -> admit(Context,Id,P,S);
+incoming(Context,Id,#{<<"kind">> := <<"accepted">>} = P,S) ->
+    R = maps:get(Id,maps:get(subscriptions,S)),matches(Context,P,R),opening = maps:get(state,R),
+    undefined = maps:get(session,R),
+    case parvi_audio_sup:start_session(worker(receiver,Context,Id,R)) of
+        {ok,Pid} ->
+            Ref = monitor(process,Pid),
+            put_sub(Id,R#{session := Pid,monitor => Ref,source_paused => maps:get(<<"paused">>,P)},S);
+        _ ->
+            wire(R,Id,(binding(R))#{<<"kind">> => <<"close">>}),
+            put_sub(Id,(closed(Id,R))#{error => transport_unavailable},S)
+    end;
+incoming(Context,Id,#{<<"kind">> := <<"rejected">>} = P,S) ->
+    R = maps:get(Id,maps:get(subscriptions,S)),matches(Context,P,R),
+    put_sub(Id,(close_receiver(Id,R))#{error => maps:get(<<"reason">>,P)},S);
+incoming(Context,Id,#{<<"kind">> := Kind} = P,S) ->
+    {Side,Key,R} = bound_transport(Context,Id,P,S),
+    case Kind of
+        <<"close">> ->
+            case Side of
+                receiver -> put_sub(Key,close_receiver(Key,R),S);
+                provider -> close_provider(Key,R,S)
+            end;
+        <<"state">> when Side=:=receiver ->
+            B = maps:get(<<"paused">>,P),
+            _ = parvi_audio_mixer:remove(Key),
+            put_sub(Key,start_playback(Key,R#{source_paused => B,mix_ready => false}),S);
+        _ when Kind=:= <<"signal.offer">>;Kind=:= <<"signal.answer">>;Kind=:= <<"signal.candidate">> ->
+            parvi_audio_subscription:signal(maps:get(session,R),P),S
+    end.
+
+admit(#{peer := Peer,session := Session} = Context,Id,P,#{sources := Sources,providers := Providers} = S) ->
+    Key = maps:get(<<"source">>,P),Inc = maps:get(<<"incarnation">>,P),Attempt = maps:get(<<"attempt">>,P),
+    ProviderKey = {Peer,Session,Id},
+    case maps:find(ProviderKey,Providers) of
+        {ok,R} -> matches(Context,P,R),wire(R,Id,(binding(R))#{<<"kind">> => <<"accepted">>,<<"paused">> => maps:get(paused,R)}),S;
+        error ->
+            Reason = case {maps:find(Key,Sources),maps:find({publish,Peer,Key},maps:get(contracts,S)),map_size(Providers)<16} of
+                {{ok,#{offer := #{incarnation := Inc}}},{ok,#{id := C,revision := V}},true}
+                    when C=:=map_get(<<"contract">>,P),V=:=map_get(<<"revision">>,P) -> ok;
+                {_,_,false} -> <<"capacity">>;
+                {{ok,_},_,_} -> <<"contract">>;
+                _ -> <<"unavailable">>
+            end,
+            R0 = #{source => Key,incarnation => Inc,attempt => Attempt,context => Context,subscription => Id},
+            case Reason of
+                ok ->
+                    #{pid := Source,offer := #{paused := Paused,profiles := #{channel := D}}} = maps:get(Key,Sources),
+                    R = R0#{descriptor => D,paused => Paused},
+                    case parvi_audio_sup:start_session((worker(provider,Context,Id,R))#{source_pid => Source}) of
+                        {ok,Pid} ->
+                            Attached = try gen_server:call(Source,{attach,Pid},100) catch exit:_ -> unavailable end,
+                            case Attached of
+                                ok ->
+                                    Ref = monitor(process,Pid),
+                                    wire(R,Id,(binding(R))#{<<"kind">> => <<"accepted">>,<<"paused">> => Paused}),
+                                    S#{providers := Providers#{ProviderKey => R#{session => Pid,monitor => Ref}}};
+                                _ ->
+                                    stop_worker(Pid),
+                                    wire(R,Id,(binding(R))#{<<"kind">> => <<"rejected">>,<<"reason">> => <<"unavailable">>}),S
+                            end;
+                        _ -> wire(R,Id,(binding(R))#{<<"kind">> => <<"rejected">>,<<"reason">> => <<"transport">>}),S
+                    end;
+                _ -> wire(R0,Id,(binding(R0))#{<<"kind">> => <<"rejected">>,<<"reason">> => Reason}),S
+            end
+    end.
+worker(Role,Context,Id,R) -> #{role => Role,owner => self(),context => Context,subscription => Id,
+    attempt => maps:get(attempt,R),descriptor => maps:get(descriptor,R)}.
+restore_one(_,_,#{suspended := true} = S) -> S;
+restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := Contracts} = S) ->
+    #{intent := I,session := Session,state := State,retry_at := Retry} = R = maps:get(Id,Items),
+    Peer = maps:get(device,I),Key = maps:get(source_key,I),
+    Ready = Session=:=undefined andalso State=/=opening andalso now_ms()>=Retry andalso
+        (not Automatic orelse clock_ready(S)),
+    case {Ready,maps:find({Peer,Key},Offers),maps:find({receive_audio,Peer,Key},Contracts),context(Peer)} of
+        {true,{ok,#{incarnation := Inc,profiles := #{channel := D}}},{ok,Contract},{ok,#{swarm := Swarm} = Context}}
+            when Swarm=:=map_get(swarm,I) ->
+            Attempt = fresh(),Next = R#{state := opening,context => Context,attempt => Attempt,source => Key,
+                incarnation => Inc,descriptor => D,retry_at := now_ms()+10000},
+            P = (binding(Next))#{<<"kind">> => <<"subscribe">>,<<"contract">> => maps:get(id,Contract),
+                                 <<"revision">> => maps:get(revision,Contract)},
+            case wire(Next,Id,P) of ok -> put_sub(Id,Next,S);_ -> S end;
+        _ ->
+            case State=:=opening andalso now_ms()>=Retry of
+                true -> put_sub(Id,close_receiver(Id,R),S);false -> S
+            end
+    end.
+clock_ready(S) ->
+    Module = application:get_env(parvi,audio_clock_adapter,parvi_clock),
+    try parvi_audio_subscription_intent:clock_ready(Module:status(),maps:get(resume_after,S)) catch _:_ -> false end.
+start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
+    case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
+start_playback(_,R) -> R.
+enable_output(Id,#{descriptor := D,intent := I,context := #{deadline := Deadline}} = R) ->
+    case parvi_audio_mixer:add(Id,D#{authorization_deadline => Deadline},maps:get(gain,I)) of
+        ok ->
+            case parvi_audio_mixer:enable(Id,true) of
+                ok -> {ok,maps:remove(error,R#{mix_ready => true})};
+                Error -> parvi_audio_mixer:remove(Id),Error
+            end;
         Error -> Error
     end.
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) ->
-    ok = net_kernel:monitor_nodes(true),
-    connect_sources(),
-    {ok,_} = parvi_events:subscribe(),
-    erlang:send_after(1000,self(),restore_subscription),
-    {Watch, Sources} = parvi_audio:watch_sources(),
-    S = #{handler => parvi_audio_stream_handler:default(), watch => Watch, offers => #{},
-          requests => gen_server:reqids_new(), receive_state => idle(),
-          output => undefined, playback => #{state => <<"stopped">>},
-          intent => parvi_audio_subscription_intent:load(),suspended => false,background => false,
-          resume_after => undefined,retry_at => erlang:monotonic_time(millisecond)},
-    {ok, discover(Sources, S)}.
-idle() -> #{state => stopped, session => undefined, packets => 0, frames => 0, bytes => 0}.
-
-handle_call(Request, From, S) -> changed(handle_call_event(Request, From, S), S).
-
-handle_call_event(refresh,_,S) -> connect_sources(), {reply,ok,S};
-handle_call_event(forget_subscription,_,S) ->
-    ok = parvi_audio_subscription_intent:save(undefined),
-    {reply,ok,disconnect(S#{intent := undefined})};
-handle_call_event(suspend,_,S) ->
-    %% iOS background audio keeps the real media path alive. Idle/paused clients
-    %% release their native session and let the OS suspend them normally.
-    Next = S#{background => true},
-    case playing_output(S) of
-        true -> {reply,ok,Next};
-        false -> {reply,ok,disconnect(Next#{suspended := true})}
-    end;
-handle_call_event(resume,_,S) ->
-    Next = S#{background => false},
-    case playing_output(S) andalso recent_audio(S) of
-        true -> {reply,ok,Next}; % Continuous playback: do not tear down a healthy stream.
-        false ->
-            {reply,ok,refresh_connection(Next)}
-    end;
-handle_call_event(snapshot, _, #{offers := Offers, receive_state := R, handler := Handler} = S) ->
-    Rows = [public_offer(Pid, Offer) || {Pid, #{name := _} = Offer} <- maps:to_list(Offers)],
-    {reply, #{offers => lists:sort(fun(A,B) -> maps:get(id,A) < maps:get(id,B) end, Rows),
-              receiver => public_receive_with_intent(R,S), backend => Handler:info(), handler => maps:get(id,Handler:info()),
-              native_statistics => maps:get(native_statistics,S,null),
-              playback => (maps:get(playback,S))#{available => Handler:output_available()}}, S};
-handle_call_event({playback, start}, _, #{output := undefined,
-                                 handler := Handler, receive_state := #{profile := channel, descriptor := D, session := Session}} = S) ->
-    case Handler:start_output(self(), D#{session => Session}) of
-        {ok, Pid} ->
-            Ref = monitor(process, Pid),
-            {reply, ok, remember_playback(true,S#{output := {Pid,Ref}, playback := #{state => <<"starting">>}})};
-        Error -> {reply, Error, S}
-    end;
-handle_call_event({playback, stop}, _, S) ->
-    Next = remember_playback(false,stop_output(S)),
-    case maps:get(background,S,false) of
-        true -> {reply,ok,disconnect(Next#{suspended := true})};
-        false -> {reply,ok,Next}
-    end;
-handle_call_event({playback, _}, _, S) ->
-    {reply, {error, <<"Subscribe to a mono or stereo channel stream before playback.">>}, S};
-handle_call_event({output_control, Command}, _,
-            #{handler := Handler, receive_state := #{state := active, session := Session}} = S) ->
-    {reply,Handler:output_control(Session,Command),S};
-handle_call_event({output_control, _}, _, S) ->
-    {reply,{error,<<"Subscribe to audio before controlling its output.">>},S};
-handle_call_event({subscribe, Id, Profile}, _, #{offers := Offers, receive_state := R} = S) ->
-    Matches = [{Pid,O} || {Pid, #{id := I, profiles := Ps} = O} <- maps:to_list(Offers),
-                          I =:= Id, maps:is_key(Profile, Ps)],
-    case {maps:get(session, R), Matches} of
-        {undefined, [{Source, Offer}]} ->
-            Next = begin_subscription(Source,Offer,Profile,remember_source(Source,Offer,Profile,S)),
-            {reply,ok,Next};
-        {undefined, _} -> {reply, {error, source_unavailable}, S};
-        _ -> {reply, {error, <<"Stop the current subscription before selecting another.">>}, S}
-    end;
-handle_call_event(stop, _, #{receive_state := R} = S) ->
-    close(R),
-    ok = parvi_audio_subscription_intent:save(undefined),
-    {reply, ok, (stop_output(S))#{receive_state := idle(),intent := undefined}};
-handle_call_event(_, _, S) -> {reply, {error, unsupported_request}, S}.
-handle_cast(network_changed, S) -> changed({noreply,refresh_connection(S)},S);
-handle_cast(_, S) -> {noreply, S}.
-
-handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
-
-handle_info_event(restore_subscription,S) ->
-    erlang:send_after(1000,self(),restore_subscription),
-    {noreply,restore_subscription(S)};
-handle_info_event({parvi_changed,policy},S) ->
-    {noreply,restore_subscription(reconcile_policy(S))};
-handle_info_event({parvi_changed,clock},S) -> {noreply,restore_subscription(S)};
-handle_info_event({nodeup,_},S) -> connect_sources(), {noreply,restore_subscription(S)};
-handle_info_event({Watch, join, ?GROUP, Pids}, #{watch := Watch} = S) -> {noreply, discover(Pids, S)};
-handle_info_event({Watch, leave, ?GROUP, Pids}, #{watch := Watch, offers := Offers} = S) ->
-    {noreply, S#{offers := maps:without(Pids, Offers)}};
-handle_info_event({parvi_audio, Session, Header, PCM},
-            #{receive_state := #{session := Session, descriptor := D} = R, handler := Handler} = S) ->
-    Levels = parvi_audio_meter:levels(parvi_audio_meter:accumulate(
-        maps:get(sample_format, D), PCM, parvi_audio_meter:new())),
-    Next = R#{packets := maps:get(packets,R) + 1, frames := maps:get(frames,R) + maps:get(frame_count,Header),
-              bytes := maps:get(bytes,R) + byte_size(PCM), meter => Levels,
-              last_packet => erlang:monotonic_time(millisecond)},
-    case maps:get(output,S) of
-        {Pid,_} -> Handler:push_output(Pid, Header, PCM);
-        undefined -> ok
-    end,
-    {noreply, S#{receive_state := Next}};
-handle_info_event({parvi_native_audio, Session, Stats}, #{receive_state := #{session := Session} = R} = S) ->
-    Packets = maps:get(<<"packetsReceived">>,Stats,0),
-    Meter = case {maps:get(<<"samplePeakDb">>,Stats,undefined), maps:get(<<"sampleRmsDb">>,Stats,undefined)} of
-        {Peak, RMS} when is_number(Peak), is_number(RMS) ->
-            #{<<"peak_db">> => Peak, <<"rms_db">> => RMS};
-        _ -> #{}
-    end,
-    Next = R#{packets := Packets, bytes := maps:get(<<"bytesReceived">>,Stats,0),
-        frames := maps:get(<<"totalSamplesReceived">>,Stats,0), meter => Meter},
-    WithTime = case Packets > maps:get(packets,R) of
-        true -> Next#{last_packet => erlang:monotonic_time(millisecond)}; false -> Next end,
-    Report = recent_native_timing(native_timing(Stats),maps:get(native_statistics,S,#{})),
-    {noreply,S#{receive_state := WithTime, native_statistics => Report}};
-handle_info_event({parvi_audio_output, Pid, Status}, #{output := {Pid,_},playback := Previous} = S) ->
-    case {maps:get(state,Status),maps:get(state,Previous)} of
-        {<<"playing">>,Old} when Old =/= <<"playing">> ->
-            parvi_chat:system(info,audio_playback,<<"[Audio] Playback started.">>,#{});
-        _ -> ok
-    end,
-    {noreply, S#{playback := Status}};
-handle_info_event({'DOWN', Ref, process, _, Reason}, #{output := {_,Ref}} = S) ->
-    Text = <<"Playback stopped. Check the audio route and try Play again.">>,
-    parvi_chat:system(error, audio_playback, <<"[Audio] ",Text/binary>>, #{reason => Reason}),
-    {noreply, S#{output := undefined, playback := #{state => <<"error">>, error => Text}}};
-handle_info_event({'DOWN', Ref, process, _, Reason}, #{receive_state := #{monitor := Ref}} = S) ->
-    {noreply, failed({subscription_closed, Reason}, S)};
-handle_info_event(Message, #{receive_state := R} = S) ->
-    Response = case maps:find(pending, R) of
-        {ok, Id} -> gen_statem:check_response(Message, Id);
-        error -> no_reply
-    end,
-    case Response of
-        no_reply -> {noreply, description(Message, S)};
-        _ -> {noreply, response(Response, S)}
-    end.
-
-refresh_connection(S) ->
-    After = erlang:monotonic_time(nanosecond),
-    _ = try parvi_clock:resync() catch exit:_ -> unavailable end,
-    connect_sources(),
-    disconnect(S#{suspended := false,resume_after := After,
-        retry_at := erlang:monotonic_time(millisecond)}).
-
-%% pg supplies offers once a publisher is directly connected. Ask existing
-%% trusted neighbors for source PIDs, then reuse normal member authentication
-%% for just those publishers; do not connect the entire cluster into a mesh.
-connect_sources() ->
-    case application:get_env(parvi,native_desk,false) of
-        true -> spawn(fun() ->
-            Members = [N || #{node := N} <- parvi_node_api:members()],
-            Peers = nodes(),
-            Sources = lists:flatmap(fun(Peer) ->
-                try erpc:call(Peer,parvi_audio,sources,[],1000)
-                catch _:_ -> [] end
-            end,Peers),
-            Targets = lists:usort([node(P) || P <- Sources,is_pid(P),node(P) =/= node(),
-                not lists:member(node(P),Peers),lists:member(atom_to_binary(node(P)),Members)]),
-            [parvi_cluster_desk:connect_member(atom_to_binary(N)) || N <- Targets]
-        end), ok;
-        false -> ok
-    end.
-
-discover(Pids, S) ->
-    lists:foldl(fun(Pid, #{offers := Offers, requests := Requests} = Acc) ->
-        case node(Pid) =/= node() andalso not maps:is_key(Pid, Offers) of
-            true ->
-                Id = integer_to_binary(erlang:unique_integer([positive, monotonic])),
-                Next = gen_server:send_request(Pid, describe, Pid, Requests),
-                Acc#{offers := Offers#{Pid => #{id => Id}}, requests := Next};
-            false -> Acc
-        end
-    end, S, Pids).
-
-description(Message, #{requests := Requests, offers := Offers} = S) ->
-    case gen_server:check_response(Message, Requests, true) of
-        {{reply, #{name := Name, profiles := Profiles} = Description}, Pid, Next} ->
-            case maps:find(Pid, Offers) of
-                {ok, Offer} ->
-                    Supported = maps:filter(fun(P,D) ->
-                        Selected = parvi_audio_stream_handler:for_descriptor(D),
-                        Selected:validate_descriptor(P,D) =:= ok end, Profiles),
-                    restore_subscription(S#{requests := Next, offers := Offers#{Pid := Offer#{name => Name,source_key => maps:get(source_key,Description,Name), profiles => Supported}}});
-                error -> S#{requests := Next}
+catalog(Peer,#{catalogs := Cs} = S) ->
+    case {maps:is_key(Peer,Cs),context(Peer)} of
+        {false,{ok,#{session := Session}}} ->
+            Id = fresh(),
+            case send(Peer,Id,#{<<"kind">> => <<"catalog.read">>}) of
+                ok -> {ok,S#{catalogs := Cs#{Peer => #{id => Id,session => Session,deadline => now_ms()+5000,offers => #{}}}}};
+                Error -> {Error,S}
             end;
-        {_, Pid, Next} -> S#{requests := Next, offers := maps:remove(Pid, Offers)};
+        _ -> {{error,no_session_or_pending},S}
+    end.
+refresh_all(S) ->
+    case parvi_swarm_membership:current() of
+        {ok,#{policy := #{peers := Peers}}} -> maps:fold(fun(Peer,_,Acc) -> {_,Next}=catalog(Peer,Acc),Next end,S,Peers);
         _ -> S
     end.
-
-response({reply, {ok, Session, Descriptor}}, #{receive_state := #{state := opening, session := Session} = R} = S) ->
-    try parvi_audio:listen(Session, self()) of
-        ok ->
-            Pending = gen_statem:send_request(Session, ready),
-            S#{receive_state := R#{state := activating, pending := Pending, descriptor => Descriptor}}
-    catch exit:Reason -> failed(Reason, S) end;
-response({reply, ok}, #{receive_state := #{state := activating} = R} = S) ->
-    parvi_chat:system(info,audio_subscription,
-        <<"[Audio] Subscribed to: ",(maps:get(source_name,R))/binary,".">>,
-        #{source_id => maps:get(source_id,R),source_name => maps:get(source_name,R)}),
-    restore_playback(S#{receive_state := maps:remove(pending, R#{state := active})});
-response({reply, {error, Reason}}, S) -> failed(Reason, S);
-response({error, Reason}, S) -> failed(Reason, S);
-response(_, S) -> failed(invalid_subscription_reply, S).
-
-
-playing_output(#{intent := #{playing := true},output := {Pid,_},playback := #{state := State}})
-        when State =:= <<"playing">>; State =:= <<"starting">> -> is_process_alive(Pid);
-playing_output(_) -> false.
-recent_audio(#{receive_state := #{last_packet := Time}}) ->
-    erlang:monotonic_time(millisecond)-Time =< 2500;
-recent_audio(_) -> false.
-
-begin_subscription(Source,Offer,Profile,S) ->
-    Handler = parvi_audio_stream_handler:for_descriptor(maps:get(Profile,maps:get(profiles,Offer))),
-    {ok,Session} = parvi_audio_sup:start_session({receiver,self(),Handler}),
-    Monitor = monitor(process,Session),
-    Pending = gen_statem:send_request(Session,{open,Source,#{profile => Profile,selector => all}}),
-    Next = (idle())#{state := opening,session := Session,monitor => Monitor,pending => Pending,
-        source_id => maps:get(id,Offer),source_name => maps:get(name,Offer),profile => Profile},
-    (maps:remove(native_statistics,S))#{receive_state := Next,handler := Handler}.
-remember_source(Source,Offer,Profile,S) ->
-    case parvi_cluster_trust:snapshot() of
-        #{<<"cluster">> := Cluster} ->
-            I = parvi_audio_subscription_intent:new(Cluster,atom_to_binary(node(Source)),Offer,Profile),
-            ok = parvi_audio_subscription_intent:save(I), S#{intent := I};
-        _ -> S
+context(Peer) -> try parvi_swarm_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
+send(Peer,Id,P) -> parvi_swarm_control:audio_message(Peer,Id,P).
+wire(#{context := #{peer := Peer,session := Session,deadline := Deadline}},Id,P) ->
+    Now = now_ms(),
+    case context(Peer) of
+        {ok,#{session := Session}} when Deadline>Now -> send(Peer,Id,P);
+        _ -> {error,session_lost}
     end.
-remember_playback(Playing,#{intent := I} = S) when is_map(I) ->
-    Next = I#{playing := Playing},
-    ok = parvi_audio_subscription_intent:save(Next), S#{intent := Next};
-remember_playback(_,S) -> S.
-disconnect(#{receive_state := R} = S) ->
-    close(R), (maps:remove(native_statistics,stop_output(S)))#{receive_state := idle()}.
-reconcile_policy(#{intent := #{cluster := Cluster}} = S) ->
-    case parvi_cluster_trust:snapshot() of
-        #{<<"cluster">> := Cluster} = Policy ->
-            case source_admitted(maps:get(intent,S),Policy) of
-                true -> S;
-                false -> disconnect(S)
-            end;
-        _ -> ok = parvi_audio_subscription_intent:save(undefined),
-             disconnect(S#{intent := undefined})
-    end;
-reconcile_policy(S) -> S.
-source_admitted(#{node := Node},#{<<"members">> := Members}) ->
-    lists:any(fun(M) -> maps:get(<<"node">>,M) =:= Node end,maps:values(Members)).
-
-restore_subscription(#{suspended := true} = S) -> S;
-restore_subscription(#{intent := #{cluster := Cluster} = I,receive_state := #{session := undefined},
-                       offers := Offers,retry_at := Retry,resume_after := After} = S) ->
-    case parvi_cluster_trust:snapshot() of
-        #{<<"cluster">> := Cluster} = Policy ->
-            Ready = source_admitted(I,Policy) andalso erlang:monotonic_time(millisecond) >= Retry andalso
-                parvi_audio_subscription_intent:clock_ready(parvi_clock:status(),After),
-            Matches = [{P,O} || {P,#{name := _} = O} <- maps:to_list(Offers),
-                parvi_audio_subscription_intent:matches(I,atom_to_binary(node(P)),O)],
-            case {Ready,Matches} of
-                {true,[{Source,Offer}]} ->
-                    Handler = parvi_audio_stream_handler:for_descriptor(
-                        maps:get(maps:get(profile,I),maps:get(profiles,Offer))),
-                    Supported = Handler =/= parvi_audio_stream_handler_webrtc orelse
-                        (Handler:output_available() andalso
-                         maps:get(presentation_schedule_execution,parvi_audio_engine:info(),false)),
-                    case Supported of
-                        true -> begin_subscription(Source,Offer,maps:get(profile,I),S);
-                        false -> S
-                    end;
-                {_,[]} when Ready ->
-                    %% Throttle discovery, not readiness: a source description or
-                    %% fresh clock sample can restore immediately when it arrives.
-                    Now = erlang:monotonic_time(millisecond),
-                    case Now >= maps:get(discover_at,S,Now) of
-                        true -> connect_sources(), S#{discover_at => Now+5000};
-                        false -> S
-                    end;
-                _ -> S
-            end;
-        undefined -> S;
-        _ -> reconcile_policy(S)
-    end;
-restore_subscription(S) -> S.
-restore_playback(#{intent := #{playing := true},handler := Handler,
-                   receive_state := #{descriptor := D,session := Session}} = S) ->
-    case Handler:start_output(self(),D#{session => Session}) of
-        {ok,Pid} -> S#{output := {Pid,monitor(process,Pid)},playback := #{state => <<"starting">>}};
-        {error,Reason} -> failed({playback_restore_failed,Reason},S)
-    end;
-restore_playback(S) -> S.
-public_receive_with_intent(R,#{intent := I,suspended := Suspended}) ->
-    View = public_receive(R),
-    case {maps:get(session,R),I} of
-        {undefined,#{name := Name}} -> View#{saved_subscription => true,source_name => Name,
-            state => case Suspended of true -> <<"suspended">>; false -> <<"waiting_for_source">> end};
-        _ -> View#{saved_subscription => is_map(I)}
+binding(R) -> #{<<"source">> => maps:get(source,R),<<"incarnation">> => maps:get(incarnation,R),<<"attempt">> => maps:get(attempt,R)}.
+matches(#{peer := Peer,session := Session,swarm := Swarm},P,#{context := #{peer := Peer,session := Session,swarm := Swarm,deadline := Deadline}} = R) ->
+    true = now_ms()<Deadline,true = maps:with([<<"source">>,<<"incarnation">>,<<"attempt">>],P)=:=binding(R),ok.
+bound_transport(Context,Id,P,S) ->
+    #{peer := Peer,session := Session} = Context,
+    case maps:find(Id,maps:get(subscriptions,S)) of
+        {ok,R} -> matches(Context,P,R),true = is_pid(maps:get(session,R)),{receiver,Id,R};
+        error -> K = {Peer,Session,Id},R = maps:get(K,maps:get(providers,S)),matches(Context,P,R),{provider,K,R}
     end.
-
-public_offer(Pid, #{id := Id, name := Name, profiles := Profiles}) ->
-    #{id => Id, name => Name, node => atom_to_binary(node(Pid)), profiles =>
-        [#{id => atom_to_binary(P), sample_rate => maps:get(sample_rate,D),
-           channels => maps:get(channel_count,D), sample_format => atom_to_binary(maps:get(sample_format,D))}
-         || {P,D} <- lists:sort(maps:to_list(Profiles))]}.
-public_receive(R) ->
-    Now = erlang:monotonic_time(millisecond),
-    Native = maps:get(stream_handler,maps:get(descriptor,R,#{}),legacy_webrtc) =:= webrtc_audio_opus,
-    {MeterAge,DataAge} = case Native of true -> {2000,2500}; false -> {250,500} end,
-    Age = case maps:find(last_packet,R) of {ok,T} -> Now-T; error -> undefined end,
-    Meter = case Age =/= undefined andalso Age =< MeterAge of
-        true -> maps:get(meter,R,#{}); false -> parvi_audio_meter:levels(parvi_audio_meter:new())
-    end,
-    State = case {maps:get(state,R), Age} of
-        {active, undefined} -> waiting_for_audio;
-        {active, A} when A > DataAge -> no_data;
-        {active, _} -> receiving;
-        {Other, _} -> Other
-    end,
-    #{state => atom_to_binary(State), packets => maps:get(packets,R), frames => maps:get(frames,R),
-      bytes => maps:get(bytes,R), peak_db => maps:get(<<"peak_db">>,Meter,-96.0),
-      meter_available => maps:is_key(<<"peak_db">>,Meter) andalso Age =/= undefined andalso Age =< MeterAge,
-      rms_db => maps:get(<<"rms_db">>,Meter,-96.0), source_id => maps:get(source_id,R,null),
-      source_name => maps:get(source_name,R,null), error => maps:get(error,R,null),
-      subscribed => maps:get(session,R) =/= undefined}.
-failed(Reason, #{receive_state := R} = S) ->
-    close(R), Text = case maps:get(intent,S,undefined) of
-        I when is_map(I) -> <<"Audio connection lost. Waiting to restore the saved subscription.">>;
-        _ -> <<"Audio subscription ended. Check the source and connection, then subscribe again.">>
-    end,
-    parvi_chat:system(error, audio_subscription, <<"[Audio] ", Text/binary>>, #{reason => Reason}),
-    (stop_output(S))#{retry_at := erlang:monotonic_time(millisecond)+5000,
-        receive_state := (maps:without([monitor,pending,descriptor],R))#{state := error, session := undefined, error => Text}}.
-stop_output(#{output := Output, handler := Handler} = S) ->
-    case Output of
-        {Pid,Ref} -> demonitor(Ref,[flush]), Handler:stop_output(Pid);
-        undefined -> ok
-    end,
-    S#{output := undefined, playback := #{state => <<"stopped">>}}.
-close(R) ->
-    case maps:find(monitor,R) of {ok,Ref} -> demonitor(Ref,[flush]); error -> ok end,
+transport(Pid,S) ->
+    Receivers = [{receiver,Id,R} || {Id,#{session := P}=R} <- maps:to_list(maps:get(subscriptions,S)),P=:=Pid],
+    Providers = [{provider,K,R} || {K,#{session := P}=R} <- maps:to_list(maps:get(providers,S)),P=:=Pid],
+    case Receivers++Providers of [Match] -> Match;_ -> none end.
+put_sub(Id,R,S) -> S#{subscriptions := (maps:get(subscriptions,S))#{Id := R}}.
+closed(Id,R) ->
+    _ = parvi_audio_mixer:remove(Id),
+    case maps:find(monitor,R) of {ok,Ref} -> demonitor(Ref,[flush]);error -> ok end,
+    (maps:without([monitor,context,attempt,incarnation,descriptor,source_paused,mix_ready],R))#{
+        session := undefined,state := waiting_for_source,retry_at := now_ms()+1000}.
+close_receiver(Id,R) ->
     case maps:get(session,R) of
-        undefined -> ok;
-        Session -> try parvi_audio:close(Session) catch exit:_ -> ok end
+        Pid when is_pid(Pid) -> _ = wire(R,Id,(binding(R))#{<<"kind">> => <<"close">>}),stop_worker(Pid);
+        _ -> ok
+    end,closed(Id,R).
+close_provider(Key,R,S) ->
+    demonitor(maps:get(monitor,R),[flush]),stop_worker(maps:get(session,R)),
+    S#{providers := maps:remove(Key,maps:get(providers,S))}.
+stop_worker(Pid) -> try gen_server:stop(Pid,normal,1000) catch exit:_ -> exit(Pid,kill) end.
+unsubscribe(Id,S) ->
+    case maps:find(Id,maps:get(subscriptions,S)) of
+        {ok,R} -> _ = close_receiver(Id,R),persist(S#{subscriptions := maps:remove(Id,maps:get(subscriptions,S))});
+        error -> S
     end.
-%% W3C cumulative jitter-buffer seconds / emitted samples: session mean,
-%% not packet jitter, current buffer depth or end-to-end capture latency.
-native_timing(#{<<"jitterBufferDelay">> := Delay, <<"jitterBufferEmittedCount">> := Count} = Stats)
-        when is_number(Delay), Delay >= 0, is_integer(Count), Count > 0 ->
-    Stats#{<<"mean_jitter_buffer_delay_ms">> => 1000 * Delay / Count};
-native_timing(Stats) -> Stats.
-%% Difference of cumulative counters: average residence time for samples
-%% emitted since the previous report, not current queue depth or total latency.
-recent_native_timing(#{<<"jitterBufferDelay">> := Delay, <<"jitterBufferEmittedCount">> := Count} = Stats,
-                     #{<<"jitterBufferDelay">> := PreviousDelay, <<"jitterBufferEmittedCount">> := PreviousCount})
-        when is_number(Delay), is_number(PreviousDelay), Delay >= PreviousDelay,
-             is_integer(Count), is_integer(PreviousCount), Count > PreviousCount ->
-    Stats#{<<"recent_jitter_buffer_delay_ms">> => 1000*(Delay-PreviousDelay)/(Count-PreviousCount)};
-recent_native_timing(Stats,_) -> Stats.
-terminate(_, #{receive_state := R} = S) -> stop_output(S), close(R).
+scoped(Peer,Session,#{context := #{peer := Peer,session := Session}}) -> true;
+scoped(_,_,_) -> false.
+stop_matching(Predicate,S) ->
+    Subs = maps:map(fun(Id,R) -> case Predicate(R) of true -> close_receiver(Id,R);false -> R end end,maps:get(subscriptions,S)),
+    lists:foldl(fun({K,R},Acc) -> case Predicate(R) of true -> close_provider(K,R,Acc);false -> Acc end end,
+        S#{subscriptions := Subs},maps:to_list(maps:get(providers,S))).
+stop_contract({Direction,Peer,Key},S) ->
+    case Direction of
+        receive_audio ->
+            Subs = maps:map(fun(Id,#{intent := I}=R) ->
+                case maps:get(device,I)=:=Peer andalso maps:get(source_key,I)=:=Key of
+                    true -> close_receiver(Id,R);false -> R
+                end
+            end,maps:get(subscriptions,S)),S#{subscriptions := Subs};
+        publish -> lists:foldl(fun({K,#{context := #{peer := P},source := Source}=R},Acc) ->
+            case P=:=Peer andalso Source=:=Key of
+                true -> wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),close_provider(K,R,Acc);
+                false -> Acc
+            end
+        end,S,maps:to_list(maps:get(providers,S)))
+    end.
+disconnect_all(S) -> stop_matching(fun(_) -> true end,S).
+persist(S) ->
+    ok = parvi_audio_subscription_intent:save(maps:map(fun(_,R) -> maps:get(intent,R) end,maps:get(subscriptions,S))),S.
+reject(S) -> S#{rejected := maps:get(rejected,S)+1}.
+fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
+now_ms() -> erlang:monotonic_time(millisecond).
+terminate(_,S) ->
+    [stop_worker(P) || #{session := P} <- maps:values(maps:get(subscriptions,S)),is_pid(P)],
+    [stop_worker(maps:get(session,R)) || R <- maps:values(maps:get(providers,S))],ok.
 
-changed({reply,Reply,Next}, Old) ->
-    notify_changed(Old,Next), {reply,Reply,Next};
-changed({noreply,Next}, Old) ->
-    notify_changed(Old,Next), {noreply,Next};
-changed(Result, _) -> Result.
-notify_changed(Old,Next) ->
-    View = fun(S) -> S end,
-    case View(Old) =:= View(Next) of
-        true -> ok; false -> parvi_events:notify(audio_receive)
-    end.
+format_status(Status) -> maps:map(fun(state,S) -> maps:with([suspended,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).

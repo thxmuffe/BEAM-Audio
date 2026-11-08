@@ -210,3 +210,15 @@ membership_deadline_is_synchronous_test() ->
     ?assertMatch({error,_,_},p(receive_packet,[B,Packet,5,Expired])),
     {_,Peer,_,_,Fresh,_} = fixture(),
     ?assertMatch({error,_,_},p(connect,[Peer,5,Fresh#{membership_deadline => 5}])).
+
+stream_control_requires_grants_and_exact_schema_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    Id = binary:copy(<<"A">>,32),P = #{<<"kind">> => <<"catalog.read">>},
+    {ok,Packet,_} = p(audio_message,[B,Id,P,5,SA]),
+    ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
+    Policy = maps:get(policy,SB),
+    Granted = SB#{policy := Policy#{peers := #{A => [stream_read,stream_subscribe]}}},
+    ?assertMatch({ok,[],[{audio,Id,P,#{peer := A}}],_},p(receive_packet,[A,Packet,6,Granted])),
+    Base = #{<<"source">> => <<"music">>,<<"incarnation">> => Id,<<"attempt">> => Id},
+    ?assertMatch({error,_,_},p(audio_message,[B,Id,Base#{<<"kind">> => <<"signal.offer">>,<<"sdp">> => <<"unsigned generic SDP">>},5,SA])),
+    ?assertMatch({error,_,_},p(audio_message,[B,Id,P#{<<"pcm">> => <<"audio is not control">>},5,SA])).

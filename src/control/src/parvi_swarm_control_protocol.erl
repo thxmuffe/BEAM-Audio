@@ -2,7 +2,7 @@
 -module(parvi_swarm_control_protocol).
 -export([new/2, connect/3, request_status/3, request_capabilities/3, reply_capabilities/5,
          receive_packet/4, expire/2, reset/1,
-         snapshot/1, seal/2,job_message/6,context/3]).
+         snapshot/1, seal/2,job_message/6,context/3,audio_message/5]).
 -define(DOMAIN, <<"parvi-swarm-control/v1:">>).
 -define(MAX, 32768).
 -define(INT, 9007199254740991).
@@ -19,9 +19,9 @@ new({Public, Private}, #{swarm := Swarm, authority := Authority,director := Dire
     true = hex(Director,64) andalso (Director =:= Id orelse maps:is_key(Director,Peers)),
     maps:foreach(fun(Peer, Permissions) ->
         true = hex(Peer,64) andalso Peer =/= Id,
-        true = is_list(Permissions) andalso length(Permissions) =< 3,
+        true = is_list(Permissions) andalso length(Permissions) =< 5,
         true = lists:usort(Permissions) =:= Permissions,
-        true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer]) end,Permissions)
+        true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer,stream_read,stream_subscribe]) end,Permissions)
     end,Peers),
     %% Reject an accidentally mismatched local key before opening a Desk route.
     Probe = crypto:sign(eddsa,none,?DOMAIN,[Private,ed25519]),
@@ -98,6 +98,13 @@ job_message(Peer,Op,Id,Payload,Now,S) ->
         {ok,Packet,Next}
     end,S).
 
+audio_message(Peer,Id,Payload,Now,S) ->
+    attempt(fun() ->
+        true = hex(Id,32),ok = parvi_audio_stream_protocol:validate(Payload),
+        {Packet,Next} = outgoing(Peer,<<"stream.message">>,Id,Payload,active(Peer,Now,S),S),
+        {ok,Packet,Next}
+    end,S).
+
 dispatch(Peer, #{<<"op">> := <<"hello">>,<<"seq">> := 0,<<"session">> := Id,
                  <<"request">> := Id,<<"payload">> := Payload}, Now, S) ->
     false = maps:is_key(Peer,maps:get(sessions,S)),
@@ -135,6 +142,14 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
     true = Sequence > Last,
     Received = Session#{received := Sequence},
     case Op of
+        <<"stream.message">> ->
+            Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
+            case maps:get(<<"kind">>,Payload) of
+                <<"catalog.read">> -> true = lists:member(stream_read,Permissions);
+                <<"subscribe">> -> true = lists:member(stream_subscribe,Permissions);
+                _ -> ok
+            end,
+            {ok,[],[{audio,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
         _ when Op =:= <<"job.offer">>; Op =:= <<"job.cancel">> ->
             Policy = maps:get(policy,S),
             true = Peer =:= maps:get(director,Policy),
@@ -250,6 +265,7 @@ payload(<<"capabilities.error">>,P) ->
     exact(P,[<<"reason">>]),
     Reason = maps:get(<<"reason">>,P),
     true = Reason =:= <<"forbidden">> orelse Reason =:= <<"unavailable">>;
+payload(<<"stream.message">>,P) -> parvi_audio_stream_protocol:validate(P);
 payload(<<"job.offer">>,P) -> parvi_swarm_job:validate_offer(P);
 payload(<<"job.cancel">>,P) -> exact(P,[]);
 payload(<<"job.report">>,P) -> parvi_swarm_job:validate_report(P);

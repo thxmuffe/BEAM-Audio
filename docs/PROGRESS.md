@@ -1,6 +1,63 @@
 # Progress
 
 
+## 2026-11-09 — Step 6: independent PCM Streams and Subscriptions
+
+Replaced the single receiver/intent with a bounded durable collection keyed by
+Swarm, publisher Device and stable source key, with independent local IDs. Local
+publications have distinct incarnations; each connection has a fresh attempt and
+local temporary WebRTC endpoint. Source/receiver pause keeps intent; unsubscribe,
+source disappearance, endpoint failure and Contract revocation affect only their
+own stream. Receiver restart reloads labels/playing intent/gain, with no restored
+Contract, transport, buffered audio or target. Former singular checkpoints are
+not imported. Saved state and live media execution remain separate.
+
+Removed pg/erpc source discovery and remote-PID signaling from the new path.
+Catalogue/subscription/state/SDP/ICE use exact signed stream.message schemas;
+stream_read and stream_subscribe are separate explicit grants. Both endpoints
+install local device/source Contracts. Reply/signaling dispatch matches peer,
+control session, source incarnation, subscription and fresh attempt, then rechecks
+current context/deadline before acting. ExWebRTC verifies signed-SDP DTLS
+fingerprints and carries PCM directly, without Desk audio or OTP distribution.
+The existing packet codec retains an independent target on every packet.
+
+Added an Erlang stereo mixer over independent bounded queues: PCM16/24/32/float32,
+mono duplication, per-input gain bounded to [0,1], summed hard limiting and explicit
+late/malformed/wrong-clock rejection. Sample-index conversion derives only from
+each packet's target. The first playing input selects output rate/reference;
+incompatible output fails explicitly while its subscription remains available.
+Pausing removes that input's queued contribution, with already-submitted mixed
+output bounded by the handoff window. Existing product gain/Music settings remain
+unchanged. The local output uses the existing OS-binding adapter interface.
+
+Validation: warnings-as-errors compilation and 75 focused EUnit checks pass,
+including retained collections, current Contract/fresh-clock restoration gates,
+independent targets/pause, mixed formats/channels, gain/limiting, mixer lease expiry, signed stream
+permissions/schema boundaries and existing job/membership/timing checks. Replaced
+obsolete singular receiver tests with collection/restore checks.
+The two-Desk membership/revocation regression also passes. The public WSS
+status/capability/job regression passed after an initial pre-authentication
+connection failure and healthy HTTPS response; its network cause is not established.
+The headless three-device proof passes with real Desk signaling and ExWebRTC PCM:
+two publishers sum to the expected output at packet targets; receiver/source pause
+and resume, receiver restart without restored permissions, source disappearance
+and new incarnation, scoped unsubscribe and Contract revocation are independent.
+Its clock and scheduled output sink are test bindings; no hardware audio is opened.
+The existing Mac libsrtp build needed Homebrew OpenSSL in its test launch search
+path; no generated/downloaded dependency was edited. Test-helper stdin now accepts
+both list and binary lines after Elixir starts.
+
+Limits: this proves the default Erlang PCM collection/mixer path, not native Opus
+mixing, cross-device clock accuracy, hardware output or physical speaker timing.
+Native libwebrtc/GStreamer Opus code remains unchanged and its earlier signaling
+path is not admitted by this new collection; native decoded-audio handoff/mixing
+remains an explicit backend/app acceptance gate. No silent PCM fallback from an
+Opus descriptor is installed. Different output rates/clocks require explicit
+conversion support; no implicit resampler was introduced. Normal shared-clock and
+Offset integration is step 7. No product app build, launch, installation or service
+deployment was performed. [Usage, protocol and bounds](SWARM_STREAMS.md).
+
+
 ## 2026-11-09 — Step 5: durable Passports and multi-Desk rejoin
 
 Added one durable OTP membership authority, signed v3 invitations/Passports and
