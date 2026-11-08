@@ -58,6 +58,7 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
   Select All and Copy. Do not render error messages solely as static labels or
   implement custom clipboard/context-menu handling for them.
 - Use OTP for process lifecycle, supervision, messaging, links/monitors and process-group membership. Keep admission permission distinct from observed connection/process liveness.
+- Do not give mutually untrusted Swarm devices Distributed Erlang connectivity or the ability to invoke arbitrary remote functions. Keep supervision local and cross-device operations authenticated, allowlisted and scoped to explicit permissions.
 - Implementation sources belong under `src/`: platform apps in `src/Apps/`, app-specific shared code in `src/Apps/Shared/`, audio processing and native audio adapters in `src/Audio/`, shared networking/swarm runtime in `src/control/`, and independently deployed services in `src/Services/`. Cross-component integration checks belong in top-level `tests/`; component unit tests can stay beside their component. Documentation belongs in `docs/` and repository-wide tooling in `scripts/`.
 - Keep `src/Audio/src/` platform independent. Platform audio bindings, including
   Erlang port/format/OS-clock adapters and native helpers, belong together under
@@ -73,10 +74,14 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 
 ### Repository split
 
-Use "cluster" in user-facing text, "Offset" for the shared playback target
-offset, and OpenSound for product branding. Preserve established internal Parvi
-module/protocol names, bundle identifiers, identity storage and invitation schemes
-unless a separately planned compatibility migration requires changing them.
+Use **Swarm** for logical, mutually untrusted device collaboration,
+**Desk** for public admission/introductions, and **Offset** for the shared playback
+target setting in new user-facing design. **BEAM Audio** is the open-source
+technology; **OpenSound** names only the commercial product. Legacy "cluster"
+labels may remain until a deliberate UI/protocol migration. Preserve established
+internal Parvi module/protocol names, bundle identifiers, identity storage and
+invitation schemes unless a separately planned compatibility migration requires
+changing them. See the accepted Swarm roadmap in docs/PLAN.md.
 
 BEAM Audio owns reusable runtime, audio handlers, platform bindings, services,
 tooling, tests and project documentation. Commercial UI/app sources live in the
