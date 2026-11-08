@@ -1,7 +1,13 @@
 # OpenSound Cinema & Surround Systems Architecture
 
+> **Archived 2026-11-08 — historical proposal or checkpoint.**
+> Preserved for reference; statements such as “current”, “next”, and
+> “accepted” below describe their original date. They do not set today’s
+> implementation order or establish working features. Follow the
+> [secure Swarm roadmap](../PLAN.md) and [archive notes](README.md).
+
 > **Status — 2026-11-02:** Long-term vision, not an implementation or validation
-> report. Follow [PLAN.md](PLAN.md#active-priorities--revised-2026-11-02) for the
+> report. Follow [PLAN.md](PLAN-before-swarm-2026-11-08.md#previous-priorities--revised-2026-11-02) for the
 > active order: audio quality/reliability and scheduled output, virtual/real
 > discrete multichannel cinema, public/private split, then DSP. Numerical latency,
 > scale, clock-accuracy and glitch-free claims below are hypotheses to verify,
@@ -26,14 +32,14 @@ OpenSound inverts this paradigm into a **Distributed Edge-DSP Cinema**:
 
 OpenSound already defines core spatial and timing contracts that support this cinema architecture:
 
-1. **Spatial Profile Contract ([`docs/AUDIO_STREAM_CONTRACT.md`](file:///Users/penpa/Documents/GitHub/OpenSound/docs/AUDIO_STREAM_CONTRACT.md))**:
+1. **Spatial Profile Contract ([`docs/AUDIO_STREAM_CONTRACT.md`](../AUDIO_STREAM_CONTRACT.md))**:
    - Defines the `point` profile: 3D Cartesian coordinates $(X, Y, Z)$ per audio object with explicit coordinate frames and time units.
    - Defines **spatial selection spheres** and separation of **spatial filtering** from **spatial rendering**.
    - Establishes that receiving the full scene and filtering/rendering locally at the edge is a first-class architectural pattern.
-2. **Native Backend Boundary ([`docs/BEAM_Audio_Codex_Implementation_Spec.md`](file:///Users/penpa/Documents/GitHub/OpenSound/docs/BEAM_Audio_Codex_Implementation_Spec.md))**:
+2. **Native Backend Boundary ([`docs/BEAM_Audio_Codex_Implementation_Spec.md`](BEAM_Audio_Codex_Implementation_Spec.md))**:
    - Separates channel mapping from point metadata rendering.
    - Preserves platform independence by avoiding hardcoded proprietary DSP inside the Erlang BEAM layer, offloading sample convolution to native SIMD engines.
-3. **Cluster Clock Domain ([`docs/PLAN.md`](file:///Users/penpa/Documents/GitHub/OpenSound/docs/PLAN.md) & `parvi_clock`)**:
+3. **Cluster Clock Domain ([`docs/PLAN.md`](../PLAN.md) & `parvi_clock`)**:
    - Provides nanosecond-level cluster clock mapping and slew correction.
    - Sets the target for multi-channel acoustic measurement using simultaneous impulse/correlation capture.
 
@@ -175,7 +181,7 @@ In traditional live monitoring, latency must be $<5 \text{ ms}$. In a home cinem
 1. **Multi-Channel Speaker Registry (Erlang Control)**:
    - Extend `parvi_cluster_trust` / store with speaker metadata: physical coordinates $(x, y, z)$, speaker role (`front_left`, `subwoofer`, `ceiling_rear_right`), and FIR profile IDs.
 2. **Ambisonic Stream Profile**:
-   - Implement the B-format / HOA descriptor binding in `parvi_audio_source` according to [`docs/AUDIO_STREAM_CONTRACT.md`](file:///Users/penpa/Documents/GitHub/OpenSound/docs/AUDIO_STREAM_CONTRACT.md).
+   - Implement the B-format / HOA descriptor binding in `parvi_audio_source` according to [`docs/AUDIO_STREAM_CONTRACT.md`](../AUDIO_STREAM_CONTRACT.md).
 3. **Local Edge DSP Integration**:
    - Integrate an embedded convolution engine (e.g. CamillaDSP backend or native C/Rust NIF) into the edge speaker adapter.
 4. **Calibration Wizard**:

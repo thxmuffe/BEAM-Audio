@@ -1,5 +1,10 @@
 # Parvi chat: first prototype step
 
+> **Reading status — 2026-11-08:** This guide describes the existing runtime and
+> earlier checkpoints. Its cross-device OTP/erpc/pg operations belong to the
+> trusted baseline, not the new untrusted Device boundary. Follow the
+> [eight-step Swarm plan](../../docs/PLAN.md) for migration and work order.
+
 ## Automatic chat notices
 
 Info-level system messages appear automatically for peer connect/reconnect/

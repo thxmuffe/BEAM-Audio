@@ -1,5 +1,11 @@
 # Subplan: make playback simultaneous
 
+> **Archived 2026-11-08 — historical proposal or checkpoint.**
+> Preserved for reference; statements such as “current”, “next”, and
+> “accepted” below describe their original date. They do not set today’s
+> implementation order or establish working features. Follow the
+> [secure Swarm roadmap](../PLAN.md) and [archive notes](README.md).
+
 Date: 2026-11-03. This is the active plan for the repository split, build
 restoration and scheduled playback. It advances extraction ahead of the earlier
 multichannel milestone at the user's explicit request. Existing quality, recovery,
@@ -64,7 +70,7 @@ unproved; the app engine capabilities are still unsupported.
 
 ## 2. Finish the replaceable media boundary — implemented, device check pending
 
-See [the implemented interface](AUDIO_ENGINE_INTERFACE.md) and PROGRESS.md for
+See [the implemented interface](../AUDIO_ENGINE_INTERFACE.md) and PROGRESS.md for
 scope and validation limits. The following requirements guided this increment:
 
 
@@ -82,7 +88,7 @@ scope and validation limits. The following requirements guided this increment:
 
 ## 3. Prove scheduled GStreamer output on Windows — local proof passes, Windows pending
 
-See [the isolated fixture and Windows commands](../src/Audio/experiments/gstreamer/README.md).
+See [the isolated fixture and Windows commands](../../src/Audio/experiments/gstreamer/README.md).
 The clean Mac run preserves all 401 RTP/decoded PTS associations and executes
 an Erlang-planned offset plus bounded dedicated-clock calibration. This is not
 an app scheduling implementation or physical alignment proof. The user will
@@ -115,7 +121,7 @@ its unsigned device build links successfully. The user will deploy/listen and
 check Stop/Play and resubscription. Explicit launch-time libwebrtc selection is
 retained. This establishes a trial integration only: schedule execution, device
 clock correction, physical alignment and recovery qualification remain pending.
-See [device instructions](apps/iOS/README.md).
+See [device instructions](../apps/iOS/README.md).
 
 
 - Assess GStreamer iOS packaging and real device output against the proven

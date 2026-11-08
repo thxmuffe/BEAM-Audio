@@ -1,5 +1,11 @@
 # 0005 — Persistent identity and automatic cluster rejoin
 
+> **Migration status — 2026-11-08:** This decision records earlier implementation
+> boundaries and evidence. The [secure Swarm roadmap](../PLAN.md) supersedes its
+> cross-device trust assumptions and old next-step instructions. Retain useful
+> local OTP/media ownership; use the [engine interface](../AUDIO_ENGINE_INTERFACE.md)
+> for the current independent per-packet target rule and platform limits.
+
 Date: 2026-11-01. Status: accepted; implemented; focused Mac/iPhone restart checks pass.
 
 ## Problem

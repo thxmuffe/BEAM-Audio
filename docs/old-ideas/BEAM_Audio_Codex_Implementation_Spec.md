@@ -1,5 +1,11 @@
 # BEAM Audio: Capability-Negotiated Media Providers
 
+> **Archived 2026-11-08 — historical proposal or checkpoint.**
+> Preserved for reference; statements such as “current”, “next”, and
+> “accepted” below describe their original date. They do not set today’s
+> implementation order or establish working features. Follow the
+> [secure Swarm roadmap](../PLAN.md) and [archive notes](README.md).
+
 ## Codex implementation specification
 
 **Version:** 0.1  
@@ -9,7 +15,7 @@
 **Status:** Proposed implementation plan; not implemented or performance-validated by this document.
 
 **Implementation follow-up, 2026-11-01:** The accepted incremental sequence is
-in [PLAN.md](PLAN.md#current-implementation-sequence--accepted-2026-11-01).
+in [PLAN.md](PLAN-before-swarm-2026-11-08.md#implementation-record--sequence-begun-2026-11-01).
 It prioritizes a minimal backend boundary and a real native playback proof before
 general negotiation, and defers RAVENNAKIT and restoration. Erlang owns the master
 time reference, local clock mapping, presentation schedule and correction policy;
@@ -20,14 +26,14 @@ and automatic rejoin ahead of native audio work; full media restoration remains
 deferred.
 
 **Architecture follow-up, 2026-11-02:**
-[Decision 0006](decisions/0006-audio-backend-boundary-and-clock-ownership.md)
+[Decision 0006](../decisions/0006-audio-backend-boundary-and-clock-ownership.md)
 records the accepted boundary and clock ownership. The compiled legacy wrapper
 uses the existing subscription/receiver owners without an additional provider
 process. This is the first extraction, not a finished native engine protocol or
 a new device-playback validation. Follow `PLAN.md` for the next isolated proof.
 
 **Clock follow-up, 2026-11-02:**
-[Decision 0007](decisions/0007-cluster-clock-pulls-and-monotonic-mapping.md)
+[Decision 0007](../decisions/0007-cluster-clock-pulls-and-monotonic-mapping.md)
 records the first asynchronous clock implementation and its connected-peer
 coordination limits. Physical reference/alignment validation remains separate.
 

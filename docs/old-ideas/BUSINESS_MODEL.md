@@ -1,5 +1,11 @@
 # OpenSound & BEAM Audio — Business Model & Product Strategy
 
+> **Archived 2026-11-08 — historical proposal or checkpoint.**
+> Preserved for reference; statements such as “current”, “next”, and
+> “accepted” below describe their original date. They do not set today’s
+> implementation order or establish working features. Follow the
+> [secure Swarm roadmap](../PLAN.md) and [archive notes](README.md).
+
 ## 1. Executive Summary & Brand Architecture
 
 OpenSound operates on an **Open-Core & Hardware Ecosystem** model, decoupling the open-source transport plumbing from the commercial applications, cloud infrastructure, and turnkey hardware.

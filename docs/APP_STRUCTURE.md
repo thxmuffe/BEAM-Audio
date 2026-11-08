@@ -1,5 +1,10 @@
 # Shared app structure
 
+> **Reading status — 2026-11-08:** Legacy UI/profile and trusted-cluster behavior
+> below describes existing work, not the target security or membership model.
+> The [eight-step Swarm roadmap](PLAN.md) governs the migration; its membership,
+> session and permission contracts must be specified in step 1.
+
 The macOS, iOS and Windows apps follow this interaction model. Platform controls
 and responsive layouts can differ; membership and chat behavior come from the
 same Erlang/OTP core in `src/control/`.

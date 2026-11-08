@@ -1,5 +1,11 @@
 # Audio runtime and platform adapters
 
+> **Reading status — 2026-11-08:** This guide includes historical implementation
+> checkpoints. Follow the [active Swarm roadmap](../../docs/PLAN.md) for work
+> order and the [engine interface](../../docs/AUDIO_ENGINE_INTERFACE.md) for the
+> current per-packet scheduling rule/platform limits. Older NetEq-only,
+> anchor-based or GStreamer-deferral statements below describe earlier stages.
+
 See [audio/stream/subscription draft 0.1](../../docs/AUDIO_STREAM_CONTRACT.md)
 for the shared semantic boundary and its first PCM/WebRTC binding. It is not
 an interoperability or synchronized-playback claim.
@@ -318,7 +324,7 @@ No new automated test cases were added. Sustained operation, overload behavior,
 Mac capture, iPhone UI/meter, clock synchronization and playback are unverified.
 The existing PC mailbox guard is not full SCTP/network backpressure.
 
-The [current architecture discussion](../../docs/PLAN.md#audio-adapters-and-heterogeneous-streams--discussion-2026-10-31)
+The [historical architecture discussion](../../docs/old-ideas/PLAN-before-swarm-2026-11-08.md#audio-adapters-and-heterogeneous-streams--discussion-2026-10-31)
 describes a shared Erlang audio-stream boundary with small platform adapters.
 Streams may retain different source formats; a common description does not imply
 a common sample rate or bit depth. Capture is for processing and IP delivery to

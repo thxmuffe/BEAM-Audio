@@ -1,5 +1,12 @@
 # Audio, stream and subscription contract — draft 0.1
 
+> **Scope update — 2026-11-08:** This draft includes the original trusted-OTP
+> lifecycle design. Follow [PLAN.md](PLAN.md) for the secure Swarm migration.
+> Every packet independently carries its authoritative target as specified in
+> [AUDIO_ENGINE_INTERFACE.md](AUDIO_ENGINE_INTERFACE.md); older media-position
+> mappings here cannot replace a missing packet target. Rich spatial formats
+> remain outside the current eight steps.
+
 Date: 2026-11-01. Status: semantic draft with a first implemented PCM/WebRTC
 binding below. This is not an interoperability or synchronized-playback claim.
 The user accepted compact, known-layout packet profiles with stable properties

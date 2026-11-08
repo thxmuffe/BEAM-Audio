@@ -1,8 +1,29 @@
 # Progress
 
+## 2026-11-08 — Reconciled the active roadmap and archived older proposals
+
+PLAN.md now contains only the approved eight-step secure Swarm roadmap, its
+current status and migration/scope clarifications. The eight steps and their exit
+criteria retain their order and wording. Older plan bodies, the playback subplan,
+provider specification, early handover, trust discussion and risk/cinema/business
+proposals are preserved under [old-ideas/](old-ideas/README.md), with archive
+notices and a conflict-resolution memo. IDEAS.md separately tracks deferred work
+and removes already-implemented single-slot restoration from the future backlog.
+
+Resolved competing “current” instructions, trusted-OTP/VIP trust assumptions,
+anchor-based timing directions, backend reversals and future cinema/DSP/scaling
+prerequisites. Clarified identity before secure messaging, multi-Desk versus
+federation, permission checks on restored intent, and the temporary trusted audio
+baseline before clock/control migration. Existing interface/decision records stay
+available as descriptions of code and history; they do not override the roadmap.
+
+Validation: documentation/link and preservation checks only; no runtime source,
+compilation, app build, device test or deployment. This does not complete step 1;
+next is its boundary contract and code-grounded migration map.
+
 ## 2026-11-05 — Recorded trust and coordination discussion
 
-Saved [exploratory design notes](design/audio-system-trust-and-coordination.md)
+Saved [exploratory design notes](old-ideas/audio-system-trust-and-coordination.md)
 covering recursive groups, admission/authority, local OTP capability workers,
 RabbitMQ control messaging, direct authorised media and reconnect semantics.
 References and unresolved decisions are included. Documentation only: no broker
@@ -864,7 +885,7 @@ Next: user baseline check using [BUILDING.md](BUILDING.md). Launch the rebuilt M
 app, sign/run iPhone through the relocated Xcode workspace, and rebuild Windows
 on Windows. Confirm identity/rejoin, chat, capture, subscribe/play and stop/play.
 Playback is still unsynchronized. Then continue the
-[simultaneous-playback subplan](SIMULTANEOUS_PLAYBACK_PLAN.md): finish the backend
+[simultaneous-playback subplan](old-ideas/SIMULTANEOUS_PLAYBACK_PLAN.md): finish the backend
 contract, prove GStreamer deadline/sample-rate execution and iPhone feasibility,
 then measure two physical outputs. Existing quality/recovery/cinema/DSP work stays
 open; a passing build does not close it.
@@ -2950,7 +2971,7 @@ The user chose cluster-wide mutual removal: the caller and target lose native
 cluster access across their logical swarms. Implemented the isolated policy in
 Erlang without changing the working apps, Windows, graphs, core relay or public
 service. See [the experiment](../src/control/transport/experiments/otp_dist/README.md)
-and [the updated plan](PLAN.md#trusted-native-otp-cluster-direction-accepted-2026-10-28).
+and [the updated plan](old-ideas/PLAN-before-swarm-2026-11-08.md#trusted-native-otp-cluster-direction-accepted-2026-10-28).
 
 `parvi_cluster_auth` uses OTP Ed25519, JSON/URI parsing and secure randomness.
 Expiring capability invitations pin an ephemeral inviter key and contain no OTP
@@ -3015,7 +3036,7 @@ Reception Desk or application message router carrying native traffic. Names and
 cookies are temporary, and each node allows only its locally provisioned peer.
 This is not production invitation authentication or revocation. The accepted
 six-step direction and remaining admission, internet/recovery, mobile and DSP
-work are recorded in [the plan](PLAN.md#trusted-native-otp-cluster-direction-accepted-2026-10-28).
+work are recorded in [the plan](old-ideas/PLAN-before-swarm-2026-11-08.md#trusted-native-otp-cluster-direction-accepted-2026-10-28).
 End-to-end backpressure, reconnection and audio latency remain unverified.
 Working apps, Windows, graph code and public services were not changed.
 
@@ -3042,7 +3063,7 @@ the physical device.
 
 ## 2026-10-28 — Library reuse audit and automatic WebSocket pongs
 
-Recorded a first codebase-wide reuse pass in [the plan](PLAN.md#code-reuse-audit-2026-10-28),
+Recorded a first codebase-wide reuse pass in [the plan](old-ideas/PLAN-before-swarm-2026-11-08.md#code-reuse-audit-2026-10-28),
 separating existing vendored libraries, removable legacy code, and actual
 replacement candidates. Removed Parvi's extra WebSocket pong handler: Gun 2.7
 already sends the reply and normally suppresses ping notifications.
@@ -3217,7 +3238,7 @@ remain outside this layout update.
 ## 2026-10-28 — Browser/server BEAM architecture selected
 
 Recorded the accepted Phoenix/Cowboy + Popcorn 1.0/LocalLiveView direction in
-[the current implementation plan](PLAN.md#current-implementation-plan--accepted-2026-10-28).
+[the current implementation plan](old-ideas/PLAN-before-swarm-2026-11-08.md#current-implementation-plan--accepted-2026-10-28).
 Shared swarm logic remains Erlang/OTP; the browser runs its own actors and uses
 an explicit transport protocol. The plan records the new browser runtime's
 limited operating history, compatibility checks and internet-first Mac–iPhone

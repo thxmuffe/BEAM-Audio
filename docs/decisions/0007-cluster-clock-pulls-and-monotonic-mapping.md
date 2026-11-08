@@ -1,5 +1,11 @@
 # 0007 — Cluster clock pulls and monotonic mapping
 
+> **Migration status — 2026-11-08:** This decision records earlier implementation
+> boundaries and evidence. The [secure Swarm roadmap](../PLAN.md) supersedes its
+> cross-device trust assumptions and old next-step instructions. Retain useful
+> local OTP/media ownership; use the [engine interface](../AUDIO_ENGINE_INTERFACE.md)
+> for the current independent per-packet target rule and platform limits.
+
 Date: 2026-11-02. Status: first implementation; compiled and focused checks pass.
 
 ## Scope and OTP mechanisms

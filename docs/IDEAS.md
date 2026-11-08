@@ -1,5 +1,28 @@
 # Ideas for later
 
+These are deferred possibilities, outside the [active eight-step Swarm
+plan](PLAN.md). They add no prerequisites or implementation commitments.
+Original discussions are preserved in [old-ideas/](old-ideas/README.md).
+
+## Longer-term directions
+
+- Discrete multichannel/home cinema, spatial/object/ambisonic rendering,
+  upmixing and video lip-sync: [cinema vision](old-ideas/CINEMA_SYSTEMS.md).
+- DSP algorithms, room EQ, crossovers and acoustic feedback/calibration during
+  music: [earlier idea record](old-ideas/PLAN-before-swarm-2026-11-08.md#audio-and-calibration-ideas--recorded-2026-10-30).
+  The current plan's test Workers and local multi-stream mixer do not require
+  implementing these systems.
+- Federation, recursive groups, Director failover and large-event routing/time
+  distribution: [coordination discussion](old-ideas/audio-system-trust-and-coordination.md).
+  Several Desks for one Swarm remain in current step 5.
+- Additional native backends, lossless formats, general capability negotiation,
+  AES67/PTP interoperability, browser work and new platforms:
+  [earlier provider proposal](old-ideas/BEAM_Audio_Codex_Implementation_Spec.md)
+  and [historical plan](old-ideas/PLAN-before-swarm-2026-11-08.md).
+- Accounts, paid tiers, turnkey hardware and managed services:
+  [business ideas](old-ideas/BUSINESS_MODEL.md). Prices, capacities and feature
+  claims there are proposals, not a product specification.
+
 ## Receiver accountability and periodic contract reports
 
 Requested 2026-11-04. Not part of the current implementation increment.
@@ -23,18 +46,10 @@ does not alter decoded audio samples. Format negotiation, bandwidth limits and
 cross-platform support need a separate increment; the current wire audio remains
 Opus. Do not remove transport encryption for this experiment.
 
-## Restore audio subscriptions after iPhone resume/relaunch
+## Work already promoted to implementation
 
-Promoted to implementation 2026-11-04; see PLAN.md and the iPhone README for
-current behavior and pending physical-device checks. Original scope: save the
-user's intended source/profile and playback-enabled state in the core runtime's
-persistent settings. Use stable source identity rather than process/session IDs
-or a publication ID that changes when broadcasting restarts. On resume/relaunch,
-reconnect to the saved cluster, reacquire the shared clock, rediscover the source
-and negotiate a fresh subscription before restoring playback. Invalidate old
-native buffers and expired targets; only fresh packets may play at their own
-authoritative targets. Unsubscribe/Stop/Forget must update or clear saved intent.
-If the source is absent, show waiting/unavailable rather than fabricate success.
-Use existing OTP supervision/discovery; iOS supplies lifecycle notifications only.
-Apple's UI snapshot is an image, not a saved network/media session. This work is
-separate from background-audio entitlement/session policy.
+Subscription restoration is no longer a future idea: the single-slot baseline
+is implemented and has user-reported iPhone evidence in [PROGRESS.md](PROGRESS.md).
+Current step 6 expands it into independent subscriptions; fresh sessions and
+current permission checks remain required. See the [iPhone guide](apps/iOS/README.md)
+for usage and platform limitations.

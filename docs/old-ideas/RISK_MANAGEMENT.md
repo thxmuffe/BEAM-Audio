@@ -1,5 +1,11 @@
 # OpenSound Risk Management & Security Architecture
 
+> **Archived 2026-11-08 — historical proposal or checkpoint.**
+> Preserved for reference; statements such as “current”, “next”, and
+> “accepted” below describe their original date. They do not set today’s
+> implementation order or establish working features. Follow the
+> [secure Swarm roadmap](../PLAN.md) and [archive notes](README.md).
+
 ## 1. Executive Summary
 
 OpenSound (Parvi) is an open, distributed audio-over-IP platform combining Erlang/OTP cluster control with native media engines (WebRTC/Opus). As the system transitions from lab prototypes (Mac-to-iPhone) to real-world deployment across home cinemas, shared listening sessions, and mass public events, it encounters distinct threat vectors:
