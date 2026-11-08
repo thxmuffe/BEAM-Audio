@@ -1,5 +1,16 @@
 # Progress
 
+## 2026-11-05 — Recorded trust and coordination discussion
+
+Saved [exploratory design notes](design/audio-system-trust-and-coordination.md)
+covering recursive groups, admission/authority, local OTP capability workers,
+RabbitMQ control messaging, direct authorised media and reconnect semantics.
+References and unresolved decisions are included. Documentation only: no broker
+selected, runtime changes, builds or deployments performed for this note-taking.
+User reports current timing/quality acceptable and handover recovery possibly
+around 7 seconds, versus the earlier roughly 20 seconds; informal observation,
+not an instrumented latency guarantee. Connection churn remains undiagnosed.
+
 ## 2026-11-05 — Larger, compact dark Windows presentation
 
 Used the requested larger-default alternative to browser-style +/- zoom. The
