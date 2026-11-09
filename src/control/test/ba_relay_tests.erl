@@ -6,7 +6,7 @@ bounded_raw_delivery_test() ->
         mailbox => <<"cap">>,payload => #{swarm => <<"swarm">>}})),
     S = #{owner => self(),delivery => raw,max_owner_queue => 0,
           conn => self(),stream => stream,boxes => #{<<"cap">> => <<"swarm">>}},
-    ?assertMatch({noreply,S},ba_relay:handle_info({gun_ws,self(),stream,{text,Frame}},S)),
+    ?assertMatch({noreply,#{diagnostics := #{last_error := desk_owner_overloaded}}},ba_relay:handle_info({gun_ws,self(),stream,{text,Frame}},S)),
     receive {relay,{delivery,_,_,_}} -> error(unbounded_delivery) after 0 -> ok end,
     Allowed = S#{max_owner_queue := 64},
     ?assertMatch({noreply,Allowed},ba_relay:handle_info({gun_ws,self(),stream,{text,Frame}},Allowed)),

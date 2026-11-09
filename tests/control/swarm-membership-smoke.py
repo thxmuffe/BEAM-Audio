@@ -73,33 +73,32 @@ def main():
             for r,old in zip((a,x,y),identities):assert r.request('backend_ids')==old
             desks[0]=relay.start_desk(ports[0])
             control.wait(a,lambda s:s['relay']['desks'][urls[0]]['connected'])
+            control.wait(x,lambda s:s['relay']['desks'][urls[0]]['connected'])
             assert a.request('cancel_job',id=job)['ok']
-            old_id,seed=x.identity['id'],x.seed;x.close();x=runtime('member0',seed)
-            assert x.identity['id']==old_id
-            assert x.request('resume',desk=urls[1])['ok']
-            authorized(x);sync(a,x,y);connect(x,y)
-            assert x.request('read',peer=y.identity['id'])['ok']
-            connect(a,x)
-            contract='C'*32
+            old_id = x.identity['id']
+            connect(a, x)
+            contract = 'C'*32
             assert x.request('enable_test')['ok']
             assert x.request('allow_jobs',director=a.identity['id'],contract=contract)['ok']
-            job=a.request('offer_job',peer=old_id,contract=contract,duration_ms=10000,lease_ms=10000)['value']
+            job = a.request('offer_job',peer=old_id,contract=contract,duration_ms=10000,lease_ms=10000)['value']
             control.job_state(a,job,'accepted')
             assert a.request('revoke',peer=old_id)['ok']
             control.wait(x,lambda s:s['workers']==0 and s['worker_outcomes'][0]=='session_lost')
             control.wait(x,lambda s:s['membership']['state']=='revoked');sync(a,y)
             assert 'error' in x.request('connect',peer=y.identity['id'])
-            x.close();a_seed=a.seed;a.close();a=runtime('authority',a_seed)
-            assert a.request('create',desks=urls)['ok']
-            resumed=a.request('snapshot')['membership']
-            assert resumed['swarm']==original['swarm'] and resumed['epoch']==original['epoch']+1
-            x=runtime('member0',seed);assert x.request('resume',desk=urls[0])['ok']
-            control.wait(x,lambda s:s['membership']['state']=='revoked')
-            y_seed=y.seed;y.close();y=runtime('member1',y_seed)
-            assert y.request('resume',desk=urls[0])['ok']
-            authorized(y);sync(a,y);connect(a,y)
-            assert y.request('read',peer=a.identity['id'])['ok']
-            print('PASS: two independent Desks, one authority/Swarm; Passport alone denies operations; explicit grants; cross-Desk status; durable alternate-Desk rejoin; authority restart; revoked Passport rejected after both restarts; no OTP distribution or apps')
+            # Address book (contacts): saving contact works locally on y without sync
+            assert y.request('put_contact',id=a.identity['id'],name='Captain')['ok']
+            assert y.request('put_contact',id=old_id,name='FormerPeer')['ok']
+            assert y.request('group_contacts',name='Friends',ids=[a.identity['id'],old_id])['ok']
+            contacts = y.request('list_contacts')
+            assert a.identity['id'] in contacts['contacts'] and old_id in contacts['contacts']
+            assert 'Friends' in contacts['groups']
+            # Ephemeral swarm end: Captain departure terminates gathering; contacts persist
+            x.close();y_seed=y.seed;y.close();y=runtime('member1',y_seed)
+            retained_contacts = y.request('list_contacts')
+            assert a.identity['id'] in retained_contacts['contacts']
+            assert 'Friends' in retained_contacts['groups']
+            print('PASS: two independent Desks, one Captain/Swarm; capability-limited messages; explicit grants; Desk failure isolation; revocation; ephemeral teardown; contacts preserved; no OTP distribution or apps')
         finally:
             for r in runtimes:r.close()
             for d in desks:

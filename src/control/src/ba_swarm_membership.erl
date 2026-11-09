@@ -45,8 +45,8 @@ boot(#{mode := join,invitation := Link} = Config,S) ->
             client(Ticket,maps:get(<<"authority">>,I),maps:get(<<"swarm">>,I),URLs,Primary,
                    maps:get(<<"route">>,I),#{},S#{name => maps:get(<<"name">>,I)})
     end;
-boot(#{mode := resume} = Config,S) ->
-    boot_saved(Config,ba_device_store:load(swarm_member,undefined),S).
+boot(#{mode := resume},_S) ->
+    error(ephemeral_swarms_cannot_be_resumed).
 boot_saved(Config,#{id := Id,passport := Passport,authority := Authority,swarm := Swarm,
                    desks := URLs,primary := OldPrimary,authority_route := R} = Saved,#{id := Id} = S) ->
     _ = ba_swarm_passport:passport(Passport,Authority,Id,Swarm),

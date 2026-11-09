@@ -21,10 +21,69 @@ loop() ->
 
 %% An embedded host can call this same function without emulating terminal I/O.
 request(JSON) ->
+    Bin = if is_binary(JSON) -> JSON; true -> iolist_to_binary(JSON) end,
     case application:get_env(ba_core, runtime_profile, legacy_apps) of
-        native_cluster -> ba_native_bridge:request(JSON);
-        legacy_apps -> legacy_request(JSON)
+        swarm_control -> swarm_request(Bin);
+        native_cluster -> ba_native_bridge:request(Bin);
+        legacy_apps -> legacy_request(Bin)
     end.
+
+swarm_request(JSON) ->
+    Reply = try
+        Request = json:decode(JSON),
+        Result = swarm_command(Request),
+        Response = case Result of
+            {ok, Data} -> (swarm_snapshot())#{<<"error">> => null, <<"result">> => Data};
+            ok -> (swarm_snapshot())#{<<"error">> => null};
+            null -> (swarm_snapshot())#{<<"error">> => null};
+            {error, Reason} -> (swarm_snapshot())#{<<"error">> => format_error(Reason)};
+            _ -> (swarm_snapshot())#{<<"error">> => Result}
+        end,
+        maps:merge(Response, maps:with([<<"request_id">>], Request))
+    catch
+        _:_ -> (swarm_snapshot())#{<<"error">> => <<"Invalid request or unavailable worker.">>}
+    end,
+    iolist_to_binary(json:encode(Reply)).
+
+swarm_command(#{<<"method">> := <<"snapshot">>}) -> null;
+swarm_command(#{<<"method">> := <<"list_contacts">>}) ->
+    {ok, ba_contacts:list()};
+swarm_command(#{<<"method">> := <<"put_contact">>, <<"id">> := Id, <<"name">> := Name}) ->
+    ba_contacts:put(Id, Name);
+swarm_command(#{<<"method">> := <<"delete_contact">>, <<"id">> := Id}) ->
+    ba_contacts:delete(Id);
+swarm_command(#{<<"method">> := <<"put_group">>, <<"name">> := Name, <<"ids">> := Ids}) ->
+    ba_contacts:group(Name, Ids);
+swarm_command(#{<<"method">> := <<"delete_group">>, <<"name">> := Name}) ->
+    ba_contacts:delete_group(Name);
+swarm_command(#{<<"method">> := <<"create_swarm">>, <<"name">> := Name, <<"desks">> := Desks}) ->
+    ba_swarm:create(Name, Desks);
+swarm_command(#{<<"method">> := <<"join_swarm">>, <<"invitation">> := Link}) ->
+    ba_swarm:join(Link);
+swarm_command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
+    TTL = maps:get(<<"ttl">>, Req, 3600),
+    Selection = case Sel of
+        #{<<"group">> := G} -> {group, G};
+        Ids when is_list(Ids) -> Ids
+    end,
+    ba_swarm:invite(Selection, TTL);
+swarm_command(#{<<"method">> := <<"leave_swarm">>}) ->
+    ba_swarm:leave();
+swarm_command(#{<<"method">> := <<"end_swarm">>}) ->
+    ba_swarm:end_swarm();
+swarm_command(_) ->
+    {error, <<"Unsupported request.">>}.
+
+swarm_snapshot() ->
+    Contacts = try ba_contacts:list() catch exit:_ -> #{contacts => #{}, groups => #{}} end,
+    Swarm = try ba_swarm:status() catch exit:_ -> #{state => idle} end,
+    #{<<"profile">> => <<"swarm_control">>,
+      <<"contacts">> => Contacts,
+      <<"swarm">> => Swarm}.
+
+format_error(Reason) when is_binary(Reason) -> Reason;
+format_error(Reason) when is_atom(Reason) -> atom_to_binary(Reason);
+format_error(Reason) -> iolist_to_binary(io_lib:format("~p", [Reason])).
 
 legacy_request(JSON) ->
     Reply = try

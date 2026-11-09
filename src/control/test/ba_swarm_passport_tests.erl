@@ -28,7 +28,7 @@ policy_separates_permission_test() ->
     ?assertException(error,_,ba_swarm_passport:permissions([<<"status_read">>,<<"status_read">>])).
 invitation_scope_and_expiry_test() ->
     {A,_,Swarm,Key,_}=fixture(),URL = <<"ws://127.0.0.1:4000/relay/v1">>,
-    I=#{<<"v">>=>1,<<"type">>=><<"invitation">>,<<"authority">>=>A,<<"swarm">>=>Swarm,
+    I=#{<<"v">>=>1,<<"type">>=><<"invitation">>,<<"name">>=><<"Test gathering">>,<<"authority">>=>A,<<"swarm">>=>Swarm,
         <<"invite">>=>Swarm,<<"secret">>=>binary:copy(<<"A">>,64),
         <<"expires">>=>erlang:system_time(second)+60,<<"desks">>=>[URL],
         <<"route">>=>#{<<"desk">>=>URL,<<"mailbox">>=>Swarm}},

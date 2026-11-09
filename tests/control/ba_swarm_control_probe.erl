@@ -24,7 +24,24 @@ command(#{<<"op">> := <<"create">>,<<"desks">> := URLs},_,_) ->
     start(#{mode => create,name => <<"Test gathering">>,desks => URLs});
 command(#{<<"op">> := <<"join">>,<<"invitation">> := Link,<<"desk">> := Desk},_,_) ->
     start(#{mode => join,invitation => Link,desk => Desk});
-command(#{<<"op">> := <<"resume">>,<<"desk">> := Desk},_,_) -> start(#{mode => resume,desk => Desk});
+command(#{<<"op">> := <<"create_swarm">>,<<"name">> := Name,<<"desks">> := URLs},_,_) ->
+    ensure_started(),result(ba_swarm:create(Name,URLs));
+command(#{<<"op">> := <<"join_swarm">>,<<"invitation">> := Link},_,_) ->
+    ensure_started(),result(ba_swarm:join(Link));
+command(#{<<"op">> := <<"invite_swarm">>,<<"selection">> := Sel},_,_) ->
+    ensure_started(),result(ba_swarm:invite(Sel,3600));
+command(#{<<"op">> := <<"leave_swarm">>},_,_) -> ensure_started(),result(ba_swarm:leave());
+command(#{<<"op">> := <<"end_swarm">>},_,_) -> ensure_started(),result(ba_swarm:end_swarm());
+command(#{<<"op">> := <<"swarm_status">>},_,_) -> ensure_started(),ba_swarm:status();
+command(#{<<"op">> := <<"list_contacts">>},_,_) -> ensure_started(),ba_contacts:list();
+command(#{<<"op">> := <<"put_contact">>,<<"id">> := Id,<<"name">> := Name},_,_) ->
+    ensure_started(),result(ba_contacts:put(Id,Name));
+command(#{<<"op">> := <<"delete_contact">>,<<"id">> := Id},_,_) ->
+    ensure_started(),result(ba_contacts:delete(Id));
+command(#{<<"op">> := <<"group_contacts">>,<<"name">> := Name,<<"ids">> := Ids},_,_) ->
+    ensure_started(),result(ba_contacts:group(Name,Ids));
+command(#{<<"op">> := <<"delete_group">>,<<"name">> := Name},_,_) ->
+    ensure_started(),result(ba_contacts:delete_group(Name));
 command(#{<<"op">> := <<"invite">>},_,_) -> result(ba_swarm_membership:invite(3600));
 command(#{<<"op">> := <<"grant">>,<<"peer">> := Peer,<<"permissions">> := Ps},_,_) ->
     result(ba_swarm_membership:grant(Peer,Ps));
@@ -110,9 +127,17 @@ command(#{<<"op">> := <<"block_handshakes">>},_,_) ->
     [sys:replace_state(P,fun(S) -> S#{owner := Filter} end) || P <- maps:values(ba_desk_connections_sup:connections())],
     #{ok => true};
 command(Other,_,_) -> ba_audio_stream_probe:command(Other).
+ensure_started() ->
+    case whereis(ba_sup) of
+        undefined ->
+            application:load(ba_core),
+            application:set_env(ba_core,clock_reference,system),
+            {ok,_} = ba_runtime:start(swarm_control),
+            ok;
+        _ -> ok
+    end.
 start(Config) ->
-    application:load(ba_core),application:set_env(ba_core,clock_reference,system),
-    case whereis(ba_sup) of undefined -> {ok,_} = ba_runtime:start(swarm_control);_ -> ok end,
+    ensure_started(),
     result(ba_swarm:start(Config)).
 result(ok) -> #{ok => true};
 result({ok,V}) -> #{ok => true,value => V};
