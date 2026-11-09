@@ -1,5 +1,60 @@
 # Progress
 
+## 2026-11-09 — macOS implementation built for user-led acceptance
+
+Migrated the Mac host from trusted Distributed Erlang to an unnamed secure Swarm
+runtime, starting idle with no restored gathering. Added OpenSoundKit's Swarm
+model/layout: local contacts/groups and private invitations; Swarm name/ID/Captain;
+Chat with public Passport details; clock/Director/Device Handler graph and scoped
+capability inspector; Audio's speaker/microphone/broadcast symbol toggles, per-
+Device exclusions and Swarm Offset. There are no separate subscription/play buttons.
+
+The Device Handler advertises the three real audio capabilities and supervises a
+fixed local audio Worker. Desired consent is local to the app session; speaker
+starts on, mic/broadcast off. The Worker starts capture and maintains authorized
+per-source Contracts/Subscriptions automatically when eligible. Existing Stream
+negotiation supplies the audio task lifecycle. Local JSON commands cannot be
+invoked through remote Swarm messages. App gathering operation grants are explicit
+local configuration; ordinary headless admission defaults remain unchanged.
+
+Extended the existing Core Audio adapter for microphone input, retaining Erlang
+format/meter/target policy. Added an AVAudioEngine output binding with post-startup
+clock mapping and bounded scheduled buffers. The system tap excludes local audio
+playback helpers to avoid rebroadcast loops. The current Erlang Mixer and packet
+target format are retained. Exclusions fence only affected sessions/jobs/audio;
+needed clock/authority exclusion reports unavailable state rather than election.
+Added bounded authenticated/replay-protected chat messages and optional validated
+audio capability reports; no arbitrary remote inspection was introduced.
+
+Renamed product packages, sources, Xcode projects/workspace and artifacts to
+OpenSound/OpenSoundKit or OS/BA prefixes. iOS/Windows changes are mechanical naming
+references only; their app migration/builds remain later. Stable identity-storage
+identifiers and core wire constants remain unchanged. Removed the four obsolete
+Mac files actually present: authority.term, policy.term, desk.term and
+clock_status.json; Keychain identity and contacts/groups were untouched. Startup
+also removes the known obsolete Swarm/subscription snapshot names.
+
+Checks: the 122-case backend suite passed; a subsequent 26-case focused run also
+passed with the additional audio-capability schema test (123 distinct cases).
+A final 38-case focused run includes native-binding PCM status redaction. Three
+pure Swift model tests pass: typed values, preserving a newly edited draft during
+send acknowledgement, and matching inspector responses to the selected Device.
+These use pure/runtime and synthetic endpoint checks, not a live app Swarm or
+hardware. The separate RTP-header-extension codec proof passed preservation of
+full per-packet targets, reordered packets and wrap. The offline native-mixing
+candidate compiles but was not run or adopted. Actual negotiation/decode/native
+preservation and physical timing/recovery are not established by that prototype.
+
+The OpenSound Mac bundle and audio helpers compile for macOS 14.2, pass deep
+code-signature verification and static runtime import checks (zero unresolved
+imports), and are packaged for manual
+acceptance. See [Mac app usage and limits](MACOS_APP.md). No product app, real
+Swarm service or audio device was launched, per the user's testing preference.
+Real OS permission, capture/playback, two-app interaction, visual layout and
+sustained timing still require user checks. The 8d maximum-Offset issue remains
+open. Added the requested thin CLI hardware Device Handler command to PLAN.md;
+that follow-up is not implemented. No commit or deployment was made.
+
 ## 2026-11-09 — Reviewed and completed Ephemeral Swarm verification
 
 Reviewed commits dd12617 and 3f9f245. They implement a device-local address book,

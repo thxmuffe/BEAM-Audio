@@ -1,3 +1,11 @@
+## macOS app integration — step 10
+
+[Mac app notes](../../docs/MACOS_APP.md) describe the new microphone/default-output
+Core Audio binding, AVAudioEngine scheduled-output adapter and Device Handler
+Worker. Capture/metering/timing policy and the reference Mixer remain in Erlang.
+The native-mixing/RTP experiments are isolated; neither changes the production
+format/default. Compilation is verified; actual hardware acceptance is user-led.
+
 # Audio runtime and platform adapters
 
 Step 8a–8d now isolates Desk failures, preserves live media on unchanged Contract

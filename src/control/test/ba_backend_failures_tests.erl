@@ -49,7 +49,8 @@ pcm_owner_overload_is_visible_without_retargeting_test() ->
 otp_reports_do_not_include_pcm_test() ->
     Audio = <<"private-sample-block">>,Status = #{state => #{mix => Audio},message => Audio,log => [Audio]},
     [?assertEqual(nomatch,binary:match(term_to_binary(Report),Audio)) || Report <-
-        [ba_audio_mixer:format_status(Status),ba_audio_source:format_status(Status)]].
+        [ba_audio_mixer:format_status(Status),ba_audio_source:format_status(Status),
+         ba_mac_audio:format_status(Status),ba_mac_output:format_status(Status)]].
 
 future_buffering_does_not_allow_output_past_authorization_test() ->
     Old = application:get_env(ba_core,audio_clock_adapter),application:set_env(ba_core,audio_clock_adapter,?MODULE),

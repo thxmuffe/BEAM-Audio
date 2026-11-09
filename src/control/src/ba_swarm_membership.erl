@@ -64,6 +64,8 @@ handle_call(status,_,S) ->
     {reply,#{id => maps:get(id,S),swarm => maps:get(swarm,S),role => maps:get(role,S),name => maps:get(name,S),captain => maps:get(authority,S),
         state => maps:get(state,S),epoch => value(<<"epoch">>,P),revision => value(<<"revision">>,P),
         members => case P of undefined -> [];_ -> maps:keys(maps:get(<<"members">>,P)) end,
+        membership => case P of undefined -> null;_ ->
+            maps:get(<<"membership">>,maps:get(maps:get(id,S),maps:get(<<"members">>,P)),null) end,
         rejected => maps:get(rejected,S)},S};
 handle_call(current,_,#{state := authorized} = S) ->
     case maps:get(until,S) > now_ms() of

@@ -82,7 +82,7 @@ handle_call({cancel,Id},_,#{active := Active,history := History} = S) ->
         false -> {reply,{error,unknown_worker},S}
     end;
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
-handle_cast(audio_changed,#{audio_worker := P}=S) -> ba_device_audio:changed(P),{noreply,S};
+handle_cast(audio_changed,#{audio_worker := P}=S) -> ba_device_audio:changed(P),{noreply,changed(S)};
 handle_cast(_,S) -> {noreply,S}.
 
 handle_info(audio_worker,S) ->
@@ -95,7 +95,7 @@ handle_info(audio_worker,S) ->
                 _ -> erlang:send_after(250,self(),audio_worker),{noreply,S}
             end
     end;
-handle_info({audio_state,P,Audio},#{audio_worker := P}=S) -> {noreply,S#{audio => Audio}};
+handle_info({audio_state,P,Audio},#{audio_worker := P}=S) -> {noreply,changed(S#{audio => Audio})};
 handle_info({'DOWN',_,process,P,_},#{audio_worker := P}=S) ->
     erlang:send_after(250,self(),audio_worker),{noreply,maps:remove(audio_worker,S#{audio => #{}})};
 handle_info({'DOWN',Ref,process,_,_},#{control_monitor := Ref} = S) ->

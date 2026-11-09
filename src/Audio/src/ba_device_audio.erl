@@ -75,7 +75,7 @@ capture(K,true,Adapter,S) ->
         {error,_,_} -> Status;
         {_,{ok,E},_} -> #{state => error,error => E};
         {stopped,_,ok} ->
-            case Adapter:start(K) of ok -> #{state => starting};{error,R} -> #{state => error,error => printable(R)} end;
+            case Adapter:start(K) of ok -> #{state => starting};{error,waiting_for_clock} -> #{state => waiting_for_clock};{error,R} -> #{state => error,error => printable(R)} end;
         {stopped,_,_} -> #{state => waiting_for_clock};
         _ -> Status
     end,

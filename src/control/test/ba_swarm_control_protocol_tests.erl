@@ -300,3 +300,18 @@ chat_is_authenticated_bounded_and_replay_protected_test() ->
     ?assertMatch({error,_,B1},p(receive_packet,[A,Packet,7,B1])),
     ?assertMatch({error,_,A1},p(chat_message,[B,Id,binary:copy(<<"x">>,4097),8,A1])),
     ?assertMatch({error,_,SB},p(chat_message,[A,Id,<<"later">>,100000,SB])).
+
+audio_capability_shape_is_bounded_and_authenticated_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Policy=maps:get(policy,SB),
+    Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read,status_read]}}},
+    {ok,Query,A1}=p(request_capabilities,[B,5,SA]),
+    {ok,[],[{capabilities_read,Id}],B1}=p(receive_packet,[A,Query,6,Granted]),
+    Entry=#{<<"consent">> => true,<<"available">> => false,<<"state">> => <<"waiting_for_clock">>},
+    Caps=#{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0,
+        <<"audio">> => #{<<"speaker">> => Entry,<<"microphone">> => Entry,<<"broadcast">> => Entry},
+        <<"test">> => #{<<"supported">> => true,<<"available">> => false,<<"requires_consent">> => true,
+            <<"consent">> => false,<<"capacity">> => 2,<<"active">> => 0,<<"max_duration_ms">> => 10000}},
+    {ok,Reply,_}=p(reply_capabilities,[A,Id,Caps,7,B1]),
+    ?assertMatch({ok,[],[{reply,<<"capabilities.reply">>,Caps}],_},p(receive_packet,[B,Reply,8,A1])),
+    Bad=Caps#{<<"audio">> := (maps:get(<<"audio">>,Caps))#{<<"execute">> => Entry}},
+    ?assertMatch({error,_,B1},p(reply_capabilities,[A,Id,Bad,7,B1])).

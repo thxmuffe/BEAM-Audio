@@ -3,12 +3,12 @@
 -module(ba_mac_audio).
 -behaviour(gen_server).
 -export([start/0, stop/0, status/0, available/0, start_link/0,start/1,stop/1,status/1,start_link/1]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,format_status/1]).
 
 available() -> case helper() of false -> false; Path -> filelib:is_regular(Path) end.
 helper() -> os:getenv("BA_MAC_AUDIO_HELPER").
 helper(broadcast) -> helper();
-helper(microphone) -> os:getenv("BA_MAC_DEVICE_AUDIO_HELPER").
+helper(microphone) -> helper().
 name(broadcast) -> ?MODULE;
 name(microphone) -> ba_mac_microphone.
 start() -> start(broadcast).
@@ -39,7 +39,7 @@ initial(Kind) -> #{kind => Kind,port => undefined, input => ba_audio_input:new()
 handle_call(start, _, #{port := undefined,kind := Kind} = S) ->
     case {helper(Kind)=/=false andalso filelib:is_regular(helper(Kind)), ba_audio_input:ready()} of
         {false, _} -> {reply, {error, <<"Mac audio helper is unavailable; rebuild the Mac app (macOS 14.2+).">>}, S};
-        {_, {error, _} = Error} -> {reply, Error, S};
+        {_, {error, _}} -> {reply, {error,waiting_for_clock}, S};
         {true, ok} ->
             try open_port({spawn_executable, helper(Kind)}, [binary, {packet, 4}, exit_status, use_stdio,{args,case Kind of microphone -> ["mic"];broadcast -> [] end}]) of
                 Port -> {reply, ok, (initial(Kind))#{port := Port, input := (ba_audio_input:new())#{state := starting}}}
@@ -88,7 +88,7 @@ handle_info({Port, {data, <<2, Host:64/little, PositionBytes:8/binary,
         Mono = ba_core_audio:host_ns(Host, Format) + Offset,
         Input = ba_audio_input:captured(PCM, Mono, maps:get(input, S)),
         {noreply, S#{input := Input, capture_position => Position, dropped_callbacks := Dropped}}
-    catch _:_ -> {noreply, fail(<<"Invalid capture buffers/timestamp; stop/start broadcast.">>, S)} end;
+    catch _:_ -> {noreply, fail(<<"Invalid capture buffers/timestamp; toggle the audio capability off and on.">>, S)} end;
 handle_info({Port, {data, <<4>>}}, #{port := Port} = S) ->
     erlang:send_after(10, self(), {read, Port}), {noreply, S};
 handle_info({read, Port}, #{port := Port} = S) -> {noreply, read(S)};
@@ -101,7 +101,7 @@ handle_info({'EXIT', Port, Reason}, #{port := Port} = S) ->
     {noreply, fail(iolist_to_binary(io_lib:format("Audio capture port closed: ~p", [Reason])), S)};
 handle_info({'DOWN', Ref, process, _, _}, S) ->
     case ba_audio_input:source_monitor(Ref, maps:get(input, S)) of
-        true -> {noreply, fail(<<"Audio publication closed; stop/start broadcast.">>, S)};
+        true -> {noreply, fail(<<"Audio publication closed; toggle the audio capability off and on.">>, S)};
         false -> {noreply, S}
     end;
 handle_info(_, S) -> {noreply, S}.
@@ -118,3 +118,7 @@ close_port(#{port := undefined}) -> ok;
 close_port(#{port := Port}) ->
     try port_close(Port) catch error:badarg -> ok end.
 terminate(_, S) -> close_port(S), ba_audio_input:close(maps:get(input, S)).
+
+format_status(Status) ->
+    maps:map(fun(state,S) -> maps:with([kind,dropped_callbacks],S);
+        (log,_) -> [];(_,_) -> redacted end,Status).

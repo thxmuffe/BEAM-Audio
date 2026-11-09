@@ -59,6 +59,11 @@ swarm_command(#{<<"method">> := <<"invitation">>}) -> ba_swarm_membership:invite
 swarm_command(#{<<"method">> := <<"snapshot">>}) -> null;
 swarm_command(#{<<"method">> := <<"list_contacts">>}) ->
     {ok, ba_contacts:list()};
+swarm_command(#{<<"method">> := <<"save_contact">>,<<"value">> := Value,<<"name">> := Name}) ->
+    case ba_swarm_job:hex(Value,64) of
+        true -> ba_contacts:put(Value,Name);
+        false -> {_,I}=ba_swarm_passport:parse_invitation(Value),ba_contacts:put(maps:get(<<"authority">>,I),Name)
+    end;
 swarm_command(#{<<"method">> := <<"contact_from_invitation">>,<<"invitation">> := Link,<<"name">> := Name}) ->
     {_,I}=ba_swarm_passport:parse_invitation(Link),ba_contacts:put(maps:get(<<"authority">>,I),Name);
 swarm_command(#{<<"method">> := <<"put_contact">>, <<"id">> := Id, <<"name">> := Name}) ->

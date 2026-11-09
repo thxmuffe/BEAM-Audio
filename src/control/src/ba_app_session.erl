@@ -53,7 +53,7 @@ snapshot() ->
             Base#{handler => Handler,devices := Devices,audio := Audio,clock := Clock,
                 jobs := LocalJobs++[J#{id => Key} || {Key,J} <- maps:to_list(maps:get(jobs,Control,#{}))],
                 messages := safe(fun ba_swarm_chat:history/0,[]),
-                passport := maps:with([swarm,captain,role,state,epoch,revision],Swarm)}
+                passport := maps:with([swarm,captain,membership,role,state,epoch,revision],Swarm)}
     end.
 safe(F,Default) -> try F() catch exit:_ -> Default end.
 forget_snapshots() ->

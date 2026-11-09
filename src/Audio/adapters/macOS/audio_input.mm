@@ -11,6 +11,10 @@
 #include <cstdio>
 #include <cstring>
 #include <csignal>
+#include <vector>
+#include <libproc.h>
+#include <unistd.h>
+#include <cstdlib>
 
 struct Failure { OSStatus code; const char *operation; };
 static void check(OSStatus code, const char *operation) {
@@ -20,10 +24,33 @@ static AudioObjectPropertyAddress address(AudioObjectPropertySelector selector,
         AudioObjectPropertyScope scope = kAudioObjectPropertyScopeGlobal) {
     return {selector, scope, kAudioObjectPropertyElementMain};
 }
-template<class T> static T property(AudioObjectID object, AudioObjectPropertySelector selector) {
-    T value{}; UInt32 size = sizeof(value); auto a = address(selector);
+template<class T> static T property(AudioObjectID object, AudioObjectPropertySelector selector,
+        AudioObjectPropertyScope scope = kAudioObjectPropertyScopeGlobal) {
+    T value{}; UInt32 size = sizeof(value); auto a = address(selector, scope);
     check(AudioObjectGetPropertyData(object, &a, 0, nullptr, &size, &value), "Read audio property");
     return value;
+}
+// Exclude this Device's playback helpers from system capture, including helpers
+// started after the tap. This prevents received Swarm audio being republished.
+static NSArray<NSNumber *> *localAudioProcesses() {
+    auto a = address(kAudioHardwarePropertyProcessObjectList);
+    UInt32 size = 0;
+    check(AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, nullptr, &size), "List audio processes");
+    std::vector<AudioObjectID> processes(size / sizeof(AudioObjectID));
+    check(AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, nullptr, &size, processes.data()), "Read audio processes");
+    NSMutableArray<NSNumber *> *excluded = [NSMutableArray array];
+    const char *appPID = getenv("BA_APP_PID");
+    const pid_t app = appPID ? pid_t(strtol(appPID, nullptr, 10)) : 0;
+    for (AudioObjectID process : processes) {
+        pid_t pid;
+        try { pid = property<pid_t>(process, kAudioProcessPropertyPID); }
+        catch (Failure failure) { if (failure.code == kAudioHardwareBadObjectError) continue; throw; }
+        struct proc_bsdinfo info{};
+        const bool sibling = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)
+            && info.pbi_ppid == uint32_t(getppid());
+        if (pid == app || pid == getpid() || sibling) [excluded addObject:@(process)];
+    }
+    return excluded;
 }
 static void writeBytes(const void *data, size_t size) {
     if (size && fwrite(data, 1, size, stdout) != size) throw Failure{-1, "Write capture pipe"};
@@ -50,13 +77,19 @@ class Capture {
     std::array<Slot, 8> slots;
     size_t head = 0, count = 0;
     std::atomic<uint64_t> dropped{0};
-    std::atomic<bool> changed{false};
-    bool watchingOutput = false, watchingFormat = false;
+    std::atomic<bool> changed{false}, processesChanged{false};
+    bool watchingOutput = false, watchingFormat = false, watchingProcesses = false, microphone = false;
+    static OSStatus processProperty(AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *context) {
+        static_cast<Capture *>(context)->processesChanged.store(true); return noErr;
+    }
     static OSStatus changedProperty(AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *context) {
         static_cast<Capture *>(context)->changed.store(true); return noErr;
     }
     static OSStatus input(AudioObjectID, const AudioTimeStamp *, const AudioBufferList *buffers,
-            const AudioTimeStamp *time, AudioBufferList *, const AudioTimeStamp *, void *context) {
+            const AudioTimeStamp *time, AudioBufferList *output, const AudioTimeStamp *, void *context) {
+        // A duplex input Device can supply unused output buffers for this IOProc.
+        if (output) for (UInt32 i = 0; i < output->mNumberBuffers; ++i)
+            if (output->mBuffers[i].mData) memset(output->mBuffers[i].mData, 0, output->mBuffers[i].mDataByteSize);
         static_cast<Capture *>(context)->copy(buffers, time); return noErr;
     }
     void copy(const AudioBufferList *buffers, const AudioTimeStamp *time) {
@@ -83,19 +116,26 @@ class Capture {
     }
 public:
     ~Capture() {
-        auto out = address(kAudioHardwarePropertyDefaultOutputDevice);
+        auto processes = address(kAudioHardwarePropertyProcessObjectList);
+        if (watchingProcesses) AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &processes, processProperty, this);
+        auto out = address(microphone ? kAudioHardwarePropertyDefaultInputDevice : kAudioHardwarePropertyDefaultOutputDevice);
         if (watchingOutput) AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &out, changedProperty, this);
-        auto fmt = address(kAudioTapPropertyFormat);
-        if (watchingFormat) AudioObjectRemovePropertyListener(tap, &fmt, changedProperty, this);
+        auto fmt = microphone ? address(kAudioDevicePropertyStreamFormat, kAudioDevicePropertyScopeInput) : address(kAudioTapPropertyFormat);
+        if (watchingFormat) AudioObjectRemovePropertyListener(microphone ? device : tap, &fmt, changedProperty, this);
         if (callback) { AudioDeviceStop(device, callback); AudioDeviceDestroyIOProcID(device, callback); }
-        if (device != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(device);
+        if (!microphone && device != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(device);
         if (tap != kAudioObjectUnknown) AudioHardwareDestroyProcessTap(tap);
     }
-    void run() {
+    void run(bool mic = false) {
+        microphone = mic;
+        if (microphone) {
+            device = property<AudioObjectID>(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultInputDevice);
+            if (device == kAudioObjectUnknown) throw Failure{-1, "No default microphone"};
+        } else {
         const AudioObjectID output = property<AudioObjectID>(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultOutputDevice);
         if (output == kAudioObjectUnknown) throw Failure{-1, "No default output device"};
         NSString *uid = CFBridgingRelease(property<CFStringRef>(output, kAudioDevicePropertyDeviceUID));
-        CATapDescription *description = [[CATapDescription alloc] initExcludingProcesses:@[] andDeviceUID:uid withStream:0];
+        CATapDescription *description = [[CATapDescription alloc] initExcludingProcesses:localAudioProcesses() andDeviceUID:uid withStream:0];
         description.name = @"BEAM Audio default output";
         description.privateTap = YES; description.muteBehavior = CATapUnmuted;
         check(AudioHardwareCreateProcessTap(description, &tap), "Create system audio tap (requires System Audio Recording permission)");
@@ -107,15 +147,21 @@ public:
             @kAudioAggregateDeviceTapAutoStartKey: @NO
         };
         check(AudioHardwareCreateAggregateDevice((__bridge CFDictionaryRef)composition, &device), "Create tap input device");
+        auto processes = address(kAudioHardwarePropertyProcessObjectList);
+        check(AudioObjectAddPropertyListener(kAudioObjectSystemObject, &processes, processProperty, this), "Watch playback processes");
+        watchingProcesses = true;
+        }
         check(AudioDeviceCreateIOProcID(device, input, this, &callback), "Create capture callback");
-        check(AudioDeviceStart(device, callback), "Start system audio recording; check macOS privacy permission");
-        auto out = address(kAudioHardwarePropertyDefaultOutputDevice);
+        check(AudioDeviceStart(device, callback), microphone ? "Start microphone; check macOS Microphone permission" : "Start system audio recording; check macOS System Audio Recording permission");
+        auto out = address(microphone ? kAudioHardwarePropertyDefaultInputDevice : kAudioHardwarePropertyDefaultOutputDevice);
         check(AudioObjectAddPropertyListener(kAudioObjectSystemObject, &out, changedProperty, this), "Watch default output");
         watchingOutput = true;
-        auto fmt = address(kAudioTapPropertyFormat);
-        check(AudioObjectAddPropertyListener(tap, &fmt, changedProperty, this), "Watch tap format");
+        auto fmt = microphone ? address(kAudioDevicePropertyStreamFormat, kAudioDevicePropertyScopeInput) : address(kAudioTapPropertyFormat);
+        check(AudioObjectAddPropertyListener(microphone ? device : tap, &fmt, changedProperty, this), "Watch tap format");
         watchingFormat = true;
-        const auto format = property<AudioStreamBasicDescription>(tap, kAudioTapPropertyFormat);
+        const auto format = microphone
+            ? property<AudioStreamBasicDescription>(device, kAudioDevicePropertyStreamFormat, kAudioObjectPropertyScopeInput)
+            : property<AudioStreamBasicDescription>(tap, kAudioTapPropertyFormat);
         { std::lock_guard<std::mutex> lock(mutex); head = 0; count = 0; }
         mach_timebase_info_data_t base; mach_timebase_info(&base);
         // ASBD's defined members, not sizeof(struct)/ABI padding.
@@ -129,7 +175,14 @@ public:
         uint8_t command[5];
         while (fread(command, 1, sizeof(command), stdin) == sizeof(command)) {
             if (memcmp(command, "\0\0\0\1r", 5)) throw Failure{-1, "Invalid capture command"};
-            if (changed.load()) throw Failure{-1, "Default output or tap format changed; stop/start broadcast"};
+            if (changed.load()) throw Failure{-1, "Default audio device or capture format changed; toggle capture off and on"};
+            if (!microphone && processesChanged.exchange(false)) {
+                CATapDescription *description = CFBridgingRelease(property<CFTypeRef>(tap, kAudioTapPropertyDescription));
+                description.processes = localAudioProcesses();
+                CFTypeRef raw = (__bridge CFTypeRef)description;
+                auto a = address(kAudioTapPropertyDescription);
+                check(AudioObjectSetPropertyData(tap, &a, 0, nullptr, sizeof(raw), &raw), "Exclude local playback from capture");
+            }
             const uint64_t host = mach_absolute_time(); packet(5, &host, sizeof(host));
             // Drain at most one ring's worth per credit, then yield to Erlang.
             for (size_t n = 0; n < slots.size(); ++n) {
@@ -147,12 +200,12 @@ public:
     }
 };
 
-int main() {
+int main(int argc, const char **argv) {
     signal(SIGPIPE, SIG_IGN);
     @autoreleasepool {
         try {
             if (@available(macOS 14.2, *)) {
-                auto capture = std::make_unique<Capture>(); capture->run(); return 0;
+                auto capture = std::make_unique<Capture>(); capture->run(argc > 1 && strcmp(argv[1], "mic") == 0); return 0;
             }
             throw Failure{-1, "System audio capture requires macOS 14.2 or newer"};
         } catch (Failure failure) {

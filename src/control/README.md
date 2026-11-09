@@ -1,5 +1,11 @@
 # BEAM Audio control runtime
 
+The macOS app now uses the secure Swarm profile and a local Device Handler audio
+Worker. Its JSON boundary exposes consent/action toggles, scoped inspection, chat
+and exclusions. [Mac app behavior, build and user-led checks](../../docs/MACOS_APP.md).
+The Mac build is prepared; hardware/app acceptance is pending, and iOS/Windows
+runtime/UI migration remains later.
+
 Step 9 adds [Ephemeral Swarms and local contacts/groups](../../docs/SWARM_MEMBERSHIP.md).
 Start `ba_runtime:start(swarm_control)` idle, then call `ba_swarm:create/2` or
 explicitly accept an invitation with `ba_swarm:join/1`. `ba_contacts` is the

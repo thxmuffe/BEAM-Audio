@@ -22,7 +22,8 @@ record and resolve it in step 1 before changing the affected runtime behavior.
 **Ephemeral Swarms (step 9) are implemented and verified in the headless core.
 Contacts/groups and Device Identity survive; gatherings and their runtime state
 do not. Former abandoned-Swarm recovery is superseded. Next is step 10:
-application integration (macOS → iOS → Windows). The earlier 8d maximum-Offset
+application acceptance (macOS → iOS → Windows); the Mac implementation is built
+for user testing. The earlier 8d maximum-Offset
 continuity limitation remains open; this lifecycle work does not resolve it.** See
 [canonical component names](TERMINOLOGY.md) and [API/configuration migration](NAMING.md). The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
@@ -263,6 +264,13 @@ trusted-cluster code; it is not the current Swarm boundary.
    automatic unsolicited invitation delivery is outside this URI-based proof.
 
 10. **Update and verify the applications — macOS, then iOS, then Windows.**
+   **In progress:** the macOS implementation is compiled for user-led acceptance.
+   [Current app behavior, native evaluation and limits](MACOS_APP.md). No app or
+   hardware was launched by the agent. iOS/Windows behavior remains unmigrated;
+   shared package/product names are updated mechanically. The CLI hardware test
+   entry point below is planned, not implemented. Native mixing/RTP adoption and
+   the earlier 8d maximum-Offset continuity qualification remain open.
+
    Integrate the new runtime and permission/state model into each app in that
    order, with the **same functionality, layout and information hierarchy on
    every platform**. Start with forgotten old Swarms/subscriptions rather than
@@ -350,7 +358,8 @@ trusted-cluster code; it is not the current Swarm boundary.
    let the user choose “Don't connect with this device” and later undo it. In
    general, accept/do authorized eligible jobs automatically according to the
    enabled capabilities, while allowing specific devices to be excluded. Persist
-   exclusions locally per Swarm/device, prevent their automatic connections/jobs/
+   exclusions locally per Swarm/device for that live gathering (retained through
+   worker recovery, discarded at gathering end), prevent automatic connections/jobs/
    audio, and stop affected existing work without disturbing other devices.
    Exclusion is distinct from authority revocation or deleting membership. If
    excluding a required clock/authority removes availability, display that state
@@ -431,7 +440,7 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Next: **step 10 — macOS runtime/UI integration**, when requested, including
+Next: **step 10 — user-led macOS app acceptance**, including
 the combined native-mixing/RTP timing evaluation. Finalize and verify the
 macOS audio boundary before updating iOS, then Windows. No product app is launched
 for the preparatory backend work. Preserve independent packet targets, stored

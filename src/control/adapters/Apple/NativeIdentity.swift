@@ -56,7 +56,7 @@ public struct NativeIdentity: Sendable {
 
     private static func keychainError(_ status: OSStatus) -> NSError {
         NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [
-            NSLocalizedDescriptionKey: "Could not load the saved node identity (Keychain status \(status))."
+            NSLocalizedDescriptionKey: "Could not load the saved Device Identity (Keychain status \(status))."
         ])
     }
 }
