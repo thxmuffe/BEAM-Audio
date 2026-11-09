@@ -1,5 +1,40 @@
 # Progress
 
+## 2026-11-09 — iOS implementation built for user-led acceptance
+
+Migrated the embedded iPhone host to the typed Swarm bridge and shared
+OpenSoundKit UI/model. Compact windows have a collapsible contacts/Swarm sidebar;
+Chat, Graph and Audio retain the Mac hierarchy. Local Device naming is explicit.
+Removed trusted-cluster startup and its legacy self-probe; the VM stays unnamed.
+Identity/contacts remain; old Swarm snapshots are deleted on next app startup.
+Generated runtime resources are replaced rather than merged. Stable signing /
+Keychain identifiers remain. Archived the superseded iOS app usage history.
+
+Added `ba_ios_input` for the existing Device Handler audio Worker. Microphone
+uses AVAudioEngine; system output uses iOS 27 ScreenCaptureKit after explicit
+system-picker selection. Unsupported OS/cancel/failures leave broadcast off.
+Current-app output is excluded. Native code copies bounded Float32 buffers and
+capture-time host timestamps; shared Erlang still owns metering/publication/
+target scheduling and reference mixing. Independent mic/speaker bindings share
+one AVAudioSession. Playback scheduling is bounded. No native mixer or RTP
+format replacement was adopted.
+
+Ordinary backgrounding fences capture/receiving; foreground resumes with fresh
+clock state. System-broadcast consent avoids that explicit fence while selecting
+another source app. Route/interruption failures are visible and may require a
+toggle retry. Path changes invoke existing receiver/clock recovery. Continuous
+background/system-sharing and physical sound/timing remain unverified.
+
+Validation: unsigned iPhone device build succeeds; 18 focused EUnit tests
+(app-session, audio restoration, Device Handler, clock mapping) and four pure
+Swift model tests pass. Includes iOS configuration /
+snapshot cleanup preservation, phone label and typed capability requests.
+No installation/launch, live Swarm, picker, hardware access or deployment was
+performed. Next: user-led [Mac/iPhone acceptance](OpenSound/iOS/README.md), then
+Windows. Earlier 8d maximum-Offset continuity and native mixing/RTP evaluations
+remain open.
+
+
 ## 2026-11-09 — macOS implementation built for user-led acceptance
 
 Migrated the Mac host from trusted Distributed Erlang to an unnamed secure Swarm

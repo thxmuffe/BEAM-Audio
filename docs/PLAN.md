@@ -24,8 +24,8 @@ record and resolve it in step 1 before changing the affected runtime behavior.
 **Ephemeral Swarms (step 9) are implemented and verified in the headless core.
 Contacts/groups and Device Identity survive; gatherings and their runtime state
 do not. Former abandoned-Swarm recovery is superseded. Next is step 10:
-application acceptance (macOS → iOS → Windows); the Mac implementation is built
-for user testing. The earlier 8d maximum-Offset
+application acceptance (macOS → iOS → Windows); Mac and iOS implementations
+are built for user testing. The earlier 8d maximum-Offset
 continuity limitation remains open; this lifecycle work does not resolve it.** See
 [canonical component names](TERMINOLOGY.md) and [API/configuration migration](NAMING.md). The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
@@ -268,8 +268,10 @@ trusted-cluster code; it is not the current Swarm boundary.
 10. **Update and verify the applications — macOS, then iOS, then Windows.**
    **In progress:** the macOS implementation is compiled for user-led acceptance.
    [Current app behavior, native evaluation and limits](MACOS_APP.md). No app or
-   hardware was launched by the agent. iOS/Windows behavior remains unmigrated;
-   shared package/product names are updated mechanically. The CLI hardware test
+   hardware was launched by the agent. The iOS migration now also compiles for
+   user-led acceptance: [current iPhone behavior and limits](OpenSound/iOS/README.md).
+   It reuses the shared Swarm UI and Device Handler, with native mic/speaker and
+   iOS 27 system-picker audio broadcast. Windows remains unmigrated. The CLI hardware test
    entry point below is planned, not implemented. Native mixing/RTP adoption and
    the earlier 8d maximum-Offset continuity qualification remain open.
 
@@ -284,8 +286,8 @@ trusted-cluster code; it is not the current Swarm boundary.
    `BA_*` interfaces, secure Swarm runtime, local consent/Contracts and scoped
    chat/graph/diagnostic APIs. Begin the macOS audio work with a small combined
    evaluation of the two approved proposals below, before finalizing its Audio
-   Engine boundary. This is part of macOS integration, not permission to migrate
-   or launch iOS yet. Do not make a speculative engine/format rewrite a condition
+   Engine boundary. This is part of macOS integration. iOS migration is now authorized;
+   launches and hardware acceptance remain user-led. Do not make a speculative engine/format rewrite a condition
    for starting the app integration or polishing its common UI.
 
    **Native mixing evaluation:** keep mixing local to the receiving Device,
@@ -324,9 +326,10 @@ trusted-cluster code; it is not the current Swarm boundary.
 
    **macOS acceptance, then platform reuse:** complete and verify the common UI
    and real macOS capture/output below. Record native-mixing/RTP evaluation results
-   and the selected interfaces before porting audio to iOS. Then update and verify
-   iOS with those interfaces, followed by Windows; preserve the same functionality
-   and layout. An inconclusive prototype is recorded plainly and does not become
+   and the selected interfaces before porting audio to iOS. The iOS implementation
+   retains the current reference Mixer/packet targets and is now built; next run
+   user-led Mac/iPhone acceptance, then update Windows. Preserve the same
+   functionality and information hierarchy. An inconclusive prototype is recorded plainly and does not become
    an unverified production default.
 
    **Address book (Contacts & Groups):** show saved contacts and named groups.
