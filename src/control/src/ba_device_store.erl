@@ -77,4 +77,4 @@ path(Name) ->
 transient(Name) ->
     application:get_env(ba_core,runtime_profile,legacy_apps)=:=swarm_control andalso
     lists:member(Name,[swarm_authority,swarm_member,swarm_desks,swarm_time_policy,
-                      swarm_time_cache,audio_subscriptions]).
+                      swarm_time_cache,audio_subscriptions,swarm_exclusions]).

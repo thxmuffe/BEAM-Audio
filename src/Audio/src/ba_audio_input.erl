@@ -2,7 +2,7 @@
 %% The adapter supplies PCM, its descriptor and local monotonic nanoseconds.
 %% This module owns no process, port or platform-specific clock representation.
 -module(ba_audio_input).
--export([new/0, ready/0, open/2, captured/3, status/1,
+-export([new/0, ready/0, open/2, open/3, captured/3, status/1,
          source_monitor/2, stop/1, failed/2, close/1]).
 
 new() -> #{state => stopped, source => undefined, frames => 0,
@@ -13,12 +13,13 @@ ready() ->
         {error, _} -> {error, <<"Clock is not synchronized yet. Try broadcast again shortly.">>}
     end.
 
-open(Name, Descriptor0) ->
+open(Name,Descriptor0) -> open(Name,Descriptor0,Name).
+open(Name, Descriptor0, Key) ->
     Descriptor = Descriptor0#{clock => ba_swarm_clock:id()},
     Handler = ba_stream_handler:default(),
     Frame = Handler:frame_bytes(Descriptor),
     true = Frame =< Handler:max_payload_bytes(channel),
-    {ok, Source} = ba_audio:publish(#{name => Name, profiles => #{channel => Descriptor}}, self()),
+    {ok, Source} = ba_audio:publish(#{name => Name,source_key => Key, profiles => #{channel => Descriptor}}, self()),
     Ref = monitor(process, Source),
     event(audio_started, <<"[Audio] ", Name/binary, " is available for subscription.">>),
     (new())#{state := running, source := Source, source_monitor => Ref,

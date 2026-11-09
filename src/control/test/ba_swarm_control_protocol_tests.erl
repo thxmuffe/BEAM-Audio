@@ -292,3 +292,11 @@ renewal_is_capped_by_fresh_membership_test() ->
     {ok,[Ready],_,_} = p(receive_packet,[A,Proof,20003,B1]),
     {ok,[],[{session_renewed,#{deadline := 65000}}],A3} = p(receive_packet,[B,Ready,20004,A2]),
     ?assertMatch({error,_,A3},p(request_status,[B,65000,A3])).
+
+chat_is_authenticated_bounded_and_replay_protected_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Id=binary:copy(<<"D">>,32),
+    {ok,Packet,A1}=p(chat_message,[B,Id,<<"hello">>,5,SA]),
+    {ok,[],[{chat,Id,<<"hello">>,#{peer := A}}],B1}=p(receive_packet,[A,Packet,6,SB]),
+    ?assertMatch({error,_,B1},p(receive_packet,[A,Packet,7,B1])),
+    ?assertMatch({error,_,A1},p(chat_message,[B,Id,binary:copy(<<"x">>,4097),8,A1])),
+    ?assertMatch({error,_,SB},p(chat_message,[A,Id,<<"later">>,100000,SB])).

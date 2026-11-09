@@ -1,7 +1,7 @@
 {application, ba_core, [
     {description, "BEAM Audio core runtime"},
     {vsn, "0.1.0"},
-    {registered, [ba_contacts,ba_swarm,ba_sup,ba_swarm_runtime_sup,ba_desk_connections_sup, ba_pg, ba_chat, ba_swarm_clock_sup, ba_swarm_clock,
+    {registered, [ba_swarm_chat,ba_contacts,ba_swarm,ba_sup,ba_swarm_runtime_sup,ba_desk_connections_sup, ba_pg, ba_chat, ba_swarm_clock_sup, ba_swarm_clock,
                   ba_discovery, ba_relay, ba_direct, ba_network, ba_swarms,
                   ba_audio_sup,ba_audio_receiver,ba_audio_mixer,ba_swarm_desks,ba_swarm_membership,ba_swarm_control,ba_device_sup,ba_device_handler,ba_device_worker_sup]},
     {mod, {ba_app, []}},

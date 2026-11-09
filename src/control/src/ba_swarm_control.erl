@@ -1,16 +1,18 @@
 %% Desk adapter. Owns application sessions, never OTP distribution or audio.
 -module(ba_swarm_control).
 -behaviour(gen_server).
--export([start_link/0, snapshot/0, connect/1, read_status/1,read_capabilities/1]).
--export([offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,audio_context/1,time_message/3]).
+-export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1]).
+-export([offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,chat_message/3,audio_context/1,time_message/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 
+chat_message(Peer,Id,Text) -> gen_server:call(?MODULE,{chat_message,Peer,Id,Text}).
 time_message(Peer,Id,Payload) -> gen_server:call(?MODULE,{time_message,Peer,Id,Payload}).
 audio_message(Peer,Id,Payload) -> gen_server:call(?MODULE,{audio_message,Peer,Id,Payload}).
 audio_context(Peer) -> gen_server:call(?MODULE,{audio_context,Peer}).
 
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 snapshot() -> gen_server:call(?MODULE,snapshot).
+exclude(Peer) -> gen_server:call(?MODULE,{exclude,Peer}).
 connect(Peer) -> gen_server:call(?MODULE,{connect,Peer}).
 read_status(Peer) -> gen_server:call(?MODULE,{read_status,Peer},7000).
 read_capabilities(Peer) -> gen_server:call(?MODULE,{read_capabilities,Peer},7000).
@@ -43,6 +45,19 @@ handle_call(snapshot,_,S) ->
     Public = ba_swarm_control_protocol:snapshot(maps:get(protocol,S)),
     {reply,Public#{relay => ba_swarm_desks:status(),membership => ba_swarm_membership:status(),rejected => maps:get(rejected,S),
         last_rejection => maps:get(last_rejection,S),diagnostics => ba_diagnostics:view(S),jobs => maps:map(fun(_,J) -> public_job(J) end,maps:get(jobs,S))},S};
+handle_call({exclude,Peer},_,#{protocol := P}=S) ->
+    case maps:find(Peer,maps:get(sessions,P)) of {ok,Session} -> drop_session(Peer,maps:get(id,Session));error -> ok end,
+    Next=fence_peer_jobs(Peer,reply(Peer,{error,peer_excluded},S)),
+    {reply,ok,Next#{protocol := P#{sessions := maps:remove(Peer,maps:get(sessions,P))}}};
+handle_call({chat_message,Peer,Id,Text},{Owner,_},S) ->
+    case Owner=:=whereis(ba_swarm_chat) of
+        false -> {reply,{error,not_chat_owner},S};
+        true ->
+            case ba_swarm_control_protocol:chat_message(Peer,Id,Text,now_ms(),maps:get(protocol,S)) of
+                {ok,Packet,P} -> case send(Peer,Packet,S) of ok -> {reply,ok,S#{protocol := P}};Error -> {reply,Error,S} end;
+                {error,R,_} -> {reply,{error,R},S}
+            end
+    end;
 handle_call({audio_context,Peer},_,S) ->
     Result = try {ok,ba_swarm_control_protocol:context(Peer,now_ms(),maps:get(protocol,S))}
         catch _:_ -> {error,no_authorized_session} end,
@@ -107,14 +122,8 @@ handle_call({job_command,Command,Id},_,#{jobs := Jobs} = S) ->
             end
     end;
 handle_call({connect,Peer},_,S) ->
-    case ba_swarm_control_protocol:connect(Peer,now_ms(),maps:get(protocol,S)) of
-        {ok,Packet,Protocol} ->
-            case send(Peer,Packet,S) of
-                ok -> {reply,ok,S#{protocol := Protocol}};
-                Error -> {reply,Error,S}
-            end;
-        {error,Reason,_} -> {reply,{error,Reason},S}
-    end;
+    case ba_app_session:excluded(Peer) of true -> {reply,{error,peer_excluded},S};false -> connect_peer(Peer,S) end;
+
 handle_call({Operation,Peer},From,#{callers := Callers} = S)
         when Operation =:= read_status; Operation =:= read_capabilities ->
     Result = case Operation of
@@ -228,6 +237,14 @@ event(Peer,{capabilities_read,Request},S) ->
                 _ -> rejected(transport_failed,S)
             end;
         {error,_,_} -> reset(capability_reply_failed,S)
+    end;
+event(_,{chat,Id,Text,Context},S) ->
+    case whereis(ba_swarm_chat) of
+        undefined -> S;
+        P -> case process_info(P,message_queue_len) of
+            {message_queue_len,N} when N<64 -> P ! {swarm_chat,Context,Id,Text},S;
+            _ -> ba_diagnostics:count(chat_mailbox_overloaded,S)
+        end
     end;
 event(_,{time,Id,Payload,Context},S) ->
     case time_notify({swarm_time,Context#{received_at_ns => maps:get(received_at_ns,S)},Id,Payload}) of
@@ -395,3 +412,13 @@ time_notify(Event) ->
 
 critical_audio_notify(Event) ->
     case whereis(ba_audio_receiver) of undefined -> ok;P -> P ! Event,ok end.
+
+connect_peer(Peer,S) ->
+    case ba_swarm_control_protocol:connect(Peer,now_ms(),maps:get(protocol,S)) of
+        {ok,Packet,Protocol} ->
+            case send(Peer,Packet,S) of
+                ok -> {reply,ok,S#{protocol := Protocol}};
+                Error -> {reply,Error,S}
+            end;
+        {error,Reason,_} -> {reply,{error,Reason},S}
+    end.

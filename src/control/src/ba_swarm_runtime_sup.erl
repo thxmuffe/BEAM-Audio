@@ -9,4 +9,5 @@ init([]) ->
          [#{id => ba_swarm_membership,start => {ba_swarm_membership,start_link,[]},restart => temporary,significant => true},
           #{id => ba_device_sup,start => {ba_device_sup,start_link,[]},type => supervisor,shutdown => infinity},
           #{id => ba_swarm_control,start => {ba_swarm_control,start_link,[]}},
+          #{id => ba_swarm_chat,start => {ba_swarm_chat,start_link,[]}},
           #{id => ba_swarm_clock_sup,start => {ba_swarm_clock_sup,start_link,[]},type => supervisor,shutdown => infinity}]}}.

@@ -2,46 +2,54 @@
 %% Portable publication/meter/timing policy is delegated to ba_audio_input.
 -module(ba_mac_audio).
 -behaviour(gen_server).
--export([start/0, stop/0, status/0, available/0, start_link/0]).
+-export([start/0, stop/0, status/0, available/0, start_link/0,start/1,stop/1,status/1,start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 available() -> case helper() of false -> false; Path -> filelib:is_regular(Path) end.
 helper() -> os:getenv("BA_MAC_AUDIO_HELPER").
-start() ->
+helper(broadcast) -> helper();
+helper(microphone) -> os:getenv("BA_MAC_DEVICE_AUDIO_HELPER").
+name(broadcast) -> ?MODULE;
+name(microphone) -> ba_mac_microphone.
+start() -> start(broadcast).
+start(Kind) ->
     case ba_audio_sup:ensure_started() of
         ok ->
             case supervisor:start_child(ba_audio_sup,
-                    #{id => mac_audio, start => {?MODULE, start_link, []}, restart => temporary}) of
+                    #{id => name(Kind), start => {?MODULE, start_link, [Kind]}, restart => temporary}) of
                 {ok, Pid} -> gen_server:call(Pid, start);
                 {error, {already_started, Pid}} -> gen_server:call(Pid, start);
                 Error -> Error
             end;
         Error -> Error
     end.
-stop() -> case whereis(?MODULE) of undefined -> ok; Pid -> gen_server:call(Pid, stop) end.
-status() ->
-    case whereis(?MODULE) of
-        undefined -> #{state => stopped, available => available()};
+stop() -> stop(broadcast).
+stop(Kind) -> case whereis(name(Kind)) of undefined -> ok; Pid -> gen_server:call(Pid, stop) end.
+status() -> status(broadcast).
+status(Kind) ->
+    case whereis(name(Kind)) of
+        undefined -> #{state => stopped, available => helper(Kind)=/=false};
         Pid -> gen_server:call(Pid, status)
     end.
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> process_flag(trap_exit, true), {ok, initial()}.
-initial() -> #{port => undefined, input => ba_audio_input:new(), dropped_callbacks => 0}.
+start_link() -> start_link(broadcast).
+start_link(Kind) -> gen_server:start_link({local,name(Kind)},?MODULE,Kind,[]).
+init(Kind) -> process_flag(trap_exit, true), {ok, initial(Kind)}.
+initial(Kind) -> #{kind => Kind,port => undefined, input => ba_audio_input:new(), dropped_callbacks => 0}.
 
-handle_call(start, _, #{port := undefined} = S) ->
-    case {available(), ba_audio_input:ready()} of
+handle_call(start, _, #{port := undefined,kind := Kind} = S) ->
+    case {helper(Kind)=/=false andalso filelib:is_regular(helper(Kind)), ba_audio_input:ready()} of
         {false, _} -> {reply, {error, <<"Mac audio helper is unavailable; rebuild the Mac app (macOS 14.2+).">>}, S};
         {_, {error, _} = Error} -> {reply, Error, S};
         {true, ok} ->
-            try open_port({spawn_executable, helper()}, [binary, {packet, 4}, exit_status, use_stdio]) of
-                Port -> {reply, ok, (initial())#{port := Port, input := (ba_audio_input:new())#{state := starting}}}
+            try open_port({spawn_executable, helper(Kind)}, [binary, {packet, 4}, exit_status, use_stdio,{args,case Kind of microphone -> ["mic"];broadcast -> [] end}]) of
+                Port -> {reply, ok, (initial(Kind))#{port := Port, input := (ba_audio_input:new())#{state := starting}}}
             catch error:Reason -> {reply, {error, Reason}, S} end
     end;
 handle_call(start, _, S) -> {reply, ok, S};
 handle_call(stop, _, S) ->
     close_port(S),
     ba_audio_input:stop(maps:get(input, S)),
-    {reply, ok, initial()};
+    {reply, ok, initial(maps:get(kind,S))};
 handle_call(status, _, S) ->
     Diagnostics = maps:without([port, input, request_sent, host_offset, best_round_trip], S),
     Public = maps:merge(Diagnostics, ba_audio_input:status(maps:get(input, S))),
@@ -54,7 +62,8 @@ handle_info({Port, {data, <<1, Metadata/binary>>}}, #{port := Port} = S) ->
         #{rate := Rate, channels := Channels, encoding := Encoding} = Format ->
             Descriptor = #{encoding => pcm, sample_format => Encoding, sample_rate => Rate,
                            channel_count => Channels},
-            Input = ba_audio_input:open(<<"Mac default output">>, Descriptor),
+            {Name,Key}=case maps:get(kind,S) of broadcast -> {<<"Mac default output">>,<<"default-output">>};microphone -> {<<"Mac microphone">>,<<"microphone">>} end,
+            Input = ba_audio_input:open(Name, Descriptor,Key),
             {noreply, read(S#{input := Input, format => Format})}
     catch _:_ -> {noreply, fail(<<"Unsupported Core Audio PCM format or source unavailable.">>, S)} end;
 handle_info({Port, {data, <<5, Host:64/little>>}},
@@ -104,7 +113,7 @@ read(#{port := Port} = S) ->
 fail(Text, S) ->
     close_port(S),
     Input = ba_audio_input:failed(Text, maps:get(input, S)),
-    (initial())#{input := Input}.
+    (initial(maps:get(kind,S)))#{input := Input}.
 close_port(#{port := undefined}) -> ok;
 close_port(#{port := Port}) ->
     try port_close(Port) catch error:badarg -> ok end.

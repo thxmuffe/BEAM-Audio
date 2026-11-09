@@ -22,7 +22,7 @@ boot(#{mode := create,desks := URLs} = Config,S) ->
     Default = #{<<"v">> => 1,<<"type">> => <<"policy">>,<<"swarm">> => fresh(16),
         <<"authority">> => Id,<<"director">> => Id,<<"epoch">> => 1,<<"revision">> => 1,
         <<"members">> => #{Id => #{<<"membership">> => fresh(16),
-            <<"permissions">> => [<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>]}}},
+            <<"permissions">> => application:get_env(ba_core,swarm_default_permissions,[<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>])}}},
     Saved = ba_device_store:load(swarm_authority,#{policy => Default,invitations => #{},routes => #{}}),
     P = maps:get(policy,Saved),ok = ba_swarm_passport:policy(P),Id = maps:get(<<"authority">>,P),
     Swarm = maps:get(<<"swarm">>,P),ok = ba_swarm_desks:configure(Swarm,URLs,Primary,maps:get(routes,Saved)),
@@ -255,7 +255,7 @@ credential(Peer,Packet,S) ->
     catch _:_ -> denied end.
 admit(Peer,R,Credential,Kind,#{policy := P,routes := Routes,invitations := Invites} = S) ->
     Members = maps:get(<<"members">>,P),true = map_size(Members) < 16 orelse maps:is_key(Peer,Members),
-    M = maps:get(Peer,Members,#{<<"membership">> => fresh(16),<<"permissions">> => []}),
+    M = maps:get(Peer,Members,#{<<"membership">> => fresh(16),<<"permissions">> => application:get_env(ba_core,swarm_default_permissions,[])}),
     Updated = not maps:is_key(Peer,Members) orelse maps:get(Peer,Routes,undefined) =/= R,
     NewP = case Updated of true -> bump(P#{<<"members">> := Members#{Peer => M}},false);false -> P end,
     NewInvites = case Kind of

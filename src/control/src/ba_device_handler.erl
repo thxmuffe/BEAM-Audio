@@ -1,13 +1,14 @@
 %% Local resource authority. No network ingress, arbitrary modules or hardware.
 -module(ba_device_handler).
 -behaviour(gen_server).
--export([start_link/0,capabilities/0,status/0,enable_test/1,start/2,cancel/1]).
+-export([start_link/0,capabilities/0,status/0,audio_changed/0,enable_test/1,start/2,cancel/1]).
 -export([set_test_contract/3,clear_test_contract/0,accept_job/3,cancel_job/2,session_down/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
 -define(CAPACITY,2).
 -define(HISTORY,16).
 
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
+audio_changed() -> gen_server:cast(?MODULE,audio_changed),ok.
 capabilities() -> gen_server:call(?MODULE,capabilities,100).
 status() -> gen_server:call(?MODULE,status).
 enable_test(Enabled) -> gen_server:call(?MODULE,{enable_test,Enabled}).
@@ -19,6 +20,7 @@ accept_job(Context,Id,Offer) -> gen_server:call(?MODULE,{accept_job,Context,Id,O
 cancel_job(Context,Id) -> gen_server:call(?MODULE,{cancel_job,Context,Id}).
 session_down(Peer,Session) -> gen_server:call(?MODULE,{session_down,Peer,Session}).
 init([]) ->
+    case application:get_env(ba_core,audio_automation,false) of true -> self() ! audio_worker;false -> ok end,
     {ok,#{instance => fresh(),revision => 0,enabled => false,active => #{},history => [],
           contract => undefined,jobs => #{},control => undefined,control_monitor => undefined}}.
 
@@ -26,7 +28,7 @@ handle_call(capabilities,_,S) -> {reply,capability_snapshot(S),S};
 handle_call(status,_,S) ->
     {reply,#{capabilities => capability_snapshot(S),active =>
         maps:map(fun(_,W) -> public(W) end,maps:get(active,S)),history => maps:get(history,S),
-        jobs => maps:map(fun(_,J) -> maps:get(report,J) end,maps:get(jobs,S)),contract => maps:get(contract,S)},S};
+        jobs => maps:map(fun(_,J) -> maps:get(report,J) end,maps:get(jobs,S)),contract => maps:get(contract,S),audio => maps:get(audio,S,#{})},S};
 handle_call({test_contract,Director,Id,Revision},_,S) ->
     case ba_swarm_job:hex(Director,64) andalso ba_swarm_job:hex(Id,32) andalso
          is_integer(Revision) andalso Revision > 0 andalso Revision =< 9007199254740991 of
@@ -80,8 +82,22 @@ handle_call({cancel,Id},_,#{active := Active,history := History} = S) ->
         false -> {reply,{error,unknown_worker},S}
     end;
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
+handle_cast(audio_changed,#{audio_worker := P}=S) -> ba_device_audio:changed(P),{noreply,S};
 handle_cast(_,S) -> {noreply,S}.
 
+handle_info(audio_worker,S) ->
+    case whereis(ba_device_worker_sup) of
+        undefined -> erlang:send_after(50,self(),audio_worker),{noreply,S};
+        _ ->
+            case supervisor:start_child(ba_device_worker_sup,#{id => audio,start => {ba_device_audio,start_link,[self()]},restart => temporary}) of
+                {ok,P} -> monitor(process,P),{noreply,S#{audio_worker => P}};
+                {error,{already_started,P}} -> {noreply,S#{audio_worker => P}};
+                _ -> erlang:send_after(250,self(),audio_worker),{noreply,S}
+            end
+    end;
+handle_info({audio_state,P,Audio},#{audio_worker := P}=S) -> {noreply,S#{audio => Audio}};
+handle_info({'DOWN',_,process,P,_},#{audio_worker := P}=S) ->
+    erlang:send_after(250,self(),audio_worker),{noreply,maps:remove(audio_worker,S#{audio => #{}})};
 handle_info({'DOWN',Ref,process,_,_},#{control_monitor := Ref} = S) ->
     Next = stop_jobs(fun(_) -> true end,session_lost,S),
     {noreply,Next#{jobs := #{},control := undefined,control_monitor := undefined}};
@@ -145,13 +161,20 @@ finish(Id,Outcome,#{active := Active,history := History} = S) ->
     changed(Next#{active := Rest,history := lists:sublist([(public(W))#{state := Final}|History],?HISTORY)}).
 public(W) -> maps:with([id,attempt,state],W).
 changed(S) -> S#{revision := maps:get(revision,S)+1}.
-capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,revision := Revision}) ->
+capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,revision := Revision}=S) ->
     Count = map_size(Active),
-    #{<<"instance">> => Instance,<<"revision">> => Revision,<<"test">> => #{
+    Base=#{<<"instance">> => Instance,<<"revision">> => Revision,<<"test">> => #{
         <<"supported">> => true,<<"available">> => Enabled andalso Count < ?CAPACITY andalso
             is_pid(whereis(ba_device_worker_sup)),
         <<"requires_consent">> => true,<<"consent">> => Enabled,
-        <<"capacity">> => ?CAPACITY,<<"active">> => Count,<<"max_duration_ms">> => 10000}}.
+        <<"capacity">> => ?CAPACITY,<<"active">> => Count,<<"max_duration_ms">> => 10000}},
+    case application:get_env(ba_core,audio_automation,false) of
+        false -> Base;
+        true -> Base#{<<"audio">> => maps:from_list([{atom_to_binary(K),
+            #{<<"consent">> => B,<<"state">> => atom_to_binary(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting)),
+              <<"available">> => B andalso lists:member(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting),[ready,running])}} || {K,B} <- maps:to_list(ba_app_session:consent())])}
+    end.
+
 fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
 
 watch_control(Pid,#{control := undefined} = S) ->

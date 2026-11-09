@@ -301,6 +301,17 @@ trusted-cluster code; it is not the current Swarm boundary.
    versioned adoption decision; add no speculative compatibility stack. Finer
    timestamp resolution alone is not evidence of better physical synchronization.
 
+   **CLI hardware test entry point (approved follow-up):** add a command to the
+   existing CLI that starts an ordinary Device Handler with explicit `--mic`,
+   `--speaker` and `--broadcast` capability flags, using the same production OS
+   adapters, consent, Contracts, scoped Jobs and clock/packet scheduling as apps.
+   Support explicit new-Swarm creation or invitation joining, show real device /
+   permission / clock / job failures and stop resources on exit. Do not restore
+   old Swarms or start capture merely by opening the CLI; actual hardware use
+   requires the selected flags and OS permission. Keep it a thin local command
+   entry point, not a second runtime or media implementation. This is planned
+   work for quick user-driven checks, not a hardware test run in this session.
+
    **macOS acceptance, then platform reuse:** complete and verify the common UI
    and real macOS capture/output below. Record native-mixing/RTP evaluation results
    and the selected interfaces before porting audio to iOS. Then update and verify

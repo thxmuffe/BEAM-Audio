@@ -55,7 +55,7 @@ handle_call({send,To,Type,Packet},From,S) ->
     end;
 handle_call({send_route,To,Route,Type,Packet},_,S) ->
     Result = try
-        true = ba_swarm_job:hex(To,64),
+        true = ba_swarm_job:hex(To,64),false = ba_app_session:excluded(To),
         true = is_binary(Packet) andalso byte_size(Packet) =< 32768,
         true = Type =:= <<"membership">> orelse Type =:= <<"swarm_control">>,
         valid_route(Route,maps:get(urls,S)),
@@ -71,17 +71,10 @@ handle_call({send_route,To,Route,Type,Packet},_,S) ->
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info({relay,URL,{delivery,From,Cap,Payload}},#{mailbox := Cap,swarm := Swarm} = S) ->
-    Delivery = case Payload of
-        #{<<"type">> := Type,<<"swarm">> := Swarm,<<"packet">> := Packet} when map_size(Payload) =:= 3 ->
-            Target = case Type of <<"membership">> -> ba_swarm_membership;<<"swarm_control">> -> ba_swarm_control;_ -> undefined end,
-            case Target =/= undefined andalso is_binary(Packet) andalso byte_size(Packet) =< 32768 of
-                true -> notify(Target,{desk_delivery,URL,From,Packet});
-                false -> {error,invalid_desk_payload}
-            end;
-        _ -> {error,invalid_desk_payload}
-    end,
-    Next = case Delivery of {error,R} -> ba_diagnostics:count(R,S);_ -> S end,
-    {noreply,Next};
+    case ba_app_session:excluded(From) of
+        true -> {noreply,ba_diagnostics:count(peer_excluded,S)};
+        false -> delivery(URL,From,Payload,Swarm,S)
+    end;
 handle_info({relay,URL,Event},S0) ->
     S = case Event of connected -> repair(S0#{bound := maps:remove(URL,maps:get(bound,S0))});_ -> S0 end,
     notify(ba_swarm_membership,{desk_event,URL,Event}),
@@ -126,3 +119,16 @@ send_available([URL|Rest],Connections,To,Cap,Payload) ->
     Result = try gen_server:call(maps:get(URL,Connections),{send,To,Cap,Payload},500)
         catch _:_ -> {error,unavailable} end,
     case Result of ok -> ok;_ -> send_available(Rest,Connections,To,Cap,Payload) end.
+
+delivery(URL,From,Payload,Swarm,S) ->
+    Delivery = case Payload of
+        #{<<"type">> := Type,<<"swarm">> := Swarm,<<"packet">> := Packet} when map_size(Payload) =:= 3 ->
+            Target = case Type of <<"membership">> -> ba_swarm_membership;<<"swarm_control">> -> ba_swarm_control;_ -> undefined end,
+            case Target =/= undefined andalso is_binary(Packet) andalso byte_size(Packet) =< 32768 of
+                true -> notify(Target,{desk_delivery,URL,From,Packet});
+                false -> {error,invalid_desk_payload}
+            end;
+        _ -> {error,invalid_desk_payload}
+    end,
+    Next = case Delivery of {error,R} -> ba_diagnostics:count(R,S);_ -> S end,
+    {noreply,Next}.

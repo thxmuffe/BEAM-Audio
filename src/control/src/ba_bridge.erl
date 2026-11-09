@@ -7,12 +7,13 @@
 main() ->
     logger:update_handler_config(default, config, #{type => standard_error}),
     io:setopts(standard_io, [binary, {encoding, utf8}]),
+    ba_app_session:configure(),
     {ok, _} = ba_runtime:start(),
     loop().
 
 loop() ->
     case io:get_line(standard_io, "") of
-        eof -> init:stop();
+        eof -> close_swarm(),init:stop();
         {error, _} -> init:stop(1);
         Line ->
             io:put_chars(standard_io, [request(Line), $\n]),
@@ -45,9 +46,21 @@ swarm_request(JSON) ->
     end,
     iolist_to_binary(json:encode(Reply)).
 
+swarm_command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}) ->
+    Key=case K of <<"speaker">> -> speaker;<<"microphone">> -> microphone;<<"broadcast">> -> broadcast end,
+    ba_app_session:capability(Key,B);
+swarm_command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);
+swarm_command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_swarm_chat:send(Text);
+swarm_command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_swarm_clock:set_offset(Offset);
+swarm_command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
+    {Pub,_}=ba_device_store:identity(),
+    case Device=:=binary:encode_hex(Pub) of true -> {ok,ba_device_handler:capabilities()};false -> ba_swarm_control:read_capabilities(Device) end;
+swarm_command(#{<<"method">> := <<"invitation">>}) -> ba_swarm_membership:invite(3600);
 swarm_command(#{<<"method">> := <<"snapshot">>}) -> null;
 swarm_command(#{<<"method">> := <<"list_contacts">>}) ->
     {ok, ba_contacts:list()};
+swarm_command(#{<<"method">> := <<"contact_from_invitation">>,<<"invitation">> := Link,<<"name">> := Name}) ->
+    {_,I}=ba_swarm_passport:parse_invitation(Link),ba_contacts:put(maps:get(<<"authority">>,I),Name);
 swarm_command(#{<<"method">> := <<"put_contact">>, <<"id">> := Id, <<"name">> := Name}) ->
     ba_contacts:put(Id, Name);
 swarm_command(#{<<"method">> := <<"delete_contact">>, <<"id">> := Id}) ->
@@ -74,12 +87,7 @@ swarm_command(#{<<"method">> := <<"end_swarm">>}) ->
 swarm_command(_) ->
     {error, <<"Unsupported request.">>}.
 
-swarm_snapshot() ->
-    Contacts = try ba_contacts:list() catch exit:_ -> #{contacts => #{}, groups => #{}} end,
-    Swarm = try ba_swarm:status() catch exit:_ -> #{state => idle} end,
-    #{<<"profile">> => <<"swarm_control">>,
-      <<"contacts">> => Contacts,
-      <<"swarm">> => Swarm}.
+swarm_snapshot() -> ba_app_session:snapshot().
 
 format_error(Reason) when is_binary(Reason) -> Reason;
 format_error(Reason) when is_atom(Reason) -> atom_to_binary(Reason);
@@ -190,3 +198,6 @@ message(#{id := Id, text := Text, sender := Sender, sent_at_ms := Time} = M) ->
       <<"kind">> => atom_to_binary(maps:get(kind, M, user)),
       <<"event">> => atom_to_binary(maps:get(event, M, none)),
       <<"level">> => case maps:find(level, M) of {ok, L} -> atom_to_binary(L); error -> null end}.
+
+close_swarm() ->
+    case whereis(ba_swarm) of undefined -> ok;_ -> try ba_swarm:leave() catch exit:_ -> ok end end.

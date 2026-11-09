@@ -1,6 +1,6 @@
 %% Pure, bounded application sessions. No OTP distribution, processes or device I/O.
 -module(ba_swarm_control_protocol).
--export([new/2, connect/3, request_status/3, request_capabilities/3, reply_capabilities/5,
+-export([new/2, connect/3, request_status/3, request_capabilities/3, reply_capabilities/5,chat_message/5,
          receive_packet/4, expire/2, reset/1,
          snapshot/1, seal/2,renew/3,renew_due/2,job_message/6,context/3,audio_message/5,time_message/5]).
 -define(DOMAIN, <<"parvi-swarm-control/v1:">>).
@@ -116,6 +116,12 @@ job_message(Peer,Op,Id,Payload,Now,S) ->
         {ok,Packet,Next}
     end,S).
 
+chat_message(Peer,Id,Text,Now,S) ->
+    attempt(fun() ->
+        true=hex(Id,32),Payload=#{<<"text">> => Text},payload(<<"chat.message">>,Payload),
+        {Packet,Next}=outgoing(Peer,<<"chat.message">>,Id,Payload,active(Peer,Now,S),S),{ok,Packet,Next}
+    end,S).
+
 audio_message(Peer,Id,Payload,Now,S) ->
     attempt(fun() ->
         true = hex(Id,32),ok = ba_audio_stream_protocol:validate(Payload),
@@ -186,6 +192,8 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
     true = Sequence > Last,
     Received = Session#{received := Sequence},
     case Op of
+        <<"chat.message">> ->
+            {ok,[],[{chat,Request,maps:get(<<"text">>,Payload),context(Peer,Now,put(Peer,Received,S))}],put(Peer,Received,S)};
         _ when Op=:= <<"lease.request">>;Op=:= <<"lease.challenge">>;
                Op=:= <<"lease.proof">>;Op=:= <<"lease.ready">> ->
             lease(Peer,Op,Request,Payload,Received,Now,S);
@@ -343,6 +351,10 @@ payload(Op,P) when Op =:= <<"hello">>; Op =:= <<"challenge">>;
                    Op =:= <<"lease.proof">>;Op =:= <<"lease.ready">> ->
     exact(P,[<<"a">>,<<"b">>]), true = hex(maps:get(<<"a">>,P),64),
     B = maps:get(<<"b">>,P), true = B =:= null orelse hex(B,64);
+payload(<<"chat.message">>,P) ->
+    exact(P,[<<"text">>]),Text=maps:get(<<"text">>,P),
+    true=is_binary(Text) andalso byte_size(Text)>0 andalso byte_size(Text)=<4096,
+    true=is_list(unicode:characters_to_list(Text));
 payload(<<"status.read">>,P) -> exact(P,[]);
 payload(<<"status.reply">>,P) ->
     exact(P,[<<"protocol">>,<<"session">>]),
@@ -363,7 +375,17 @@ payload(<<"job.report">>,P) -> ba_swarm_job:validate_report(P);
 payload(_,_) -> throw(forbidden_operation).
 
 capability_payload(P) ->
-    exact(P,[<<"instance">>,<<"revision">>,<<"test">>]),
+    exact(P,[<<"instance">>,<<"revision">>,<<"test">>]++case maps:is_key(<<"audio">>,P) of true -> [<<"audio">>];false -> [] end),
+    case maps:find(<<"audio">>,P) of
+        {ok,Audio} ->
+            exact(Audio,[<<"speaker">>,<<"microphone">>,<<"broadcast">>]),
+            maps:foreach(fun(_,Entry) ->
+                exact(Entry,[<<"consent">>,<<"state">>,<<"available">>]),
+                true=is_boolean(maps:get(<<"consent">>,Entry)),true=is_boolean(maps:get(<<"available">>,Entry)),
+                State=maps:get(<<"state">>,Entry),true=is_binary(State) andalso byte_size(State)=<64
+            end,Audio);
+        error -> ok
+    end,
     true = hex(maps:get(<<"instance">>,P),32),true = uint(maps:get(<<"revision">>,P)),
     Test = maps:get(<<"test">>,P),
     exact(Test,[<<"supported">>,<<"available">>,<<"requires_consent">>,<<"consent">>,
@@ -377,7 +399,7 @@ capability_payload(P) ->
 %% Reject duplicate keys, arrays, excess nesting and oversized number strings.
 decode(Data) ->
     {Value,_,<<>>} = json:decode(Data,{0,#{}},#{
-        object_start => fun({Depth,_}) -> true = Depth < 3, {Depth+1,#{}} end,
+        object_start => fun({Depth,_}) -> true = Depth < 5, {Depth+1,#{}} end,
         object_push => fun(K,V,{D,M}) -> false = maps:is_key(K,M), {D,M#{K => V}} end,
         object_finish => fun({_,M},Old) -> {M,Old} end,
         array_start => fun(_) -> error(arrays_not_allowed) end,
