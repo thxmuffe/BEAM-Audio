@@ -22,7 +22,7 @@ spec(Root) ->
       "new" => #{commands => #{"device" => Device(fun(A) -> emit(new_device(A,Root)) end,
           [#{name => createswarm,long => "-createswarm",action => {store,true},default => false},
            #{name => joinswarm,long => "-joinswarm",type => string},
-           #{name => enable,long => "-enable",type => string,default => ""},
+           #{name => enable,long => "-enable",type => string},
            #{name => desk,long => "-desk",type => string},
            #{name => until,long => "-wait",type => {string,["endpoint","admitted","ready"]},default => "admitted"}])}},
       "inspect" => #{commands => #{
@@ -38,6 +38,9 @@ spec(Root) ->
       "get" => #{commands => #{
           "swarm" => Device(fun(A) -> scalar(get_swarm(A),A) end,[]),
           "invitation" => Device(fun(A) -> R=request(one_name(A),#{<<"method">> => <<"invitation">>}),scalar(maps:get(<<"result">>,R),A) end,[])}},
+      "history" => #{commands => #{"device" => Device(fun(A) -> emit(request(one_name(A),#{<<"method">> => <<"configuration">>})) end,[])}},
+      "undo" => #{commands => #{"device" => Device(fun(A) -> history_action(A,<<"undo">>) end,[])}},
+      "redo" => #{commands => #{"device" => Device(fun(A) -> history_action(A,<<"redo">>) end,[])}},
       "set" => #{commands => #{"device" => Device(fun set_device/1,
           [#{name => enable,long => "-enable",type => string,default => ""},#{name => disable,long => "-disable",type => string,default => ""}])}},
       "wait" => #{commands => #{"device" => Device(fun(A) -> emit(wait(names(A),maps:get(until,A),timeout(A))) end,
@@ -46,7 +49,7 @@ spec(Root) ->
       "kill" => #{commands => #{"device" => Device(fun(A) -> stop(A,<<"kill">>) end,[#{name => all,long => "-all",action => {store,true},default => false}])}}
     }}.
 new_device(A,Root) ->
-    Name=one_name(A),Enabled=capabilities(maps:get(enable,A)),Timeout=timeout(A),
+    Name=one_name(A),Enabled=capabilities(maps:get(enable,A,"")),Timeout=timeout(A),
     Create=maps:get(createswarm,A),Join=maps:get(joinswarm,A,undefined),
     case Create andalso Join=/=undefined of true -> fail(2,<<"Choose createswarm or joinswarm, not both.">>);false -> ok end,
     case os:type() of {unix,darwin} -> ok;_ -> fail(2,<<"Real hardware CLI currently supports macOS only.">>) end,
@@ -57,7 +60,7 @@ new_device(A,Root) ->
     Socket=filename:join("/tmp","ba-device-"++Instance++".sock"),
     Mode=case {Create,Join} of {true,_} -> <<"create">>;{_,undefined} -> <<"idle">>;_ -> <<"join">> end,
     Desk=maps:get(desk,A,"wss://parvi-reception-desk.onrender.com/relay/v1"),
-    C=#{instance => list_to_binary(Instance),name => list_to_binary(Name),socket => list_to_binary(Socket),mode => Mode,enabled => Enabled,desk => list_to_binary(Desk),
+    C=#{instance => list_to_binary(Instance),name => list_to_binary(Name),socket => list_to_binary(Socket),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
         invitation => case Join of undefined -> null;_ -> list_to_binary(Join) end},
     Record=filename:join(D,"running.json"),
     case file:open(Record,[write,binary,exclusive]) of
@@ -123,8 +126,17 @@ get_swarm(A) ->
 set_device(A) ->
     N=one_name(A),On=capabilities(maps:get(enable,A)),Off=capabilities(maps:get(disable,A)),
     case [K || K <- On,lists:member(K,Off)] of [] -> ok;_ -> fail(2,<<"A capability cannot be both enabled and disabled.">>) end,
-    [request(N,#{<<"method">> => <<"capability">>,<<"capability">> => K,<<"enabled">> => B}) || {Ks,B} <- [{On,true},{Off,false}],K <- Ks],
-    emit(request(N,#{<<"method">> => <<"snapshot">>})).
+    Patch=maps:from_list([{K,B} || {Ks,B} <- [{On,true},{Off,false}],K <- Ks]),
+    R=request(N,#{<<"method">> => <<"snapshot">>}),
+    emit(request(N,#{<<"method">> => <<"capabilities">>,<<"consent">> => Patch,
+        <<"expected_revision">> => maps:get(<<"revision">>,maps:get(<<"configuration">>,R)),
+        <<"request_id">> => binary:encode_hex(crypto:strong_rand_bytes(16))})).
+history_action(A,Method) ->
+    N=one_name(A),R=request(N,#{<<"method">> => <<"snapshot">>}),
+    emit(request(N,#{<<"method">> => Method,
+        <<"expected_revision">> => maps:get(<<"revision">>,maps:get(<<"configuration">>,R)),
+        <<"request_id">> => binary:encode_hex(crypto:strong_rand_bytes(16))})).
+
 stop(A,Method) ->
     Timeout=timeout(A),
     Ns=case maps:get(all,A,false) of true -> ba_cli_store:names();false -> names(A) end,

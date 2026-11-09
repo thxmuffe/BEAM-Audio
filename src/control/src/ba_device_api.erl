@@ -10,6 +10,7 @@ request(Request) when is_map(Request) ->
     catch _:_ -> (ba_app_session:snapshot())#{<<"error">> => <<"Invalid request or unavailable worker.">>} end,
     maps:merge(Reply,maps:with([<<"request_id">>],Request));
 request(_) -> request(#{}).
+printable(configuration_changed) -> <<"Settings changed in another client. Review the latest state and retry.">>;
 printable(R) when is_binary(R) -> R;
 printable(R) when is_atom(R) -> atom_to_binary(R);
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
@@ -26,9 +27,14 @@ command(#{<<"method">> := <<"audio_lifecycle">>,<<"active">> := Active}) when is
     case whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end;
 command(#{<<"method">> := <<"network_changed">>}) ->
     case whereis(ba_audio_receiver) of undefined -> ok;_ -> ba_audio_receiver:network_changed(),ok end;
-command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}) ->
-    Key=case K of <<"speaker">> -> speaker;<<"microphone">> -> microphone;<<"broadcast">> -> broadcast end,
-    ba_app_session:capability(Key,B);
+command(#{<<"method">> := <<"undo">>}=R) -> ba_device_config:undo(config_options(R));
+command(#{<<"method">> := <<"redo">>}=R) -> ba_device_config:redo(config_options(R));
+command(#{<<"method">> := <<"configuration">>}) -> {ok,ba_device_config:snapshot()};
+command(#{<<"method">> := <<"capabilities">>,<<"consent">> := Values}=R) ->
+    Patch=maps:from_list([{capability_key(K),B} || {K,B} <- maps:to_list(Values)]),
+    ba_device_config:change(Patch,config_options(R));
+command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}=R) ->
+    ba_device_config:change(#{capability_key(K) => B},config_options(R));
 command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);
 command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_swarm_chat:send(Text);
 command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_swarm_clock:set_offset(Offset);
@@ -71,6 +77,12 @@ command(#{<<"method">> := <<"end_swarm">>}) ->
     ba_swarm:end_swarm();
 command(_) ->
     {error, <<"Unsupported request.">>}.
+
+capability_key(<<"speaker">>) -> speaker;
+capability_key(<<"microphone">>) -> microphone;
+capability_key(<<"broadcast">>) -> broadcast.
+config_options(R) -> maps:from_list([{K,V} || {Wire,K} <- [{<<"request_id">>,request_id},{<<"expected_revision">>,expected_revision}],
+    {ok,V} <- [maps:find(Wire,R)]]).
 
 
 %% Predicates are shared policy, not delays chosen by individual UIs/scripts.

@@ -1,5 +1,61 @@
 # Progress
 
+## 2026-11-09 — simple Device audio configuration resume and undo/redo
+
+Implemented `ba_device_config`, a root-supervised Device settings owner independent
+of Swarm lifetime. The three audio capability settings now persist with a bounded
+100-step full-state history, labels/timestamps, cursor, revision and retry IDs in
+one versioned document. Writes complete before applying changes; save failure
+keeps previous state. Restart restores both settings and cursor, including redo.
+Supported app/CLI/internal consent setters converge on this owner; no-op/invalid
+changes do not add edits. A new edit after undo drops redo. App startup defaults
+only initialize a new document; they do not replace saved settings.
+
+Added history/undo/redo/shared revision checks to the Device API and CLI. Explicit
+CLI capability sets are one edit; `new device` without an enable override resumes
+existing settings under that identity. Added shared Mac/iOS Undo/Redo buttons and
+labels. Normal polling carries one coherent revision/consent summary; full history
+is only requested explicitly. External updates retain drafts and ordinary view
+state. Native text-edit undo shortcuts were not overridden.
+
+This is deliberately Device audio configuration only. Contacts persist through
+their existing owner; shared Offset, live membership/subscriptions and ephemeral
+exclusions are outside this history. No ended Swarm is revived, no OS permission
+is fabricated, and no new remote write authority exists. iOS system broadcast
+needs system-picker authorization again. Workspace/tab/draft restoration, group
+startup recipes, `start device` and push remain later. Recorded optional Git-backed
+browsing/comparison/selective restoration in possibly-useful/IDEAS.md; no Git code
+or dependency was introduced.
+
+Validation: 57 focused OTP tests pass (seven new configuration cases), five Swift
+model tests pass, and a real idle CLI VM restart smoke checks settings, persistent
+undo/redo, no-op and redo-tail behavior. Shared UI compiles for Mac and is checked
+for iOS. No app launch, live Swarm, audio hardware, OS prompt or deployment.
+File durability remains subject to existing OS/store guarantees; no database /
+physical audio restoration claim. Rebuild app bundles to include the new core.
+
+
+## 2026-11-09 — configuration history/resume design refined
+
+Investigated OTP gen_server/file/disk_log/sys documentation and existing state
+ownership, persistence and UI refresh. Proposed one supervised Device configuration
+owner with bounded full-state history/cursor, named semantic commits, retry/revision
+checks and reconciliation after persistence. All supported internal/client setters
+must use the owner; UI-only interception cannot meet the requirement. Runtime
+availability/counters are separate from desired configuration and undo history.
+
+The current Mac/iOS hosts already poll snapshots, so cross-origin changes can
+update normal bindings without a view reload or per-button event mapping. Push
+can follow using revisioned invalidation/read; existing ba_events depends on ba_pg,
+which the secure profile does not start, and the CLI socket is currently one-shot.
+Proposed reusing bounded versioned file persistence before adding a logging/DB
+framework; persistence interruption/platform guarantees still need verification.
+
+PLAN step 3 now records the proposal and implementation order, including restored
+undo/redo position across launch and fresh-Swarm recipes rather than resurrected
+membership. Documentation only: no implementation, tests, app launch or hardware.
+
+
 ## 2026-11-09 — CLI steps 1–2 implemented; step 3 deferred
 
 Added `bin/beam-audio`, an OTP argparse/escript CLI and a supervised per-Device

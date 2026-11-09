@@ -8,7 +8,8 @@ init([]) ->
     case application:get_env(ba_core,runtime_profile,legacy_apps) of
         swarm_control ->
             {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
-                 [#{id => ba_contacts,start => {ba_contacts,start_link,[]}},
+                 [#{id => ba_device_config,start => {ba_device_config,start_link,[]}},
+                  #{id => ba_contacts,start => {ba_contacts,start_link,[]}},
                   #{id => ba_desk_connections_sup,start => {ba_desk_connections_sup,start_link,[]},type => supervisor,shutdown => infinity},
                   #{id => ba_swarm_desks,start => {ba_swarm_desks,start_link,[]}},
                   #{id => ba_swarm,start => {ba_swarm,start_link,[]}}]}};

@@ -14,16 +14,23 @@ configure(#{platform := Platform}=Options) ->
     application:set_env(ba_core,audio_output_adapter,Output),
     application:set_env(ba_core,swarm_default_permissions,permissions()),
     case maps:find(consent,Options) of
-        {ok,#{speaker := S,microphone := M,broadcast := B}=C} when is_boolean(S),is_boolean(M),is_boolean(B) -> application:set_env(ba_core,audio_consent,C);
+        {ok,#{speaker := S,microphone := M,broadcast := B}=C} when is_boolean(S),is_boolean(M),is_boolean(B) ->
+            case whereis(ba_device_config) of
+                undefined -> application:set_env(ba_core,audio_consent,C);
+                _ -> ba_device_config:change(C,#{})
+            end;
         error -> ok
     end.
 
 permissions() -> [<<"capabilities_read">>,<<"job_offer">>,<<"offset_write">>,<<"status_read">>,
     <<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>].
-consent() -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false}).
+consent() ->
+    case whereis(ba_device_config) of
+        undefined -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false});
+        _ -> ba_device_config:consent()
+    end.
 capability(Key,B) when (Key=:=speaker orelse Key=:=microphone orelse Key=:=broadcast),is_boolean(B) ->
-    application:set_env(ba_core,audio_consent,(consent())#{Key := B}),
-    case whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end;
+    ba_device_config:change(#{Key => B},#{});
 capability(_,_) -> {error,invalid_capability}.
 exclusions() -> ba_device_store:load(swarm_exclusions,[]).
 excluded(Peer) -> lists:member(Peer,exclusions()).
@@ -40,11 +47,11 @@ contract(Swarm,Publisher,#{receiver := Receiver,source := Source}) ->
     <<Id:16/binary,_/binary>>=crypto:hash(sha256,term_to_binary({Swarm,Publisher,Receiver,Source})),binary:encode_hex(Id).
 snapshot() ->
     {Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
-    Swarm=ba_swarm:status(),
+    Swarm=ba_swarm:status(),Config=ba_device_config:snapshot(),
     Base=#{profile => swarm_control,device => Id,swarm => Swarm,contacts => ba_contacts:list(),
         desks => safe(fun ba_swarm_desks:status/0,#{}),
         default_desk => application:get_env(ba_core,default_reception_desk_url,<<>>),
-        consent => consent(),excluded => exclusions(),messages => [],devices => [],jobs => [],
+        configuration => maps:without([entries],Config),consent => maps:get(consent,Config),excluded => exclusions(),messages => [],devices => [],jobs => [],
         audio => #{},clock => #{state => idle},passport => #{}},
     case maps:get(state,Swarm) of
         idle -> Base;

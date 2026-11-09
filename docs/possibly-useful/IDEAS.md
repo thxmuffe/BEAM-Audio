@@ -1,6 +1,6 @@
 # Ideas for later
 
-These are deferred possibilities, outside the [active architecture plan](PLAN.md).
+These are deferred possibilities, outside the [active architecture plan](../PLAN.md).
 They add no prerequisites or implementation commitments.
 
 The repository now uses three buckets for non-active concepts:
@@ -10,6 +10,17 @@ The repository now uses three buckets for non-active concepts:
   but not part of the active implementation path.
 - [old-ideas/](../old-ideas/README.md): retained as historical provenance only.
   This is not a planning area and should not be used as guidance for current work.
+
+## Git-backed configuration history — deferred
+
+Requested 2026-11-09 as a possible later enhancement: a Device-local Git
+repository for readable configuration versions, meaningful commit names,
+comparison, browsing older settings, and selectively applying past settings as a
+new authorized change. OTP would remain the configuration/permission owner;
+Git would provide storage/history, not runtime rollback or Swarm resurrection.
+No remote repository/account would be required. This is explicitly outside the
+current simple bounded file-based resume/undo/redo implementation. Revisit only
+when richer historical selection is wanted; no Git dependency or integration now.
 
 ## Longer-term directions
 

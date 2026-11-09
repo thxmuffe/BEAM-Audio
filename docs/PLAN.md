@@ -37,8 +37,8 @@ Product guides now live in [OpenSound docs](../../OpenSound/docs/README.md).
 
 ### Next three steps — CLI first (2026-11-09)
 
-**Status:** steps 1–2 are implemented for macOS with the validation limits below;
-step 3 is explicitly not started. [CLI build/usage and limits](../src/Tools/CLI/README.md).
+**Status:** steps 1–2 and the simple settings/history part of step 3 are
+implemented, with the validation limits below. [CLI build/usage and limits](../src/Tools/CLI/README.md).
 The source-tree escript uses installed OTP and existing native packaging; standalone
 relx distribution is deferred. Actual audio/permission acceptance remains user-led.
 
@@ -138,31 +138,63 @@ require implementing the independent review's entire proposed redesign.
    The speaker/broadcast pair is wired to existing automatic Contracts/Subscriptions
    and real OS helpers, but physical permission/capture/playback, sustained flow
    and timing still await user checks. Membership/route changes still reset control
-   sessions; ordinary authorization renewal is distinct. Step 3 stays deferred.
+   sessions; ordinary authorization renewal is distinct. The simple settings
+   history part of step 3 is now implemented below; group startup recipes remain deferred.
 
-3. **OTP-owned saved configuration, restart and bounded settings undo.**
-   Persist named Device configuration and an explicit test-group recipe: identity
-   reference, capabilities, exclusions/settings as appropriate, creator and joiner
-   roles. Save declarative desired settings, never process IDs, sockets, packet
-   queues, clock mappings, expired grants or live transport snapshots. Starting
-   the saved Devices is an explicit action which reapplies saved audio intent
-   subject to OS permission and current authorization; merely inspecting a file
-   never enables capture. Restore the creator first, create a **fresh ephemeral
-   Swarm**, then issue fresh invitations to the selected joiners. If a different
-   still-live Swarm is targeted, require current admission; old credentials do
-   not resurrect it. Partial starts report per-Device results without claiming
-   the group is ready. Stop retains configuration; deletion is a separate action.
+3. **Simple Device configuration resume and undo/redo — implemented.**
+   `ba_device_config` is a supervised Device-local `gen_server`, outside the
+   ephemeral Swarm subtree. It owns the three durable Device audio settings:
+   speaker, microphone and system-output broadcast. App/CLI commands and the
+   existing internal consent/configuration setters use this same owner. No-op
+   and invalid changes create no edit. A CLI multi-capability change is one edit.
 
-   Implement settings snapshots and bounded undo history in OTP, shared by all
-   clients, with a documented initial supported-setting list. Start with local
-   capability intent/settings; validate and reapply through the same command
-   path. Undo is a new authorized command, not rollback of the world: shared
-   Offset requires current permission, and revoked membership or an ended Swarm
-   cannot be undone. Credentials are not settings. Do not clone a Device Identity
-   across concurrent runtimes. UI controls can adopt these operations later.
-   **Exit:** stop/start test1,test2 recreates the test arrangement with retained
-   identities and new Swarm/session IDs; offline checks prove snapshot validation,
-   settings undo, permission enforcement and no live-state resurrection.
+   Persist a bounded sequence of full settings states (100 undo steps), meaningful
+   labels, timestamps, cursor, monotonic revision and bounded retry IDs in one
+   `device_configuration.term` document via the existing versioned/sync/replace
+   store. Persist before notifying the Device Handler to reconcile. On failure,
+   retain previous in-memory settings/history and report the error. On restart,
+   load desired settings and the same undo/redo position before Swarm work starts.
+   Undo/redo moves the cursor and increments revision; a fresh edit after undo
+   drops the redo tail. Stale revision and duplicate retry protection are in OTP.
+   Unknown/corrupt stored schema fails explicitly rather than resetting history.
+
+   The shared Mac/iOS view has Undo/Redo controls and backend-generated labels.
+   Existing polling refreshes one coherent configuration revision/consent summary;
+   internal or other-client edits update normal bindings without reloading views
+   or clearing drafts. Full entries are returned only by the history operation.
+   No event broker, push protocol, database, inverse side-effect engine or Git.
+   Native text editing keeps its own undo; no global Command-Z interception.
+
+   CLI: `history device`, `undo device`, `redo device`, and `set device` use the
+   same API. For an existing name, `new device` without `--enable` resumes saved
+   audio intent; an explicit `--enable` is a new settings edit. New CLI identities
+   still default all audio off; new app identities keep speaker on/mic and
+   broadcast off. Startup reuses saved desired settings subject to current OS
+   permissions and current admission/clock availability. iOS system broadcast
+   still needs system-picker authorization; saved intent does not recreate it.
+
+   **Scope:** contacts keep their existing persistent owner. Swarm membership,
+   subscriptions, shared Offset and per-gathering exclusions retain their current
+   lifecycles and are not included in this Device undo history. No settings change
+   restores an ended Swarm or revoked permission. Runtime failures/counters,
+   reconnects, packet/clock state and reconciliation are never history edits.
+   This initial version restores Device audio configuration, not UI drafts/tabs
+   or a whole application/workspace snapshot. Direct env/ETS/file/debugger writes
+   outside supported setters cannot be tracked. No new remote write permission
+   was granted to Swarm members/inspectors.
+
+   **Checks:** seven new file/restart/configuration tests; 57 focused existing/new
+   OTP regressions; five Swift model tests, including external state updates with
+   draft preservation; an actual idle CLI restart/history/undo/redo smoke test.
+   Shared UI is compiled on Mac and type-checked for iOS; no app or hardware run.
+   Store replacement/power-loss semantics remain OS-dependent; this is not a
+   database transaction or physical audio restoration guarantee.
+
+   **Later, separately:** saved test-group startup recipes, `start device`,
+   automatic fresh-Swarm creation/invitation, more setting types and push updates
+   remain unimplemented. [Git-backed history](possibly-useful/IDEAS.md#git-backed-configuration-history--deferred)
+   is long-term only, explicitly not part of current work. Full configuration /
+   history behavior and limits are in the [CLI guide](../src/Tools/CLI/README.md).
 
 **Standard references:** OTP [argparse](https://www.erlang.org/doc/apps/stdlib/argparse.html)
 provides command trees/help/validation and fits
@@ -608,10 +640,10 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Next: **user-led CLI speaker/broadcast acceptance** using the new commands;
-steps 1–2 have the implementation/offline evidence above. Step 3 (saved startup
-configuration/restart/settings undo) is explicitly deferred at the user's request.
-Resume that step or further app work only when requested. No app or audio hardware is launched merely to
+Next: **user-led app/CLI settings resume and undo/redo acceptance**, followed by
+real CLI speaker/broadcast checks. The simple Device settings history is now
+implemented. Group startup recipes, whole-workspace restoration and Git history
+remain deferred. Continue broader app work only when requested. No app or audio hardware is launched merely to
 update this plan. Keep the existing clock/per-packet target policy and ephemeral
 membership model; earlier 8d maximum-Offset and physical-output limits remain open.
 See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),

@@ -19,9 +19,13 @@ boot() ->
         os:putenv("BA_MAC_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_audio_input"])),
         os:putenv("BA_MAC_DEVICE_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_device_audio"])),
         ok=application:load(ba_core),
-        Consent=maps:from_list([{K,lists:member(atom_to_binary(K),maps:get(<<"enabled">>,C))} || K <- [speaker,microphone,broadcast]]),
+        Consent=#{speaker => false,microphone => false,broadcast => false},
         ok=ba_app_session:configure(#{platform => mac,consent => Consent}),
         {ok,_}=ba_runtime:start(swarm_control),
+        case maps:get(<<"enabled">>,C) of
+            null -> ok;
+            Enabled -> ok=ba_device_config:change(maps:from_list([{K,lists:member(atom_to_binary(K),Enabled)} || K <- [speaker,microphone,broadcast]]),#{})
+        end,
         Public=maps:without([<<"invitation">>],C),
         {ok,Pid}=supervisor:start_child(ba_sup,#{id => ?MODULE,start => {?MODULE,start_link,[Public#{dir => Dir}]},restart => temporary}),
         Command=case maps:get(<<"mode">>,C) of

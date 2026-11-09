@@ -39,7 +39,10 @@ beam-audio stop device --all
 Play some ordinary system audio while checking broadcast. `speaker` receives
 and plays eligible remote Sources; `mic` captures/publishes the microphone;
 `broadcast` captures/publishes default system output. Only explicitly listed
-capabilities are enabled. Omitting `--enable` opens no audio hardware. You can
+capabilities are enabled on a new identity. For an existing identity, omitting
+`--enable` restores its saved capability settings; explicit `--enable` replaces
+those settings as one history edit. An idle Device opens no hardware until work
+in a Swarm is eligible. You can
 start an idle Device by omitting both Swarm flags. Use `--desk ws://127.0.0.1:PORT/relay/v1`
 when deliberately using a local Desk; otherwise the existing shared Desk is used.
 A Swarm ID identifies a gathering; its invitation is the admission credential.
@@ -119,10 +122,32 @@ also verify the recorded instance. Do not copy an identity into simultaneous VMs
 `stop device --devicename test1,test2` leaves/ends gatherings and waits for local
 teardown; `kill device ...` explicitly terminates the verified runtime process.
 `--all` affects only this CLI's managed names. Stopping Captain ends its Swarm.
-Names/identity remain, but capability intent and Swarm state are not saved. You
-can explicitly run `new device` again under that name with new flags, retaining
-identity and creating a new runtime. **`start device`, saved configuration,
-snapshots and undo are step 3 and are not implemented.**
+Names/identity and Device audio settings/history remain. Live Swarm state is
+not saved. Run `new device` again under that name without `--enable` to resume
+settings in a new idle runtime; provide fresh creation/join flags when needed.
+`start device` and saved group-startup recipes are not implemented.
+
+## Configuration history
+
+```sh
+beam-audio history device --devicename test1
+beam-audio undo device --devicename test1
+beam-audio redo device --devicename test1
+```
+
+The same OTP owner records the three audio switches from CLI, app and supported
+internal setters. History is bounded to 100 undo steps, with names such as
+“Enable microphone”. Settings and undo/redo position persist across restarts.
+A no-op or failed edit adds no step; editing after undo discards redo. Concurrent
+stale undo/redo fails clearly and retries carry a command ID. Inspect returns a
+small revision/consent/history summary; `history` includes entries.
+
+`device_configuration.term` uses the existing private versioned file store.
+There is no Git/database/event broker. Save failure reports an error and does not
+apply new settings. Hardware failure is separate observed state; desired intent
+and its undo history remain available. Shared Offset, contacts, ephemeral
+exclusions and Swarm membership are not in Device audio history. Saved intent
+cannot revive a Swarm, bypass OS permissions or restore packet/clock state.
 
 An externally killed VM may leave `running.json`/`launch.json` and its socket.
 Duplicate/stale records are rejected rather than risking two VMs sharing an
@@ -143,6 +168,7 @@ physical alignment remain open.
 ```sh
 python3 tests/control/cli-smoke.py
 python3 tests/control/cli-swarm-smoke.py
+python3 tests/control/cli-config-smoke.py
 ```
 
 The first checks two idle real VMs, identity isolation/reuse, protected endpoints,
@@ -154,3 +180,9 @@ Both keep all audio disabled and clean up runtimes; neither uses the shared Desk
 removal, output-failure process preservation and existing audio/clock protocols.
 CLI/native helpers compile. Real mic/speaker/broadcast, OS permissions, sustained
 media, interruptions and scheduling/listening remain user acceptance checks.
+
+The configuration smoke starts only an idle Device: toggling saved mic intent in
+that fixture never starts capture or creates a Swarm. It checks persistence and
+undo/redo across real VM restarts. Seven configuration unit tests cover history
+bounds, no-ops, branching, stale revision/retry, internal setter ownership and save
+failure; no hardware use is implied.
