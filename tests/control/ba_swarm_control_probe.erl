@@ -21,7 +21,7 @@ loop(Id,Cap) ->
             loop(Id,Cap)
     end.
 command(#{<<"op">> := <<"create">>,<<"desks">> := URLs},_,_) ->
-    start(#{mode => create,desks => URLs});
+    start(#{mode => create,name => <<"Test gathering">>,desks => URLs});
 command(#{<<"op">> := <<"join">>,<<"invitation">> := Link,<<"desk">> := Desk},_,_) ->
     start(#{mode => join,invitation => Link,desk => Desk});
 command(#{<<"op">> := <<"resume">>,<<"desk">> := Desk},_,_) -> start(#{mode => resume,desk => Desk});
@@ -112,8 +112,8 @@ command(#{<<"op">> := <<"block_handshakes">>},_,_) ->
 command(Other,_,_) -> ba_audio_stream_probe:command(Other).
 start(Config) ->
     application:load(ba_core),application:set_env(ba_core,clock_reference,system),
-    application:set_env(ba_core,swarm_membership,Config),
-    {ok,_} = ba_runtime:start(swarm_control),#{ok => true}.
+    case whereis(ba_sup) of undefined -> {ok,_} = ba_runtime:start(swarm_control);_ -> ok end,
+    result(ba_swarm:start(Config)).
 result(ok) -> #{ok => true};
 result({ok,V}) -> #{ok => true,value => V};
 result({error,R}) -> #{error => R}.

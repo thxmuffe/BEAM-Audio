@@ -1,4 +1,4 @@
-%% Durable signed membership records, separate from live operation/session grants.
+%% Signed credentials for the current gathering, separate from live operation/session grants.
 -module(ba_swarm_passport).
 -export([sign/2,verify/2,decode/1,exact/2,passport/4,policy/1,runtime_policy/2,
          invitation/1,parse_invitation/1,urls/1,route/2,permissions/1]).
@@ -50,10 +50,11 @@ parse_invitation(Link) when is_binary(Link),byte_size(Link) =< 32768 ->
     true = map_size(U) =:= 4,[{<<"ticket">>,B64}] = uri_string:dissect_query(Q),Packet = base64:decode(B64),
     E = decode(Packet),Body = decode(base64:decode(maps:get(<<"body">>,E))),Authority = maps:get(<<"authority">>,Body),
     Body = verify(Packet,Authority),
-    exact(Body,[<<"v">>,<<"type">>,<<"swarm">>,<<"authority">>,<<"invite">>,<<"secret">>,<<"expires">>,<<"desks">>,<<"route">>]),
+    exact(Body,[<<"v">>,<<"type">>,<<"swarm">>,<<"authority">>,<<"invite">>,<<"secret">>,<<"expires">>,<<"desks">>,<<"route">>,<<"name">>]),
     #{<<"v">> := 1,<<"type">> := <<"invitation">>} = Body,
     true = hex(maps:get(<<"swarm">>,Body),32),true = hex(maps:get(<<"invite">>,Body),32),
     true = hex(maps:get(<<"secret">>,Body),64),
+    Name = maps:get(<<"name">>,Body),true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
     positive(maps:get(<<"expires">>,Body)),
     true = maps:get(<<"expires">>,Body) > erlang:system_time(second),
     urls(maps:get(<<"desks">>,Body)),route(maps:get(<<"route">>,Body),maps:get(<<"desks">>,Body)),{Packet,Body}.

@@ -1,12 +1,14 @@
-%% Durable authority/Passport owner. Desks introduce; fresh authority proof grants operations.
+%% Live Captain/Passport owner. Desks introduce; fresh authority proof grants operations.
 -module(ba_swarm_membership).
 -behaviour(gen_server).
--export([start_link/0,status/0,current/0,invite/1,grant/2,revoke/1]).
+-export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 status() -> gen_server:call(?MODULE,status).
 current() -> gen_server:call(?MODULE,current).
 invite(TTL) -> gen_server:call(?MODULE,{invite,TTL}).
+depart() -> gen_server:call(?MODULE,depart).
+invite_devices(Ids,TTL) -> gen_server:call(?MODULE,{invite_devices,Ids,TTL}).
 grant(Device,Permissions) -> gen_server:call(?MODULE,{grant,Device,Permissions}).
 revoke(Device) -> gen_server:call(?MODULE,{revoke,Device}).
 init([]) ->
@@ -29,7 +31,7 @@ boot(#{mode := create,desks := URLs} = Config,S) ->
         {ok,OldRoute} when OldRoute =/= Route -> bump(P,false);
         _ -> P
     end,
-    Next = S#{role => authority,policy => CurrentPolicy,invitations => maps:get(invitations,Saved),routes => Routes,
+    Next = S#{role => authority,name => maps:get(name,Config),policy => CurrentPolicy,invitations => maps:get(invitations,Saved),routes => Routes,
         urls => URLs,primary => Primary,swarm => Swarm,authority => Id,state := authorized,until := infinity},
     checkpoint_authority(Next),publish(Next),Next;
 boot(#{mode := join,invitation := Link} = Config,S) ->
@@ -41,7 +43,7 @@ boot(#{mode := join,invitation := Link} = Config,S) ->
         undefined ->
             URLs = maps:get(<<"desks">>,I),Primary = maps:get(desk,Config,hd(URLs)),
             client(Ticket,maps:get(<<"authority">>,I),maps:get(<<"swarm">>,I),URLs,Primary,
-                   maps:get(<<"route">>,I),#{},S)
+                   maps:get(<<"route">>,I),#{},S#{name => maps:get(<<"name">>,I)})
     end;
 boot(#{mode := resume} = Config,S) ->
     boot_saved(Config,ba_device_store:load(swarm_member,undefined),S).
@@ -55,11 +57,11 @@ client(Credential,Authority,Swarm,URLs,Primary,AuthorityRoute,Floor,S) ->
     R = AuthorityRoute#{<<"desk">> := Primary},
     ok = ba_swarm_desks:configure(Swarm,URLs,Primary,#{Authority => R}),
     S#{role => member,credential => Credential,authority => Authority,authority_route => R,
-       swarm => Swarm,urls => URLs,primary => Primary,floor => Floor,policy => undefined,routes => #{Authority => R}}.
+       swarm => Swarm,urls => URLs,primary => Primary,captain_deadline => now_ms()+30000,floor => Floor,policy => undefined,routes => #{Authority => R}}.
 
 handle_call(status,_,S) ->
     P = maps:get(policy,S),
-    {reply,#{id => maps:get(id,S),swarm => maps:get(swarm,S),role => maps:get(role,S),
+    {reply,#{id => maps:get(id,S),swarm => maps:get(swarm,S),role => maps:get(role,S),name => maps:get(name,S),captain => maps:get(authority,S),
         state => maps:get(state,S),epoch => value(<<"epoch">>,P),revision => value(<<"revision">>,P),
         members => case P of undefined -> [];_ -> maps:keys(maps:get(<<"members">>,P)) end,
         rejected => maps:get(rejected,S)},S};
@@ -68,15 +70,22 @@ handle_call(current,_,#{state := authorized} = S) ->
         true -> {reply,{ok,view(S)},S};false -> {reply,{error,authorization_expired},S}
     end;
 handle_call(current,_,S) -> {reply,{error,maps:get(state,S)},S};
-handle_call({invite,TTL},_,#{role := authority,policy := P,invitations := Invites} = S)
-        when is_integer(TTL),TTL > 0,TTL =< 86400,map_size(Invites) < 32 ->
-    Id = fresh(16),Secret = fresh(32),Expiry = erlang:system_time(second)+TTL,
-    I = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"swarm">> => maps:get(swarm,S),
-        <<"authority">> => maps:get(id,S),<<"invite">> => Id,<<"secret">> => Secret,<<"expires">> => Expiry,
-        <<"desks">> => maps:get(urls,S),<<"route">> => maps:get(maps:get(id,S),maps:get(routes,S))},
-    Entry = #{hash => crypto:hash(sha256,Secret),expires => Expiry,claimed => undefined},
-    Next = S#{invitations := Invites#{Id => Entry}},checkpoint_authority(Next),
-    _ = P,{reply,{ok,ba_swarm_passport:invitation(sign(I,S))},Next};
+handle_call({invite,TTL},_,S) ->
+    case invitations([undefined],TTL,S) of
+        {ok,[#{invitation := Link}],Next} -> {reply,{ok,Link},Next};
+        {error,R} -> {reply,{error,R},S}
+    end;
+handle_call({invite_devices,Ids,TTL},_,S) ->
+    case invitations(Ids,TTL,S) of
+        {ok,Links,Next} -> {reply,{ok,Links},Next};
+        {error,R} -> {reply,{error,R},S}
+    end;
+handle_call(depart,_,#{role := authority,routes := Routes}=S) ->
+    maps:foreach(fun(Peer,R) ->
+        case Peer=:=maps:get(id,S) of true -> ok;false -> send(Peer,R,<<"ended">>,fresh(16),#{},S) end
+    end,Routes),{reply,ok,S};
+handle_call(depart,_,#{role := member}=S) ->
+    send(maps:get(authority,S),maps:get(authority_route,S),<<"leave">>,fresh(16),#{},S),{reply,ok,S};
 handle_call({grant,Device,Permissions},_,#{role := authority,policy := P} = S) ->
     try
         ok = ba_swarm_passport:permissions(Permissions),Members = maps:get(<<"members">>,P),
@@ -118,7 +127,12 @@ handle_info({desk_delivery,_,From,Packet},S) ->
           _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}} end;
 handle_info(_,S) -> {noreply,S}.
 
-client_tick(S) ->
+client_tick(#{captain_deadline := Deadline}=S) ->
+    case now_ms()>=Deadline of
+        true -> invalidate(),ba_swarm:ended(self()),S#{state := ended,until := 0};
+        false -> client_refresh(S)
+    end.
+client_refresh(S) ->
     Now = now_ms(),Request = maps:get(request,S),
     Next = case maps:get(state,S) =:= authorized andalso Now >= maps:get(until,S) of
         true -> invalidate(),S#{state := waiting};false -> S end,
@@ -185,7 +199,7 @@ incoming(Authority,#{<<"type">> := <<"grant">>,<<"request">> := Req,<<"payload">
     ok = save(swarm_member,Saved),
     ok = ba_swarm_desks:configure(Swarm,maps:get(urls,S),maps:get(primary,S),Routes),
     Next = S#{credential := Passport,policy := P,routes := Routes,floor := NewFloor,request := undefined,
-              state := authorized,until := Deadline+50000},publish(Next),Next;
+              state := authorized,until := Deadline+50000,captain_deadline := Deadline+50000},publish(Next),Next;
 incoming(Authority,#{<<"type">> := <<"denied">>,<<"request">> := Req,<<"payload">> := D},
          #{role := member,authority := Authority,request := #{id := Req,nonce := Nonce,deadline := Deadline}} = S) ->
     true = now_ms() < Deadline,ba_swarm_passport:exact(D,[<<"nonce">>,<<"reason">>]),
@@ -200,6 +214,17 @@ incoming(Authority,#{<<"type">> := <<"changed">>,<<"payload">> := D},#{role := m
         true -> invalidate(),S#{state := waiting,until := 0,request := undefined,last_attempt := now_ms()-5000};
         false -> S
     end;
+incoming(Authority,#{<<"type">> := <<"ended">>,<<"payload">> := P},
+         #{role := member,authority := Authority}=S) ->
+    ba_swarm_passport:exact(P,[]),invalidate(),ba_swarm:ended(self()),S#{state := ended,until := 0};
+incoming(Peer,#{<<"type">> := <<"leave">>,<<"payload">> := Payload},
+         #{role := authority,policy := P,routes := Routes,invitations := Invites}=S) ->
+    ba_swarm_passport:exact(Payload,[]),true = Peer=/=maps:get(id,S),
+    true = maps:is_key(Peer,maps:get(<<"members">>,P)),
+    NewP = bump(P#{<<"members">> := maps:remove(Peer,maps:get(<<"members">>,P))},true),
+    Next = S#{policy := NewP,routes := maps:remove(Peer,Routes),
+        invitations := maps:filter(fun(_,E) -> maps:get(claimed,E)=/=Peer end,Invites)},
+    checkpoint_authority(Next),changed(Next,Routes),Next;
 incoming(_,_,_) -> error(unexpected_membership_message).
 
 credential(Peer,Packet,S) ->
@@ -264,3 +289,24 @@ fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).
 hex(B,N) -> ba_swarm_job:hex(B,N).
 now_ms() -> erlang:monotonic_time(millisecond).
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([id,swarm,role,state],S);(log,_) -> [];(_,_) -> redacted end,Status).
+
+invitations(Ids,TTL,#{role := authority,invitations := Existing}=S)
+        when is_list(Ids),length(Ids)>0,length(Ids)=<15,is_integer(TTL),TTL>0,TTL=<86400 ->
+    Live = maps:filter(fun(_,E) -> maps:get(expires,E)>erlang:system_time(second) end,Existing),
+    case map_size(Live)+length(Ids)=<32 andalso
+         lists:all(fun(Id) -> Id=:=undefined orelse hex(Id,64) end,Ids) of
+        false -> {error,invalid_invitation};
+        true ->
+            {Links,Next} = lists:mapfoldl(fun(Device,Acc) ->
+                Id = fresh(16),Secret = fresh(32),Expiry = erlang:system_time(second)+TTL,
+                I = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"name">> => maps:get(name,S),
+                    <<"swarm">> => maps:get(swarm,S),<<"authority">> => maps:get(id,S),
+                    <<"invite">> => Id,<<"secret">> => Secret,<<"expires">> => Expiry,
+                    <<"desks">> => maps:get(urls,S),<<"route">> => maps:get(maps:get(id,S),maps:get(routes,S))},
+                Invites = maps:get(invitations,Acc),
+                Entry = #{hash => crypto:hash(sha256,Secret),expires => Expiry,claimed => Device},
+                {#{device => Device,invitation => ba_swarm_passport:invitation(sign(I,S))},
+                    Acc#{invitations := Invites#{Id => Entry}}}
+            end,S#{invitations := Live},Ids),checkpoint_authority(Next),{ok,Links,Next}
+    end;
+invitations(_,_,_) -> {error,captain_or_valid_invitation_required}.

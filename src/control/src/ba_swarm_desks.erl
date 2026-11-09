@@ -1,9 +1,10 @@
 %% A bounded set of independent Desk connections; no membership authority here.
 -module(ba_swarm_desks).
 -behaviour(gen_server).
--export([start_link/0,configure/4,route/0,send/3,send_route/4,status/0,peer_online/1]).
+-export([start_link/0,reset/0,configure/4,route/0,send/3,send_route/4,status/0,peer_online/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
+reset() -> gen_server:call(?MODULE,reset).
 configure(Swarm,URLs,Primary,Routes) -> gen_server:call(?MODULE,{configure,Swarm,URLs,Primary,Routes}).
 route() -> gen_server:call(?MODULE,route).
 send(To,Type,Packet) -> gen_server:call(?MODULE,{send,To,Type,Packet},3000).
@@ -15,11 +16,15 @@ init([]) ->
     true = os:getenv("BA_STATE_DIR") =/= false,
     {Public,_} = ba_device_store:identity(),Id = binary:encode_hex(Public),
     Saved = ba_device_store:load(swarm_desks,#{id => Id,mailbox => fresh()}),
-    Id = maps:get(id,Saved),ok = ba_device_store:save(swarm_desks,Saved),
+    Id = maps:get(id,Saved),
     erlang:send_after(1000,self(),repair),
     {ok,#{id => Id,mailbox => maps:get(mailbox,Saved),swarm => maps:get(swarm,Saved,undefined),
           primary => maps:get(primary,Saved,undefined),urls => maps:get(urls,Saved,[]),
           routes => maps:get(routes,Saved,#{}),bound => #{},rejected => 0}}.
+handle_call(reset,_,S) ->
+    [ba_desk_connections_sup:stop(URL) || URL <- maps:keys(ba_desk_connections_sup:connections())],
+    {reply,ok,S#{mailbox := fresh(),swarm := undefined,primary := undefined,
+        urls := [],routes := #{},bound := #{}}};
 handle_call(route,_,S) -> {reply,#{<<"desk">> => maps:get(primary,S),<<"mailbox">> => maps:get(mailbox,S)},S};
 handle_call({peer_online,Peer},_,S) ->
     Connections = ba_desk_connections_sup:connections(),

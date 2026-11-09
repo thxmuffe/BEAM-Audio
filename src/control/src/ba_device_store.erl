@@ -18,6 +18,13 @@ node_name(Platform) ->
                      "@127.0.0.1">>).
 
 load(Name, Default) ->
+    case transient(Name) of
+        true ->
+            try ets:lookup(ba_swarm_state,Name) of [{_,Data}] -> Data;[] -> Default
+            catch error:badarg -> Default end;
+        false -> load_file(Name,Default)
+    end.
+load_file(Name,Default) ->
     case path(Name) of
         undefined -> Default;
         Path ->
@@ -36,6 +43,11 @@ load(Name, Default) ->
     end.
 
 save(Name, Data) ->
+    case transient(Name) of
+        true -> ets:insert(ba_swarm_state,{Name,Data}),ok;
+        false -> save_file(Name,Data)
+    end.
+save_file(Name,Data) ->
     case path(Name) of
         undefined -> ok;
         Path ->
@@ -60,3 +72,9 @@ path(Name) ->
             true = os:getenv("BA_IDENTITY_SEED") =/= false,
             filename:join(Directory, atom_to_list(Name) ++ ".term")
     end.
+
+%% Live records never read/write device files, including old Swarm snapshots.
+transient(Name) ->
+    application:get_env(ba_core,runtime_profile,legacy_apps)=:=swarm_control andalso
+    lists:member(Name,[swarm_authority,swarm_member,swarm_desks,swarm_time_policy,
+                      swarm_time_cache,audio_subscriptions]).

@@ -1,5 +1,18 @@
 # Progress
 
+## 2026-11-09 — Architecture update: Ephemeral Swarms adopted in PLAN.md
+
+Updated PLAN.md to adopt the Ephemeral Swarms architecture:
+- Swarms are temporary gatherings; creator is Captain for its lifetime. When a
+  gathering ends, the Swarm disappears while contacts and groups remain.
+- Contacts and groups belong to Devices (like a phone's address book; no mutual
+  friendship, approval or synchronization required).
+- Former step 10 (abandoned-Swarm recovery) is superseded and removed.
+- Step 9 is now Implementation Step — Ephemeral Swarms (contacts, groups, and
+  temporary gathering lifecycle in core OTP).
+- Step 10 is now Update and verify the applications (macOS → iOS → Windows).
+Follow-ups 8a–8d are ready. Next implementation task: step 9.
+
 ## 2026-11-09 — Completed 8a–8c; implemented 8d with maximum-Offset qualification open
 
 Separated Desk connections/route ownership from the dependency-ordered runtime

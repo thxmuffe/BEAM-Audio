@@ -19,11 +19,13 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–8, the core naming cleanup and backend follow-ups 8a–8c are complete
-for the headless runtime. 8d is implemented; its maximum-Offset continuity exit
-check remains open because repeat runs miss output deadlines. Diagnose that
-remaining scheduling issue before declaring 8d verified. Step 9 has not started;
-app order remains macOS → iOS → Windows.** See
+**Steps 1–8, the core naming cleanup and backend follow-ups 8a–8d are ready.
+The architecture direction adopts Ephemeral Swarms: Swarms are temporary
+gatherings; contacts and groups belong to Devices (like a phone's address book;
+no mutual friendship, approval or synchronization required). Former step 10
+(abandoned-Swarm recovery) is superseded. Next is step 9: Ephemeral Swarms
+(contacts, groups, and temporary gathering lifecycle), followed by step 10:
+application integration (macOS → iOS → Windows).** See
 [canonical component names](TERMINOLOGY.md) and [API/configuration migration](NAMING.md). The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
@@ -55,11 +57,16 @@ launched, rebuilt or installed to perform that reset.
 ### Vocabulary and ownership
 
 Use the 22 component names and boundaries in [TERMINOLOGY.md](TERMINOLOGY.md).
-In particular, a **Source** has a stable identity, a **Stream** is its audio
-publication, a **Subscription** is persistent intent to receive that Source, and
-a **Media Session** is a temporary transport. The **Swarm Clock** owns the shared
-timeline and **Playback Offset** policy; Audio Engines execute approved
-Presentation Targets. Device Identity and Passport are separate credentials.
+Under the **Ephemeral Swarms** model:
+- A **Swarm** is temporary; its creator is Captain for its lifetime. When the
+  gathering ends, the Swarm disappears.
+- **Contacts and groups** belong to Devices (like a phone's address book).
+  No mutual friendship, approval or synchronization is required.
+- A **Source** has a stable identity, a **Stream** is its audio
+  publication, a **Subscription** is persistent intent to receive that Source, and
+  a **Media Session** is a temporary transport. The **Swarm Clock** owns the shared
+  timeline and **Playback Offset** policy; Audio Engines execute approved
+  Presentation Targets. Device Identity and Passport are separate credentials.
 
 Core-owned names use `ba_`, application `ba_core` and configuration `BA_*`;
 [NAMING.md](NAMING.md) records the migration and retained identity/wire spellings.
@@ -125,7 +132,7 @@ trusted-cluster code; it is not the current Swarm boundary.
    restart without restored Contracts. Concurrent output requires one common rate
    and clock; incompatible output is explicit and does not remove its subscription.
    Step 8 subsequently integrates native Opus decoded-audio handoff into this mixer;
-   native platform output remains step 9.
+   native platform output remains step 10.
 
 7. **Time and Playback Offset over Swarm control.** Adapt clock discovery,
    sampling and policy updates that currently depend on `pg`, `erpc` or
@@ -141,13 +148,13 @@ trusted-cluster code; it is not the current Swarm boundary.
    real WebRTC PCM with production capture stamping pass using a headless output
    sink. Step 8 subsequently verifies sustained buffering, capture recovery and
    production-cadence acquisition across control-session renewal. Native platform
-   output qualification remains step 9.
+   output qualification remains step 10.
 
 8. **Backend end-to-end verification and migration.** Run two-device/one-Desk and
    multi-Desk tests: join, retained membership, revoked Passport, Director/job
    failure, worker crash, reconnect, independent streams, pause/resume,
    clock/Offset updates and backend scheduling boundaries. Use headless runtimes;
-   app launches and physical listening/output evidence belong to step 9.
+   app launches and physical listening/output evidence belong to step 10.
    **Exit:** repeatable scripted backend checks, explicit platform/measurement
    limitations and no remaining dependency on the old cross-device
    Distributed Erlang control path. Obsolete pieces may be retired earlier when
@@ -157,7 +164,7 @@ trusted-cluster code; it is not the current Swarm boundary.
    buffering, clock-instance capture rebind, the actual 20 × 5-second clock window
    across session renewal and earlier membership/job/failure checks. Removed the
    obsolete remote-PID native session and retired the old PCM carrier. Installed
-   app profiles and physical output are explicitly unqualified until step 9.
+   app profiles and physical output are explicitly unqualified until step 10.
 
    **Approved backend follow-ups before step 9 — 8a–8c verified; 8d qualification open:**
 
@@ -195,7 +202,7 @@ trusted-cluster code; it is not the current Swarm boundary.
    framework. Signaling overload must produce a visible failed attempt rather
    than a silently stalled setup. **Exit:** deliberately exercise each supported
    failure path and observe its reason without unbounded diagnostic state or
-   disclosure of credentials/audio payloads. UI presentation follows in step 9.
+   disclosure of credentials/audio payloads. UI presentation follows in step 10.
    **Complete:** bounded owner-local counters/last-error codes, per-transport
    diagnostics and explicit signaling-overload failure. Unit checks cover failure
    reasons, overload, expiry and PCM redaction; supervisor child arguments contain
@@ -229,7 +236,32 @@ trusted-cluster code; it is not the current Swarm boundary.
    These are backend corrections, not new app UI or a new clock algorithm.
    Verification used isolated headless checks; no product app was launched.
 
-9. **Update and verify the applications — macOS, then iOS, then Windows.**
+9. **Implementation Step — Ephemeral Swarms.**
+   Even simpler: no friends list. Just saved contacts and groups. Like a phone's
+   address book. No mutual friendship, approval or synchronization required.
+
+   1. **Create:** Every Swarm is new. Its creator is Captain for its lifetime.
+   2. **Join:** Devices voluntarily join, subscribe and leave. Each controls its
+      own permissions.
+   3. **Remember:** A Device can save participants as contacts or a named group.
+   4. **Invite:** Select contacts or a saved group and invite them into a new Swarm.
+   5. **End:** When the gathering ends, the Swarm disappears. Contacts and groups remain.
+
+   **Architecture:** Swarms are temporary; contacts and groups belong to Devices.
+   No snapshots, elections, mutual friendship requirements or permanent Swarm membership.
+   Use existing OTP components and keep the implementation minimal:
+   - Device-local storage for contacts and groups (`ba_contacts`).
+   - Ephemeral Swarm supervision tree lifecycle: initialized with a fresh random
+     Swarm ID, creator as Captain/authority/Director for its lifetime, clean
+     process teardown on end without persistent Swarm snapshots or durable
+     registry.
+   - Voluntary join, leave, subscribe under local Device Handler control.
+   - Invitation dispatch to saved contacts or groups via Desk mailbox (or QR/URI).
+   **Exit:** scripted core proof: create ephemeral Swarm, invite saved contact/group,
+   admit and play streams, and end the Swarm cleanly. Swarm processes and transient
+   state terminate while device-local contacts and groups persist.
+
+10. **Update and verify the applications — macOS, then iOS, then Windows.**
    Integrate the new runtime and permission/state model into each app in that
    order, with the **same functionality, layout and information hierarchy on
    every platform**. Start with forgotten old Swarms/subscriptions rather than
@@ -275,7 +307,13 @@ trusted-cluster code; it is not the current Swarm boundary.
    and layout. An inconclusive prototype is recorded plainly and does not become
    an unverified production default.
 
-   **Swarm:** show the Swarm name and ID.
+   **Address book (Contacts & Groups):** show saved contacts and named groups.
+   Allow adding contacts by Device ID or invite, organizing into groups, and
+   starting a new Swarm by inviting contacts or a group. No friends list or mutual
+   approval is shown.
+
+   **Swarm:** show the current ephemeral Swarm name, ID, and Captain status.
+   Allow ending (Captain) or leaving (participant) the gathering.
 
    **Graph:** show Device Handlers and their children; the master Swarm clock and
    the time it keeps; the Director with its jobs; and inspectors. Adapt the
@@ -320,24 +358,9 @@ trusted-cluster code; it is not the current Swarm boundary.
    real listening/output-timing evidence. Record actual platform limitations;
    software tests alone do not qualify physical speaker alignment.
 
-10. **Return to an abandoned Swarm.** Establish and implement the lifecycle when
-    every participating OTP runtime has stopped, then a former member returns.
-    A Swarm is a durable logical identity/pointer, independent of its currently
-    running processes; returning to an old Swarm should remain possible. Preserve
-    its identifier and remembered membership rather than silently creating a new
-    Swarm or fork. Distinguish remembering/opening that identity from obtaining
-    current permission to resume operations. Determine what retained metadata,
-    discovery and authority recovery are required when an ordinary member returns
-    before the former authority. Do not turn a stale Passport into authority or
-    reset old revocations merely because no process is online.
-    **Existing foundation:** step 5 persists authority registry, Swarm identity and
-    member Passports; the same authority seed/state reopens that Swarm after a
-    total shutdown. Members currently require that authority online for fresh
-    authorization. This does not yet solve ordinary-member-first recovery.
-    **Exit:** stop all runtimes; verify both authority-first and ordinary-member-first
-    return to the same old Swarm, with explicit dormant/recovering state where
-    needed, no identifier fork, and preserved permissions/revocations. Record
-    authority-loss/state-loss limitations and verify safe recovery behavior.
+    **Former step 10 superseded:** Returning to an abandoned Swarm is removed.
+    Swarms are temporary gatherings; when a gathering ends, the Swarm disappears.
+    Contacts and groups remain on Devices.
 
 ### Scope constraints and immediate milestone
 
@@ -375,7 +398,7 @@ trusted-cluster code; it is not the current Swarm boundary.
   defined in step 1, independently of where a Desk is hosted.
 - Steps 6–8 implement the PCM/Opus collection, authenticated clock/Offset path,
   decoded-audio handoff, bounded sustained buffering and capture recovery.
-  Product apps still require step-9 integration. The migration is not ready for untrusted devices while any required
+  Product apps still require step-10 integration. The migration is not ready for untrusted devices while any required
   discovery, subscription, diagnostics, clock or
   policy operation still crosses a device boundary through OTP distribution.
   Temporary broken consumers do not justify granting untrusted OTP connectivity.
@@ -396,14 +419,14 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Next: **diagnose and resolve the remaining 8d maximum-Offset deadline misses**.
-Then **step 9 — macOS runtime/UI integration**, when requested, including
+Next: **step 9 — Ephemeral Swarms: contacts, groups, and temporary gathering lifecycle**.
+Then **step 10 — macOS runtime/UI integration**, when requested, including
 the combined native-mixing/RTP timing evaluation. Finalize and verify the
 macOS audio boundary before updating iOS, then Windows. No product app is launched
 for the preparatory backend work. Preserve independent packet targets, stored
 Device Identity and the common UI requirements; start updated apps with forgotten
-old Swarms/subscriptions. Abandoned-Swarm recovery remains step 10 and is not a
-prerequisite for the macOS work. Follow-ups 8a–8d are implemented; step 9 has not
-started. App/device listening and physical output timing remain unqualified.
+old Swarms/subscriptions. Former abandoned-Swarm recovery is superseded by
+ephemeral Swarms. Follow-ups 8a–8d are ready; step 9 has not started. App/device
+listening and physical output timing remain unqualified.
 See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),
 [membership](SWARM_MEMBERSHIP.md) and [jobs](SWARM_JOBS.md).
