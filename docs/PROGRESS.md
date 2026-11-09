@@ -40,6 +40,11 @@ after reference restart. The real WebRTC two-source proof also passes using the
 production capture-stamping path, authenticated clock and shared Offset, with
 only the output device replaced by a headless sink. Cadence/window are explicitly
 accelerated in test fixtures; all processes are unnamed and test state isolated.
+The existing two-Desk membership/revocation regression and public WSS status/job
+regression also pass. Public WSS initially failed before authentication; HTTPS,
+verified TLS, raw WebSocket upgrade and an isolated authenticated relay were then
+checked independently, and the full WSS proof passed on retry. The intermittent
+failure's cause is not established.
 
 Limits: same-host/loopback service evidence is not Internet clock asymmetry,
 external UTC accuracy, physical speaker timing or native app verification. The

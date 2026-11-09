@@ -22,7 +22,8 @@ Contracts and separate stream grants are required. Sources may pause or restart
 without removing intent or disturbing another stream. Old singular APIs and
 cross-device PID discovery are retired on this path.
 
-The headless proof uses real WebRTC media with a test clock/output sink. Shared-clock/Offset integration is now step 7. Mixed output currently supports PCM
+The headless proof uses real WebRTC media with either the explicit test clock or
+step 7's authenticated shared clock, and a scheduled output sink. Mixed output supports PCM
 mono/stereo at one shared output rate/reference; native Opus mixing/platform
 handoff remains a backend/app integration gate. No product apps were launched.
 The historical checkpoints below do not provide the active receiver API.

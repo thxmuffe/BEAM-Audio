@@ -276,9 +276,10 @@ formats and stored identities until deliberate compatibility migrations.
   and automatic Director failover are outside this roadmap. A Desk introduces
   devices; membership/revocation policy belongs to the explicit Swarm authority
   defined in step 1, independently of where a Desk is hosted.
-- Step 6 implements independent audio collections; full playback may remain
-  incomplete until step 7 replaces clock/Offset control. The migration is not ready for untrusted
-  devices while any required discovery, subscription, diagnostics, clock or
+- Steps 6–7 implement the PCM collection and authenticated clock/Offset path;
+  complete native playback and sustained buffering remain step-8 integration
+  gates. The migration is not ready for untrusted devices while any required
+  discovery, subscription, diagnostics, clock or
   policy operation still crosses a device boundary through OTP distribution.
   Temporary broken consumers do not justify granting untrusted OTP connectivity.
 - Publisher pause retains subscriptions. Receiver pause retains its subscription
