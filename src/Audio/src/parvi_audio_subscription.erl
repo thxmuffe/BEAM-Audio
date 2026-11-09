@@ -1,4 +1,4 @@
-%% A local, temporary WebRTC PCM endpoint. No remote PIDs or OTP carrier.
+%% A local WebRTC PCM/Opus endpoint. No remote PIDs or OTP carrier.
 -module(parvi_audio_subscription).
 -behaviour(gen_server).
 -export([start_link/1,signal/2,push/3,status/1]).
@@ -10,19 +10,35 @@ start_link(Args) -> gen_server:start_link(?MODULE,Args,[]).
 signal(Pid,P) -> gen_server:cast(Pid,{signal,P}).
 push(Pid,H,PCM) -> gen_server:call(Pid,{push,H,PCM},1000).
 status(Pid) -> gen_server:call(Pid,status).
-init(#{owner := Owner,context := #{deadline := Deadline},role := Role} = Args) ->
+init(#{owner := Owner,context := #{deadline := Deadline},role := Role,descriptor := D} = Args) ->
     process_flag(trap_exit,true),monitor(process,Owner),
     case maps:find(source_pid,Args) of {ok,Source} -> monitor(process,Source);error -> ok end,
     {ok,_} = application:ensure_all_started(ex_webrtc),
+    Opus = maps:get(encoding,D)=:=opus,
     {ok,PC} = ?PC:start_link([{ice_servers,application:get_env(parvi_transport,native_ice_servers,[])},
-                             {video_codecs,[]},{audio_codecs,[]}]),
+                             {video_codecs,[]},{audio_codecs,case Opus of true -> [opus];false -> [] end}]),
+    Extra = case {Opus,Role} of
+        {true,receiver} -> {ok,Decoder} = parvi_audio_opus:open(),#{decoder => Decoder,decoder_ready => false,pc_ready => false};
+        {true,provider} ->
+            Track = 'Elixir.ExWebRTC.MediaStreamTrack':new(audio),{ok,_} = ?PC:add_track(PC,Track),#{track => maps:get(id,Track)};
+        _ -> #{}
+    end,
     monitor(process,PC),erlang:send_after(max(1,Deadline-now_ms()),self(),lease_expired),
     erlang:send_after(10000,self(),setup_timeout),
-    S = Args#{pc => PC,channel => undefined,open => false,remote_ready => false,pending_ice => [],
+    S = (maps:merge(Args,Extra))#{pc => PC,opus => Opus,channel => undefined,open => false,remote_ready => false,pending_ice => [],
               sequence => 0,last_sequence => undefined,received => 0,sent => 0,rejected => 0},
     case Role of provider -> self() ! offer;receiver -> ok end,
     {ok,S}.
 handle_call(status,_,S) -> {reply,maps:with([role,open,received,sent,rejected],S),S};
+handle_call({encoded,Timing,Payload},{Source,_},#{role := provider,source_pid := Source,opus := true,open := true,
+            pc := PC,track := Track,sequence := Seq}=S) ->
+    case live(S) andalso below_limit(PC,256) of
+        true -> case parvi_audio_rtp_time:packet(Payload,Timing,Seq,Seq=:=0) of
+            {ok,RTP} -> ok = ?PC:send_rtp(PC,Track,RTP),{reply,ok,S#{sequence := (Seq+1) band 16#ffff,sent := maps:get(sent,S)+1}};
+            Error -> {reply,Error,S}
+        end;
+        false -> {reply,{error,expired_or_busy},S}
+    end;
 handle_call({push,H,PCM},{Source,_},#{role := provider,source_pid := Source,open := true,
                                    pc := PC,channel := Ref,descriptor := D,sequence := Seq} = S) ->
     case live(S) andalso below_limit(PC,256) of
@@ -42,10 +58,26 @@ handle_cast({signal,P},S) ->
     catch _:_ -> {stop,invalid_media_signal,S} end;
 handle_cast(_,S) -> {noreply,S}.
 handle_info(offer,#{role := provider,pc := PC} = S) ->
-    {ok,#{ref := Ref}} = ?PC:create_data_channel(PC,label(S),[{ordered,false},{max_retransmits,0}]),
+    Ref = case maps:get(opus,S) of
+        false -> {ok,#{ref := Channel}} = ?PC:create_data_channel(PC,label(S),[{ordered,false},{max_retransmits,0}]),Channel;
+        true -> undefined
+    end,
     {ok,Offer} = ?PC:create_offer(PC),ok = ?PC:set_local_description(PC,Offer),
     notify_signal(#{<<"kind">> => <<"signal.offer">>,<<"sdp">> => maps:get(sdp,Offer)},S),
     {noreply,S#{channel := Ref}};
+handle_info({ex_webrtc,PC,{connection_state_change,connected}},#{pc := PC,opus := true}=S) ->
+    {noreply,opus_open(S#{pc_ready => true})};
+handle_info({ex_webrtc,PC,{track,#{kind := audio,id := Id}}},#{pc := PC,opus := true,role := receiver}=S) ->
+    case maps:find(track,S) of error -> {noreply,S#{track => Id}};{ok,Id} -> {noreply,S};_ -> {stop,multiple_audio_tracks,S} end;
+handle_info({ex_webrtc,PC,{rtp,Track,_,Packet}},#{pc := PC,opus := true,role := receiver,track := Track,decoder := Decoder}=S) ->
+    case live(S) andalso byte_size(maps:get(payload,Packet))=<1275 of
+        true ->
+            Encoded = 'Elixir.ExRTP.Packet':encode(Packet#{payload_type := 111}),
+            case parvi_audio_opus:push(Decoder,Encoded) of
+                ok -> {noreply,S};_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+            end;
+        false -> {stop,normal,S}
+    end;
 handle_info({ex_webrtc,PC,{data_channel,#{label := Label,ref := Ref}}},#{pc := PC,role := receiver} = S) ->
     case Label=:=label(S) andalso maps:get(channel,S)=:=undefined of
         true -> {noreply,S#{channel := Ref}};
@@ -82,7 +114,30 @@ handle_info(setup_timeout,#{open := false} = S) -> {stop,setup_timeout,S};
 handle_info(lease_expired,S) -> {stop,normal,S};
 handle_info({'DOWN',_,process,_,_},S) -> {stop,normal,S};
 handle_info({'EXIT',PC,_},#{pc := PC} = S) -> {stop,normal,S};
+handle_info(Message,#{decoder := Decoder}=S) ->
+    case parvi_audio_opus:event(Decoder,Message) of
+        ready -> {noreply,opus_open(S#{decoder_ready := true})};
+        {pcm,RTP,Frames,PCM} ->
+            Module = application:get_env(parvi,audio_clock_adapter,parvi_clock),
+            case {live(S),Module:now(),Module:id()=:=maps:get(clock,maps:get(descriptor,S))} of
+                {true,{ok,Now},true} ->
+                    case parvi_audio_rtp_time:decode(RTP,Now) of
+                        {ok,Time} -> bounded_notify({audio_pcm,self(),#{playback_time => Time,frame_count => Frames,channel_id => 0},PCM},S),
+                            {noreply,S#{received := maps:get(received,S)+1}};
+                        _ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+                    end;
+                _ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+            end;
+        {error,_} -> {noreply,S#{rejected := maps:get(rejected,S)+1}};
+        closed -> {stop,decoder_closed,S};
+        ignore -> {noreply,S}
+    end;
 handle_info(_,S) -> {noreply,S}.
+opus_open(#{role := receiver,decoder_ready := true,pc_ready := true,open := false}=S) ->
+    maps:get(owner,S) ! {audio_transport,self(),open},S#{open := true};
+opus_open(#{role := provider,open := false}=S) ->
+    maps:get(owner,S) ! {audio_transport,self(),open},S#{open := true};
+opus_open(S) -> S.
 incoming_signal(#{<<"kind">> := <<"signal.offer">>,<<"sdp">> := SDP},#{role := receiver,remote_ready := false,pc := PC} = S) ->
     ok = ?PC:set_remote_description(PC,?SD:from_json(#{<<"type">> => <<"offer">>,<<"sdp">> => SDP})),
     {ok,Answer} = ?PC:create_answer(PC),ok = ?PC:set_local_description(PC,Answer),
@@ -103,7 +158,9 @@ bounded_notify(Message,#{owner := Owner}) ->
 label(#{subscription := Id,attempt := Attempt}) -> <<"parvi-audio/v2/",Id/binary,"/",Attempt/binary>>.
 live(#{context := #{deadline := Deadline}}) -> now_ms()<Deadline.
 now_ms() -> erlang:monotonic_time(millisecond).
-terminate(_,#{pc := PC}) -> try ?PC:close(PC) catch _:_ -> ok end,ok.
+terminate(_,#{pc := PC}=S) ->
+    case maps:find(decoder,S) of {ok,D} -> parvi_audio_opus:close(D);error -> ok end,
+    try ?PC:close(PC) catch _:_ -> ok end,ok.
 
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([role,open,received,sent,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).
 

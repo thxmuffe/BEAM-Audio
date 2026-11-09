@@ -19,9 +19,8 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–5 complete; step 6 provides the headless PCM collection/mixer proof;
-step 7 provides authenticated Time and Offset; next: step 8 — backend integration
-and verification.** The
+**Steps 1–8 complete for the headless backend; next: step 9 — update macOS,
+then Windows, then iOS with the common UI below.** The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
 `swarm_control` runtime now provides signed, bounded status messaging through the
@@ -36,8 +35,10 @@ not arbitrary remote execution or app migration:
 existing app bundles still use the older trusted OTP control path.
 Mac-to-iPhone playback and retained subscription intent have user-reported
 working evidence. The old single receive slot is replaced on the headless path by [independent PCM
-subscriptions and mixing](SWARM_STREAMS.md). Native Opus decoded-audio handoff/mixing
-is not integrated there yet and remains an explicit backend/app acceptance gate.
+subscriptions and mixing](SWARM_STREAMS.md). Native Opus decoded-audio handoff now
+feeds that same mixer through the authenticated stream boundary. Sustained PCM,
+full-range virtual buffering and clock/capture recovery checks pass; see the
+[repeatable backend checks and limits](../tests/control/README.md).
 Windows per-packet schedule execution and physical output alignment remain unverified/incomplete.
 Migration may temporarily break apps, connections and playback; the user accepts
 this. Do not add a parallel legacy stack or compatibility shims just to keep the
@@ -148,8 +149,8 @@ formats and stored identities until deliberate compatibility migrations.
    A real two-publisher media proof uses a test clock/sink, including receiver
    restart without restored Contracts. Concurrent output requires one common rate
    and clock; incompatible output is explicit and does not remove its subscription.
-   Native Opus handoff/mixing is still required before complete backend/app acceptance;
-   this increment does not qualify the old native engine as a mixed output.
+   Step 8 subsequently integrates native Opus decoded-audio handoff into this mixer;
+   native platform output remains step 9.
 
 7. **Time and Playback Offset over Swarm control.** Adapt clock discovery,
    sampling and policy updates that currently depend on `pg`, `erpc` or
@@ -163,8 +164,9 @@ formats and stored identities until deliberate compatibility migrations.
    **Implemented:** [Time/Offset](SWARM_TIME.md), retaining existing timestamp
    measurement, median and slew policy. Two-Desk authority/reconnect checks and
    real WebRTC PCM with production capture stamping pass using a headless output
-   sink. Native output qualification and complete buffering/capture recovery
-   remain step-8 gates.
+   sink. Step 8 subsequently verifies sustained buffering, capture recovery and
+   production-cadence acquisition across control-session renewal. Native platform
+   output qualification remains step 9.
 
 8. **Backend end-to-end verification and migration.** Run two-device/one-Desk and
    multi-Desk tests: join, retained membership, revoked Passport, Director/job
@@ -175,6 +177,12 @@ formats and stored identities until deliberate compatibility migrations.
    limitations and no remaining dependency on the old cross-device
    Distributed Erlang control path. Obsolete pieces may be retired earlier when
    their replacements are verified; keeping old apps working is not a gate.
+   **Complete for the headless backend:** [repeatable checks](../tests/control/README.md)
+   cover real PCM/Opus mixing, continuous 1000 ms scheduling, full 30-second virtual
+   buffering, clock-instance capture rebind, the actual 20 × 5-second clock window
+   across session renewal and earlier membership/job/failure checks. Removed the
+   obsolete remote-PID native session and retired the old PCM carrier. Installed
+   app profiles and physical output are explicitly unqualified until step 9.
 
 9. **Update and verify the applications — macOS, then Windows, then iOS.**
    Integrate the new runtime and permission/state model into each app in that
@@ -223,7 +231,9 @@ formats and stored identities until deliberate compatibility migrations.
    **Exit:** all three apps expose this same layout and behavior, with immediate
    audio actions, automatic eligible work, scoped exclusions, visible clock/jobs/
    inspectors and reachable Passport details. App/device checks establish join/
-   rejoin, authorized jobs, independent streams, pause/resume, clock/Offset and
+   rejoin, authorized jobs, independent streams, pause/resume, clock/Offset,
+   automatic eligible peer reconnection, sustained playback across control-session
+   renewal at the chosen Offsets, and
    real listening/output-timing evidence. Record actual platform limitations;
    software tests alone do not qualify physical speaker alignment.
 
@@ -276,9 +286,9 @@ formats and stored identities until deliberate compatibility migrations.
   and automatic Director failover are outside this roadmap. A Desk introduces
   devices; membership/revocation policy belongs to the explicit Swarm authority
   defined in step 1, independently of where a Desk is hosted.
-- Steps 6–7 implement the PCM collection and authenticated clock/Offset path;
-  complete native playback and sustained buffering remain step-8 integration
-  gates. The migration is not ready for untrusted devices while any required
+- Steps 6–8 implement the PCM/Opus collection, authenticated clock/Offset path,
+  decoded-audio handoff, bounded sustained buffering and capture recovery.
+  Product apps still require step-9 integration. The migration is not ready for untrusted devices while any required
   discovery, subscription, diagnostics, clock or
   policy operation still crosses a device boundary through OTP distribution.
   Temporary broken consumers do not justify granting untrusted OTP connectivity.
@@ -299,12 +309,12 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Resume at step 8: integrate and verify the complete backend path, including native
-Opus decoded-audio handoff/mixing, sustained buffering over the committed Offset
-range, automatic publication/capture rebind after clock-instance changes, remaining
-old native logging/control dependencies and platform scheduling boundaries. Time
-and revisioned Offset now use restricted Swarm messages; preserve independent
-packet targets and subscriptions. Do not launch product apps or restore old
-Swarms. The revised common UI remains step 9; abandoned-Swarm recovery is step 10.
+Resume at step 9: integrate the verified backend into macOS first, then Windows,
+then iOS, with the common UI and immediate audio actions specified above. Package
+and verify native decoding/capture/output and record actual listening/timing limits.
+Time, Offset and media control now use restricted Swarm messages; preserve
+independent packet targets and subscriptions. No product apps were launched during
+step 8; build/install/launch belongs to the explicit app phase. Start with forgotten
+old Swarms/subscriptions. Abandoned-Swarm recovery remains step 10.
 See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),
 [membership](SWARM_MEMBERSHIP.md) and [jobs](SWARM_JOBS.md).

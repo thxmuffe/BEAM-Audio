@@ -1,5 +1,15 @@
 # Parvi chat: first prototype step
 
+## Verified Swarm backend — step 8
+
+The headless `swarm_control` profile now provides the verified membership/job,
+PCM/Opus collection and authenticated clock/Offset path, with no old cross-device
+OTP control dependency. Step 8 fixes ordinary session renewal resetting the clock
+window, adds bounded buffering over the Offset range and capture rebind after
+reference restart, and integrates native decoded audio into the shared mixer.
+Existing clock math and per-packet targets are preserved. See
+[repeatable checks and platform limits](../../tests/control/README.md).
+Product apps remain unmigrated; step 9 starts with macOS, then Windows, then iOS.
 
 ## Shared Time and Offset — step 7
 
@@ -9,7 +19,8 @@ single Offset writer. Explicit time_read/offset_write grants, fresh four-timesta
 samples and existing median/slew policy gate scheduling. Capture stamps from one
 current clock/Offset snapshot; cached policy is not a local override. The real
 WebRTC PCM proof now also runs with this shared clock and a headless output sink.
-Native Opus/mixing, sustained buffering and platform output remain step-8/9 gates.
+Step 8 verifies native decoded-audio mixing and sustained buffering; platform
+capture/output and physical timing remain step-9 gates.
 The revised shared app UI is specified in step 9; abandoned-Swarm return is step 10.
 
 
@@ -24,8 +35,8 @@ cross-device PID discovery are retired on this path.
 
 The headless proof uses real WebRTC media with either the explicit test clock or
 step 7's authenticated shared clock, and a scheduled output sink. Mixed output supports PCM
-mono/stereo at one shared output rate/reference; native Opus mixing/platform
-handoff remains a backend/app integration gate. No product apps were launched.
+mono/stereo at one shared output rate/reference; Opus now decodes to that same
+mixer in step 8. Platform output remains step 9. No product apps were launched.
 The historical checkpoints below do not provide the active receiver API.
 
 > **Reading status — 2026-11-08:** This guide describes the existing runtime and

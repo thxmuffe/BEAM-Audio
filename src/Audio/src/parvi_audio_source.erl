@@ -14,10 +14,24 @@ handle_call({attach,Pid},{Receiver,_},#{sessions := Sessions} = S) ->
         true -> Ref = monitor(process,Pid),{reply,ok,S#{sessions := Sessions#{Ref => Pid}}};
         false -> {reply,{error,unauthorized_or_full},S}
     end;
+handle_call({rebind,Clock},{Owner,_},#{owner := Owner,offer := #{profiles := #{channel := D}}=Offer,sessions := Sessions}=S)
+        when is_binary(Clock),byte_size(Clock)>0,byte_size(Clock)=<128 ->
+    %% The receiver owns endpoint shutdown and sends the scoped close first.
+    maps:foreach(fun(Ref,_) -> demonitor(Ref,[flush]) end,Sessions),
+    Inc = binary:encode_hex(crypto:strong_rand_bytes(16)),
+    Next = Offer#{profiles := #{channel => D#{clock := Clock}}},
+    parvi_audio_receiver ! {publication_rebound,self(),Next#{source_key => maps:get(source_key,S),incarnation => Inc}},
+    {reply,ok,S#{offer := Next,incarnation := Inc,sessions := #{}}};
 handle_call({pause,B},{Owner,_},#{owner := Owner,offer := Offer} = S) when is_boolean(B) ->
     parvi_audio_receiver ! {publication_state,self(),B},
     {reply,ok,S#{offer := Offer#{paused := B}}};
-handle_call({push,channel,H,PCM},{Owner,_},#{owner := Owner,offer := #{paused := false,profiles := #{channel := D}},sessions := Sessions} = S) ->
+handle_call({push_encoded,Timing,Packet},{Owner,_},
+            #{owner := Owner,offer := #{paused := false,profiles := #{channel := #{encoding := opus}}},sessions := Sessions}=S)
+        when is_map(Timing),is_binary(Packet),byte_size(Packet)=<1275 ->
+    Replies = [{Pid,try gen_server:call(Pid,{encoded,Timing,Packet},1000) catch exit:_ -> {error,closed} end}
+        || Pid <- maps:values(Sessions)],{reply,{ok,Replies},S};
+handle_call({push_encoded,_,_},_,#{offer := #{paused := true}}=S) -> {reply,{ok,[]},S};
+handle_call({push,channel,H,PCM},{Owner,_},#{owner := Owner,offer := #{paused := false,profiles := #{channel := #{encoding := pcm}=D}},sessions := Sessions} = S) ->
     Valid = case is_binary(PCM) andalso byte_size(PCM) div parvi_audio_packet:frame_bytes(D)=<4096 of
         true -> parvi_audio_packet:validate_block(channel,D,H#{sequence => 0},PCM);
         false -> {error,block_too_large}

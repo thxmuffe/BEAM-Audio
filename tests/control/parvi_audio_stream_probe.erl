@@ -34,6 +34,18 @@ command(#{<<"op">> := <<"audio_restart_receiver">>}) ->
 command(#{<<"op">> := <<"audio_snapshot">>}) -> parvi_audio_receiver:snapshot();
 command(#{<<"op">> := <<"audio_output">>}) -> #{blocks => [R || {_,R} <- ets:tab2list(parvi_audio_test_output)]};
 command(#{<<"op">> := <<"audio_clear_output">>}) -> ets:delete_all_objects(parvi_audio_test_output),#{ok => true};
+command(#{<<"op">> := <<"publish_opus">>,<<"source">> := Key,<<"fixture">> := File}) ->
+    D = #{encoding => opus,sample_format => opus,sample_rate => 48000,channel_count => 2,clock => clock_id(),
+        stream_handler => webrtc_audio_opus,rtp_timestamp_semantics => global_playback_48k_v1},
+    {ok,Data} = file:read_file(File),put(opus_fixture,fixture(Data,[])),
+    case parvi_audio:publish(#{source_key => Key,name => Key,profiles => #{channel => D}},self()) of
+        {ok,Pid} -> put({source,Key},Pid),put({descriptor,Key},D),#{ok => true};Error -> result(Error)
+    end;
+command(#{<<"op">> := <<"push_opus">>,<<"source">> := Key,<<"target_ns">> := Target,<<"index">> := Index}) ->
+    Timing = #{continuous => true,presentation => #{target_output_time_ns => Target}},
+    case gen_server:call(get({source,Key}),{push_encoded,Timing,lists:nth(Index+1,get(opus_fixture))}) of
+        {ok,Replies} -> #{ok => true,deliveries => length([ok || {_,ok} <- Replies])};Error -> result(Error)
+    end;
 command(#{<<"op">> := <<"publish">>,<<"source">> := Key,<<"format">> := F,<<"channels">> := Channels}) ->
     Format = format(F),
     D = #{encoding => pcm,sample_format => Format,sample_rate => 48000,channel_count => Channels,clock => clock_id()},
@@ -48,6 +60,7 @@ command(#{<<"op">> := <<"capture_source">>,<<"source">> := Key,<<"capture_ns">> 
     {ok,Mono} = parvi_clock:to_monotonic(Capture),
     Input = (parvi_audio_input:new())#{descriptor => D,source => get({source,Key}),handler => parvi_audio_stream_handler_legacy},
     Next = parvi_audio_input:captured(PCM,Mono,Input),
+    put({descriptor,Key},maps:get(descriptor,Next)),
     #{ok => true,blocks => maps:get(blocks,Next),send_errors => maps:get(send_errors,Next)};
 command(#{<<"op">> := <<"push_source">>,<<"source">> := Key,<<"target_ns">> := Target,<<"value">> := Value,<<"frames">> := Frames}) ->
     PCM = pcm(Key,Value,Frames),
@@ -87,3 +100,6 @@ pcm(Key,Value,Frames) ->
         float32_le -> <<Value:32/little-float>>;
         pcm16_le -> <<(round(Value*32768)):16/little-signed>>
     end,binary:copy(Sample,Frames*maps:get(channel_count,D)).
+
+fixture(<<>>,Acc) -> lists:reverse(Acc);
+fixture(<<Size:32,Packet:Size/binary,Rest/binary>>,Acc) -> fixture(Rest,[Packet|Acc]).

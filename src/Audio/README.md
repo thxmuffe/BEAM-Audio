@@ -1,5 +1,22 @@
 # Audio runtime and platform adapters
 
+## Backend integration — step 8
+
+The [current stream path](../../docs/SWARM_STREAMS.md) supports PCM and explicit
+Opus audio tracks through the same signed catalogue/subscription/SDP boundary.
+GStreamer decodes Opus into the Erlang mixer, retaining each packet's own target;
+native platform output and decoder packaging remain step 9. Bounded binary queues
+cover the 30-second Offset in virtual time; continuous PCM at 1000 ms and automatic
+capture rebind after clock restart pass. Ordinary session renewal now retains the
+same fresh reference's observations while requiring a fresh authorized sample;
+the actual 20 × 5-second clock acquisition passes across the 60-second renewal.
+Existing clock/filter/slew and packet-target calculations are preserved.
+
+[Backend check commands](../../tests/control/README.md) document the locally
+configured GStreamer helper, real native codec proof, 107 focused unit checks and
+platform/measurement limits. No product app or audio device was opened. The old
+remote-PID native session is removed; the historical app/engine notes below are
+not the new backend API. Next: step 9, macOS then Windows then iOS.
 
 ## Shared Time and Offset — step 7
 
@@ -9,7 +26,8 @@ single Offset writer. Explicit time_read/offset_write grants, fresh four-timesta
 samples and existing median/slew policy gate scheduling. Capture stamps from one
 current clock/Offset snapshot; cached policy is not a local override. The real
 WebRTC PCM proof now also runs with this shared clock and a headless output sink.
-Native Opus/mixing, sustained buffering and platform output remain step-8/9 gates.
+Step 8 verifies native decoded-audio mixing and sustained buffering; platform
+capture/output and physical timing remain step-9 gates.
 The revised shared app UI is specified in step 9; abandoned-Swarm return is step 10.
 
 
@@ -24,8 +42,8 @@ cross-device PID discovery are retired on this path.
 
 The headless proof uses real WebRTC media with either the explicit test clock or
 step 7's authenticated shared clock, and a scheduled output sink. Mixed output supports PCM
-mono/stereo at one shared output rate/reference; native Opus mixing/platform
-handoff remains a backend/app integration gate. No product apps were launched.
+mono/stereo at one shared output rate/reference; Opus now decodes to that same
+mixer in step 8. Platform output remains step 9. No product apps were launched.
 The historical checkpoints below do not provide the active receiver API.
 
 > **Reading status — 2026-11-08:** This guide includes historical implementation

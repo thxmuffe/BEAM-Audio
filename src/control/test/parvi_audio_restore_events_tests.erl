@@ -17,6 +17,18 @@ restore_requires_fresh_clock_and_local_contract_test() ->
         {noreply,_} = parvi_audio_receiver:handle_info(tick,S#{suspended := true}),no_attempt()
     end).
 no_attempt() -> receive {attempt,_,_} -> error(unexpected_attempt) after 0 -> ok end.
+
+missing_opus_backend_keeps_intent_without_starting_transport_test() ->
+    Saved = os:getenv("PARVI_GSTREAMER_PCM_HELPER"),os:unsetenv("PARVI_GSTREAMER_PCM_HELPER"),
+    try fixture(fun(S,Id) ->
+        put(test_clock,#{state => synchronized,filter_ready => true,last_sync => 101,age_ns => 0}),
+        Offers = maps:map(fun(_,O) -> O#{profiles := #{channel => #{encoding => opus}}} end,maps:get(offers,S)),
+        {noreply,Next} = parvi_audio_receiver:handle_info(tick,S#{offers := Offers}),
+        ?assertMatch(#{state := waiting_for_backend,error := opus_decoder_unavailable,session := undefined},
+            maps:get(Id,maps:get(subscriptions,Next))),no_attempt()
+    end) after
+        case Saved of false -> os:unsetenv("PARVI_GSTREAMER_PCM_HELPER");_ -> os:putenv("PARVI_GSTREAMER_PCM_HELPER",Saved) end
+    end.
 fixture(Fun) ->
     I = parvi_audio_subscription_intent_tests:intent(<<"music">>),Id = maps:get(id,I),Peer = maps:get(device,I),
     Context = #{peer => Peer,session => binary:copy(<<"D">>,32),swarm => maps:get(swarm,I),deadline => erlang:monotonic_time(millisecond)+10000},

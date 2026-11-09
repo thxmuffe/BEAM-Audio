@@ -22,7 +22,7 @@ open(Name, Descriptor0) ->
     Ref = monitor(process, Source),
     event(audio_started, <<"[Audio] ", Name/binary, " is available for subscription.">>),
     (new())#{state := running, source := Source, source_monitor => Ref,
-             handler => Handler, descriptor => Descriptor}.
+             handler => Handler,name => Name, descriptor => Descriptor}.
 
 captured(<<>>, _, S) -> S;
 captured(PCM, Mono, #{descriptor := #{sample_format := Encoding} = Descriptor, handler := Handler} = S) ->
@@ -43,6 +43,9 @@ captured(PCM, Mono, #{descriptor := #{sample_format := Encoding} = Descriptor, h
                           send_errors := maps:get(send_errors, S) + Errors};
                 false -> Next#{skipped_frames := maps:get(skipped_frames, S) + Frames}
             end;
+        {ok,#{clock := Clock}} ->
+            ok = parvi_audio:rebind(maps:get(source,S),Clock),
+            captured(PCM,Mono,S#{descriptor := Descriptor#{clock := Clock}});
         _ -> Next#{state := waiting_for_clock, skipped_frames := maps:get(skipped_frames, S) + Frames}
     end.
 
@@ -50,7 +53,7 @@ send_blocks(<<>>, _, _, _) -> {0, 0};
 send_blocks(PCM, Time, Offset, #{descriptor := #{sample_rate := Rate} = Descriptor,
                                 source := Source, handler := Handler} = S) ->
     Frame = Handler:frame_bytes(Descriptor),
-    Max = Handler:max_payload_bytes(channel),
+    Max = min(Handler:max_payload_bytes(channel),4096*Frame),
     Size = min(byte_size(PCM), (Max div Frame) * Frame),
     <<Block:Size/binary, Rest/binary>> = PCM,
     {ok, Results} = parvi_audio:push(Source, channel,
@@ -80,5 +83,7 @@ close(S) ->
         undefined -> ok;
         Source -> try parvi_audio:unpublish(Source) catch exit:_ -> ok end
     end.
-event(audio_error, Text) -> parvi_chat:system(error, audio_error, Text, #{});
-event(Kind, Text) -> parvi_chat:system(Kind, Text, #{}).
+event(Kind,Text) ->
+    Level = case Kind of audio_error -> error;_ -> info end,
+    logger:log(Level,"~ts",[Text],#{domain => [parvi,audio],event => Kind}),
+    parvi_events:notify(audio_input).

@@ -128,7 +128,7 @@ handle_call(resync,_,#{role := authority} = S) ->
     D = maps:get(clock,S),
     {reply,ok,save(S#{blocked := false,next_external := Due,clock := D#{confirmed := false}})};
 handle_call(resync,_,S) ->
-    {reply,ok,save(invalidate(S#{sample_due := now_ms(),offset_due := now_ms()}))};
+    {reply,ok,save(reset_filter(invalidate(S#{sample_due := now_ms(),offset_due := now_ms()})))};
 handle_call(_,_,S) -> {reply,{error,invalid_request},S}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info(tick,S0) ->
@@ -179,7 +179,7 @@ scope({Swarm,Authority}=Scope,Role,S) ->
     Saved = parvi_cluster_store:load(Name,undefined),
     P = case Saved of #{swarm := Swarm,authority := Authority,policy := Policy} -> parvi_swarm_time_protocol:state(Policy),Policy;_ -> Default end,
     case Role of authority -> checkpoint(Name,Scope,P);member -> ok end,
-    Next = invalidate(S),D = maps:get(clock,Next),
+    Next = reset_filter(invalidate(S)),D = maps:get(clock,Next),
     Next#{scope := Scope,clock := D#{offset := P,offset_until := undefined}}.
 follow(#{view := V} = S) ->
     case lists:member(<<"time_read">>,maps:get(local_permissions,V,[])) of
@@ -375,7 +375,7 @@ expire(#{pending := Pending}=S) ->
     end.
 invalidate(S) ->
     maps:foreach(fun(_,P) -> answer(P,{error,unconfirmed}) end,maps:get(pending,S)),
-    D = maps:get(clock,S),reset_filter(S#{pending := #{},clock := D#{confirmed := false,offset_until := undefined}}).
+    D = maps:get(clock,S),S#{pending := #{},clock := D#{confirmed := false,offset_until := undefined}}.
 reset_filter(#{clock := D}=S) ->
     S#{filter := parvi_clock_filter:new(maps:get(filter_required_samples,D)),filter_reference := undefined,filter_last_slot := undefined,
        clock := D#{filter_ready := false,filter_sample_count := 0}}.

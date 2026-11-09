@@ -1,5 +1,60 @@
 # Progress
 
+## 2026-11-09 — Step 8: headless backend integration and verification
+
+Integrated Opus publications into the same authenticated catalogue, local Contracts,
+subscription attempts and signed SDP/ICE boundary as PCM. Independent ExWebRTC
+audio tracks carry existing per-packet global RTP targets. A locally configured
+approved GStreamer binding performs jitter/decode and exact post-jitter RTP PTS
+to decoded PTS association; Erlang resolves each packet's target and mixes its
+decoded PCM through the shared scheduled output. No inferred target for unmapped
+or GAP output, no codec algorithm rewrite and no silent PCM transport fallback.
+Missing decoder configuration retains intent with an explicit backend-unavailable
+state. The old remote-PID native session is removed and the old PCM distribution
+carrier is retired. Existing native engine experiments remain isolated from this
+backend; historical app profiles await step 9.
+
+Replaced the 32-block/one-second PCM queue bound with binary-backed ordered queues:
+4096 blocks per input, 8192 blocks/32 MiB PCM shared budget and 31-second admission
+lead. Overlap/late/overload rejection, independent targets, gain and clipping remain.
+PCM capture and the Mac Opus adapter rebind stable source keys to fresh publication
+incarnations after valid clock-instance changes. Scoped closes remove old endpoints
+and buffered output before retained subscriptions reconnect. Capture logging now
+uses local events/logger without requiring legacy chat.
+
+Fixed a default-cadence integration bug: resetting the follower's entire median
+window at every 60-second control renewal prevented 20 × 5-second acquisition.
+Ordinary reauthorization retains observations of the same fresh reference but
+invalidates readiness until a fresh sample. Changed/stale reference, scope change,
+explicit resync and process restart still clear observations. Existing timestamp,
+filter, mapping/slew and per-packet target arithmetic are unchanged.
+
+Validation: warnings-as-errors compilation and **107 focused EUnit checks pass**.
+This includes two fully buffered 30-second sources drained at exact virtual targets
+(23,040,000 PCM bytes), native decoded-block/descriptor boundaries and explicit
+missing-backend behavior. Older native timing test fixtures were updated to provide
+the current clock readiness contract; their expected calculations remain unchanged.
+Real two-publisher WebRTC PCM passes four seconds of continuous capture at the
+default 1000 ms Offset without mixer drops, queue drain and automatic recovery
+after master-clock restart. Real GStreamer-encoded/decoded Opus passes two-source
+mixing at packet targets and independent lifecycle/permission tests. Both use the
+authenticated production clock with a test-only output sink. The actual default
+20 × 5-second acquisition also passes across the 60-second session renewal.
+Two-Desk membership/revocation and the public WSS Director/job/Worker failure
+regressions pass. [Repeatable commands and evidence limits](../tests/control/README.md).
+
+Limits: these are headless same-host proofs, not Internet asymmetry, external UTC,
+physical speaker timing, native capture/content-delay qualification or real-time
+30-second network playback. Media attempts still expire with authorization and
+reject targets extending past their lease; gap-free playback across session
+renewal and general automatic eligible peer reconnection remain app integration
+checks in step 9. Platform decoder packaging and native capture/output execution
+also remain step 9. No app was launched, built, installed or deployed, and no
+audio hardware opened. The new backend has no old cross-device OTP dependency;
+unmigrated product profiles are not evidence for the new boundary. Next: **step 9,
+macOS first, then Windows, then iOS**, preserving the recorded common UI requirements.
+Abandoned-Swarm/member-first recovery remains step 10.
+
 
 ## 2026-11-09 — Step 7: authenticated shared Time and revisioned Offset
 

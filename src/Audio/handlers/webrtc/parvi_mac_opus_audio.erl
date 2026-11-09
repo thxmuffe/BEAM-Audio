@@ -32,14 +32,14 @@ handle_cast(_, S) -> {noreply, S}.
 handle_info({Port, {data, <<1, Metadata/binary>>}}, #{port := Port} = S) ->
     Format = parvi_core_audio:format(Metadata),
     Descriptor = #{encoding => opus, sample_format => opus, sample_rate => 48000,
-        channel_count => 2, clock => <<"native_webrtc_audio_comparison">>,
+        channel_count => 2, clock => parvi_clock:id(),
         stream_handler => webrtc_audio_opus,
         rtp_timestamp_semantics => parvi_audio_rtp_time:semantics(),
         presentation_stream_id => maps:get(stream_id,maps:get(presentation_state,S))},
     {ok, Source} = parvi_audio:publish(#{source_key => <<"default-output">>,name => <<"Mac output - Opus / NetEq comparison">>,
         profiles => #{channel => Descriptor}}, self()),
     {noreply, read(S#{state := running, source => Source, source_monitor => monitor(process, Source),
-        capture_format => Format, format => #{rate => 48000, channels => 2}, handler => <<"webrtc_audio_opus">>})};
+        source_clock => parvi_clock:id(),capture_format => Format, format => #{rate => 48000, channels => 2}, handler => <<"webrtc_audio_opus">>})};
 handle_info({Port, {data, <<8, Host:64/little, Position:64/little-float,
                           Dropped:64/little, Flags:32/little, _Buffers:32/little, Frames:32/little, OutputPosition:64/little>>}},
             #{port := Port, capture_format := Format, capture_timing := Timing} = S) ->
@@ -71,8 +71,10 @@ handle_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
     end,
     {Header,Presentation} = parvi_audio_presentation:stamp(CaptureHeader,
         Delay,ClockTimeline,maps:get(presentation_state,S)),
-    ok = gen_server:call(Source, {push_encoded, Header, Packet}),
-    {noreply, S#{frames := maps:get(frames,S)+960, blocks := maps:get(blocks,S)+1,
+    NewClock = case ClockTimeline of undefined -> maps:get(source_clock,S);_ -> ClockTimeline end,
+    case NewClock=:=maps:get(source_clock,S) of true -> ok;false -> ok = parvi_audio:rebind(Source,NewClock) end,
+    {ok,_} = gen_server:call(Source, {push_encoded, Header, Packet}),
+    {noreply, S#{source_clock := NewClock,frames := maps:get(frames,S)+960, blocks := maps:get(blocks,S)+1,
                 timeline => Header, presentation_state := Presentation}};
 handle_info({Port, {data, <<4>>}}, #{port := Port} = S) ->
     erlang:send_after(10,self(),read), {noreply,S};
@@ -88,7 +90,8 @@ handle_info({Port, {data, <<5, Host:64/little>>}},
     end,
     {noreply,Next};
 handle_info({Port, {data, <<3, _Code:32/little-signed, Text/binary>>}}, #{port := Port} = S) ->
-    parvi_chat:system(error,audio_error,<<"[Audio] Opus capture: ",Text/binary>>,#{}),
+    logger:error("Opus capture failed: ~ts",[Text],#{domain => [parvi,audio]}),
+    parvi_events:notify(audio_input),
     {stop, {capture_failed, Text}, S};
 handle_info({Port, {exit_status, Code}}, #{port := Port} = S) -> {stop, {capture_exit, Code}, S};
 handle_info({'DOWN', Ref, process, _, _}, #{source_monitor := Ref} = S) -> {stop, normal, S};

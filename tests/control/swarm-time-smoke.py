@@ -1,5 +1,6 @@
 """Authenticated clock and revisioned Offset through two independent Desks; no apps."""
 import concurrent.futures
+import argparse
 import importlib.util
 import shutil
 import socket
@@ -14,8 +15,8 @@ def load(name,path):
 control=load('control',HERE/'swarm-control-smoke.py')
 relay=load('relay',HERE.parent/'ReceptionDesk/relay-smoke.py');relay.ERL=Path(shutil.which('erl'))
 
-def clock(r,predicate):
-    deadline=time.monotonic()+20
+def clock(r,predicate,timeout=20):
+    deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
         s=r.request('clock_snapshot')
         if predicate(s):return s
@@ -26,6 +27,9 @@ def ready(r):return clock(r,lambda s:s['state']=='synchronized' and s['offset_po
 def policy(r,revision):return clock(r,lambda s:s['offset_policy']['ready'] and s['offset_policy']['revision']==revision)
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--production-cadence',action='store_true',help='Acquire the default 20x5s window across the 60s session renewal')
+    args=parser.parse_args()
     root=control.ROOT;paths=list((root/'builds/intermediates/control/default/lib').glob('*/ebin'))
     out=root/'builds/intermediates/swarm-control-check';out.mkdir(parents=True,exist_ok=True)
     subprocess.run([shutil.which('erlc'),'-Werror','-o',str(out),str(HERE/'parvi_swarm_control_probe.erl')],check=True)
@@ -37,7 +41,8 @@ def main():
         desks.extend(relay.start_desk(p) for p in ports)
         urls=[f'ws://127.0.0.1:{p}/relay/v1' for p in ports]
         a,b,c=[control.Runtime([out,*paths]) for _ in range(3)];runtimes.extend((a,b,c))
-        for r in runtimes:assert r.request('clock_prepare',interval_ms=100,samples=3)['ok']
+        if not args.production_cadence:
+            for r in runtimes:assert r.request('clock_prepare',interval_ms=100,samples=3)['ok']
         assert a.request('create',desks=urls)['ok']
         control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
         for i,r in enumerate((b,c)):
@@ -46,6 +51,16 @@ def main():
             assert r.request('clock_snapshot')['state']!='synchronized','membership must not imply time access'
         assert a.request('grant',peer=b.identity['id'],permissions=['offset_write','time_read'])['ok']
         assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
+        if args.production_cadence:
+            start=time.monotonic()
+            states=[clock(r,lambda s:s['state']=='synchronized' and s['offset_policy']['ready'],120) for r in runtimes]
+            assert time.monotonic()-start>=90,'Production window was not exercised'
+            assert all(s['sample_interval_ms']==5000 and s['filter_required_samples']==20 for s in states)
+            assert all(s['filter_sample_count']==20 for s in states[1:]),states
+            assert len({s['timeline'] for s in states})==1
+            assert all(r.request('snapshot')['nodes']==[] for r in runtimes)
+            print('PASS: production 20x5s clock acquisition across 60s control-session renewal; same reference, no OTP distribution or apps')
+            return
         states=[ready(r) for r in runtimes]
         timeline=states[0]['timeline'];assert all(s['timeline']==timeline for s in states)
         assert all(s['offset_policy']['offset_ms']==1000 for s in states)

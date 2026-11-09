@@ -47,3 +47,26 @@ queued_audio_is_discarded_at_its_own_authorization_deadline_test() ->
     {noreply,Next} = parvi_audio_mixer:handle_info(render,S),
     ?assertEqual(undefined,maps:get(mix,Next)),?assertEqual(#{},maps:get(descriptors,Next)),
     ?assertEqual(authorization_expired,maps:get(last_error,Next)).
+
+full_offset_two_source_buffer_test_() -> {timeout,30,fun() ->
+    %% Thirty seconds, two 20ms sources: virtual time avoids hardware/timer claims.
+    PCM = binary:copy(<<0.25:32/little-float>>,1920),D = descriptor(float32_le,2),
+    Mix = lists:foldl(fun(N,S) ->
+        H = header(1000000000+N*20000000,960),
+        {ok,A} = parvi_audio_mix:push(a,D,H,PCM,0,S),
+        {ok,B} = parvi_audio_mix:push(b,D,H,PCM,0,A),B
+    end,new(),lists:seq(0,1499)),
+    Snap = parvi_audio_mix:snapshot(Mix),
+    ?assertEqual(23040000,maps:get(queued_bytes,Snap)),
+    ?assert(maps:get(queued_bytes,Snap)<maps:get(max_bytes,Snap)),
+    Done = drain(Mix,48000,0),
+    ?assertEqual(0,maps:get(queued_bytes,parvi_audio_mix:snapshot(Done)))
+end}.
+drain(Mix,Rate,N) ->
+    case parvi_audio_mix:take(960,Mix) of
+        empty -> ?assertEqual(1440000,N),Mix;
+        {H,PCM,Next} ->
+            ?assertEqual(1000000000+(N*1000000000 div Rate),maps:get(playback_time,H)),
+            ?assertEqual(binary:copy(<<0.5:32/little-float>>,1920),PCM),
+            drain(Next,Rate,N+maps:get(frame_count,H))
+    end.

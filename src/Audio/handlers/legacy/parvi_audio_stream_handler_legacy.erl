@@ -27,21 +27,10 @@ encode(Profile, Descriptor, Selector, Header, PCM) ->
     end.
 decode(Profile, Descriptor, Packet) -> parvi_audio_packet:decode(Profile, Descriptor, Packet).
 
-%% Called in the subscription process, preserving media-channel owner checks.
-bind(Action, Token, PeerNode) ->
-    case parvi_webrtc_dist:controller(PeerNode) of
-        {ok, Ctrl} ->
-            case gen_server:call(Ctrl, {media, {Action, Token, PeerNode}}) of
-                ok -> {ok, Ctrl};
-                Error -> Error
-            end;
-        Error -> Error
-    end.
-
-send(Ctrl, Token, Packet) -> gen_server:call(Ctrl, {media, {send, Token, Packet}}).
-close(Ctrl, Token) ->
-    try gen_server:call(Ctrl, {media, {close, Token}}, 1000)
-    catch exit:_ -> ok end.
+%% The old OTP-distribution media carrier is retired.
+bind(_,_,_) -> {error,use_scoped_subscription}.
+send(_,_,_) -> {error,use_scoped_subscription}.
+close(_,_) -> ok.
 
 output_available() -> parvi_audio_output:available().
 start_output(Owner, Descriptor) ->

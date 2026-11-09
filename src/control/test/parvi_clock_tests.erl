@@ -118,3 +118,22 @@ explicit_resync_invalidates_readiness_until_a_fresh_anchor_test() ->
         await(fun() -> maps:get(state,parvi_clock:status())=:=synchronized end),
         ?assertEqual(Id,parvi_clock:id()),?assert(maps:get(reference_revision,parvi_clock:status())>Revision)
     end).
+
+session_renewal_retains_filter_but_invalidates_readiness_test() ->
+    with_clock(member,fun({_,Authority}) ->
+        await(fun() -> maps:get(role,parvi_clock:status())=:=follower end),
+        %% Run in the owner of the protected reader table; no live network needed.
+        sys:replace_state(parvi_clock,fun(S) ->
+            Filter = lists:foldl(fun(N,F) -> parvi_clock_filter:add(#{offset_ns => N,rtt_ns => 1},F) end,
+                parvi_clock_filter:new(20),lists:seq(1,20)),
+            D = maps:get(clock,S),
+            Ready = S#{filter := Filter,filter_reference := reference,
+                clock := D#{confirmed := true,filter_ready := true,filter_sample_count := 20}},
+            {noreply,Next} = parvi_clock:handle_info({time_session_down,Authority,old_session},Ready),
+            ?assertEqual(Filter,maps:get(filter,Next)),
+            ?assertEqual(reference,maps:get(filter_reference,Next)),
+            ?assertEqual(20,maps:get(filter_sample_count,maps:get(clock,Next))),
+            ?assertEqual(false,maps:get(confirmed,maps:get(clock,Next))),Next
+        end),
+        ?assertEqual({error,clock_unavailable},parvi_clock:now())
+    end).

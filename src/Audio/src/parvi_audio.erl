@@ -1,6 +1,6 @@
 %% Local publication API. Remote discovery/subscription belongs to Swarm control.
 -module(parvi_audio).
--export([publish/1,publish/2,unpublish/1,pause/2,sources/0,describe/1,watch_sources/0,
+-export([publish/1,publish/2,unpublish/1,pause/2,rebind/2,sources/0,describe/1,watch_sources/0,
          subscribe/2,ready/1,close/1,status/1,sessions/0,push/4,listen/2,
          validate_offer/1,validate_request/2,handler/0,backend/0]).
 publish(Offer) -> publish(Offer,self()).
@@ -22,6 +22,7 @@ publish(Offer0,Owner) when is_pid(Owner),node(Owner)=:=node() ->
         Error -> Error
     end.
 unpublish(Source) when node(Source)=:=node() -> gen_server:stop(Source).
+rebind(Source,Clock) when node(Source)=:=node() -> gen_server:call(Source,{rebind,Clock}).
 pause(Source,B) when node(Source)=:=node(),is_boolean(B) -> gen_server:call(Source,{pause,B}).
 sources() ->
     case whereis(parvi_audio_sup) of undefined -> [];_ ->
@@ -41,10 +42,12 @@ with_runtime(Fun) -> case parvi_audio_sup:ensure_started() of ok -> Fun();Error 
 validate_offer(#{name := Name,source_key := Key,profiles := #{channel := D} = Profiles})
         when is_binary(Name),byte_size(Name)>0,byte_size(Name)=<128,
              is_binary(Key),byte_size(Key)>0,byte_size(Key)=<128,map_size(Profiles)=:=1 ->
-    case parvi_audio_packet:validate_descriptor(channel,D) of
+    Handler = parvi_audio_stream_handler:for_descriptor(D),
+    case Handler:validate_descriptor(channel,D) of
         ok ->
             case D of
                 #{encoding := pcm,channel_count := C,sample_rate := R} when (C=:=1 orelse C=:=2),R>=8000,R=<192000 -> ok;
+                #{encoding := opus,stream_handler := webrtc_audio_opus,sample_rate := 48000,channel_count := 2} -> ok;
                 _ -> {error,unsupported_collection_format}
             end;
         _ -> {error,unsupported_collection_format}

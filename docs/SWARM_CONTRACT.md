@@ -5,7 +5,12 @@ This specifies the whole target boundary. Step 2's restricted signed status
 exchange is now implemented; [its guide](SWARM_CONTROL_PROTOCOL.md) records the
 actual scope and limits. Step 3's [local Handler/test Worker lifecycle](DEVICE_HANDLER.md)
 and capability reads are implemented. Step 4's [test Contract/job flow](SWARM_JOBS.md)
-is implemented; Passport/rejoin and audio contracts remain targets.
+is implemented. Steps 5–8 now implement [Passport/rejoin](SWARM_MEMBERSHIP.md),
+[PCM/Opus collection and Contracts](SWARM_STREAMS.md), [shared Time/Offset](SWARM_TIME.md)
+and [headless backend verification](../tests/control/README.md). Installed app
+chat/graph/bridge consumers still require the scoped APIs in step 9; they are not
+started by the new backend profile. The migration map below records the original
+dependencies and their replacement, not a claim that old app profiles are safe.
 Existing implementation evidence stays in [PROGRESS.md](PROGRESS.md).
 The vocabulary in PLAN.md applies here.
 
@@ -226,12 +231,12 @@ dependencies must be removed from the Swarm path before step 8 qualifies it.
 | [`parvi_cluster_authority`](../src/control/src/parvi_cluster_authority.erl): caller identity from `node(Pid)`, `publish/retire/take_over` via erpc, Offset writer | Retain serialized local policy ownership. Authenticate Device IDs at ingress; replace remote calls with scoped messages. Authority transfer/failover is deferred. | 5, 7 |
 | [`parvi_sup`](../src/control/src/parvi_sup.erl), [`parvi_audio_sup`](../src/Audio/src/parvi_audio_sup.erl) | Reuse local supervision; add Handler and explicit owned-worker failure behavior. Current temporary source/session workers and permanent receiver are useful starting points. | 3 |
 | [`parvi_audio`](../src/Audio/src/parvi_audio.erl), [`parvi_audio_source`](../src/Audio/src/parvi_audio_source.erl): pg source PIDs and remote describe/subscribe that starts provider sessions | Local facade/worker ownership can remain. Wire catalogues use stable IDs; only the local Handler authorizes provider creation. | 3, 6 |
-| [`parvi_audio_subscription`](../src/Audio/src/parvi_audio_subscription.erl), [`parvi_webrtc_audio_session`](../src/Audio/handlers/webrtc/parvi_webrtc_audio_session.erl): remote PID requests, monitors and SDP/ICE casts | Keep local state machines and engine cleanup. Replace peer PIDs with authenticated stream/subscription/attempt messages and explicit session-loss events. | 6 |
+| [`parvi_audio_subscription`](../src/Audio/src/parvi_audio_subscription.erl), former `parvi_webrtc_audio_session`: remote PID requests, monitors and SDP/ICE casts | Replaced with local PCM/Opus endpoints and authenticated stream/subscription/attempt messages. Obsolete remote-PID native session removed in step 8. | 6, 8 |
 | [`parvi_media_channel`](../src/control/src/parvi_media_channel.erl), [`parvi_audio_stream_handler`](../src/Audio/src/parvi_audio_stream_handler.erl): media permission tied to distribution controller/node | Preserve selected handler/engine distinction; media authorization binds peer Device, stream and subscription, independent of distribution readiness. | 6 |
 | [`parvi_audio_receiver`](../src/Audio/src/parvi_audio_receiver.erl): `connect_sources` uses erpc/PIDs; single receive/output slot; [`subscription_intent`](../src/Audio/src/parvi_audio_subscription_intent.erl) stores one node/source | Replace catalogue transport, key intent by Device/source, expand independent sessions and mixing. Retain fresh-clock/restoration gates; add current Contract/consent checks. | 6, 7 |
 | [`parvi_clock`](../src/control/src/parvi_clock.erl): pg clock discovery, node/PID incarnation, `erpc:send_request` | Keep pure clock filter/mapping/sync modules and local worker; replace peer discovery/exchange identity and transport with authorized clock operations. | 7 |
 | [`parvi_node_api`](../src/control/src/parvi_node_api.erl), [`parvi_inspector`](../src/control/src/parvi_inspector.erl), [`parvi_node_diagnostics`](../src/control/src/parvi_node_diagnostics.erl): membership implies broad commands; direct/one-hop erpc | Local UI/inspection APIs may stay. Remote access requires per-operation/resource grants; no generic function dispatcher or erpc forwarding under JSON. | 2 boundary; relevant commands in 3–7; verify 8 |
-| [`parvi_chat`](../src/control/src/parvi_chat.erl), [`parvi_network`](../src/control/src/parvi_network.erl), [`parvi_native_bridge`](../src/control/src/parvi_native_bridge.erl): pg/node liveness, graph probes/commands | Carry admitted chat/events as explicit messages if retained; bridge shows separate membership/session/job/media observations. Keep [`parvi_events`](../src/control/src/parvi_events.erl) local notifications. Legacy swarm/bridge/direct profiles do not become a second permission source. | Integrate before 8 |
+| [`parvi_chat`](../src/control/src/parvi_chat.erl), [`parvi_network`](../src/control/src/parvi_network.erl), [`parvi_native_bridge`](../src/control/src/parvi_native_bridge.erl): pg/node liveness, graph probes/commands | Backend capture logging now uses local logger/[events](../src/control/src/parvi_events.erl), with no old chat dependency. Step 9 migrates the installed app chat/graph/bridge consumers to scoped messages/inspection APIs; legacy profiles are not a second permission source and are not used by the headless backend. | 8; app integration 9 |
 
 ## Exit and next increment
 

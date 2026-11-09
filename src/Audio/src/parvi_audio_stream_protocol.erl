@@ -41,6 +41,12 @@ offer(Key,Inc,#{name := Name,paused := Paused,profiles := #{channel := D}}) ->
 descriptor(#{<<"rate">> := Rate,<<"channels">> := Channels,<<"format">> := F,<<"clock">> := Clock}) ->
     true = is_integer(Rate) andalso Rate>=8000 andalso Rate=<192000,
     true = Channels=:=1 orelse Channels=:=2,text(Clock,128),
-    Format = case F of <<"float32_le">> -> float32_le;<<"pcm16_le">> -> pcm16_le;
+    case F of
+        <<"opus">> ->
+            48000 = Rate,2 = Channels,
+            #{encoding => opus,sample_format => opus,sample_rate => Rate,channel_count => Channels,clock => Clock,
+              stream_handler => webrtc_audio_opus,rtp_timestamp_semantics => global_playback_48k_v1};
+        _ -> Format = case F of <<"float32_le">> -> float32_le;<<"pcm16_le">> -> pcm16_le;
         <<"pcm24_le">> -> pcm24_le;<<"pcm32_le">> -> pcm32_le end,
-    #{encoding => pcm,sample_format => Format,sample_rate => Rate,channel_count => Channels,clock => Clock}.
+    #{encoding => pcm,sample_format => Format,sample_rate => Rate,channel_count => Channels,clock => Clock}
+    end.

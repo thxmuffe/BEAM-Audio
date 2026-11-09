@@ -155,10 +155,22 @@ handle_info({audio_pcm,Pid,H,PCM},S) ->
     case transport(Pid,S) of
         {receiver,Id,#{intent := I,descriptor := D,context := #{deadline := Deadline}} = R} ->
             case maps:get(playing,I) andalso maps:get(mix_ready,R,false) andalso not maps:get(source_paused,R,false) andalso now_ms()<Deadline of
-                true -> parvi_audio_mixer:push(Id,D,H,PCM);
+                true -> parvi_audio_mixer:push(Id,parvi_audio_opus:descriptor(D),H,PCM);
                 false -> ok
             end,
             {noreply,put_sub(Id,R#{packets := maps:get(packets,R)+1},S)};
+        _ -> {noreply,reject(S)}
+    end;
+handle_info({publication_rebound,Pid,Offer},#{sources := Sources}=S) ->
+    case [{K,E} || {K,#{pid := P}=E} <- maps:to_list(Sources),P=:=Pid] of
+        [{Key,E}] ->
+            Next = lists:foldl(fun({K,#{source := Source}=R},Acc) ->
+                case Source=:=Key of
+                    true -> _ = wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),close_provider(K,R,Acc);
+                    false -> Acc
+                end
+            end,S,maps:to_list(maps:get(providers,S))),
+            {noreply,Next#{sources := Sources#{Key := E#{offer := Offer}}}};
         _ -> {noreply,reject(S)}
     end;
 handle_info({publication_state,Pid,B},#{sources := Sources} = S) ->
@@ -279,11 +291,15 @@ restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := 
     case {Ready,maps:find({Peer,Key},Offers),maps:find({receive_audio,Peer,Key},Contracts),context(Peer)} of
         {true,{ok,#{incarnation := Inc,profiles := #{channel := D}}},{ok,Contract},{ok,#{swarm := Swarm} = Context}}
             when Swarm=:=map_get(swarm,I) ->
-            Attempt = fresh(),Next = R#{state := opening,context => Context,attempt => Attempt,source => Key,
+            case maps:get(encoding,D,pcm)=:=opus andalso not parvi_audio_opus:available() of
+                true -> put_sub(Id,R#{state := waiting_for_backend,error => opus_decoder_unavailable,retry_at := now_ms()+1000},S);
+                false ->
+            Attempt = fresh(),Next = (maps:remove(error,R))#{state := opening,context => Context,attempt => Attempt,source => Key,
                 incarnation => Inc,descriptor => D,retry_at := now_ms()+10000},
             P = (binding(Next))#{<<"kind">> => <<"subscribe">>,<<"contract">> => maps:get(id,Contract),
                                  <<"revision">> => maps:get(revision,Contract)},
-            case wire(Next,Id,P) of ok -> put_sub(Id,Next,S);_ -> S end;
+            case wire(Next,Id,P) of ok -> put_sub(Id,Next,S);_ -> S end
+            end;
         _ ->
             case State=:=opening andalso now_ms()>=Retry of
                 true -> put_sub(Id,close_receiver(Id,R),S);false -> S
@@ -296,7 +312,7 @@ start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
     case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
 start_playback(_,R) -> R.
 enable_output(Id,#{descriptor := D,intent := I,context := #{deadline := Deadline}} = R) ->
-    case parvi_audio_mixer:add(Id,D#{authorization_deadline => Deadline},maps:get(gain,I)) of
+    case parvi_audio_mixer:add(Id,(parvi_audio_opus:descriptor(D))#{authorization_deadline => Deadline},maps:get(gain,I)) of
         ok ->
             case parvi_audio_mixer:enable(Id,true) of
                 ok -> {ok,maps:remove(error,R#{mix_ready => true})};

@@ -123,7 +123,12 @@ On control-owner restart, a new authenticated hello can prepare one bounded fres
 challenge beside the old session. Only a valid new proof replaces the old session
 and fences its jobs/media; replaying a hello alone cannot tear down active work.
 Candidates expire after 10 seconds. The clock reconnects to its pinned authority,
-fetches current Offset and warms a new filter. Simultaneous-open resolution for
+fetches current Offset and requires a fresh sample. Ordinary session renewal
+retains observations of the same still-fresh reference, while invalidating
+readiness until new-session evidence arrives. Resetting the entire window on
+every 60-second renewal would prevent the default 20 × 5-second acquisition.
+Changed scope/reference, stale observations and explicit resync still clear the
+window; clock restart restores no observations. Simultaneous-open resolution for
 general peers is still outside this prototype.
 
 Explicit clock resync invalidates readiness until fresh evidence returns. Audio
@@ -153,6 +158,7 @@ From the core root:
 
 ```sh
 python3 tests/control/swarm-time-smoke.py
+python3 tests/control/swarm-time-smoke.py --production-cadence
 PARVI_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time
 ```
 
@@ -163,15 +169,18 @@ filtering after reference restart. No app identity/state is loaded. The second
 uses real WebRTC PCM and the production capture-stamping API with authenticated
 clock/Offset, replacing only the output device with a scheduled headless sink.
 It exercises two-source mixing, pauses, restoration, unsubscribe and Contracts.
-The test launcher library-path requirement is documented in [the stream guide](SWARM_STREAMS.md).
+The production-cadence variant runs the real 20 × 5-second window across
+60-second control-session renewal. The test launcher library-path requirement is
+documented in [the stream guide](SWARM_STREAMS.md).
 
 These same-host, loopback-Desk checks do not establish Internet clock asymmetry,
-external UTC accuracy, DAC timing or physical speaker alignment. The PCM prototype
-still has a one-second target-lead/32-block queue bound: larger committed Offsets
-fail explicitly there, and sustained operation across the supported Offset range
-needs backend qualification in step 8. Native Opus decoded-audio mixing/handoff,
-automatic capture rebind after clock-incarnation change, remaining old native
-logging/app dependencies and platform execution are also still integration gates.
+external UTC accuracy, DAC timing or physical speaker alignment. Step 8 adds
+bounded binary queues covering 30-second Offset in virtual time, continuous
+1000 ms PCM scheduling and reference-restart capture rebind, plus real Opus
+decoded-audio mixing/handoff. Existing timestamp, median, slew and independent
+packet-target calculations remain unchanged. Actual platform capture/output,
+native decoder packaging and physical listening/timing remain step-9 gates;
+small configured Offsets may still be below a particular device/network's needs.
 No product app, native audio device, deployment or physical listening was used.
 
 Swarm identity and retained credentials already survive process shutdown, but an

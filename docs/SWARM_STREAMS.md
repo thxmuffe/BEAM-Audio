@@ -1,9 +1,9 @@
-# Independent Streams and Subscriptions — step 6
+# Independent Streams and Subscriptions — steps 6–8
 
-The headless `swarm_control` runtime now has a collection of independent PCM
+The headless `swarm_control` runtime now has a collection of independent PCM/Opus
 subscriptions and one local scheduled mixer. The old single receive slot and
 remote-PID discovery/subscription path have been replaced. Installed apps and the
-native Opus receiver have not been migrated or launched.
+platform audio outputs have not been migrated or launched.
 
 ## Identity and ownership
 
@@ -16,8 +16,8 @@ key creates a new incarnation, preserving the logical source identity.
 The receiver owns up to 16 subscription records, each with a local random ID and
 Swarm/publisher Device/source identity. Endpoint PID, control session, incarnation,
 connection attempt and lease are separate volatile state. Each active endpoint is
-a temporary local OTP worker owning an independent ExWebRTC PeerConnection/data
-channel. Failure or pause of one endpoint does not select, stop or retime another.
+a temporary local OTP worker owning an independent ExWebRTC PeerConnection with a
+PCM data channel or Opus audio track. Failure or pause of one endpoint does not select, stop or retime another.
 `parvi_audio_sup` starts the mixer before the receiver with `rest_for_one`;
 receiver failure resets dependent temporary media workers/publications. The mixer
 also monitors its receiver owner and discards its queues/output on owner death.
@@ -93,6 +93,10 @@ with its authenticated control-session lease and checks it on media send/receive
 The mixer independently expires input queues and rejects packet spans extending
 past their authorization deadline, even if receiver cleanup is delayed.
 There is no silent lease renewal or uncertain packet replay.
+Packets whose presentation span exceeds the current authorization lease are
+rejected; a fresh session opens a fresh media attempt. These checks do not promise
+gap-free media across lease renewal, especially with large Offsets. General peer
+reconnection/automatic eligible work is part of the app integration in step 9.
 
 The signed SDP carries the expected SHA-256 DTLS fingerprint; ExWebRTC performs
 the DTLS certificate checks. A dedicated data-channel label binds subscription
@@ -127,13 +131,38 @@ Already submitted mixed output cannot be selectively removed after a pause.
 The supported code path needs a valid common clock: default `parvi_clock` now supplies [authenticated shared Time/Offset](SWARM_TIME.md)
 in the new headless profile. It never fabricates a fresh clock from membership or local arrival.
 
-The unchanged native libwebrtc/GStreamer Opus path bypasses Erlang PCM and still
-uses its earlier signaling path. This collection explicitly rejects that native
-source format; it neither silently converts an Opus publication to PCM transport
-nor claims native multi-source playback. Native decoded-audio handoff/mixing and
-its platform execution remain integration gates before full backend/app acceptance
-in steps 8–9. This increment proves the Erlang PCM/default-path collection and
-mixing architecture, not replacement qualification of the approved Opus engine.
+Opus publications explicitly select `stream_handler => webrtc_audio_opus`,
+`encoding => opus`, `sample_format => opus`, 48000 Hz stereo and
+`rtp_timestamp_semantics => global_playback_48k_v1`. They use the **same** signed
+catalogue/Contract/subscription/SDP boundary, with a direct ExWebRTC Opus audio
+track. The local capture owner submits `{push_encoded,Timing,OpusPayload}` to its
+source; the existing `parvi_audio_rtp_time` encodes each target into that packet's
+RTP timestamp. There is no Opus-to-PCM transport fallback.
+
+The approved GStreamer binding `adapters/gstreamer/pcm_bridge.py` uses its existing
+`rtpjitterbuffer` (20 ms), depayloader and Opus decoder. After jitter buffering it
+associates each RTP packet's PTS with its own RTP target; only decoded buffers
+whose PTS matches that association are handed to Erlang as stereo float32.
+Unmapped/concealed GAP buffers are rejected explicitly, with no neighbouring
+target inferred. Erlang resolves the existing RTP wrap contract and feeds the
+same scheduled mixer. The helper never opens an audio device, chooses a shared
+clock or schedules presentation. Bounds include 64 native input buffers, 32
+output buffers, 128 target associations and 4096 frames per decoded block.
+
+Configure this decoder locally with `PARVI_GSTREAMER_PCM_HELPER` (absolute helper
+path) and `PARVI_GSTREAMER_PYTHON` (GI-capable Python executable).
+`PARVI_GSTREAMER_RUNTIME` optionally locates the existing bundled GI libraries and
+plugins. Missing configuration keeps intent in `waiting_for_backend` with
+`opus_decoder_unavailable`; it does not create repeated PeerConnections. PCM
+remains the default publication path. This qualifies the **headless decoded-audio
+handoff**, not replacement of native platform output or libwebrtc qualification.
+
+On a valid new shared clock instance, PCM capture and the Mac Opus capture adapter
+rebind their existing source key to a fresh publication incarnation and descriptor.
+The receiver sends scoped closes for old endpoints, drops their queues and
+restores retained intent from refreshed catalogues/Contracts. It never retargets
+old audio. Capture logging uses local events/logger, without starting old chat.
+The obsolete remote-PID native session and OTP-distribution PCM carrier are retired.
 
 ## Retained intent and limits
 
@@ -148,9 +177,12 @@ resources and requires fresh clock evidence after resume.
 
 Bounds: 16 publications, subscriptions and outgoing provider endpoints each;
 32 local direction/device/source Contracts, 16 catalogue offers per peer, five
-seconds for catalogue replies, ten seconds for endpoint setup, 32 queued PCM
-blocks per playing input, 4096 frames per input block, 16 KiB media packets and
-64-message input queues. First-packet target lead is limited to one second.
+seconds for catalogue replies, ten seconds for endpoint setup, 4096 queued blocks
+per playing input, 8192 blocks/32 MiB total PCM, 4096 frames per input block,
+16 KiB PCM media packets and 64-message owner-notification queues. PCM queues hold
+stereo float32 binaries rather than sample lists. Admission lead is at most 31 s,
+covering the maximum 30 s Offset; the memory budget is shared across inputs, not
+a promise that all 16 inputs can each buffer 30 s. Opus payloads are at most 1275 bytes.
 Overload drops/rejections are visible; these limits are not a capacity benchmark.
 Restored subscriptions retry with a fresh attempt; automatic peer reconnection
 and simultaneous-open resolution are not supplied.
@@ -183,7 +215,19 @@ mix values and per-packet targets, two simultaneous publishers, scoped pauses,
 receiver restart without restored permissions, source disappearance/new incarnation,
 unsubscribe and Contract revocation. No product app, native output device,
 installed identity/state, cross-device clock accuracy or physical listening is
-involved. These software checks are distinct from steps 7–9 acceptance.
+involved.
+
+Step 8 adds `--swarm-time --sustained`: four seconds of continuous production
+capture at the default 1000 ms Offset, zero mixer drops, queue drain and automatic
+publication recovery after reference restart. A virtual-time EUnit proof queues
+and drains two complete 30-second sources (23,040,000 PCM bytes) at their exact
+targets. This full-range software proof does not claim real-time 30-second
+network playback or successful execution at a 5 ms lead on every backend.
+`--swarm-time --opus` uses real GStreamer-encoded sine packets and the decoder,
+checks two-source mixing, independent lifecycle, targets and headless handoff.
+Reproduction commands and platform limits are in [the backend checks](../tests/control/README.md).
 
 Mechanisms reuse [OTP local supervision](https://www.erlang.org/doc/system/sup_princ.html)
-and the pinned [ExWebRTC PeerConnection API](https://hexdocs.pm/ex_webrtc/0.17.0/ExWebRTC.PeerConnection.html).
+and the pinned [ExWebRTC PeerConnection API](https://hexdocs.pm/ex_webrtc/0.17.0/ExWebRTC.PeerConnection.html),
+[GStreamer RTP jitter buffering](https://gstreamer.freedesktop.org/documentation/rtpmanager/rtpjitterbuffer.html)
+and [appsink decoded-buffer access](https://gstreamer.freedesktop.org/documentation/app/appsink.html).
