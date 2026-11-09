@@ -19,8 +19,9 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–8 complete for the headless backend. The requested core naming and
-terminology cleanup is complete; step 9 is not started.** See
+**The original steps 1–8 and core naming/terminology cleanup are complete.
+Next: the approved backend follow-ups 8a–8d below, before starting the macOS app.
+Step 9 is not started; app order is macOS → iOS → Windows.** See
 [canonical component names](TERMINOLOGY.md) and [API/configuration migration](NAMING.md). The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
@@ -156,13 +157,98 @@ trusted-cluster code; it is not the current Swarm boundary.
    obsolete remote-PID native session and retired the old PCM carrier. Installed
    app profiles and physical output are explicitly unqualified until step 9.
 
-9. **Update and verify the applications — macOS, then Windows, then iOS.**
+   **Approved backend follow-ups before step 9 — pending, in this order:**
+
+   **8a. Isolate Desk failures.** Supervise each Desk connection independently,
+   using established OTP supervision. A connection crash or disconnect must not
+   restart membership, Device Handlers/Workers, control or the Swarm Clock, or
+   reset sessions routed through healthy Desks. Remove both restart cascades and
+   global disconnect handling; making the child supervisor `one_for_one` alone
+   is insufficient. Bound failed-Desk recovery and scope availability changes to
+   affected routes. Desk loss itself is not revocation; authorization freshness
+   and expiry still apply. **Exit:** with two Desks and active work, disconnect
+   and crash either connection; unaffected process/session identities and work
+   survive, and the failed connection can recover independently.
+
+   **8b. Make Contract installation idempotent.** Reinstalling the unchanged
+   current Contract is a no-op. Preserve publications, Subscription intent,
+   Media Sessions, Workers and queued audio. Changed permissions or removal
+   invalidate only the affected work, where actually required; repeated updates
+   must not create duplicate resources. **Exit:** repeated identical installation
+   preserves live resource identities/buffers; actual permission withdrawal still
+   stops the affected work without disturbing another Source.
+
+   **8c. Make failures observable.** Count packet drops, mailbox overload,
+   missing targets, missed deadlines and buffering/decoder failures by clear
+   reason at the relevant Source/Media Session/Mixer boundary. Expose bounded
+   counters and last-error details through existing scoped diagnostics; use
+   rate-limited logs where useful, not a log entry per packet or a new monitoring
+   framework. Signaling overload must produce a visible failed attempt rather
+   than a silently stalled setup. **Exit:** deliberately exercise each supported
+   failure path and observe its reason without unbounded diagnostic state or
+   disclosure of credentials/audio payloads. UI presentation follows in step 9.
+
+   **8d. Renew authorization without interrupting eligible media.** Proactively
+   renew control authorization and media permissions with fresh authenticated
+   evidence. Separate credential/session renewal from Media Session lifetime;
+   reauthorize eligible active work without rebuilding transports, clearing valid
+   buffers, duplicating providers or changing packet Presentation Targets.
+   Preserve replay protection, policy/Contract fencing, explicit revocation and
+   expiry enforcement. No cached permission or timer alone extends authority;
+   unsuccessful renewal must stop affected work at expiry. **Exit:** continuous
+   two-Source playback across multiple renewal cycles, including default and
+   maximum Playback Offset, retains eligible Media Sessions and original targets
+   without renewal-induced gaps; withheld renewal and revocation still stop
+   unauthorized playback and buffered output at the required boundary.
+
+   These are backend corrections, not new app UI or a new clock algorithm.
+   Continue using isolated headless checks; do not launch installed product apps.
+
+9. **Update and verify the applications — macOS, then iOS, then Windows.**
    Integrate the new runtime and permission/state model into each app in that
    order, with the **same functionality, layout and information hierarchy on
    every platform**. Start with forgotten old Swarms/subscriptions rather than
    restoring them. Supporting platform code may change earlier when needed, but
    do not launch product apps during backend development: installed versions can
    auto-restore old connections/audio. Build/install/launch for this explicit phase.
+
+   **macOS first — runtime and audio integration:** adopt the renamed `ba_*` /
+   `BA_*` interfaces, secure Swarm runtime, local consent/Contracts and scoped
+   chat/graph/diagnostic APIs. Begin the macOS audio work with a small combined
+   evaluation of the two approved proposals below, before finalizing its Audio
+   Engine boundary. This is part of macOS integration, not permission to migrate
+   or launch iOS yet. Do not make a speculative engine/format rewrite a condition
+   for starting the app integration or polishing its common UI.
+
+   **Native mixing evaluation:** keep mixing local to the receiving Device,
+   preferably through an established Audio Engine/OS facility and existing
+   approved backends. Erlang continues to own Swarm coordination, consent,
+   Contracts, shared time and scheduling/correction policy; the engine executes
+   approved targets. The production direction is native mixing rather than
+   ordinary PCM sample processing in Erlang. Keep the Erlang Mixer as a reference
+   and the current path until the candidate demonstrates relevant playback,
+   independent-source behavior, timing, renewal and recovery evidence. Adopting
+   it as the default requires recording that evidence and explicitly updating
+   the existing Erlang-first processing guidance/architecture decision. Do not
+   write a new native mixer or move unrelated DSP merely to complete this step.
+
+   **RTP timing evaluation:** prototype standard RTP sampling timestamps plus a
+   negotiated header extension carrying each packet's independent absolute
+   Presentation Target. Evaluate it alongside native mixing so the macOS engine
+   is not finalized against an untested timing boundary. Verify target precision
+   and preservation through WebRTC, jitter buffering and decode, including loss,
+   reordering, wrap and Playback Offset changes. Missing/unsupported targets must
+   fail explicitly; neither arrival time nor neighbouring packets supplies one.
+   Keep the current format until the isolated prototype justifies a documented,
+   versioned adoption decision; add no speculative compatibility stack. Finer
+   timestamp resolution alone is not evidence of better physical synchronization.
+
+   **macOS acceptance, then platform reuse:** complete and verify the common UI
+   and real macOS capture/output below. Record native-mixing/RTP evaluation results
+   and the selected interfaces before porting audio to iOS. Then update and verify
+   iOS with those interfaces, followed by Windows; preserve the same functionality
+   and layout. An inconclusive prototype is recorded plainly and does not become
+   an unverified production default.
 
    **Swarm:** show the Swarm name and ID.
 
@@ -235,6 +321,9 @@ trusted-cluster code; it is not the current Swarm boundary.
   **not** automatically authorize active microphone, playback or job operations.
 - Reuse existing WebRTC/Opus and GStreamer media engine boundaries and preserve
   per-packet playback timing. Working app behavior between steps is not required.
+- Follow-ups 8a–8d precede app integration. Native mixing and RTP header-extension
+  work are bounded evaluations during macOS audio integration; neither changes
+  the accepted default or packet format without evidence and a recorded decision.
 - Paused Streams retain logical subscriptions; idle transports may remain open
   for simplicity. Multiplexing, packet bundling, RabbitMQ, MQTT/EMQX, Redis,
   PostgreSQL, federation and large-scale routing are **not required** now.
@@ -281,13 +370,15 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-The next implementation phase remains step 9, pending the user's request:
-integrate the verified backend and renamed `ba_*` / `BA_*` interfaces into macOS first, then Windows,
-then iOS, with the common UI and immediate audio actions specified above. Package
-and verify native decoding/capture/output and record actual listening/timing limits.
-Time, Offset and media control now use restricted Swarm messages; preserve
-independent packet targets and subscriptions. No product apps were launched during
-step 8; build/install/launch belongs to the explicit app phase. Start with forgotten
-old Swarms/subscriptions. Abandoned-Swarm recovery remains step 10.
+Next: **8a — Desk failure isolation**, then **8b — idempotent Contracts**,
+**8c — observable failures**, and **8d — seamless authorization renewal**.
+After those backend checks pass, begin step 9 with macOS runtime/UI integration
+and the combined native-mixing/RTP timing evaluation. Finalize and verify the
+macOS audio boundary before updating iOS, then Windows. No product app is launched
+for the preparatory backend work. Preserve independent packet targets, stored
+Device Identity and the common UI requirements; start updated apps with forgotten
+old Swarms/subscriptions. Abandoned-Swarm recovery remains step 10 and is not a
+prerequisite for the macOS work. This plan update does not implement any follow-up
+or start app integration.
 See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),
 [membership](SWARM_MEMBERSHIP.md) and [jobs](SWARM_JOBS.md).

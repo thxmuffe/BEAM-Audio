@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-11-09 — Architectural follow-ups scheduled before macOS integration
+
+Updated PLAN.md with the accepted preparation order: 8a Desk failure isolation,
+8b idempotent Contract updates, 8c observable failures and 8d proactive seamless
+authorization renewal. These remain pending backend work, with headless exit
+checks and no product app launches. Renewal must preserve eligible Media Sessions,
+buffered targets and playback while retaining authenticated freshness, revocation
+and expiry enforcement.
+
+Step 9 now runs macOS, then iOS, then Windows. Its initial macOS audio integration
+includes a bounded combined native-mixing/RTP-header-extension evaluation before
+finalizing the Audio Engine boundary. Native mixing is the intended production
+direction; default adoption remains conditional on playback/timing/recovery
+evidence and an explicit update to existing Erlang-first guidance. Standard RTP
+sampling timestamps plus per-packet absolute targets are a prototype proposal,
+not an implemented or adopted wire-format change. Existing clock policy and the
+independent Presentation Target rule remain binding. Recorded common UI
+requirements and step-10 abandoned-Swarm recovery are preserved.
+
+Documentation change only: no follow-up implemented, runtime/test executed,
+app launched, platform built or service deployed. Next implementation task: 8a.
+
 ## 2026-11-09 — Core naming and terminology cleanup before step 9
 
 Renamed core-owned Erlang modules/files, registered processes, OTP metadata,
