@@ -71,3 +71,10 @@ is implemented and has user-reported iPhone evidence in [PROGRESS.md](PROGRESS.m
 Current step 6 expands it into independent subscriptions; fresh sessions and
 current permission checks remain required. See the [iPhone guide](apps/iOS/README.md)
 for usage and platform limitations.
+
+## Publish/default-output wording and icon — UI follow-up
+
+User feedback during 2026-11-09 testing: “broadcast” and its antenna icon do not
+communicate the default-system-output Source well. Revisit wording and symbol
+consistently across platforms/CLI when doing the next UI pass. Do not rename wire
+fields or introduce competing capability names in the monitoring increment.

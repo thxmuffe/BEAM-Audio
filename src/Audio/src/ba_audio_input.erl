@@ -66,12 +66,12 @@ status(S) ->
     Public = maps:without([source, source_monitor, handler, last_capture_ms], S),
     case maps:find(last_capture_ms, S) of
         {ok, Last} ->
-            case erlang:monotonic_time(millisecond) - Last > 250 of
-                true -> Public#{meter => ba_audio_meter:levels(ba_audio_meter:new())};
-                false -> Public
-            end;
+            Age=max(0,erlang:monotonic_time(millisecond)-Last),
+            Meter=case Age>250 of true -> ba_audio_meter:levels(ba_audio_meter:new());false -> maps:get(meter,S,#{}) end,
+            Public#{meter => Meter#{<<"meter_age_ms">> => Age,<<"meter_stage">> => <<"capture">>}};
         error -> Public
     end.
+
 source_monitor(Ref, S) -> maps:get(source_monitor, S, undefined) =:= Ref.
 stop(S) ->
     close(S), event(audio_stopped, <<"[Audio] Broadcast stopped.">>), new().

@@ -15,6 +15,7 @@ printable(R) when is_binary(R) -> R;
 printable(R) when is_atom(R) -> atom_to_binary(R);
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
 
+command(#{<<"method">> := <<"monitor">>}=R) -> {ok,ba_swarm_monitor:snapshot(#{metrics => maps:get(<<"metrics">>,R,false),plain => maps:get(<<"plain">>,R,[])})};
 command(#{<<"method">> := <<"readiness">>}=R) ->
     {ok,readiness(ba_app_session:snapshot(),maps:get(<<"previous">>,R,#{}))};
 command(#{<<"method">> := <<"audio_lifecycle">>,<<"active">> := Active}) when is_boolean(Active) ->

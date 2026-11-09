@@ -44,7 +44,7 @@ handle_call(snapshot,_,S) ->
              providers => map_size(maps:get(providers,S)),
              provider_status => [#{peer => maps:get(peer,maps:get(context,R)),source => maps:get(source,R),
                  transport => transport_status(R)} || R <- maps:values(maps:get(providers,S))],mixer => ba_audio_mixer:status(),
-             rejected => maps:get(rejected,S),diagnostics => ba_diagnostics:view(S)},S};
+             rejected => maps:get(rejected,S),receive_meter => receive_meter(maps:get(subscriptions,S)),diagnostics => ba_diagnostics:view(S)},S};
 handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pid)=:=node(),map_size(Sources)<16 ->
     try
         Offer = gen_server:call(Pid,describe,100),Key = maps:get(source_key,Offer),
@@ -189,7 +189,9 @@ handle_info({audio_pcm,Pid,H,PCM},S) ->
                 false -> {error,playback_not_enabled}
             end,
             Next = case Delivery of {error,playback_not_enabled} -> S;{error,R0} -> ba_diagnostics:count(R0,S);_ -> S end,
-            {noreply,put_sub(Id,R#{packets := maps:get(packets,R)+1},Next)};
+            Format=maps:get(sample_format,ba_audio_opus:descriptor(D)),
+            Meter=ba_audio_meter:levels(ba_audio_meter:accumulate(Format,PCM,ba_audio_meter:new())),
+            {noreply,put_sub(Id,R#{packets := maps:get(packets,R)+1,meter => Meter,meter_at => now_ms()},Next)};
         _ -> {noreply,reject(S)}
     end;
 handle_info({publication_rebound,Pid,Offer},#{sources := Sources}=S) ->
@@ -233,6 +235,17 @@ handle_info({'DOWN',Ref,process,Pid,Reason},S) ->
     Sources = maps:filter(fun(_,#{monitor := M}) -> M=/=Ref end,maps:get(sources,Next)),
     {noreply,Next#{sources := Sources}};
 handle_info(_,S) -> {noreply,S}.
+
+%% Max individual received-Source level, not a mixed/native speaker measurement.
+receive_meter(Items) ->
+    Now=now_ms(),Fresh=[{maps:get(meter,R),Now-T} || R <- maps:values(Items),
+        {ok,T} <- [maps:find(meter_at,R)],Now-T=<250,maps:is_key(meter,R)],
+    case Fresh of
+        [] -> #{};
+        _ -> #{<<"peak_db">> => lists:max([maps:get(<<"peak_db">>,M) || {M,_} <- Fresh]),
+               <<"rms_db">> => lists:max([maps:get(<<"rms_db">>,M) || {M,_} <- Fresh]),
+               <<"meter_age_ms">> => lists:max([A || {_,A} <- Fresh]),<<"meter_stage">> => <<"receive_max">>}
+    end.
 
 incoming(#{peer := Peer} = Context,Id,#{<<"kind">> := <<"catalog.read">>},S) ->
     maps:foreach(fun(Key,#{offer := Offer}) ->

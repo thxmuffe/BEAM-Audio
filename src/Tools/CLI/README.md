@@ -108,6 +108,50 @@ beam-audio inspect legacy --help
 It still needs its own Inspector build and uses the historical trusted profile.
 Modern `inspect device/swarm` never delegates to it.
 
+## Live Swarm monitor
+
+```sh
+beam-audio monitor --all
+```
+
+The default invitation file is `builds/CLI/private/monitor-invitation.txt`, private
+mode 0600 under an ignored mode-0700 directory. A fresh, unused invitation is
+required for first admission: invitations become bound to their first joining
+Device. You can instead supply `--invitation-file PATH`. Do not commit invitation
+files. The monitor verifies the ticket and uses an independent named
+`ba-monitor-SWARM_ID` identity. It never creates a Swarm as a fallback.
+
+This is an ordinary admitted, audio-disabled Device using the existing Desk,
+signed control sessions and `capabilities_read` permission. It subscribes to no
+audio and accepts no audio Jobs; there is no app attachment or arbitrary RPC.
+`--all` means all members of this gathering, not every Device on the Internet.
+Adding the observer is a real membership change and may reset existing control
+sessions under the currently documented membership-churn behavior.
+
+The table refreshes each second (`--interval 500` chooses milliseconds); use
+`--json` for JSON frames or `--once` for a single frame. Ctrl-C exits the view;
+the background observer remains connected and renews authorization normally.
+Rerunning uses that member. If its invitation has expired or is unavailable, a
+single still-authorized observer can be reused without another invitation;
+`--devicename` selects one when necessary. A cold restart rejoins using the saved
+ticket and stable identity only while the ticket and gathering remain valid.
+Expired/revoked credentials or an ended Swarm require fresh admission, not
+restoration of cached permissions. `stop device --devicename ba-monitor-SWARM_ID`
+leaves the gathering; `stop device --all` includes managed observers.
+
+Updated Devices expose opt-in, bounded authenticated peak/RMS levels in dBFS,
+age, stage and capture counters. Capture meters describe mic/default-output
+input. `receive_max` describes the maximum individual received Source's level,
+not the physical speaker or mixed OS output. No audio samples/credentials cross
+this diagnostic interface. Older app builds still show their existing capability
+states; meter values display **N/A** until those apps are rebuilt. The monitor
+probes extended reporting, falls back to plain capability reads on timeouts and
+periodically retries; ordinary existing inspectors keep the original response
+shape. Permission denial/disconnection also remains visible, never fake silence.
+
+Native capture/playback and physical timing are not enabled or qualified merely
+by running this command. A “running” state alone is not proof of sound.
+
 ## Lifetime and local state
 
 Names contain 1–48 letters/digits, dashes or underscores. Each Device uses an

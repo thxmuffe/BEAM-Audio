@@ -1,5 +1,39 @@
 # Progress
 
+## 2026-11-09 — read-only Swarm console monitor
+
+Added `beam-audio monitor --all`: a separate ordinary admitted Device with all
+audio automation disabled, signed scoped reads of all members, a refreshing
+terminal table/JSON and one-shot mode. Saved the user's invitation privately in
+ignored CLI resources. The first ticket was denied (consistent with it already
+being claimed); a fresh ticket admitted the observer. Live reads saw three
+members: one advertised speaker running and another broadcast running. No remote
+level measurements were exposed by those existing app builds. These states do
+not establish audible playback. Observer audio remained disabled.
+
+Added explicitly requested metrics to the capability protocol with bounded flat
+fields and unchanged ordinary reply shapes. New builds report capture peak/RMS,
+age/stage/counters and receive_max (maximum individual received Source), without
+PCM payloads. Existing builds show N/A, with a bounded timeout/plain-read fallback
+and retry rather than inventing silence. Metering uses the existing Erlang meter;
+no clock, packet target or native scheduling change. Capture's existing stale
+meter reset now carries age. Receive metrics are not physical speaker output.
+
+Stable observer identity and valid stored invitation support cold rejoin while
+the Swarm/ticket remain valid; an already-authorized live observer can be reused
+without a fresh invitation. No Passport persistence or ended-Swarm restoration.
+Ctrl-C exits the console without stopping the member; stop device remains explicit.
+
+47 focused protocol/meter/Handler/audio regression checks pass, including new
+opt-in round-trip/range validation and absent-level reporting tests. The temporary
+Desk CLI integration checks observer membership, all-member reads and foreground
+interrupt while retaining membership. No test audio hardware or app was launched.
+The user's live Desk/Swarm was contacted only for the authorized observer join /
+reads, with audio off. User reports asymmetric iPhone joining, unclear Join UI,
+no audible audio yet, and confusing Device undo versus shared Offset; these remain
+open. Broadcast wording/icon is recorded as a deferred UI improvement.
+
+
 ## 2026-11-09 — simple Device audio configuration resume and undo/redo
 
 Implemented `ba_device_config`, a root-supervised Device settings owner independent

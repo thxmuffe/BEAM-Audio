@@ -21,6 +21,7 @@ boot() ->
         ok=application:load(ba_core),
         Consent=#{speaker => false,microphone => false,broadcast => false},
         ok=ba_app_session:configure(#{platform => mac,consent => Consent}),
+        case maps:get(<<"observer">>,C,false) of true -> application:set_env(ba_core,audio_automation,false);false -> ok end,
         {ok,_}=ba_runtime:start(swarm_control),
         case maps:get(<<"enabled">>,C) of
             null -> ok;
@@ -85,7 +86,7 @@ handle_call({request,#{<<"instance">> := I}=R},_,#{<<"instance">> := I}=S) ->
         <<"kill">> -> #{error => null};
         _ -> ba_device_api:request(maps:remove(<<"instance">>,R))
     end,
-    Meta=#{name => maps:get(<<"name">>,S),instance => I,os_pid => list_to_binary(os:getpid()),node => atom_to_binary(node()),startup_error => maps:get(startup_error,S)},
+    Meta=#{observer => maps:get(<<"observer">>,S,false),name => maps:get(<<"name">>,S),instance => I,os_pid => list_to_binary(os:getpid()),node => atom_to_binary(node()),startup_error => maps:get(startup_error,S)},
     {reply,Reply#{managed => Meta},S};
 handle_call(_,_,S) -> {reply,#{error => <<"Device instance mismatch.">>},S}.
 handle_cast(stop,S) ->

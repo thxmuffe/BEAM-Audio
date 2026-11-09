@@ -252,6 +252,30 @@ inform the CLI milestone:
   needs them; evaluate timing/CPU changes with evidence rather than a wholesale
   rewrite. Keep existing native-mixing/RTP evaluation limits intact.
 
+### Current test support — Swarm monitoring (2026-11-09)
+
+`beam-audio monitor --all` now joins/reuses an ordinary audio-disabled observer
+Device and reads every member through scoped signed capability requests. The
+private saved invitation is outside Git; first admission needs an unused ticket.
+Existing live membership may be reused after ticket expiry; cold rejoin still
+requires valid current admission. No ended-Swarm resurrection or audio Jobs.
+
+The refreshing table/JSON reports state plus opt-in bounded capture/receive
+meters. Old app builds remain inspectable but show N/A for levels until rebuilt;
+normal capability reply shapes remain unchanged unless metrics are requested.
+Receive metering is maximum per-Source input, not actual mixed/native speaker
+measurement. Tests use synthetic samples and a temporary Desk. Live admission
+and existing app state reads have been checked with the user's test invitation;
+no observer microphone/speaker/broadcast was enabled.
+
+User-led test findings to revisit after monitoring: iPhone joining a Mac-created
+Swarm failed while the reverse direction worked; make the iPhone Create/Join /
+paste-invitation action clearer. Device undo intentionally does not undo shared
+Swarm Offset; labels/scope need clearer UI wording. The default-output capability
+word “broadcast” and antenna icon also need a later consistent UI review, recorded
+in [long-term ideas](possibly-useful/IDEAS.md#publishdefault-output-wording-and-icon--ui-follow-up).
+These are observed/reported issues, not fixes claimed in this monitor increment.
+
 ### Vocabulary and ownership
 
 Use the 22 component names and boundaries in [TERMINOLOGY.md](TERMINOLOGY.md).

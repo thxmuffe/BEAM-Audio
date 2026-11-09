@@ -1,7 +1,7 @@
 %% Local resource authority. No network ingress, arbitrary modules or hardware.
 -module(ba_device_handler).
 -behaviour(gen_server).
--export([start_link/0,capabilities/0,status/0,audio_changed/0,enable_test/1,start/2,cancel/1]).
+-export([start_link/0,capabilities/0,capabilities/1,status/0,audio_changed/0,enable_test/1,start/2,cancel/1]).
 -export([set_test_contract/3,clear_test_contract/0,accept_job/3,cancel_job/2,session_down/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
 -define(CAPACITY,2).
@@ -10,6 +10,8 @@
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 audio_changed() -> gen_server:cast(?MODULE,audio_changed),ok.
 capabilities() -> gen_server:call(?MODULE,capabilities,100).
+capabilities(false) -> capabilities();
+capabilities(true) -> gen_server:call(?MODULE,capability_metrics,100).
 status() -> gen_server:call(?MODULE,status).
 enable_test(Enabled) -> gen_server:call(?MODULE,{enable_test,Enabled}).
 start(Capability,Args) -> gen_server:call(?MODULE,{start,Capability,Args}).
@@ -24,6 +26,7 @@ init([]) ->
     {ok,#{instance => fresh(),revision => 0,enabled => false,active => #{},history => [],
           contract => undefined,jobs => #{},control => undefined,control_monitor => undefined}}.
 
+handle_call(capability_metrics,_,S) -> {reply,capability_metrics(S),S};
 handle_call(capabilities,_,S) -> {reply,capability_snapshot(S),S};
 handle_call(status,_,S) ->
     {reply,#{capabilities => capability_snapshot(S),active =>
@@ -173,6 +176,20 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
         true -> Base#{<<"audio">> => maps:from_list([{atom_to_binary(K),
             #{<<"consent">> => B,<<"state">> => atom_to_binary(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting)),
               <<"available">> => B andalso lists:member(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting),[ready,running])}} || {K,B} <- maps:to_list(ba_app_session:consent())])}
+    end.
+
+capability_metrics(S) ->
+    Base=capability_snapshot(S),
+    case maps:find(<<"audio">>,Base) of
+        error -> Base;
+        {ok,Audio} -> Base#{<<"audio">> := maps:map(fun(K,Entry) ->
+            Key=case K of <<"speaker">> -> speaker;<<"microphone">> -> microphone;<<"broadcast">> -> broadcast end,
+            Row=maps:get(Key,maps:get(audio,S,#{}),#{}),
+            Meter=maps:get(meter,Row,#{}),
+            Counts=maps:from_list([{Wire,V} || {Field,Wire} <- [{blocks,<<"blocks">>},{frames,<<"frames">>},{dropped_callbacks,<<"dropped">>}],
+                {ok,V} <- [maps:find(Field,Row)],is_integer(V),V>=0]),
+            maps:merge(Entry,maps:merge(Counts,maps:with([<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>],Meter)))
+        end,Audio)}
     end.
 
 fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).

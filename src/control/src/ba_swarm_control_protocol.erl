@@ -1,6 +1,6 @@
 %% Pure, bounded application sessions. No OTP distribution, processes or device I/O.
 -module(ba_swarm_control_protocol).
--export([new/2, connect/3, request_status/3, request_capabilities/3, reply_capabilities/5,chat_message/5,
+-export([new/2, connect/3, request_status/3, request_capabilities/3,request_capabilities/4, reply_capabilities/5,chat_message/5,
          receive_packet/4, expire/2, reset/1,
          snapshot/1, seal/2,renew/3,renew_due/2,job_message/6,context/3,audio_message/5,time_message/5]).
 -define(DOMAIN, <<"parvi-swarm-control/v1:">>).
@@ -62,12 +62,15 @@ request_status(Peer, Now, S) ->
     request(Peer,status,<<"status.read">>,Now,S).
 request_capabilities(Peer, Now, S) ->
     request(Peer,capabilities,<<"capabilities.read">>,Now,S).
-request(Peer,Kind,Operation,Now,S) ->
+request_capabilities(Peer,true,Now,S) -> request(Peer,capabilities,<<"capabilities.read">>,#{<<"metrics">> => true},Now,S);
+request_capabilities(Peer,false,Now,S) -> request_capabilities(Peer,Now,S).
+request(Peer,Kind,Operation,Now,S) -> request(Peer,Kind,Operation,#{},Now,S).
+request(Peer,Kind,Operation,Payload,Now,S) ->
     attempt(fun() ->
         Session = active(Peer,Now,S),
         false = maps:is_key(pending,Session),
         Request = fresh(16),
-        {Packet,Next} = outgoing(Peer,Operation,Request,#{},
+        {Packet,Next} = outgoing(Peer,Operation,Request,Payload,
             Session#{pending => Request,pending_kind => Kind,request_deadline => Now+5000},S),
         {ok,Packet,Next}
     end,S).
@@ -235,7 +238,8 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
             case lists:member(capabilities_read,Permissions) of
                 true ->
                     false = maps:is_key(capability_request,Session),
-                    {ok,[],[{capabilities_read,Request}],put(Peer,Received#{capability_request => Request},S)};
+                    Event=case maps:get(<<"metrics">>,Payload,false) of true -> {capabilities_read,Request,true};false -> {capabilities_read,Request} end,
+                    {ok,[],[Event],put(Peer,Received#{capability_request => Request},S)};
                 false ->
                     {Packet,Next} = outgoing(Peer,<<"capabilities.error">>,Request,
                         #{<<"reason">> => <<"forbidden">>},Received,S),
@@ -361,6 +365,7 @@ payload(<<"status.reply">>,P) ->
     #{<<"protocol">> := 1,<<"session">> := <<"authorized">>} = P;
 payload(<<"status.error">>,P) ->
     exact(P,[<<"reason">>]), #{<<"reason">> := <<"forbidden">>} = P;
+payload(<<"capabilities.read">>,#{<<"metrics">> := true}=P) -> exact(P,[<<"metrics">>]);
 payload(<<"capabilities.read">>,P) -> exact(P,[]);
 payload(<<"capabilities.reply">>,P) -> capability_payload(P);
 payload(<<"capabilities.error">>,P) ->
@@ -380,7 +385,11 @@ capability_payload(P) ->
         {ok,Audio} ->
             exact(Audio,[<<"speaker">>,<<"microphone">>,<<"broadcast">>]),
             maps:foreach(fun(_,Entry) ->
-                exact(Entry,[<<"consent">>,<<"state">>,<<"available">>]),
+                Extra=[<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>,<<"blocks">>,<<"frames">>,<<"dropped">>],
+                exact(Entry,[<<"consent">>,<<"state">>,<<"available">>]++[K || K <- Extra,maps:is_key(K,Entry)]),
+                [begin V=maps:get(K,Entry),true=is_number(V) andalso V>= -96 andalso V=<48 end || K <- [<<"peak_db">>,<<"rms_db">>],maps:is_key(K,Entry)],
+                [true=uint(maps:get(K,Entry)) || K <- [<<"meter_age_ms">>,<<"blocks">>,<<"frames">>,<<"dropped">>],maps:is_key(K,Entry)],
+                case maps:find(<<"meter_stage">>,Entry) of error -> ok;{ok,Stage} -> true=lists:member(Stage,[<<"capture">>,<<"receive_max">>]) end,
                 true=is_boolean(maps:get(<<"consent">>,Entry)),true=is_boolean(maps:get(<<"available">>,Entry)),
                 State=maps:get(<<"state">>,Entry),true=is_binary(State) andalso byte_size(State)=<64
             end,Audio);

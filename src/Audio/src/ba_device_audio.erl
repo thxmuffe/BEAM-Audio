@@ -66,7 +66,7 @@ reconcile(S) ->
                         [] -> #{state => case Playing of true -> running;false -> ready end}
                     end
             end,
-            Audio=(maps:get(audio,Captured,#{}))#{speaker => Speaker},
+            Audio=(maps:get(audio,Captured,#{}))#{speaker => Speaker#{meter => maps:get(receive_meter,NextView,#{})}},
             maps:get(owner,S) ! {audio_state,self(),Audio},Captured#{contracts := Wanted};
         _ ->
             Audio=maps:map(fun(_,B) -> #{state => case B of true -> waiting_for_membership;false -> disabled end} end,Consent),

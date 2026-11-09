@@ -1,7 +1,7 @@
 %% Desk adapter. Owns application sessions, never OTP distribution or audio.
 -module(ba_swarm_control).
 -behaviour(gen_server).
--export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1]).
+-export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1,read_capabilities/2]).
 -export([offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,chat_message/3,audio_context/1,time_message/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 
@@ -16,6 +16,7 @@ exclude(Peer) -> gen_server:call(?MODULE,{exclude,Peer}).
 connect(Peer) -> gen_server:call(?MODULE,{connect,Peer}).
 read_status(Peer) -> gen_server:call(?MODULE,{read_status,Peer},7000).
 read_capabilities(Peer) -> gen_server:call(?MODULE,{read_capabilities,Peer},7000).
+read_capabilities(Peer,Metrics) -> gen_server:call(?MODULE,{read_capabilities,Peer,Metrics},7000).
 offer_job(Peer,Offer) -> gen_server:call(?MODULE,{offer_job,Peer,Offer}).
 retry_job(Id) -> gen_server:call(?MODULE,{job_command,retry,Id}).
 cancel_job(Id) -> gen_server:call(?MODULE,{job_command,cancel,Id}).
@@ -124,6 +125,8 @@ handle_call({job_command,Command,Id},_,#{jobs := Jobs} = S) ->
 handle_call({connect,Peer},_,S) ->
     case ba_app_session:excluded(Peer) of true -> {reply,{error,peer_excluded},S};false -> connect_peer(Peer,S) end;
 
+handle_call({read_capabilities,Peer,Metrics},From,S) when is_boolean(Metrics) ->
+    read_capabilities_call(Peer,Metrics,From,S);
 handle_call({Operation,Peer},From,#{callers := Callers} = S)
         when Operation =:= read_status; Operation =:= read_capabilities ->
     Result = case Operation of
@@ -221,6 +224,15 @@ handle_info(Message,#{handler_requests := Requests} = S) ->
         _ -> {noreply,S}
     end.
 
+read_capabilities_call(Peer,Metrics,From,#{callers := Callers}=S) ->
+    case ba_swarm_control_protocol:request_capabilities(Peer,Metrics,now_ms(),maps:get(protocol,S)) of
+        {ok,Packet,Protocol} -> case send(Peer,Packet,S) of
+            ok -> {noreply,S#{protocol := Protocol,callers := Callers#{Peer => From}}};
+            Error -> {reply,Error,S}
+        end;
+        {error,R,_} -> {reply,{error,R},S}
+    end.
+
 send(Peer,Packet,_) -> ba_swarm_desks:send(Peer,<<"swarm_control">>,Packet).
 event(Peer,{reply,<<"status.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
 event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
@@ -228,8 +240,9 @@ event(Peer,{reply,<<"capabilities.reply">>,Value},S) -> reply(Peer,{ok,Value},S)
 event(Peer,{reply,<<"capabilities.error">>,#{<<"reason">> := Reason}},S) ->
     Error = case Reason of <<"forbidden">> -> forbidden; <<"unavailable">> -> unavailable end,
     reply(Peer,{error,Error},S);
-event(Peer,{capabilities_read,Request},S) ->
-    Value = try ba_device_handler:capabilities() catch exit:_ -> unavailable end,
+event(Peer,{capabilities_read,Request},S) -> event(Peer,{capabilities_read,Request,false},S);
+event(Peer,{capabilities_read,Request,Metrics},S) ->
+    Value = try ba_device_handler:capabilities(Metrics) catch exit:_ -> unavailable end,
     case ba_swarm_control_protocol:reply_capabilities(Peer,Request,Value,now_ms(),maps:get(protocol,S)) of
         {ok,Packet,Protocol} ->
             case send(Peer,Packet,S) of

@@ -1,6 +1,6 @@
 %% CLI presentation/lifecycle only. Device behavior and readiness live in OTP APIs.
 -module(ba_cli).
--export([main/2,spec/1,new_device/2,request/2,wait/3]).
+-export([main/2,spec/1,new_device/2,request/2,wait/3,timeout/1]).
 main(Args,Root) ->
     try case lists:member("--help",Args) of
         true -> io:put_chars(argparse:help(spec(Root),#{progname => "beam-audio",command => [A || A <- Args,A=/="--help"]}));
@@ -19,6 +19,11 @@ spec(Root) ->
             #{name => timeout,long => "-timeout",type => string,default => "120s"}],
     Device=fun(F,Extra) -> #{arguments => Extra,handler => fun(A) -> F(A) end} end,
     #{help => "Real headless BEAM Audio Devices; no UI or Distributed Erlang.",arguments => Common,commands => #{
+      "monitor" => #{arguments => [#{name => all,long => "-all",action => {store,true},default => false},
+          #{name => invitation_file,long => "-invitation-file",type => string},
+          #{name => once,long => "-once",action => {store,true},default => false},
+          #{name => interval,long => "-interval",type => {integer,[{min,500},{max,10000}]},default => 1000}],
+          handler => fun(A) -> ba_cli_monitor:run(A,Root) end},
       "new" => #{commands => #{"device" => Device(fun(A) -> emit(new_device(A,Root)) end,
           [#{name => createswarm,long => "-createswarm",action => {store,true},default => false},
            #{name => joinswarm,long => "-joinswarm",type => string},
@@ -61,7 +66,7 @@ new_device(A,Root) ->
     Mode=case {Create,Join} of {true,_} -> <<"create">>;{_,undefined} -> <<"idle">>;_ -> <<"join">> end,
     Desk=maps:get(desk,A,"wss://parvi-reception-desk.onrender.com/relay/v1"),
     C=#{instance => list_to_binary(Instance),name => list_to_binary(Name),socket => list_to_binary(Socket),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
-        invitation => case Join of undefined -> null;_ -> list_to_binary(Join) end},
+        observer => maps:get(observer,A,false),invitation => case Join of undefined -> null;_ -> list_to_binary(Join) end},
     Record=filename:join(D,"running.json"),
     case file:open(Record,[write,binary,exclusive]) of
         {ok,F} -> ok=file:change_mode(Record,8#600),ok=file:write(F,json:encode(maps:with([instance,name,socket],C))),file:close(F);
