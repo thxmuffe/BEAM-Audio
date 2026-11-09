@@ -85,7 +85,15 @@ handle_call(depart,_,#{role := authority,routes := Routes}=S) ->
         case Peer=:=maps:get(id,S) of true -> ok;false -> send(Peer,R,<<"ended">>,fresh(16),#{},S) end
     end,Routes),{reply,ok,S};
 handle_call(depart,_,#{role := member}=S) ->
-    send(maps:get(authority,S),maps:get(authority_route,S),<<"leave">>,fresh(16),#{},S),{reply,ok,S};
+    %% Bind departure to this admission: replaying an old signed leave must not
+    %% evict the same Device after it accepts a fresh invitation.
+    case maps:get(policy,S) of
+        undefined -> ok;
+        P ->
+            M = maps:get(maps:get(id,S),maps:get(<<"members">>,P)),
+            send(maps:get(authority,S),maps:get(authority_route,S),<<"leave">>,fresh(16),
+                #{<<"membership">> => maps:get(<<"membership">>,M)},S)
+    end,{reply,ok,S};
 handle_call({grant,Device,Permissions},_,#{role := authority,policy := P} = S) ->
     try
         ok = ba_swarm_passport:permissions(Permissions),Members = maps:get(<<"members">>,P),
@@ -219,8 +227,9 @@ incoming(Authority,#{<<"type">> := <<"ended">>,<<"payload">> := P},
     ba_swarm_passport:exact(P,[]),invalidate(),ba_swarm:ended(self()),S#{state := ended,until := 0};
 incoming(Peer,#{<<"type">> := <<"leave">>,<<"payload">> := Payload},
          #{role := authority,policy := P,routes := Routes,invitations := Invites}=S) ->
-    ba_swarm_passport:exact(Payload,[]),true = Peer=/=maps:get(id,S),
-    true = maps:is_key(Peer,maps:get(<<"members">>,P)),
+    ba_swarm_passport:exact(Payload,[<<"membership">>]),true = Peer=/=maps:get(id,S),
+    #{<<"membership">> := Membership} = maps:get(Peer,maps:get(<<"members">>,P)),
+    Membership = maps:get(<<"membership">>,Payload),
     NewP = bump(P#{<<"members">> := maps:remove(Peer,maps:get(<<"members">>,P))},true),
     Next = S#{policy := NewP,routes := maps:remove(Peer,Routes),
         invitations := maps:filter(fun(_,E) -> maps:get(claimed,E)=/=Peer end,Invites)},

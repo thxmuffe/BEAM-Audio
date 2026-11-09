@@ -1,5 +1,14 @@
 # BEAM Audio control runtime
 
+Step 9 adds [Ephemeral Swarms and local contacts/groups](../../docs/SWARM_MEMBERSHIP.md).
+Start `ba_runtime:start(swarm_control)` idle, then call `ba_swarm:create/2` or
+explicitly accept an invitation with `ba_swarm:join/1`. `ba_contacts` is the
+durable address book; Swarm policy, Passports, routes and Subscription intent
+are memory-only for that gathering. Captain end/departure tears down its runtime;
+Captain loss ends members when fresh authorization expires. No election or restore.
+The local JSON bridge exposes lifecycle/address-book commands. UI integration
+is step 10, macOS → iOS → Windows; no product app was launched for this work.
+
 Follow-ups 8a–8d are implemented: independently supervised Desk connections and
 route fallback, unchanged Contract no-ops, bounded failure diagnostics and fresh
 nonce-based authorization renewal retaining eligible media. The root supervisor
@@ -7,7 +16,7 @@ isolates Desk ownership from `ba_swarm_runtime_sup`'s dependency-ordered runtime
 ordinary route loss is not revocation. Exact current policy and expiry remain
 enforced. See [control/renewal](../../docs/SWARM_CONTROL_PROTOCOL.md),
 [Desk ownership](../../docs/SWARM_MEMBERSHIP.md) and [checks](../../tests/control/README.md).
-Step 9/app integration has not started.
+The 8d maximum-Offset continuity qualification remains open.
 
 Core entry point: `ba_runtime`; OTP application: `ba_core`; configuration: `BA_*`.
 Use the [canonical terminology](../../docs/TERMINOLOGY.md) and
@@ -25,7 +34,7 @@ window, adds bounded buffering over the Offset range and capture rebind after
 reference restart, and integrates native decoded audio into the shared mixer.
 Existing clock math and per-packet targets are preserved. See
 [repeatable checks and platform limits](../../tests/control/README.md).
-Product apps remain unmigrated; step 9 starts with macOS, then Windows, then iOS.
+Product apps remain unmigrated; step 10 starts with macOS, then iOS, then Windows.
 
 ## Shared Time and Offset — step 7
 
@@ -36,14 +45,14 @@ samples and existing median/slew policy gate scheduling. Capture stamps from one
 current clock/Offset snapshot; cached policy is not a local override. The real
 WebRTC PCM proof now also runs with this shared clock and a headless output sink.
 Step 8 verifies native decoded-audio mixing and sustained buffering; platform
-capture/output and physical timing remain step-9 gates.
-The revised shared app UI is specified in step 9; abandoned-Swarm return is step 10.
+capture/output and physical timing remain step-10 gates.
+The revised shared app UI is specified in step 10; abandoned-Swarm return is superseded.
 
 
 ## Current Swarm audio path — step 6
 
 [Independent Streams and Subscriptions](../../docs/SWARM_STREAMS.md) replaces the
-single receiver with a durable collection, scoped signed signaling, independent
+single receiver with a gathering-scoped collection, scoped signed signaling, independent
 WebRTC PCM endpoints and one Erlang scheduled mixer. Local publication/receive
 Contracts and separate stream grants are required. Sources may pause or restart
 without removing intent or disturbing another stream. Old singular APIs and
@@ -52,7 +61,7 @@ cross-device PID discovery are retired on this path.
 The headless proof uses real WebRTC media with either the explicit test clock or
 step 7's authenticated shared clock, and a scheduled output sink. Mixed output supports PCM
 mono/stereo at one shared output rate/reference; Opus now decodes to that same
-mixer in step 8. Platform output remains step 9. No product apps were launched.
+mixer in step 8. Platform output remains step 10. No product apps were launched.
 The historical checkpoints below do not provide the active receiver API.
 
 > **Reading status — 2026-11-08:** This guide describes the existing runtime and
@@ -70,15 +79,14 @@ Step 4 now adds the [Director/Contract/job proof](../../docs/SWARM_JOBS.md), wit
 local acceptance, leases, idempotent retry and correlated outcomes. Step 2's
 [restricted status protocol](../../docs/SWARM_CONTROL_PROTOCOL.md) is implemented
 and verified between independent runtimes through the real Desk without OTP
-connectivity. Step 5 adds [durable Passports, current permissions and multi-Desk rejoin](../../docs/SWARM_MEMBERSHIP.md).
-Use `ba_runtime:start(swarm_control)` with that membership configuration; the old explicit
-peer-policy fixture is replaced. The guides give limits and headless check commands.
+connectivity. Step 5 introduced [Passports, current permissions and multi-Desk routing](../../docs/SWARM_MEMBERSHIP.md).
+Step 9 now starts that runtime idle; use `ba_swarm` for explicit create/join. The guides give limits and headless check commands.
 New builds ignore old version-1 membership/route/subscription records while
 retaining device keys. Step 3 adds scoped `capabilities.read` queries with their
 own `capabilities_read` grant; they do not grant Worker execution. A separate
 `job_offer` grant, designated Director and explicit local test Contract/consent
 are required for the bounded test job. App integration
-is step 9: macOS, Windows, then iOS.
+is step 10: macOS, iOS, then Windows.
 Temporary broken app/control paths during migration are accepted; preserving the
 old runtime alongside the replacement is not required.
 

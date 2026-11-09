@@ -22,10 +22,10 @@ From `src/control`, compile and run the focused unit/protocol regression:
 
 ```sh
 rebar3 compile
-rebar3 eunit --module=ba_swarm_control_protocol_tests,ba_swarm_passport_tests,ba_swarm_job_tests,ba_device_handler_tests,ba_device_store_tests,ba_subscription_tests,ba_audio_restore_events_tests,ba_audio_mix_tests,ba_audio_opus_tests,ba_audio_rtp_time_tests,ba_webrtc_audio_timing_tests,ba_audio_engine_tests,ba_audio_gstreamer_schedule_tests,ba_audio_gstreamer_control_tests,ba_audio_meter_tests,ba_swarm_clock_tests,ba_swarm_clock_filter_tests,ba_swarm_clock_mapping_tests,ba_swarm_time_protocol_tests,ba_backend_failures_tests
+rebar3 eunit --module=ba_swarm_control_protocol_tests,ba_swarm_passport_tests,ba_swarm_job_tests,ba_device_handler_tests,ba_device_store_tests,ba_subscription_tests,ba_audio_restore_events_tests,ba_audio_mix_tests,ba_audio_opus_tests,ba_audio_rtp_time_tests,ba_webrtc_audio_timing_tests,ba_audio_engine_tests,ba_audio_gstreamer_schedule_tests,ba_audio_gstreamer_control_tests,ba_audio_meter_tests,ba_swarm_clock_tests,ba_swarm_clock_filter_tests,ba_swarm_clock_mapping_tests,ba_swarm_time_protocol_tests,ba_backend_failures_tests,ba_contacts_tests,ba_swarm_tests
 ```
 
-117 checks pass for the implemented 8a–8d changes. Native engine protocol checks use bounded loopback
+123 checks pass including the Ephemeral Swarm review fixes. Native engine protocol checks use bounded loopback
 test endpoints; they do not qualify native playback. The 30-second queue proof
 uses virtual time and two sources; the ordinary clock-renewal unit check requires
 fresh authorization even when observations are retained.
@@ -43,8 +43,8 @@ BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control
 The first uses the existing public WSS Desk for signed status/capabilities,
 Director jobs, local consent, retry, cancellation, expiry, Worker crash and
 Director-loss cleanup. Membership/time proofs start two temporary instances of
-the existing Desk service for cross-Desk admission/rejoin, retained authority,
-revoked return, clock/Offset writes, reference restart and control recovery.
+the existing Desk service for cross-Desk admission, explicit permissions, revocation, Desk isolation,
+clock/Offset writes, reference restart and control recovery.
 Production cadence takes about 100 seconds, exercising 20 observations at 5 s
 across the 60 s session boundary. Sustained PCM covers two mixed sources, 4 s of
 continuous capture at 1000 ms Offset without mixer drops, queue drain, automatic
@@ -52,6 +52,27 @@ capture rebind after reference restart and the independent subscription lifecycl
 Its test sink checks software target/handoff times, with no output hardware.
 The Homebrew OpenSSL variable is needed only for the existing macOS libsrtp NIF;
 omit or adapt it on other systems.
+
+## Ephemeral Swarms — step 9
+
+```sh
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --ephemeral --swarm-time
+```
+
+This passes the lifecycle exit: saved contacts/group generate recipient-bound
+invitation URIs; voluntary join and explicit Contracts allow two real WebRTC PCM
+Sources to mix at their packet targets. It verifies member leave/rejoin,
+Captain-only end, full process/ETS/Desk teardown on all participants, contacts
+surviving a cold restart, new gathering IDs and rejection of old-gathering tickets.
+It also kills the Captain membership actor and waits through the actual 60-second
+authorization bound for member teardown. No election or snapshot restoration.
+Storage contains only the Captain's `contacts.term`; other test Devices write no
+Swarm checkpoint files. The corrected two-Desk membership proof also explicitly
+ends the Captain gathering before checking remote cleanup and retained contacts.
+
+Local APIs and limits: [Ephemeral Swarms](../../docs/SWARM_MEMBERSHIP.md).
+These are headless loopback proofs, not app, hardware or physical timing tests.
+The earlier 8d maximum-Offset continuity issue remains separate and open.
 
 ## Desk isolation, idempotency, diagnostics and renewal — 8a–8d
 

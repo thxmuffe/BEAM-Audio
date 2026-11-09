@@ -190,14 +190,14 @@ The obsolete remote-PID native session and OTP-distribution PCM carrier are reti
 
 ## Retained intent and limits
 
-`audio_subscriptions.term` stores only a format-1 collection inside the existing
-version-2 checkpoint envelope: stable IDs, Swarm/device/source keys, labels,
-profile, playing intent and per-input gain. The former single `audio_subscription`
-record is deliberately not imported. No contracts/consent, incarnations, endpoint
-PIDs, nonces, leases, audio or packet targets persist. Restart cannot reopen media
-until current local Contracts, matching catalogue, current membership/control
-session and fresh clock are available. Suspension/network handover drops live
-resources and requires fresh clock evidence after resume.
+Step 9 replaces `audio_subscriptions.term` with gathering-owned ETS storage.
+The format-1 collection still contains stable intent IDs, Swarm/device/source
+keys, labels, profile, playing intent and gain. It survives receiver recovery
+within this gathering, not its end or a VM restart. Old subscription files are
+ignored. Contracts/consent, incarnations, endpoint PIDs, nonces, leases, audio and
+packet targets are never restored. Receiver recovery cannot reopen media until
+current local Contracts, a matching catalogue, current authorization and a fresh
+clock are available. See [Ephemeral Swarm lifecycle](SWARM_MEMBERSHIP.md).
 
 Bounds: 16 publications, subscriptions and outgoing provider endpoints each;
 32 local direction/device/source Contracts, 16 catalogue offers per peer, five

@@ -1,5 +1,40 @@
 # Progress
 
+## 2026-11-09 — Reviewed and completed Ephemeral Swarm verification
+
+Reviewed commits dd12617 and 3f9f245. They implement a device-local address book,
+fresh-ID temporary gatherings, Captain-owned lifetime, significant temporary
+membership supervision, gathering-owned ETS, local create/join/leave/end APIs
+and a JSON bridge. Contacts/groups remain on disk; old Swarm files are ignored.
+No durable membership registry, election or automatic gathering restoration.
+
+The commits did not supply the complete planned exit proof: the two-Desk test
+claimed Captain teardown while only closing member VMs, and group invitations
+were not exercised with audio. Added an explicit `--ephemeral --swarm-time`
+scenario to the existing media harness and corrected the two-Desk test. The
+scenario proves saved-group invitations, voluntary join, local Contracts, real
+two-source WebRTC PCM mixed at original packet targets, member leave/rejoin,
+Captain-only end, complete process/ETS/Desk cleanup, contact/group persistence
+through a cold restart, fresh creation IDs and no old-gathering restoration.
+It kills the Captain membership actor and waits for the member's actual fresh
+60-second authorization bound to expire, confirming teardown without election.
+
+Also fixed a signed-departure replay defect: `leave` now includes its membership
+ID. An old valid signed departure cannot remove that Device after a later
+admission. Added a signature-level regression. Isolated the new EUnit fixtures'
+state directories/environment and explicitly stop their supervisors during cleanup.
+Updated terminology, membership/stream contracts, API usage and roadmap to match
+the implemented volatile lifecycle instead of the old durable-Swarm model.
+
+Validation: warnings-as-errors compilation and all 123 focused backend EUnit
+checks pass. The new Ephemeral Swarm audio/lifecycle proof and corrected two-Desk
+permission/Job/isolation/revocation/teardown proof both pass. Invites use private
+URI transfer (QR-capable), not unsolicited Desk push. No product app, hardware
+output, platform packaging or deployment was used. Changes are uncommitted;
+OpenSound product sources remain unchanged. Step 9 is verified in the core;
+planned app work is step 10 (macOS → iOS → Windows). The earlier 8d maximum-Offset
+continuity qualification remains open and is not resolved by this lifecycle work.
+
 ## 2026-11-09 — Architecture update: Ephemeral Swarms adopted in PLAN.md
 
 Updated PLAN.md to adopt the Ephemeral Swarms architecture:

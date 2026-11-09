@@ -45,3 +45,14 @@ stale_authority_response_test() ->
         <<"swarm">>=>Swarm,<<"request">>=>Req,<<"payload">>=>#{<<"nonce">>=>Nonce,<<"reason">>=><<"revoked">>}},
     Packet=ba_swarm_passport:sign(Body,Key),
     ?assertEqual({noreply,S#{rejected:=1}},ba_swarm_membership:handle_info({desk_delivery,unused,A,Packet},S)).
+
+old_signed_departure_cannot_evict_a_new_admission_test() ->
+    {APub,_}=crypto:generate_key(eddsa,ed25519),A=binary:encode_hex(APub),
+    {BPub,BKey}=crypto:generate_key(eddsa,ed25519),B=binary:encode_hex(BPub),
+    Swarm=binary:copy(<<"A">>,32),Old=binary:copy(<<"B">>,32),New=binary:copy(<<"C">>,32),
+    S=#{role=>authority,id=>A,swarm=>Swarm,rejected=>0,routes=>#{},invitations=>#{},
+        policy=>#{<<"members">>=>#{B=>#{<<"membership">>=>New}}}},
+    Body=#{<<"v">>=>1,<<"type">>=><<"leave">>,<<"from">>=>B,<<"to">>=>A,
+        <<"swarm">>=>Swarm,<<"request">>=>Old,<<"payload">>=>#{<<"membership">>=>Old}},
+    Packet=ba_swarm_passport:sign(Body,BKey),
+    ?assertEqual({noreply,S#{rejected:=1}},ba_swarm_membership:handle_info({desk_delivery,unused,B,Packet},S)).

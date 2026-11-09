@@ -1,4 +1,4 @@
-"""Durable membership through two independent Desk service instances; no apps."""
+"""Ephemeral membership through two independent Desk service instances; no apps."""
 import importlib.util
 import shutil
 import socket
@@ -94,7 +94,18 @@ def main():
             assert a.identity['id'] in contacts['contacts'] and old_id in contacts['contacts']
             assert 'Friends' in contacts['groups']
             # Ephemeral swarm end: Captain departure terminates gathering; contacts persist
-            x.close();y_seed=y.seed;y.close();y=runtime('member1',y_seed)
+            x.close()
+            assert a.request('end_swarm')['ok']
+            end=time.monotonic()+15
+            for r in (a,y):
+                while True:
+                    lifecycle=r.request('lifecycle')
+                    if lifecycle['swarm']=={'state':'idle'}:
+                        assert lifecycle['live']==[] and not lifecycle['transient_state'] and lifecycle['connections']==0,lifecycle
+                        break
+                    assert time.monotonic()<end,lifecycle
+                    time.sleep(.1)
+            y_seed=y.seed;y.close();y=runtime('member1',y_seed)
             retained_contacts = y.request('list_contacts')
             assert a.identity['id'] in retained_contacts['contacts']
             assert 'Friends' in retained_contacts['groups']

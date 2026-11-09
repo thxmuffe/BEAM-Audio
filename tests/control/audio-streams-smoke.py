@@ -29,6 +29,7 @@ def wait_audio(r,predicate):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--swarm-time",action="store_true")
+    parser.add_argument('--ephemeral',action='store_true',help='Contacts/group invitations, live PCM, leave/end, cold restart and Captain-loss teardown')
     parser.add_argument('--opus',action='store_true',help='Exercise the configured GStreamer decoder, no hardware')
     parser.add_argument('--sustained',action='store_true',help='Continuous PCM capture at the default 1000ms Offset, then reference restart/rebind')
     parser.add_argument('--renewal',action='store_true',help='Continuous two-source lease renewal proof; returns before lifecycle checks')
@@ -67,8 +68,16 @@ def main():
             for r in runtimes:assert r.request('clock_prepare',interval_ms=250,samples=3)['ok']
         assert a.request('create',desks=[url])['ok']
         control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
+        invitations={}
+        if args.ephemeral:
+            for r,name in ((b,'Receiver'),(c,'Second publisher')):
+                assert a.request('put_contact',id=r.identity['id'],name=name)['ok']
+            assert a.request('group_contacts',name='Session',ids=[b.identity['id'],c.identity['id']])['ok']
+            links=a.request('invite_swarm',selection={'group':'Session'})['value']
+            invitations={entry['device']:entry['invitation'] for entry in links}
         for r in (b,c):
-            assert r.request('join',invitation=a.request('invite')['value'],desk=url)['ok']
+            invitation=invitations[r.identity['id']] if args.ephemeral else a.request('invite')['value']
+            assert r.request('join',invitation=invitation,desk=url)['ok']
             control.wait(r,lambda s:s['membership']['state']=='authorized')
         permissions=['status_read','stream_read','stream_subscribe']
         if args.swarm_time:
@@ -212,6 +221,56 @@ def main():
             assert abs(blocks[0]['target_ns']-target)<22000,blocks
             return blocks
         mixed(.75)
+        if args.ephemeral:
+            assert not args.opus and not args.renewal
+            def idle(r,timeout=15):
+                end=time.monotonic()+timeout
+                while time.monotonic()<end:
+                    state=r.request('lifecycle')
+                    if state['swarm']=={'state':'idle'}:
+                        assert state['live']==[] and not state['transient_state'] and state['connections']==0,state
+                        return
+                    time.sleep(.1)
+                raise AssertionError(('Swarm did not terminate',state))
+            swarm=a.request('swarm_status')['swarm']
+            address_book=a.request('list_contacts')
+            assert b.request('end_swarm')=={'error':'captain_only'}
+            assert b.request('leave_swarm')['ok'];idle(b)
+            control.wait(a,lambda s:b.identity['id'] not in s['membership']['members'])
+            assert a.request('swarm_status')['swarm']==swarm
+            # A new invitation allows an explicit return to the still-live gathering.
+            link=a.request('invite_swarm',selection=[b.identity['id']])['value'][0]['invitation']
+            assert b.request('join_swarm',invitation=link)['ok']
+            control.wait(b,lambda s:s['membership']['state']=='authorized')
+            assert a.request('end_swarm')['ok']
+            for r in runtimes:idle(r)
+            assert a.request('list_contacts')==address_book
+            for r in runtimes:
+                directory=Path(r.state.name)
+                assert sorted(p.name for p in directory.glob('*.term'))==(['contacts.term'] if r is a else []),list(directory.iterdir())
+            # Same identity/storage, new VM: contacts survive, gathering does not.
+            directory=a.state.name;seed=a.seed;identity=a.identity['id'];a.close()
+            a=control.Runtime([out,*paths],seed=seed,state=directory,executable=executable,extra_env=extra_env)
+            runtimes.append(a);idle(a)
+            assert a.identity['id']==identity and a.request('list_contacts')==address_book
+            assert a.request('create',desks=[url])['ok']
+            assert a.request('swarm_status')['swarm']!=swarm
+            control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
+            # A ticket from the ended gathering never restores its old identity.
+            assert b.request('join_swarm',invitation=link)['ok']
+            assert b.request('swarm_status')['swarm']==swarm
+            time.sleep(.5)
+            assert b.request('swarm_status')['state']!='authorized'
+            assert b.request('leave_swarm')['ok'];idle(b)
+            link=a.request('invite_swarm',selection=[b.identity['id']])['value'][0]['invitation']
+            assert b.request('join_swarm',invitation=link)['ok']
+            control.wait(b,lambda s:s['membership']['state']=='authorized')
+            # Loss of the Captain is terminal: no election or restored snapshot.
+            assert a.request('crash_swarm')['ok'];idle(a)
+            idle(b,70)
+            assert a.request('list_contacts')==address_book
+            print('PASS: saved group invitations, voluntary join/leave and return, real two-source PCM, Captain end and crash/lease expiry, full process/ETS/Desk teardown, new Swarm ID and contacts surviving cold restart; no apps or hardware')
+            return
         if args.sustained:
             assert args.swarm_time and not args.opus
             assert b.request('offset_set',offset_ms=1000)['ok']

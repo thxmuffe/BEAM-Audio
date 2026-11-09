@@ -29,10 +29,19 @@ command(#{<<"op">> := <<"create_swarm">>,<<"name">> := Name,<<"desks">> := URLs}
 command(#{<<"op">> := <<"join_swarm">>,<<"invitation">> := Link},_,_) ->
     ensure_started(),result(ba_swarm:join(Link));
 command(#{<<"op">> := <<"invite_swarm">>,<<"selection">> := Sel},_,_) ->
-    ensure_started(),result(ba_swarm:invite(Sel,3600));
+    ensure_started(),Selection = case Sel of #{<<"group">> := G} -> {group,G};L -> L end,
+    result(ba_swarm:invite(Selection,3600));
 command(#{<<"op">> := <<"leave_swarm">>},_,_) -> ensure_started(),result(ba_swarm:leave());
 command(#{<<"op">> := <<"end_swarm">>},_,_) -> ensure_started(),result(ba_swarm:end_swarm());
 command(#{<<"op">> := <<"swarm_status">>},_,_) -> ensure_started(),ba_swarm:status();
+command(#{<<"op">> := <<"lifecycle">>},_,_) ->
+    ensure_started(),
+    #{swarm => ba_swarm:status(),transient_state => ets:whereis(ba_swarm_state)=/=undefined,
+      connections => map_size(ba_desk_connections_sup:connections()),
+      live => [atom_to_binary(N) || N <- [ba_swarm_runtime_sup,ba_swarm_membership,
+        ba_device_sup,ba_swarm_control,ba_swarm_clock_sup,ba_swarm_clock,
+        ba_audio_sup,ba_audio_receiver,ba_audio_mixer],is_pid(whereis(N))]};
+command(#{<<"op">> := <<"crash_swarm">>},_,_) -> exit(whereis(ba_swarm_membership),kill),#{ok => true};
 command(#{<<"op">> := <<"list_contacts">>},_,_) -> ensure_started(),ba_contacts:list();
 command(#{<<"op">> := <<"put_contact">>,<<"id">> := Id,<<"name">> := Name},_,_) ->
     ensure_started(),result(ba_contacts:put(Id,Name));

@@ -5,12 +5,21 @@ contacts_test_() ->
     {setup,
      fun() ->
          application:load(ba_core),
-         application:set_env(ba_core, runtime_profile, swarm_control),
-         {ok, _} = ba_contacts:start_link()
+         Profile=application:get_env(ba_core,runtime_profile),
+         Saved=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
+         Dir=filename:join("/tmp","ba_ephemeral_unit_"++integer_to_list(erlang:unique_integer([positive]))),
+         os:putenv("BA_STATE_DIR",Dir),
+         os:putenv("BA_IDENTITY_SEED","0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+         application:set_env(ba_core,runtime_profile,swarm_control),
+         {ok,Pid}=ba_contacts:start_link(),unlink(Pid),
+         {Pid,Saved,Profile,Dir}
      end,
-     fun(_) ->
-         try gen_server:stop(ba_contacts) catch _:_ -> ok end,
-         application:unset_env(ba_core, runtime_profile)
+     fun({Pid,Saved,Profile,Dir}) ->
+         gen_server:stop(Pid,shutdown,5000),
+         [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Saved],
+         case Profile of undefined -> application:unset_env(ba_core,runtime_profile);
+             {ok,P} -> application:set_env(ba_core,runtime_profile,P) end,
+         file:del_dir_r(Dir)
      end,
      [fun crud_and_validation/0,
       fun groups_and_resolve/0,

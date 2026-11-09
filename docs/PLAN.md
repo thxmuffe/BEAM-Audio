@@ -19,13 +19,11 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–8, the core naming cleanup and backend follow-ups 8a–8d are ready.
-The architecture direction adopts Ephemeral Swarms: Swarms are temporary
-gatherings; contacts and groups belong to Devices (like a phone's address book;
-no mutual friendship, approval or synchronization required). Former step 10
-(abandoned-Swarm recovery) is superseded. Next is step 9: Ephemeral Swarms
-(contacts, groups, and temporary gathering lifecycle), followed by step 10:
-application integration (macOS → iOS → Windows).** See
+**Ephemeral Swarms (step 9) are implemented and verified in the headless core.
+Contacts/groups and Device Identity survive; gatherings and their runtime state
+do not. Former abandoned-Swarm recovery is superseded. Next is step 10:
+application integration (macOS → iOS → Windows). The earlier 8d maximum-Offset
+continuity limitation remains open; this lifecycle work does not resolve it.** See
 [canonical component names](TERMINOLOGY.md) and [API/configuration migration](NAMING.md). The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
@@ -257,9 +255,12 @@ trusted-cluster code; it is not the current Swarm boundary.
      registry.
    - Voluntary join, leave, subscribe under local Device Handler control.
    - Invitation dispatch to saved contacts or groups via Desk mailbox (or QR/URI).
-   **Exit:** scripted core proof: create ephemeral Swarm, invite saved contact/group,
-   admit and play streams, and end the Swarm cleanly. Swarm processes and transient
-   state terminate while device-local contacts and groups persist.
+   **Exit — verified:** the [core proof](../tests/control/README.md) uses saved-group
+   invitation URIs, voluntary admission, real two-source PCM, leave/rejoin and
+   Captain end. It checks full process/ETS/Desk teardown, contacts surviving cold
+   restart, fresh creation IDs, and Captain crash followed by actual lease expiry.
+   [Lifecycle/API details](SWARM_MEMBERSHIP.md). Contacts never grant permission;
+   automatic unsolicited invitation delivery is outside this URI-based proof.
 
 10. **Update and verify the applications — macOS, then iOS, then Windows.**
    Integrate the new runtime and permission/state model into each app in that
@@ -419,14 +420,14 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Next: **step 9 — Ephemeral Swarms: contacts, groups, and temporary gathering lifecycle**.
-Then **step 10 — macOS runtime/UI integration**, when requested, including
+Next: **step 10 — macOS runtime/UI integration**, when requested, including
 the combined native-mixing/RTP timing evaluation. Finalize and verify the
 macOS audio boundary before updating iOS, then Windows. No product app is launched
 for the preparatory backend work. Preserve independent packet targets, stored
 Device Identity and the common UI requirements; start updated apps with forgotten
 old Swarms/subscriptions. Former abandoned-Swarm recovery is superseded by
-ephemeral Swarms. Follow-ups 8a–8d are ready; step 9 has not started. App/device
+ephemeral Swarms. Step 9 is verified; the earlier 8d maximum-Offset issue remains
+open and must not be described as fixed. App/device
 listening and physical output timing remain unqualified.
 See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),
 [membership](SWARM_MEMBERSHIP.md) and [jobs](SWARM_JOBS.md).

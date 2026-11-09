@@ -8,10 +8,13 @@ and capability reads are implemented. Step 4's [test Contract/job flow](SWARM_JO
 is implemented. Steps 5–8 now implement [Passport/rejoin](SWARM_MEMBERSHIP.md),
 [PCM/Opus collection and Contracts](SWARM_STREAMS.md), [shared Time/Offset](SWARM_TIME.md)
 and [headless backend verification](../tests/control/README.md). Installed app
-chat/graph/bridge consumers still require the scoped APIs in step 9; they are not
+chat/graph consumers still require the scoped APIs in step 10; they are not
 started by the new backend profile. The migration map below records the original
 dependencies and their replacement, not a claim that old app profiles are safe.
 Existing implementation evidence stays in [PROGRESS.md](PROGRESS.md).
+Step 9 supersedes the original durable-membership direction with
+[Ephemeral Swarms](SWARM_MEMBERSHIP.md): creator-as-Captain for the gathering,
+no restoration/election, durable Device contacts/groups only.
 The vocabulary in PLAN.md applies here.
 Use [TERMINOLOGY.md](TERMINOLOGY.md) for canonical component names and
 [NAMING.md](NAMING.md) for renamed core APIs. A Subscription retains intent to
@@ -33,22 +36,23 @@ assumes connected distribution peers and loaded code are fully trusted.
 | Device Handler | Local capabilities, consent, capacity, accepted obligations, worker ownership and reconciliation. It can refuse any offer that violates local limits. |
 | Local OTP supervisors | Process startup/shutdown/restart mechanics. They do not admit remote Devices or decide Swarm permissions. |
 | Worker/session | One local task and its native resources; reports completion/failure to its Handler. |
-| Subscription owner | Durable receive/playback intent keyed by Swarm, publisher Device and source identity; separate live media execution per subscription. |
+| Subscription owner | Receive/playback intent retained within the live Swarm, keyed by Swarm, publisher Device and source identity; separate live media execution per subscription. |
 | Erlang clock/presentation code | Shared reference identity/quality, local mapping, packet targets and permitted corrections. The publisher assigns targets; receivers execute them or report failure. |
 | Desk | Authenticated socket routes, mailbox capabilities and introductions; neither membership authority nor audio transport. |
 | UI/platform host | Local user commands, consent/OS permissions, secure key storage and state display. No remote authorization or scheduling decisions. |
 
 An authority's absence does not elect a replacement. New admissions, grants and
 policy edits wait or fail visibly. Director failure likewise does not transfer
-authority by timeout. Offline membership remains recorded; it is not evidence
-that a cached policy is current. No federation or consensus service is required.
+authority by timeout. Membership exists only within the live gathering; it is not evidence
+that a cached policy is current. Loss of fresh Captain proof ends the local
+gathering at its authorization deadline. No federation or consensus service is required.
 
 ## Identity and durable state
 
 - Device ID is the existing Ed25519 public key (64 uppercase hexadecimal
   characters). Keep its private seed in platform secure storage and preserve
   installation identity. OTP node names, Desk URLs and runtime PIDs are not IDs.
-- Swarm ID is a stable random identifier (existing 128-bit/32-hex representation).
+- Swarm ID is fresh per creation (128-bit/32-hex), stable only during that gathering.
   An invitation pins the expected authority/introducer and identifies a Swarm;
   a mailbox capability grants delivery only. Neither is an operational grant.
 - A Passport binds Swarm ID, Device ID and membership ID to its issuing authority
@@ -56,16 +60,17 @@ that a cached policy is current. No federation or consensus service is required.
   and checks current membership/epoch. It never reuses an old live session grant.
 - Trust in the authority key comes from local creation or an explicitly accepted
   invitation/pairing, not an unsolicited policy claiming its own authority.
-  Persist the selected authority key, membership and verified policy revisions.
+  Retain the selected key, membership and verified revisions in gathering-owned
+  memory; never restore an ended gathering from them.
 - Session ID identifies one authenticated peer association; worker attempt,
   publication incarnation and native handle identify disposable execution.
   Stable source identity survives republishing; an incarnation prevents stale
   signaling from controlling a replacement publication. No PID travels on wire.
-- Persist declarative intent and accepted policy changes when they happen.
-  Never persist queues, monotonic deadlines, native handles or session replay
-  counters. Existing local term checkpoints may remain local; they are not a
-  format for decoding network traffic. Old checkpoints/tokens are not silently
-  promoted into new Passport credentials. Step 5 defines their explicit migration.
+- Persist only Device-local address-book data in this model. Policy, Passport,
+  Subscription intent and routes live in the gathering-owned ETS table. Queues,
+  monotonic deadlines, native handles and replay counters are never durable.
+  A receiver may recover intent within this gathering; end/VM restart forgets it.
+  Historical term checkpoints are ignored, never promoted into new membership.
 
 For the step-2 proof, configure two existing Device keys and an explicit shared
 Swarm policy fixture with a pinned authority and only status permission. That
@@ -189,7 +194,7 @@ their authorizing session is lost, rather than continue with uncertain grants.
 Keep desired intent and unrelated local tasks. Reconnect checks current policy,
 consent, capability and clock readiness before opening new native resources;
 never replay expired packets. Source and receiver pause retain subscriptions;
-receiver pause stops its output. Forget clears local rejoin/subscription intent,
+receiver pause stops its output. Gathering end clears all membership/Subscription state,
 not the persistent Device key or everybody else's membership. New protocol
 revocation uses explicit authority policy; legacy mutual-removal UI semantics
 must be mapped deliberately in step 5, not silently exposed as broad authority.
@@ -239,7 +244,7 @@ dependencies must be removed from the Swarm path before step 8 qualifies it.
 | [`ba_audio_receiver`](../src/Audio/src/ba_audio_receiver.erl): `connect_sources` uses erpc/PIDs; single receive/output slot; [`subscription_intent`](../src/Audio/src/ba_subscription.erl) stores one node/source | Replace catalogue transport, key intent by Device/source, expand independent sessions and mixing. Retain fresh-clock/restoration gates; add current Contract/consent checks. | 6, 7 |
 | [`ba_swarm_clock`](../src/control/src/ba_swarm_clock.erl): pg clock discovery, node/PID incarnation, `erpc:send_request` | Keep pure clock filter/mapping/sync modules and local worker; replace peer discovery/exchange identity and transport with authorized clock operations. | 7 |
 | [`ba_node_api`](../src/control/src/ba_node_api.erl), [`ba_inspector`](../src/control/src/ba_inspector.erl), [`ba_node_diagnostics`](../src/control/src/ba_node_diagnostics.erl): membership implies broad commands; direct/one-hop erpc | Local UI/inspection APIs may stay. Remote access requires per-operation/resource grants; no generic function dispatcher or erpc forwarding under JSON. | 2 boundary; relevant commands in 3–7; verify 8 |
-| [`ba_chat`](../src/control/src/ba_chat.erl), [`ba_network`](../src/control/src/ba_network.erl), [`ba_native_bridge`](../src/control/src/ba_native_bridge.erl): pg/node liveness, graph probes/commands | Backend capture logging now uses local logger/[events](../src/control/src/ba_events.erl), with no old chat dependency. Step 9 migrates the installed app chat/graph/bridge consumers to scoped messages/inspection APIs; legacy profiles are not a second permission source and are not used by the headless backend. | 8; app integration 9 |
+| [`ba_chat`](../src/control/src/ba_chat.erl), [`ba_network`](../src/control/src/ba_network.erl), [`ba_native_bridge`](../src/control/src/ba_native_bridge.erl): pg/node liveness, graph probes/commands | Backend capture logging now uses local logger/[events](../src/control/src/ba_events.erl), with no old chat dependency. Step 10 migrates the installed app chat/graph/bridge consumers to scoped messages/inspection APIs; legacy profiles are not a second permission source and are not used by the headless backend. | 8; app integration 10 |
 
 ## Exit and next increment
 
@@ -260,7 +265,7 @@ Handler/test Worker and authenticated capability queries, retaining the ban on
 arbitrary remote Worker start. Step 4 implements the scoped offer/acceptance and
 non-audio Worker result proof. Next is step 5's Passport/rejoin and multi-Desk
 work, keeping membership separate from resource permission. Product apps and
-their device/listening checks are step 9, macOS then Windows then iOS.
+their device/listening checks are step 10, macOS then iOS then Windows.
 
 OTP references checked 2026-11-08: [security](https://www.erlang.org/doc/system/secure_coding.html),
 [supervision](https://www.erlang.org/doc/system/sup_princ.html),

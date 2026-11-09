@@ -1,34 +1,51 @@
-# Passports, current policy and multiple Desks — step 5
+# Ephemeral Swarms, Passports and multiple Desks — step 9
 
-Implemented 2026-11-09. One device-local OTP authority owns a Swarm's membership,
-revocation epoch, operation permissions and route directory. Desks only authenticate
-identities and relay bounded envelopes; independent Desks do not create separate
-membership replicas. This is one designated authority, with no consensus, election,
-automatic Director failover or federation.
+Step 9 supersedes step 5's durable Swarm/rejoin model. Each gathering has a fresh
+random ID. Its creator is Captain, membership authority and Director for its
+lifetime. There is no election, dormant Swarm registry or snapshot restoration.
+Device Identity and the local address book survive; Swarm membership does not.
 
-## Starting the headless runtime
+## Local APIs
 
 Supply a stable `BA_IDENTITY_SEED` from secure platform storage and a private
-`BA_STATE_DIR`. Both are required by this profile. No key is saved in checkpoint
-files. Start an unnamed BEAM; this profile rejects Distributed Erlang.
+`BA_STATE_DIR`. Start an unnamed BEAM; `swarm_control` rejects Distributed Erlang.
+The runtime starts **idle**, without restoring or joining a gathering.
 
 ```erlang
-application:load(ba_core).
-application:set_env(ba_core,swarm_membership,
-    #{mode => create,desks => [DeskA,DeskB]}).
 {ok,_} = ba_runtime:start(swarm_control).
-{ok,Invitation} = ba_swarm_membership:invite(3600).
+ok = ba_contacts:put(DeviceId, <<"Alice">>).
+ok = ba_contacts:group(<<"Session">>, [DeviceId]).
+ok = ba_swarm:create(<<"Evening session">>, [DeskA,DeskB]).
+{ok,[#{device := DeviceId,invitation := Link}]} =
+    ba_swarm:invite({group,<<"Session">>},3600).
 ```
 
-On a second device, configure before starting:
+Contacts are Device IDs with local labels. Groups are local selections of saved
+contacts; no approval, reciprocal friendship or synchronization is involved.
+`ba_contacts:list/0`, `delete/1`, `delete_group/1` and `resolve/1` provide management.
+`ba_swarm:invite([DeviceId],TTL)` selects individual contacts. It returns signed,
+recipient-bound invitation URIs for private transfer or QR rendering. Automatic
+unsolicited Desk invitation delivery is not implemented; URI transfer is the
+accepted step-9 path. The recipient explicitly chooses to join:
 
 ```erlang
-application:set_env(ba_core,swarm_membership,
-    #{mode => join,invitation => Invitation,desk => DeskB}).
 {ok,_} = ba_runtime:start(swarm_control).
+ok = ba_swarm:join(Link).
+ba_swarm:status().  % Join is asynchronous; wait for state => authorized.
+ok = ba_swarm:leave().
 ```
 
-New members receive **no operation permissions**. On the authority explicitly set:
+The Captain uses `ba_swarm:end_swarm/0`, or leaves to end the entire gathering.
+A member cannot end it for everybody. Leaving removes that admission and its
+claimed invitations; returning requires a new invitation. A new creation always
+gets a new ID, even with the same Captain, name and storage directory. There is
+one active Swarm per local runtime. `ba_bridge:request/1` exposes local JSON
+contact/group and lifecycle commands; app integration remains step 10.
+
+## Permission boundary
+
+Saving a contact, generating an invitation or joining grants **no operations**.
+Existing local Device Handler consent, Contracts and operation grants still apply:
 
 ```erlang
 ok = ba_swarm_membership:grant(DeviceId,
@@ -36,114 +53,66 @@ ok = ba_swarm_membership:grant(DeviceId,
 ok = ba_swarm_membership:revoke(DeviceId).
 ```
 
-Permission lists are sorted and unique. Step 6 adds separate `stream_read` and
-`stream_subscribe` grants, with local per-source Contracts; existing members do
-not receive them automatically. Step 7 adds `time_read`/`offset_write` for the
-[authenticated reference and shared Offset](SWARM_TIME.md). `job_offer` additionally requires the
-pinned Director role and the recipient's local Contract and consent. Initially
-the authority is also Director and explicitly has the original three operation permissions.
-The authority and Director cannot be revoked by this initial API.
+Lists of permissions are sorted and unique. Audio needs `stream_read` /
+`stream_subscribe`, local per-source Contracts and explicit playback intent.
+Time/Offset requires `time_read` / `offset_write`. Jobs require the designated
+Director, `job_offer`, recipient consent and Contract. Captain status never
+permits arbitrary remote process execution or access to microphones.
 
-For a returning member use `#{mode => resume,desk => DeskA}` and the same seed
-and state directory. It retains identity and Passport but obtains a fresh authority
-challenge and current policy before operating. The authority restarts with `create`
-and its original seed/state directory; existing authority state takes precedence
-over creating a new Swarm. Never share one directory between runtime instances.
-Use `ba_swarm_membership:status/0` for public state; invitations are secrets and
-must be transferred privately, not logged. Ordinary session APIs remain in the
-[control protocol guide](SWARM_CONTROL_PROTOCOL.md).
+Signed v3 invitations pin the Captain, gathering name/ID, permitted Desks and
+mailbox route. Each ticket expires within 24 hours and is bound to one claimant;
+contact/group tickets are pre-bound to their selected Device in Captain memory.
+Challenge/proof verifies fresh nonces, identity, request and credential hash.
+Passports and policy floors exist only within this live gathering. They support
+fresh authorization after transport loss, not restoration after a runtime ends.
+A departure also identifies the current membership, so replaying an old signed
+leave cannot evict a later admission. End messages must be signed by this Swarm's
+Captain. Credentials must be transferred privately and never logged.
 
-## Authorization and persistence
+## Lifecycle and storage
 
-Version-3 invitations pin the authority public key, Swarm and permitted Desk URLs.
-A signed one-device invitation expires after at most 24 hours; claim state is
-stored by the authority. Challenge/proof binds both fresh nonces, request ID,
-credential hash, sender identity and a 10-second local deadline. A claimed ticket
-can retry for its same device until expiry; it cannot admit another device.
-Old invitation formats and old version-1 checkpoint data are not promoted.
+`ba_sup` keeps contacts, Desk ownership and the local lifecycle owner independent.
+`ba_swarm` dynamically starts one temporary `ba_swarm_runtime_sup`. Its
+`rest_for_one` order is membership → Device supervisor → control → Swarm Clock →
+on-demand audio. Membership is a significant temporary child: its death shuts
+down the branch instead of recreating authority. Control/clock/receiver recovery
+within a live gathering retains its existing scoped semantics.
 
-A Passport binds authority, Swarm, device, membership ID and issue epoch. It proves
-membership identity, not current non-revocation, operations, consent or liveness.
-The authority checks its current registry on every admission/return/refresh;
-removal rejects a retained Passport. Revocation advances both epoch and revision,
-removes grants/routes, invalidates claimed invitations and notifies known members.
-Old-epoch Passports of remaining members can refresh; removed memberships cannot.
+The branch owns `ba_swarm_state` ETS. Policy, invitation claims, Passport,
+mailboxes/routes, Offset and Subscription intent use that volatile storage.
+Ending the branch deletes it and terminates Workers, Sources, Media Sessions,
+Mixers and clock processes. Desk connections close and their mailbox rotates.
+Old on-disk Swarm records are ignored; they cannot restore membership. Only
+`contacts.term` is written by this new model; it uses the existing private atomic
+file writes. Device keys remain in platform secure storage. Subscription intent
+can survive a receiver restart within a gathering, but not its end or VM restart.
 
-A fresh nonce-bound grant carries signed current policy and an authority-signed
-route directory. Members authorize operations for at most 60 local monotonic
-seconds from the fresh request, refreshing with 30 seconds remaining. Delaying
-a response does not extend that deadline. Observed newer policy immediately clears
-sessions, fences outstanding jobs and requests current policy again. Control checks
-its authorization deadline synchronously; session/job deadlines are clipped to it.
-When an update cannot arrive, an existing authorization may survive until its
-60-second bound. An offline authority cannot issue fresh authorizations; cached
-Passports or wall-clock expiry alone never establish fresh non-revocation.
+Captain end is sent to known members before local teardown. If that message is
+lost, members end when existing fresh authority proof expires (at most 60 seconds
+from its request); an initial unanswered join expires after 30 seconds. A brief
+Desk disconnection does not itself end the gathering or elect a Captain.
+Revocation still fences active work immediately on verified policy evidence;
+without delivery, the existing authorization bound applies. Already submitted
+native output cannot be selectively retracted.
 
-Checkpoints contain only declarative authority registry/invitation claims, member
-Passport/policy version floor, and stable mailbox identity. Existing storage uses
-0600 files, synced temporary writes and rename. No live session, nonce, request,
-monotonic lease, Worker, local test consent/Contract or uncertain job is restored.
-Authority storage failure terminates its actor so dependent runtime branches
-restart instead of silently continuing with an uncheckpointed membership change.
-Backups/rollback-resistant storage and distributed durable storage are not supplied.
+## Desks, bounds and verification
 
-## Desk ownership and limits
+Each Device opens the same scoped mailbox on up to four configured Desks. Sends
+try the advertised route, then a configured alternate, without duplicate fanout.
+Temporary relay Workers reconcile once per second; repeated failures of one Desk
+do not restart runtime owners or healthy connections. Desks introduce and route;
+they do not own membership or carry audio. Remote URLs require verified WSS;
+WS is loopback-only. Signed messages are not end-to-end encrypted against the Desk.
 
-`ba_sup` uses `one_for_one` to separate the Desk connection supervisor, Desk
-route owner and dependency-ordered runtime branch. `ba_swarm_runtime_sup` retains
-`rest_for_one` for membership → Device supervisor → control → Swarm Clock →
-on-demand audio. Thus membership/control failures still reset dependent state,
-while one Desk connection failure cannot restart those owners or their Workers.
+Bounds remain 16 members, 16 pending challenges, 32 live invitation records,
+32 KiB signed packets and bounded queues/JSON. Expired invitations are pruned
+when new invitations are created. The address book allows 256 contacts and 64
+groups, with at most 15 invitees per selection and 128-byte labels.
 
-Relay Workers are temporary supervised children. The Desk owner reconciles desired
-connections once per second and reinstalls their mailbox/watch state; repeated
-Worker crashes do not consume a shared automatic-restart budget or tear down a
-healthy Desk. Ordinary socket failures retain the relay's bounded reconnect backoff.
-The route owner checkpoints declarative configuration, not live PIDs. Status calls
-tolerate a missing/stalled connection. Loss of a member's primary Desk preserves
-its unexpired membership and pending proof; another configured Desk can carry the
-refresh. Failure to obtain fresh proof still expires permission normally.
-
-Each device registers its stable identity/mailbox at all explicitly configured
-Desks. The authority-signed directory names each recipient's primary Desk and
-mailbox; senders try that route first, then another configured Desk if sending
-fails, without broadcasting duplicates. This uses the same mailbox registered at
-each permitted Desk, with the same signed peer/Swarm binding.
-A returning member may choose another permitted primary. Route changes increment
-policy revision. The authority must maintain connections at the participating
-Desks; Desks require no shared database or membership logic. Unknown Desk URLs
-advertised by peers are rejected. This is explicit routing, not automatic discovery
-or load balancing. Remote Desks require verified WSS; WS is loopback-only.
-
-Bounds: 4 Desks, 16 members, 16 pending authority challenges, 32 invitation records,
-32 KiB signed packets, bounded JSON shape/depth and recipient queue. Invitation
-records have no automatic compaction; reaching the bound returns unsupported.
-Envelope signing uses Ed25519 and a membership-specific domain, distinct from
-control/Desk signatures. Payloads are signed, not end-to-end encrypted; the Desk
-can observe them. No arbitrary remote Erlang terms or calls are accepted.
-
-## Evidence and limits
-
-From `src/control`, compile and run the focused checks:
-
-```sh
-rebar3 compile
-rebar3 eunit --module=ba_swarm_passport_tests,ba_swarm_job_tests,ba_device_handler_tests,ba_swarm_control_protocol_tests,ba_relay_tests,ba_native_tests
-```
-
-From the core root:
-
-```sh
-python3 tests/control/swarm-membership-smoke.py
-python3 tests/control/swarm-control-smoke.py
-```
-
-The membership proof starts two temporary instances of the existing Phoenix Desk
-service on loopback, with three independent unnamed device runtimes. It checks
-zero-grant admission, explicit grants, cross-Desk status, alternate-Desk retained
-rejoin, epoch change, authority restart and revoked Passport rejection after both
-restarts, and active test-job cleanup on revocation. Test seeds/state are isolated from installed apps. It requires the
-existing compiled ReceptionDeskMix and Elixir libraries under `builds/intermediates`.
-This is not two independently hosted Internet Desks, app integration, audio output
-or physical timing evidence. The separate public WSS proof checks existing
-status/capability and bounded job behavior through Passport admission.
+See [repeatable headless checks](../tests/control/README.md). The Ephemeral Swarm
+proof covers saved-group invitations, real two-source WebRTC PCM, local consent,
+leave/rejoin, Captain end, full process/ETS/connection cleanup, cold restart,
+retained contacts and Captain crash followed by actual authorization expiry.
+No product apps, audio hardware, physical speaker timing or Internet resilience
+are qualified by that proof. Earlier 8d maximum-Offset deadline misses remain a
+separate documented limitation; this lifecycle change does not claim to fix them.
