@@ -1,13 +1,13 @@
 %% Console projection of ordinary Swarm-member observations. No PCM or audio I/O.
 -module(ba_cli_monitor).
--export([run/2,render/1,invitation_path/2]).
+-export([run/2,render/1,render/2,invitation_path/2]).
 run(A,Root) ->
-    case maps:get(all,A,false) of true -> ok;false -> fail(<<"Use beam-audio monitor --all.">>) end,
+    case maps:get(all,A,false) of true -> ok;false -> fail(<<"Use beamaudio monitor --all.">>) end,
     _=ba_cli:timeout(A),
     io:put_chars(standard_error,"Connecting Swarm monitor (audio stays disabled)...\n"),
     Name=choose(A,Root),
     io:format(standard_error,"Monitoring through Device ~s. Audio disabled. Ctrl-C exits this view; Device stays connected.~n",[Name]),
-    loop(Name,A,false,#{},#{}).
+    loop(Name,A,false,#{},#{},#{}).
 choose(A,Root) ->
     Path=invitation_path(A,Root),
     Parsed=case file:read_file(Path) of
@@ -62,9 +62,9 @@ await_admission(Name,Until,LastState) ->
         true -> ok;
         false ->
             case State of
-                <<"idle">> -> fail(<<"The saved gathering is no longer active. Supply a fresh unused invitation from the current Swarm (--invitation-file PATH).">>);
-                <<"revoked">> -> fail(<<"Admission was denied. The invitation may already be claimed; use a fresh unused invitation.">>);
-                <<"ended">> -> fail(<<"The saved Swarm ended. A new Swarm needs a fresh unused invitation.">>);
+                <<"idle">> -> fail(<<"The saved gathering is no longer active. Supply a valid invitation from the current Swarm (--invitation-file PATH).">>);
+                <<"revoked">> -> fail(<<"Admission was denied. Check invitation expiry or revocation and that the Captain is online.">>);
+                <<"ended">> -> fail(<<"The saved Swarm ended. A new Swarm needs a valid invitation.">>);
                 _ -> ok
             end,
             case State=:=LastState of
@@ -77,16 +77,22 @@ await_admission(Name,Until,LastState) ->
             end
     end.
 
-loop(Name,A,Metrics,Plain,Instances) ->
+loop(Name,A,Metrics,Plain,Instances,Names) ->
     Now=erlang:monotonic_time(millisecond),
     Skip=[Id || {Id,#{retry := Until}} <- maps:to_list(Plain),Now<Until],
     R=ba_cli:request(Name,#{<<"method">> => <<"monitor">>,<<"metrics">> => Metrics,<<"plain">> => Skip}),
-    Data=maps:get(<<"result">>,R),
+    Raw=maps:get(<<"result">>,R),
+    Rows=[case maps:get(<<"name">>,Row,maps:get(maps:get(<<"id">>,Row),Names,<<>>)) of
+        <<>> -> Row;N -> Row#{<<"name">> => N}
+    end || Row <- maps:get(<<"devices">>,Raw)],
+    Data=Raw#{<<"devices">> := Rows},
+    NextNames=maps:from_list([{maps:get(<<"id">>,Row),N} || Row <- Rows,
+        N <- [maps:get(<<"name">>,Row,<<>>)],N=/=<<>>]),
     case maps:get(json,A,false) of
         true -> io:put_chars([json:encode(Data),$\n]);
         false ->
             case io:columns() of {ok,_} -> io:put_chars(<<27,"[H",27,"[2J">>);_ -> ok end,
-            io:put_chars(render(Data))
+            io:put_chars(render(Data,terminal_color()))
     end,
     {NextPlain,NextInstances}=lists:foldl(fun(Row,{P,Is}) ->
         Id=maps:get(<<"id">>,Row),State=maps:get(<<"state">>,Row),Caps=maps:get(<<"capabilities">>,Row,#{}),
@@ -101,29 +107,75 @@ loop(Name,A,Metrics,Plain,Instances) ->
     end,{Plain,Instances},maps:get(<<"devices">>,Data)),
     case maps:get(once,A,false) of
         true -> ok;
-        false -> receive stop_monitor -> ok after maps:get(interval,A,1000) -> loop(Name,A,true,NextPlain,NextInstances) end
+        false -> receive stop_monitor -> ok after maps:get(interval,A,1000) -> loop(Name,A,true,NextPlain,NextInstances,NextNames) end
     end.
-render(Data) ->
-    Swarm=maps:get(<<"swarm">>,Data),
-    Header=io_lib:format("Swarm: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Swarm,<<>>)),maps:get(<<"swarm">>,Swarm,<<>>),safe(maps:get(<<"state">>,Data))]),
-    [Header,"DEVICE        CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
-     [row_lines(R) || R <- maps:get(<<"devices">>,Data)],
-     "N/A = unavailable/not exposed; receive_max is max received Source, not physical speaker output.\n"].
-row_lines(#{<<"id">> := Id,<<"state">> := State}=R) ->
-    Short=binary:part(Id,0,min(12,byte_size(Id))),
-    case maps:find(<<"capabilities">>,R) of
-        error -> io_lib:format("~-12ts  ~-10ts  ~ts~n",[Short,<<"-">>,State]);
+render(Data) -> render(Data,false).
+render(Data,Color) ->
+    Swarm=maps:get(<<"swarm">>,Data),Rows=maps:get(<<"devices">>,Data),
+    Header=io_lib:format("Swarm: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Swarm,<<>>)),safe(maps:get(<<"swarm">>,Swarm,<<>>)),safe(maps:get(<<"state">>,Data))]),
+    Names=[device_name(R) || R <- Rows],
+    [Header,"  CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
+     [row_lines(R,Color,length([N || N <- Names,N=:=device_name(R)])>1) || R <- Rows],
+     "N/A = unavailable; receive_max = loudest received Source, before physical speaker output.\n"].
+row_lines(#{<<"id">> := Id,<<"state">> := State}=R,Color,Duplicate) ->
+    Short=binary:part(Id,0,min(12,byte_size(Id))),Name=device_name(R),
+    Title=case Duplicate of true -> [Name," (",Short,")"];false -> Name end,
+    Lines=case maps:find(<<"capabilities">>,R) of
+        error -> tint(State,["  ",safe(State),"\n"],Color);
         {ok,C} ->
             Audio=maps:get(<<"audio">>,C,#{}),
             case map_size(Audio) of
-                0 -> io_lib:format("~-12ts  ~-10ts  ~ts~n",[Short,<<"-">>,<<"No audio capabilities">>]);
-                _ -> [begin E=maps:get(K,Audio,#{}),
-                    io_lib:format("~-12ts  ~-10ts  ~-21ts  ~9ts  ~8ts  ~-11ts  ~ts~n",[Short,K,
-                        safe(maps:get(<<"state">>,E,State)),level(maps:get(<<"peak_db">>,E,null)),level(maps:get(<<"rms_db">>,E,null)),
-                        maps:get(<<"meter_stage">>,E,<<"N/A">>),number(maps:get(<<"meter_age_ms">>,E,null))])
+                0 -> tint(<<"disabled">>,"  No audio capabilities\n",Color);
+                _ -> [begin E=maps:get(K,Audio,#{}),Status=maps:get(<<"state">>,E,State),
+                    Line=case Status of
+                        <<"disabled">> -> io_lib:format("  ~-10ts  ~ts~n",[K,Status]);
+                        _ -> io_lib:format("  ~-10ts  ~-21ts  ~9ts  ~8ts  ~-11ts  ~ts~n",[K,
+                            safe(Status),level(maps:get(<<"peak_db">>,E,null)),level(maps:get(<<"rms_db">>,E,null)),
+                            safe(maps:get(<<"meter_stage">>,E,<<"N/A">>)),number(maps:get(<<"meter_age_ms">>,E,null))])
+                    end,tint(Status,Line,Color)
                 end || K <- [<<"speaker">>,<<"microphone">>,<<"broadcast">>]]
             end
+    end,
+    [paint("1",[Title,"\n"],Color),Lines,diagnostic_lines(R,Color),paint("90",[lists:duplicate(83,$-),"\n"],Color)].
+diagnostic_lines(R,Color) ->
+    Caps=maps:get(<<"capabilities">>,R,#{}),
+    Errors=[tint(<<"error">>,["  ! ",K,": ",safe(Error),"\n"],Color) ||
+        {K,Entry} <- maps:to_list(maps:get(<<"audio">>,Caps,#{})),
+        Error <- [maps:get(<<"error">>,Entry,<<>>)],Error=/=<<>>],
+    case maps:find(<<"audio_diagnostics">>,Caps) of
+        error -> [Errors,case maps:is_key(<<"audio">>,Caps) of
+            true -> paint("90","  Playback diagnostics: unavailable (Device update required)\n",Color);
+            false -> [] end];
+        {ok,D} ->
+            Clock=io_lib:format("  Clock: ~ts  correction: ~ts ns~n",[
+                safe(maps:get(<<"clock.state">>,D,<<"unavailable">>)),number(maps:get(<<"clock.remaining_correction_ns">>,D,null))]),
+            Playback=case maps:is_key(<<"mixer.rendered">>,D) of
+                false -> [];
+                true -> io_lib:format("  Mixer: ~ts rendered  ~ts dropped  ~ts queued  ~ts clipped frames~n",[
+                    number(maps:get(K,D,null)) || K <- [<<"mixer.rendered">>,<<"mixer.dropped">>,<<"mixer.queued_blocks">>,<<"mixer.clipped_frames">>]])
+            end,
+            Failures=[tint(<<"error">>,io_lib:format("  ! ~ts: ~B (total)~n",[safe(K),V]),Color) ||
+                {K,V} <- lists:sort(maps:to_list(D)),is_integer(V),V>0,binary:match(K,<<".failure.">>)=/=nomatch],
+            [Errors,Clock,Playback,Failures]
     end.
+device_name(#{<<"id">> := Id}=R) ->
+    case maps:get(<<"name">>,R,<<>>) of
+        <<>> -> binary:part(Id,0,min(12,byte_size(Id)));
+        N -> safe(N)
+    end.
+terminal_color() ->
+    os:getenv("NO_COLOR")=:=false andalso os:getenv("TERM")=/="dumb" andalso
+        case io:columns() of {ok,_} -> true;_ -> false end.
+tint(State,Text,Color) ->
+    Code=case State of
+        <<"running">> -> "32";
+        <<"disabled">> -> "90";
+        <<"error">> -> "31";
+        <<"unavailable">> -> "31";
+        _ -> "33"
+    end,paint(Code,Text,Color).
+paint(Code,Text,true) -> [<<27,"[">>,Code,"m",Text,<<27,"[0m">>];
+paint(_,Text,false) -> Text.
 level(N) when is_number(N) -> io_lib:format("~.1f",[float(N)]);
 level(_) -> "N/A".
 number(N) when is_integer(N) -> integer_to_list(N);

@@ -35,6 +35,52 @@ not become the control backend of the new CLI. See [backend evidence and limits]
 arrived here; their durable-Swarm/rejoin assumptions are superseded by step 9.
 Product guides now live in [OpenSound docs](../../OpenSound/docs/README.md).
 
+### Playback diagnostics gap found in live testing (2026-11-09)
+
+Inspecting current signed reports confirms capture/receive activity, but does not
+expose receiver transport drops, Mixer missed targets/buffer counters or audio
+Device clock quality. Step 8c's owner-local counters now have a bounded, cached projection in signed
+opt-in diagnostic replies, shared by all clients. Local validation is in
+PROGRESS.md; rebuilt app/observer acceptance and actual glitch diagnosis remain
+pending. Native underrun measurement and RTP loss statistics are not established. Do not infer glitch causes from meters or the
+observer's clock, and do not use legacy Distributed Erlang inspection on Swarm
+Devices. Render's deployed routing logic already handles the current envelopes;
+no Desk update is required for these recent client/core changes.
+
+### Current monitor presentation work (2026-11-09)
+
+Implemented and locally tested `beamaudio monitor --all` with one Device heading per group, separators,
+terminal status colours, and human-readable Device names from signed diagnostics.
+Keep plain/JSON output usable and older peers readable with an ID fallback.
+Name reporting needs rebuilt apps and a restarted observer. Full user-assigned
+iPhone names require Apple’s entitlement; leave that packaging follow-up for later.
+The user reports startup reconnection still fails in actual apps: retain that as
+an unresolved acceptance issue and do not change restoration during this monitor
+work. The user now reports audible phone playback after an initial delay and
+crackling; cause, startup latency and sustained quality remain unverified.
+
+### Immediate startup restoration (2026-11-09)
+
+Implement the shared OTP reconnect intent and Passport checkpoint, immediate
+participant rejoin on Apple app startup, and visible shared header progress.
+Explicit Leave forgets the connection; closing a participant app retains it.
+Captain shutdown continues to end its ephemeral gathering and reopening must
+explain that limitation. No UI-owned restore logic, clock leases or media buffers
+are persisted. This refines step 9's blanket “start idle” behavior for participants
+without resurrecting a dead Captain. Validate with fresh independent runtimes and
+shared model tests; app rebuild and actual Mac/iPhone acceptance remain user-led.
+
+### Invitation behavior correction and CLI command (2026-11-09)
+
+One invitation is forwardable to multiple independently authenticated Devices,
+including the CLI monitor. Joining or voluntarily leaving does not consume the
+link. Expiry, the lifetime of the gathering and explicit Device revocation still
+apply; contact/group selection is delivery metadata. This supersedes earlier
+recipient-bound/first-claim invitation behavior. The canonical CLI command is
+`beamaudio`; `beam-audio` remains an alias and existing Device storage is retained.
+Rebuild the Captain app to apply this admission correction; the running app has
+not been updated. Continue user-led Mac/iPhone audio testing afterward.
+
 ### Next three steps — CLI first (2026-11-09)
 
 **Status:** steps 1–2 and the simple settings/history part of step 3 are

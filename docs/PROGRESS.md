@@ -1,5 +1,163 @@
 # Progress
 
+## 2026-11-09 — cached signed playback diagnostics for glitch investigation
+
+The user reports recurring interrupted/Morse-like playback; a later monitor
+screenshot shows one receiver in speaker error while its receive meter remains
+fresh. That is evidence of incoming audio plus a local playback error, not a
+confirmed network, scheduling or clock cause.
+
+Added a bounded projection of existing receiver/Mixer/aggregate transport and
+local clock observations. The existing audio Worker computes it from snapshots
+already used in normal reconciliation and sends it to the Handler with channel
+state. Opt-in signed diagnostic replies serve that cache: remote reads add no
+synchronous audio-process queries. Reports include failure totals, last-error
+codes, rendered/dropped/queued/clipped Mixer counts, transport rejects, local
+clock state/correction and bounded channel error text. The monitor prints the
+channel error reason and diagnostic summaries under each Device. Plain capability
+replies retain their original shape. Counters are process-local totals, not rates;
+no RTP loss or native physical underrun measurement is invented. Projection omits
+PCM, credentials, descriptors, routes and private state.
+
+Validation: compilation and 41 focused projection/monitor/protocol/Handler tests
+passed, including bounded scalar wire data, nested/private payload rejection,
+redaction, cached replies, signed delivery and displayed error/drop reasons. The
+local CLI integration passed Device names and cached receiver/Mixer/clock reports
+end to end. No product app was rebuilt/launched/deployed, and no live playback
+policy, clock, buffer setting or Render service was changed. Live glitch diagnosis
+requires rebuilt apps and an updated/restarted observer; it is not yet resolved.
+
+Checked why names remain cryptic: the canonical packaged Mac executable is
+mtime 22:33:13 Helsinki, while its OS-name handoff source changed at 22:44:46.
+That bundle predates the change. The source reads the OS name on both Apple
+platforms; full user-assigned iPhone names still depend on Apple's entitlement.
+
+## 2026-11-09 — live glitch investigation and Desk deployment review (read-only)
+
+Read three extended diagnostic samples from the existing observer in the user's
+10WARNING Swarm. The broadcaster's blocks/frames advanced while its cumulative
+capture callback-drop count stayed at 7. The receiving Device reported running
+with fresh receive-meter ages (1–9 ms). Another peer remained connecting from the
+observer's view. These readings do not identify the cause of audible glitches.
+The observer's clock reported synchronized with no active correction, but this
+is not evidence about either audio Device's local clock quality.
+
+Found an observability gap: receiver snapshots include per-transport diagnostics,
+Mixer drop reasons/queue/render counts and local failure counters, but these are
+not included in the current signed remote capability report. `status.read` only
+reports protocol/session authorization. Generic Director Job reports describe
+the test-task lifecycle, not audio performance. The old Inspector documentation
+refers to trusted Distributed Erlang inspection, which must not be used across
+the secure Swarm. Existing local counters need a bounded signed projection before
+remote playback glitches can be diagnosed. No cause or audio fix is claimed.
+
+Read Render deployment history: the Desk is live at original product commit
+`e5e002b80c3b7885b5f38d14153ff9219ff821e5` (2026-10-28). Compared its source from
+the retained product history with current core sources: mailbox routing is
+identical after module-prefix normalization; Phoenix host differences are landing
+page branding, and Docker changes cover paths/environment naming. The recent
+invitation/admission and monitor changes do not require a Desk protocol update.
+No deployment, restart, audio setting or remote runtime change was performed.
+
+## 2026-11-09 — readable console monitor and Device names
+
+Grouped each Device under one heading with a horizontal separator, instead of
+repeating its ID for every channel. Running rows are green, disabled rows grey,
+and failures red; disabled rows omit irrelevant meter placeholders. Terminal
+colour respects NO_COLOR; pipes/JSON stay plain. Device names are sanitized for
+terminal control characters and retained through temporary read failures. An ID
+appears once when no name is available, or alongside duplicate names to distinguish
+them.
+
+Added bounded UTF-8 Device names to signed, opt-in diagnostic replies. Ordinary
+capability reply shape is unchanged. CLI Devices supply their configured name;
+the observer supplies “Swarm monitor”. The Apple hosts now supply the OS Device
+name through BA_DEVICE_NAME; this is a small native property binding, with naming
+and monitor rendering in Erlang. Rebuilt apps and a restarted observer are needed
+for name reporting. Apple normally returns a generic name on iOS 16+ without its
+user-assigned-device-name entitlement; entitlement work is not part of this pass.
+
+Validation: control compilation and 38 focused monitor/protocol/Handler tests
+passed, covering Unicode names, one heading per Device, separators, ANSI/plain
+output, name bounds/authentication, and unchanged plain capability replies. The
+local three-Device CLI regression passed named diagnostic responses end to end.
+An initial run timed out with one peer still connecting; rerun passed. No startup
+or session-timing fix is claimed. Terminal size detection was checked in a PTY;
+actual product apps were not built/launched or deployed. The live test Swarm was
+not changed by these tests.
+
+User reports audible phone playback after crackling and a delayed start. This is
+user-observed playback evidence, not measured physical alignment or an explanation
+of the startup delay. User also reports app startup still does not restore the
+previous Swarm; leave that unresolved for a separate task, as requested.
+
+## 2026-11-09 — shared OTP participant startup restoration
+
+Startup previously restored audio settings but deliberately discarded Swarm
+connections. Added a private `swarm_connection.term` record owned by `ba_swarm`:
+initial join intent becomes a signed participant Passport checkpoint after
+admission. App startup immediately requests fresh Captain authorization; policy,
+clock leases, buffers and live workers are not restored. Participant app closure
+now disconnects instead of issuing voluntary Leave. Explicit Leave forgets the
+connection. Captain shutdown still ends the ephemeral gathering; reopening
+explains that result without manufacturing a new gathering.
+
+Moved Apple runtime configuration into OTP application startup, before the
+supervisor starts, because the Mac release can start the application before its
+bridge entry point. Membership retries immediately when its primary Desk first
+connects, without waiting for the five-second retry interval. macOS and iOS use
+the same OTP behavior and shared header UI for startup/rejoining progress, saved
+Swarm name and connection result. No per-platform restoration logic was added.
+
+Validation: control compilation, 13 focused app-session/lifecycle/passport/store
+EUnit checks, the existing two-Desk membership regression and six shared Swift
+model tests passed. A separate-process local restoration regression verifies
+same-Swarm/same-membership rejoining, protected checkpoint storage, rejection of
+a revoked saved Passport, explicit Leave forgetting and Captain restart on both
+Apple startup configurations. The Swift checks required full Xcode because the
+selected Command Line Tools lack XCTest. No product app was built/launched or
+deployed and no audio hardware was opened. Physical Mac/iPhone acceptance remains
+user-led. Both apps require rebuilding; a join with the new version records the
+connection, since earlier versions discarded that history. Captain-unavailable
+startup retains the existing 30-second initial deadline; that timeout duration
+was inspected in code, not measured in this regression.
+
+## 2026-11-09 — forwardable invitations and shorter CLI name
+
+Removed the unrequested first-claim/recipient binding from Captain admission.
+One unexpired invitation can admit several authenticated Devices; voluntary
+leave does not consume it. Contact/group selection describes delivery. Explicit
+revocation blocks the removed identity from existing invitations while leaving
+those links usable by others; a newly issued invitation permits re-inviting it.
+Earlier instructions requiring an unused invitation are superseded. Shared clock,
+packet targets, audio scheduling and local capability consent are unchanged.
+Recorded the product-design boundary in AGENTS.md: standards guide implementation
+mechanics, without silently substituting conventional product behavior.
+
+The canonical command is now `beamaudio`; `beam-audio` forwards to it. Existing
+Device storage, identities and configuration paths are unchanged. Updated help,
+build output, CLI usage examples and regression entry points.
+
+Validation: control compilation and 32 focused protocol/passport/lifecycle EUnit
+checks passed. The local two-Desk regression passed shared-link admission,
+leave/rejoin, revoked-identity denial and existing isolation/teardown checks.
+The local CLI Swarm/monitor regression passed with one shared invitation. Both
+command names produce identical help. No product app was launched, rebuilt or
+deployed; the Captain app must be rebuilt/restarted to apply the correction.
+These checks do not establish physical audio playback.
+
+## 2026-11-09 — monitor startup no longer waits silently
+
+Reproduced the user's blank monitor from the home directory with a real terminal.
+PATH resolution worked. The saved observer was idle; the saved Captain was absent
+from Desk presence during the attempted rejoin. The command was waiting for
+admission before printing any header. Added an immediate connecting message,
+state-transition progress and clear errors for ended/denied admission and timeout.
+This does not revive old Swarms or fabricate access; the current Captain must be
+online, with a fresh unused invitation if the gathering has changed. Observer
+configuration/audio were untouched. Asked user for a current invitation.
+
+
 ## 2026-11-09 — read-only Swarm console monitor
 
 Added `beam-audio monitor --all`: a separate ordinary admitted Device with all

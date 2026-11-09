@@ -19,4 +19,4 @@ xcrun swiftc -target "$(uname -m)-apple-macosx14.2" -swift-version 5 -O \
   "$ROOT/src/Audio/adapters/macOS/DeviceAudio.swift" -o "$ROOT/builds/CLI/ba_device_audio"
 codesign --force --sign - "$ROOT/builds/CLI/ba_audio_input"
 codesign --force --sign - "$ROOT/builds/CLI/ba_device_audio"
-printf 'Ready: %s/bin/beam-audio --help\n' "$ROOT"
+printf 'Ready: %s/bin/beamaudio --help\n' "$ROOT"

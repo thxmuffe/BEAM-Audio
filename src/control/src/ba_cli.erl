@@ -3,8 +3,8 @@
 -export([main/2,spec/1,new_device/2,request/2,wait/3,timeout/1]).
 main(Args,Root) ->
     try case lists:member("--help",Args) of
-        true -> io:put_chars(argparse:help(spec(Root),#{progname => "beam-audio",command => [A || A <- Args,A=/="--help"]}));
-        false -> case argparse:parse(Args,spec(Root),#{progname => "beam-audio"}) of
+        true -> io:put_chars(argparse:help(spec(Root),#{progname => "beamaudio",command => [A || A <- Args,A=/="--help"]}));
+        false -> case argparse:parse(Args,spec(Root),#{progname => "beamaudio"}) of
             {ok,A,_,#{handler := F}} -> F(A);
             {error,R} -> io:format(standard_error,"~ts~n",[argparse:format_error(R)]),halt(2)
         end

@@ -16,6 +16,8 @@ boot() ->
         {ok,_}=application:ensure_all_started(crypto),
         Seed=ba_cli_store:identity(Dir),os:putenv("BA_IDENTITY_SEED",binary_to_list(Seed)),os:putenv("BA_STATE_DIR",Dir),
         os:putenv("BA_APP_PID",os:getpid()),
+        os:putenv("BA_DEVICE_NAME",case maps:get(<<"observer">>,C,false) of
+            true -> "Swarm monitor";false -> binary_to_list(maps:get(<<"name">>,C)) end),
         os:putenv("BA_MAC_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_audio_input"])),
         os:putenv("BA_MAC_DEVICE_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_device_audio"])),
         ok=application:load(ba_core),

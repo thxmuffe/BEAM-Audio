@@ -380,16 +380,27 @@ payload(<<"job.report">>,P) -> ba_swarm_job:validate_report(P);
 payload(_,_) -> throw(forbidden_operation).
 
 capability_payload(P) ->
-    exact(P,[<<"instance">>,<<"revision">>,<<"test">>]++case maps:is_key(<<"audio">>,P) of true -> [<<"audio">>];false -> [] end),
+    exact(P,[<<"instance">>,<<"revision">>,<<"test">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>],maps:is_key(K,P)]),
+    case maps:find(<<"audio_diagnostics">>,P) of error -> ok;{ok,D} -> ba_audio_diagnostics:validate(D) end,
+    case maps:find(<<"device_name">>,P) of
+        error -> ok;
+        {ok,Name} -> true=is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<256,
+            true=is_list(unicode:characters_to_list(Name))
+    end,
     case maps:find(<<"audio">>,P) of
         {ok,Audio} ->
             exact(Audio,[<<"speaker">>,<<"microphone">>,<<"broadcast">>]),
             maps:foreach(fun(_,Entry) ->
-                Extra=[<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>,<<"blocks">>,<<"frames">>,<<"dropped">>],
+                Extra=[<<"error">>,<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>,<<"blocks">>,<<"frames">>,<<"dropped">>],
                 exact(Entry,[<<"consent">>,<<"state">>,<<"available">>]++[K || K <- Extra,maps:is_key(K,Entry)]),
                 [begin V=maps:get(K,Entry),true=is_number(V) andalso V>= -96 andalso V=<48 end || K <- [<<"peak_db">>,<<"rms_db">>],maps:is_key(K,Entry)],
                 [true=uint(maps:get(K,Entry)) || K <- [<<"meter_age_ms">>,<<"blocks">>,<<"frames">>,<<"dropped">>],maps:is_key(K,Entry)],
                 case maps:find(<<"meter_stage">>,Entry) of error -> ok;{ok,Stage} -> true=lists:member(Stage,[<<"capture">>,<<"receive_max">>]) end,
+                case maps:find(<<"error">>,Entry) of
+                    error -> ok;
+                    {ok,Error} -> true=is_binary(Error) andalso byte_size(Error)=<256,
+                        true=is_list(unicode:characters_to_list(Error))
+                end,
                 true=is_boolean(maps:get(<<"consent">>,Entry)),true=is_boolean(maps:get(<<"available">>,Entry)),
                 State=maps:get(<<"state">>,Entry),true=is_binary(State) andalso byte_size(State)=<64
             end,Audio);

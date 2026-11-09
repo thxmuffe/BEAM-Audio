@@ -45,11 +45,17 @@ def main():
             a=runtime('authority');assert a.request('create',desks=urls)['ok']
             control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
             original=a.request('snapshot')['membership'];members=[]
+            invitation=a.request('invite')['value']
             for i in range(2):
-                r=runtime(f'member{i}');invitation=a.request('invite')['value']
+                r=runtime(f'member{i}')
                 assert r.request('join',invitation=invitation,desk=urls[i])['ok']
                 authorized(r);members.append(r)
-            x,y=members;sync(a,x,y);connect(x,y)
+            x,y=members;sync(a,x,y)
+            # Leaving does not consume the shared invitation either.
+            assert y.request('leave_swarm')['ok']
+            control.wait(a,lambda s:y.identity['id'] not in s['membership']['members'])
+            assert y.request('join_swarm',invitation=invitation)['ok']
+            authorized(y);sync(a,x,y);connect(x,y)
             assert x.request('read',peer=y.identity['id'])=={'error':'forbidden'}
             for r in members:
                 assert a.request('grant',peer=r.identity['id'],permissions=['capabilities_read','status_read'])['ok']
@@ -86,6 +92,10 @@ def main():
             control.wait(x,lambda s:s['workers']==0 and s['worker_outcomes'][0]=='session_lost')
             control.wait(x,lambda s:s['membership']['state']=='revoked');sync(a,y)
             assert 'error' in x.request('connect',peer=y.identity['id'])
+            # Forwardability must not let a removed identity bypass revocation.
+            assert x.request('leave_swarm')['ok']
+            assert x.request('join_swarm',invitation=invitation)['ok']
+            control.wait(x,lambda s:s['membership']['state']=='revoked')
             # Address book (contacts): saving contact works locally on y without sync
             assert y.request('put_contact',id=a.identity['id'],name='Captain')['ok']
             assert y.request('put_contact',id=old_id,name='FormerPeer')['ok']
@@ -109,7 +119,7 @@ def main():
             retained_contacts = y.request('list_contacts')
             assert a.identity['id'] in retained_contacts['contacts']
             assert 'Friends' in retained_contacts['groups']
-            print('PASS: two independent Desks, one Captain/Swarm; capability-limited messages; explicit grants; Desk failure isolation; revocation; ephemeral teardown; contacts preserved; no OTP distribution or apps')
+            print('PASS: shared invitation admits distinct Devices; leave/rejoin; revoked identity denied; two independent Desks, one Captain/Swarm; capability-limited messages; explicit grants; Desk failure isolation; revocation; ephemeral teardown; contacts preserved; no OTP distribution or apps')
         finally:
             for r in runtimes:r.close()
             for d in desks:

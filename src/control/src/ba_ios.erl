@@ -20,7 +20,6 @@ main() ->
     {ok,swarm_control} = application:get_env(ba_core,runtime_profile),
     {ok, _} = application:ensure_all_started(crypto),
     resolve_ice_servers(),
-    ba_app_session:configure(),
     {ok, _} = application:ensure_all_started(ba_core),
     Proof = #{status => <<"running">>, otp => list_to_binary(erlang:system_info(otp_release)),
               erts => list_to_binary(erlang:system_info(version)),

@@ -1,9 +1,4 @@
 #!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-# Preserve the legacy host's stdin/stdout/signals unchanged, only on explicit opt-in.
-if [ "${1:-}" = inspect ] && [ "${2:-}" = legacy ]; then
-  shift 2
-  exec bash "$ROOT/src/Tools/Inspector/run.sh" "$@"
-fi
-exec escript "$ROOT/src/Tools/CLI/beam-audio" "$@"
+exec "$ROOT/bin/beamaudio" "$@"

@@ -3,8 +3,8 @@
 -export([configure/0,configure/1,consent/0,capability/2,snapshot/0,exclude/2,excluded/1,exclusions/0,contract/3,permissions/0]).
 configure() ->
     case os:getenv("BA_PLATFORM") of
-        "mac" -> configure(#{platform => mac}),forget_snapshots();
-        "ios" -> configure(#{platform => ios}),forget_snapshots();
+        "mac" -> application:set_env(ba_core,restore_swarm_on_start,true),configure(#{platform => mac}),forget_snapshots();
+        "ios" -> application:set_env(ba_core,restore_swarm_on_start,true),configure(#{platform => ios}),forget_snapshots();
         _ -> ok
     end.
 configure(#{platform := Platform}=Options) ->
@@ -48,7 +48,7 @@ contract(Swarm,Publisher,#{receiver := Receiver,source := Source}) ->
 snapshot() ->
     {Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
     Swarm=ba_swarm:status(),Config=ba_device_config:snapshot(),
-    Base=#{profile => swarm_control,device => Id,swarm => Swarm,contacts => ba_contacts:list(),
+    Base=#{profile => swarm_control,device => Id,swarm => Swarm,connection => ba_swarm:connection(),contacts => ba_contacts:list(),
         desks => safe(fun ba_swarm_desks:status/0,#{}),
         default_desk => application:get_env(ba_core,default_reception_desk_url,<<>>),
         configuration => maps:without([entries],Config),consent => maps:get(consent,Config),excluded => exclusions(),messages => [],devices => [],jobs => [],

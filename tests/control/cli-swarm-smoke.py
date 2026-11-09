@@ -14,7 +14,7 @@ import time
 import signal
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / 'bin/beam-audio'
+CLI = ROOT / 'bin/beamaudio'
 spec = importlib.util.spec_from_file_location('relay_fixture', ROOT / 'tests/ReceptionDesk/relay-smoke.py')
 relay = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(relay)
@@ -33,6 +33,8 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-swarm-') as directory:
             result = subprocess.run([str(CLI), *args], cwd=ROOT, env=env,
                                     capture_output=True, text=True, timeout=40)
             assert result.returncode == 0, (args[:2], result.stderr)
+            if args[:1] == ('monitor',):
+                assert 'Connecting Swarm monitor' in result.stderr
             return result.stdout.strip() if scalar else json.loads(result.stdout)
 
         url = f'ws://127.0.0.1:{port}/relay/v1'
@@ -50,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-swarm-') as directory:
         member = run('inspect', 'device', '--devicename', 'test2')
         scoped = run('inspect', 'device', '--devicename', 'test1', '--deviceid', member['device'])
         assert scoped['error'] is None and 'instance' in scoped['result']
-        monitor_invitation = run('get', 'invitation', '--devicename', 'test1', scalar=True)
+        monitor_invitation = invitation  # Forward the same link already used by test2.
         invitation_file = Path(directory, 'monitor-invitation.txt')
         invitation_file.write_text(monitor_invitation + '\n')
         invitation_file.chmod(0o600)
@@ -70,6 +72,17 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-swarm-') as directory:
                                  '--invitation-file', str(invitation_file)], env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         assert json.loads(view.stdout.readline())['state'] == 'authorized'
+        # Extended, signed diagnostics carry the named CLI Devices end to end.
+        for _ in range(5):
+            named_frame = json.loads(view.stdout.readline())
+            if {row.get('name') for row in named_frame['devices']} == {'test1', 'test2', 'Swarm monitor'}:
+                break
+        else:
+            raise AssertionError('Monitor did not receive Device names')
+        for row in named_frame['devices']:
+            if row.get('name') in ('test1', 'test2'):
+                diagnostics = row['capabilities']['audio_diagnostics']
+                assert 'clock.state' in diagnostics and 'mixer.dropped' in diagnostics
         view.send_signal(signal.SIGINT)
         view.wait(timeout=5)
         assert run('inspect', 'device', '--devicename', observer_name)['swarm']['state'] == 'authorized'

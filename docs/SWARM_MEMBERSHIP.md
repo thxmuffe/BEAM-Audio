@@ -3,13 +3,17 @@
 Step 9 supersedes step 5's durable Swarm/rejoin model. Each gathering has a fresh
 random ID. Its creator is Captain, membership authority and Director for its
 lifetime. There is no election, dormant Swarm registry or snapshot restoration.
-Device Identity and the local address book survive; Swarm membership does not.
+Device Identity, the local address book and participant reconnect intent survive.
+Membership still requires fresh authorization from the same live Captain; a dead
+Captain’s gathering cannot be restored.
 
 ## Local APIs
 
 Supply a stable `BA_IDENTITY_SEED` from secure platform storage and a private
 `BA_STATE_DIR`. Start an unnamed BEAM; `swarm_control` rejects Distributed Erlang.
-The runtime starts **idle**, without restoring or joining a gathering.
+The bare runtime starts **idle**. Apple app startup enables
+`restore_swarm_on_start`, immediately rejoining the last participant connection
+when one was saved; see the reopening section below.
 
 ```erlang
 {ok,_} = ba_runtime:start(swarm_control).
@@ -24,7 +28,7 @@ Contacts are Device IDs with local labels. Groups are local selections of saved
 contacts; no approval, reciprocal friendship or synchronization is involved.
 `ba_contacts:list/0`, `delete/1`, `delete_group/1` and `resolve/1` provide management.
 `ba_swarm:invite([DeviceId],TTL)` selects individual contacts. It returns signed,
-recipient-bound invitation URIs for private transfer or QR rendering. Automatic
+forwardable invitation URIs for private transfer or QR rendering. Automatic
 unsolicited Desk invitation delivery is not implemented; URI transfer is the
 accepted step-9 path. The recipient explicitly chooses to join:
 
@@ -36,11 +40,11 @@ ok = ba_swarm:leave().
 ```
 
 The Captain uses `ba_swarm:end_swarm/0`, or leaves to end the entire gathering.
-A member cannot end it for everybody. Leaving removes that admission and its
-claimed invitations; returning requires a new invitation. A new creation always
+A member cannot end it for everybody. Leaving removes that admission; the same
+unexpired invitation can be used to return while the gathering is still alive. A new creation always
 gets a new ID, even with the same Captain, name and storage directory. There is
 one active Swarm per local runtime. `ba_bridge:request/1` exposes local JSON
-contact/group and lifecycle commands; app integration remains step 10.
+contact/group and lifecycle commands used by the Apple apps and CLI.
 
 ## Permission boundary
 
@@ -60,11 +64,15 @@ Director, `job_offer`, recipient consent and Contract. Captain status never
 permits arbitrary remote process execution or access to microphones.
 
 Signed v3 invitations pin the Captain, gathering name/ID, permitted Desks and
-mailbox route. Each ticket expires within 24 hours and is bound to one claimant;
-contact/group tickets are pre-bound to their selected Device in Captain memory.
+mailbox route. Each ticket expires within 24 hours and can be forwarded to admit several
+independently authenticated Devices. Contacts/groups select delivery recipients,
+not who is allowed to reuse the link. Revocation blocks the removed Device from
+all invitations that existed at removal without consuming those links for others;
+the Captain can explicitly re-invite it with a newly generated link.
 Challenge/proof verifies fresh nonces, identity, request and credential hash.
-Passports and policy floors exist only within this live gathering. They support
-fresh authorization after transport loss, not restoration after a runtime ends.
+Passports and policy floors apply only to this live gathering. A participant
+saves them for fresh authorization after transport loss or app restart; they
+cannot revive the gathering after its Captain ends.
 A departure also identifies the current membership, so replaying an old signed
 leave cannot evict a later admission. End messages must be signed by this Swarm's
 Captain. Credentials must be transferred privately and never logged.
@@ -116,3 +124,25 @@ retained contacts and Captain crash followed by actual authorization expiry.
 No product apps, audio hardware, physical speaker timing or Internet resilience
 are qualified by that proof. Earlier 8d maximum-Offset deadline misses remain a
 separate documented limitation; this lifecycle change does not claim to fix them.
+
+## App reopening and reconnect intent
+
+macOS and iOS opt into the same OTP startup restoration. `ba_swarm` privately
+saves the last participant connection and, after admission, its signed Passport,
+Captain route and policy floor in `swarm_connection.term`. This is reconnect
+intent, not a saved running Swarm: it contains no live process, clock lease,
+workers, buffers or media sessions. Startup immediately attempts fresh Captain
+authorization. Once admitted, rejoining uses the Passport rather than depending
+on the original invitation's expiry. Revocation remains authoritative.
+
+Closing a participant app disconnects transport without issuing voluntary Leave.
+Explicit Leave clears reconnect intent. A Captain stopping still ends its
+gathering: reopening explains that result and does not recreate it or elect a
+replacement. Failure to reach the Captain during the existing 30-second initial
+window produces an unavailable status; a stopped/ended gathering is not revived.
+
+The shared snapshot's `connection` object exposes `state`, `name`, optional
+`swarm`, and a human-readable `message`; credentials are never exposed there.
+Both Apple apps show startup/rejoining progress and the result in the header.
+This requires rebuilt apps and one join with the new version to record intent;
+older versions that discarded connections cannot supply missing history.

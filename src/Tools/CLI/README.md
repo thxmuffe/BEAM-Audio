@@ -1,6 +1,6 @@
 # BEAM Audio CLI — macOS
 
-`beam-audio` manages real, headless Devices: independent unnamed Erlang VMs using
+`beamaudio` (also available as `beam-audio`) manages real, headless Devices: independent unnamed Erlang VMs using
 production Swarm control, clocks, OS audio and Device Handler automation. No
 OpenSound UI is required. This first version runs/manages processes locally on
 macOS; it does not deploy or launch processes on remote machines.
@@ -12,8 +12,8 @@ From BEAM-Audio, with the existing OTP 29/rebar3/Xcode/native prerequisites:
 ```sh
 bash src/Tools/CLI/build.sh
 export PATH="$PWD/bin:$PATH"
-beam-audio --help
-beam-audio new device --help
+beamaudio --help
+beamaudio new device --help
 ```
 
 The source-tree escript uses OTP's `argparse`, compiled core modules and the
@@ -26,14 +26,14 @@ building. Standalone release distribution and Windows launch support are later.
 ## Two Devices, no UI
 
 ```sh
-beam-audio new device --devicename test1 --createswarm --enable speaker
-swarm=$(beam-audio get swarm --devicename test1)
-invitation=$(beam-audio get invitation --devicename test1)
-beam-audio new device --devicename test2 --joinswarm "$invitation" --enable broadcast
-beam-audio wait device --devicename test1,test2 --until audio-flowing --timeout 120s
-beam-audio inspect device --devicename test1
-beam-audio inspect swarm --swarmid "$swarm"
-beam-audio stop device --all
+beamaudio new device --devicename test1 --createswarm --enable speaker
+swarm=$(beamaudio get swarm --devicename test1)
+invitation=$(beamaudio get invitation --devicename test1)
+beamaudio new device --devicename test2 --joinswarm "$invitation" --enable broadcast
+beamaudio wait device --devicename test1,test2 --until audio-flowing --timeout 120s
+beamaudio inspect device --devicename test1
+beamaudio inspect swarm --swarmid "$swarm"
+beamaudio stop device --all
 ```
 
 Play some ordinary system audio while checking broadcast. `speaker` receives
@@ -56,8 +56,8 @@ permission. None of these prompts or actual audio paths was run by the agent.
 To change consent on an existing Device:
 
 ```sh
-beam-audio set device --devicename test2 --enable mic
-beam-audio set device --devicename test2 --disable mic,broadcast
+beamaudio set device --devicename test2 --enable mic
+beamaudio set device --devicename test2 --disable mic,broadcast
 ```
 
 The same configured BEAM Audio playback-helper executable is excluded from system
@@ -92,7 +92,7 @@ only by the explicit credential command, not ordinary inspection. To read a
 remote participant's scoped capabilities through a local Device:
 
 ```sh
-beam-audio inspect device --devicename test1 --deviceid PUBLIC_DEVICE_ID
+beamaudio inspect device --devicename test1 --deviceid PUBLIC_DEVICE_ID
 ```
 
 Swarm inspection returns available authorized local views, not a global lookup;
@@ -102,7 +102,7 @@ remote shell/eval, arbitrary OTP RPC or Distributed Erlang control channel.
 The old Inspector is unchanged and explicitly available under:
 
 ```sh
-beam-audio inspect legacy --help
+beamaudio inspect legacy --help
 ```
 
 It still needs its own Inspector build and uses the historical trusted profile.
@@ -111,13 +111,12 @@ Modern `inspect device/swarm` never delegates to it.
 ## Live Swarm monitor
 
 ```sh
-beam-audio monitor --all
+beamaudio monitor --all
 ```
 
 The default invitation file is `builds/CLI/private/monitor-invitation.txt`, private
-mode 0600 under an ignored mode-0700 directory. A fresh, unused invitation is
-required for first admission: invitations become bound to their first joining
-Device. You can instead supply `--invitation-file PATH`. Do not commit invitation
+mode 0600 under an ignored mode-0700 directory. Invitations are forwardable: the same valid link can admit multiple Devices
+and the monitor into the live Swarm until expiry. Using it does not consume it. You can instead supply `--invitation-file PATH`. Do not commit invitation
 files. The monitor verifies the ticket and uses an independent named
 `ba-monitor-SWARM_ID` identity. It never creates a Swarm as a fallback.
 
@@ -127,6 +126,32 @@ audio and accepts no audio Jobs; there is no app attachment or arbitrary RPC.
 `--all` means all members of this gathering, not every Device on the Internet.
 Adding the observer is a real membership change and may reset existing control
 sessions under the currently documented membership-churn behavior.
+
+Startup prints a connecting message immediately, then admission progress or an
+explicit failure. If the saved Captain is offline, keep it online; if that Swarm
+ended or was replaced, supply a valid invitation for the current gathering.
+A saved invitation cannot discover or resurrect a different Swarm.
+
+The table groups channels under one Device name with a separator after each
+Device. Running channels are green, disabled ones grey, and failures red; disabled
+channels omit unused meter columns. Colours are used only in a terminal and can
+be disabled with `NO_COLOR=1`; JSON and redirected output remain uncoloured.
+
+Updated apps pass the OS Device name to OTP; named CLI Devices advertise their
+configured name and the observer advertises “Swarm monitor”. The name travels
+only in the existing signed opt-in diagnostic reply. Plain capability replies
+remain unchanged. Contact labels are used when a peer has no advertised name,
+otherwise an ID appears once as a fallback. A short ID is appended only when
+Device names collide. Names are retained across temporary read failures.
+
+Name reporting requires rebuilt apps and a restarted observer runtime, not just
+restarting the foreground display. Stop only the observer with
+`beamaudio stop device --devicename ba-monitor-SWARM_ID`, then rerun
+`beamaudio monitor --all`; keep audio Devices running. Older builds still work
+with ID fallback. The first plain diagnostic frame may precede name reporting;
+continuous mode requests extended diagnostics on following frames. On iOS 16+
+Apple normally supplies a generic name such as “iPhone”; the user-assigned name
+requires [Apple's entitlement](https://developer.apple.com/documentation/uikit/uidevice/name).
 
 The table refreshes each second (`--interval 500` chooses milliseconds); use
 `--json` for JSON frames or `--once` for a single frame. Ctrl-C exits the view;
@@ -138,6 +163,23 @@ ticket and stable identity only while the ticket and gathering remain valid.
 Expired/revoked credentials or an ended Swarm require fresh admission, not
 restoration of cached permissions. `stop device --devicename ba-monitor-SWARM_ID`
 leaves the gathering; `stop device --all` includes managed observers.
+
+Updated diagnostic replies also include `audio_diagnostics`: a bounded flat map
+of cached receiver, aggregate transport, Mixer and local clock observations.
+The console shows channel error reasons, clock state/correction, Mixer rendered/
+dropped/queued/clipped counts and nonzero failure totals. JSON retains the full
+projected map. Totals are cumulative within the relevant running process; they
+are not per-second rates or proof of an active fault. Transport rejection counts
+are not a measurement of RTP network loss, and these reports do not measure
+physical speaker underruns or speaker alignment.
+
+The audio Worker projects its existing receiver snapshot and clock state during
+its normal update; the Handler serves this cache. Monitor requests do not add
+synchronous calls to the audio processes. Only opt-in extended replies carry it;
+ordinary capability replies keep their shape. Reports contain bounded counters
+and reason codes, never PCM, credentials, descriptors or arbitrary process state.
+Older app builds explicitly show playback diagnostics unavailable. Rebuild the
+apps and restart their observer to use the new signed report schema.
 
 Updated Devices expose opt-in, bounded authenticated peak/RMS levels in dBFS,
 age, stage and capture counters. Capture meters describe mic/default-output
@@ -174,9 +216,9 @@ settings in a new idle runtime; provide fresh creation/join flags when needed.
 ## Configuration history
 
 ```sh
-beam-audio history device --devicename test1
-beam-audio undo device --devicename test1
-beam-audio redo device --devicename test1
+beamaudio history device --devicename test1
+beamaudio undo device --devicename test1
+beamaudio redo device --devicename test1
 ```
 
 The same OTP owner records the three audio switches from CLI, app and supported

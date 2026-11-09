@@ -7,7 +7,6 @@
 main() ->
     logger:update_handler_config(default, config, #{type => standard_error}),
     io:setopts(standard_io, [binary, {encoding, utf8}]),
-    ba_app_session:configure(),
     {ok, _} = ba_runtime:start(),
     loop().
 
@@ -141,4 +140,4 @@ message(#{id := Id, text := Text, sender := Sender, sent_at_ms := Time} = M) ->
       <<"level">> => case maps:find(level, M) of {ok, L} -> atom_to_binary(L); error -> null end}.
 
 close_swarm() ->
-    case whereis(ba_swarm) of undefined -> ok;_ -> try ba_swarm:leave() catch exit:_ -> ok end end.
+    case whereis(ba_swarm) of undefined -> ok;_ -> try ba_swarm:disconnect() catch exit:_ -> ok end end.

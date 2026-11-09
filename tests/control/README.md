@@ -35,6 +35,7 @@ From the core root:
 ```sh
 python3 tests/control/swarm-control-smoke.py
 python3 tests/control/swarm-membership-smoke.py
+python3 tests/control/swarm-reconnect-smoke.py
 python3 tests/control/swarm-time-smoke.py
 python3 tests/control/swarm-time-smoke.py --production-cadence
 BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --sustained

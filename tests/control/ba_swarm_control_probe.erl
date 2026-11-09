@@ -20,6 +20,11 @@ loop(Id,Cap) ->
                     functions => [<<(atom_to_binary(M))/binary,":",(atom_to_binary(F))/binary>> || {M,F,_,_} <- Stack]}) end,
             loop(Id,Cap)
     end.
+command(#{<<"op">> := <<"start_runtime">>},_,_) -> ensure_started(),ba_app_session:snapshot();
+command(#{<<"op">> := <<"start_app">>},_,_) ->
+    application:load(ba_core),application:set_env(ba_core,restore_swarm_on_start,true),
+    ensure_started(),ba_app_session:snapshot();
+command(#{<<"op">> := <<"disconnect_app">>},_,_) -> result(ba_swarm:disconnect());
 command(#{<<"op">> := <<"create">>,<<"desks">> := URLs},_,_) ->
     start(#{mode => create,name => <<"Test gathering">>,desks => URLs});
 command(#{<<"op">> := <<"join">>,<<"invitation">> := Link,<<"desk">> := Desk},_,_) ->

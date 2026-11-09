@@ -98,9 +98,10 @@ handle_info(audio_worker,S) ->
                 _ -> erlang:send_after(250,self(),audio_worker),{noreply,S}
             end
     end;
-handle_info({audio_state,P,Audio},#{audio_worker := P}=S) -> {noreply,changed(S#{audio => Audio})};
+handle_info({audio_state,P,Audio,Diagnostics},#{audio_worker := P}=S) ->
+    {noreply,changed(S#{audio => Audio,audio_diagnostics => Diagnostics})};
 handle_info({'DOWN',_,process,P,_},#{audio_worker := P}=S) ->
-    erlang:send_after(250,self(),audio_worker),{noreply,maps:remove(audio_worker,S#{audio => #{}})};
+    erlang:send_after(250,self(),audio_worker),{noreply,maps:remove(audio_worker,S#{audio => #{},audio_diagnostics => #{}})};
 handle_info({'DOWN',Ref,process,_,_},#{control_monitor := Ref} = S) ->
     Next = stop_jobs(fun(_) -> true end,session_lost,S),
     {noreply,Next#{jobs := #{},control := undefined,control_monitor := undefined}};
@@ -179,7 +180,16 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
     end.
 
 capability_metrics(S) ->
-    Base=capability_snapshot(S),
+    Base0=capability_snapshot(S),
+    %% Names are opt-in diagnostics so ordinary capability replies keep their shape.
+    Named=case os:getenv("BA_DEVICE_NAME") of
+        false -> Base0;
+        Text -> Name=unicode:characters_to_binary(Text),
+            case is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<256 of
+                true -> Base0#{<<"device_name">> => Name};false -> Base0 end
+    end,
+    Base=case maps:find(audio_diagnostics,S) of
+        {ok,D} -> Named#{<<"audio_diagnostics">> => D};error -> Named end,
     case maps:find(<<"audio">>,Base) of
         error -> Base;
         {ok,Audio} -> Base#{<<"audio">> := maps:map(fun(K,Entry) ->
@@ -188,7 +198,12 @@ capability_metrics(S) ->
             Meter=maps:get(meter,Row,#{}),
             Counts=maps:from_list([{Wire,V} || {Field,Wire} <- [{blocks,<<"blocks">>},{frames,<<"frames">>},{dropped_callbacks,<<"dropped">>}],
                 {ok,V} <- [maps:find(Field,Row)],is_integer(V),V>=0]),
-            maps:merge(Entry,maps:merge(Counts,maps:with([<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>],Meter)))
+            Error=case maps:get(error,Row,undefined) of
+                Reason when is_atom(Reason),Reason=/=undefined -> #{<<"error">> => atom_to_binary(Reason)};
+                TextError when is_binary(TextError),byte_size(TextError)=<256 -> #{<<"error">> => TextError};
+                _ -> #{}
+            end,
+            maps:merge(maps:merge(Entry,Error),maps:merge(Counts,maps:with([<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>],Meter)))
         end,Audio)}
     end.
 

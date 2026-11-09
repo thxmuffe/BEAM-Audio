@@ -7,8 +7,13 @@ snapshot(#{metrics := Metrics,plain := Plain}) when is_boolean(Metrics),is_list(
     Peers=maps:get(members,Swarm,[]),Parent=self(),Ref=make_ref(),
     Workers=[{Peer,spawn_monitor(fun() -> Parent ! {Ref,Peer,read(Peer,Self,Metrics andalso not lists:member(Peer,Plain))} end)} || Peer <- Peers],
     Rows=collect(Workers,Ref,erlang:monotonic_time(millisecond)+6500,[]),
-    #{swarm => Swarm,device => Self,clock => maps:get(clock,Local),devices => Rows,
+    #{swarm => Swarm,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(contacts,Local)) || Row <- Rows],
       state => maps:get(state,Swarm),observed_at_ms => erlang:system_time(millisecond)}.
+named(#{id := Id}=Row,#{contacts := Contacts}) ->
+    Caps=maps:get(capabilities,Row,#{}),
+    case maps:get(<<"device_name">>,Caps,maps:get(Id,Contacts,<<>>)) of
+        <<>> -> Row;Name -> Row#{name => Name}
+    end.
 read(Self,Self,Metrics) -> #{id => Self,local => true,state => ok,capabilities => ba_device_handler:capabilities(Metrics)};
 read(Peer,_,Metrics) ->
     try

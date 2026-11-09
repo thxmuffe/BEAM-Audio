@@ -67,10 +67,11 @@ reconcile(S) ->
                     end
             end,
             Audio=(maps:get(audio,Captured,#{}))#{speaker => Speaker#{meter => maps:get(receive_meter,NextView,#{})}},
-            maps:get(owner,S) ! {audio_state,self(),Audio},Captured#{contracts := Wanted};
+            Diagnostics=ba_audio_diagnostics:snapshot(NextView,ba_swarm_clock:status()),
+            maps:get(owner,S) ! {audio_state,self(),Audio,Diagnostics},Captured#{contracts := Wanted};
         _ ->
             Audio=maps:map(fun(_,B) -> #{state => case B of true -> waiting_for_membership;false -> disabled end} end,Consent),
-            maps:get(owner,S) ! {audio_state,self(),Audio},S
+            maps:get(owner,S) ! {audio_state,self(),Audio,ba_audio_diagnostics:snapshot(#{},ba_swarm_clock:status())},S
     end.
 capture(K,false,_,S) -> S#{audio => (maps:get(audio,S,#{}))#{K => #{state => disabled}}};
 capture(K,true,Adapter,S) ->
