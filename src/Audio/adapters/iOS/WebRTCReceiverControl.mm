@@ -6,7 +6,7 @@
 #include <cmath>
 #include <optional>
 
-BOOL ParviWebRTCSetMinimumDelay(RTCRtpReceiver *receiver, NSNumber *seconds) {
+BOOL ba_webrtc_set_minimum_delay(RTCRtpReceiver *receiver, NSNumber *seconds) {
     if (seconds && (!std::isfinite(seconds.doubleValue) || seconds.doubleValue < 0 ||
                     seconds.doubleValue > 10)) return NO;
     auto native = receiver.nativeRtpReceiver;
@@ -19,22 +19,22 @@ BOOL ParviWebRTCSetMinimumDelay(RTCRtpReceiver *receiver, NSNumber *seconds) {
 // Sequentially consistent atomics keep each accepted snapshot coherent.
 #include <atomic>
 #include <mach/mach_time.h>
-struct ParviOutputTiming {
+struct ba_output_timing {
     std::atomic<uint64_t> sequence{0}, host{0}, observed{0};
     std::atomic<double> sample{0};
     std::atomic<uint32_t> flags{0}, frames{0};
     std::atomic<int32_t> status{0};
     mach_timebase_info_data_t timebase;
-    ParviOutputTiming() { mach_timebase_info(&timebase); }
+    ba_output_timing() { mach_timebase_info(&timebase); }
 };
 static_assert(std::atomic<uint64_t>::is_always_lock_free);
 static_assert(std::atomic<double>::is_always_lock_free);
 static_assert(std::atomic<uint32_t>::is_always_lock_free);
-void *ParviOutputTimingCreate(void) { return new ParviOutputTiming; }
-void ParviOutputTimingDestroy(void *timing) { delete static_cast<ParviOutputTiming *>(timing); }
-void ParviOutputTimingRecord(void *timing, const AudioTimeStamp *timestamp,
+void *ba_output_timing_create(void) { return new ba_output_timing; }
+void ba_output_timing_destroy(void *timing) { delete static_cast<ba_output_timing *>(timing); }
+void ba_output_timing_record(void *timing, const AudioTimeStamp *timestamp,
                              UInt32 frames, OSStatus status) {
-    auto &t = *static_cast<ParviOutputTiming *>(timing);
+    auto &t = *static_cast<ba_output_timing *>(timing);
     t.sequence.fetch_add(1);
     t.host.store(timestamp->mHostTime);
     t.sample.store(timestamp->mSampleTime);
@@ -44,8 +44,8 @@ void ParviOutputTimingRecord(void *timing, const AudioTimeStamp *timestamp,
     t.observed.store(mach_absolute_time());
     t.sequence.fetch_add(1);
 }
-NSDictionary<NSString *, id> *ParviOutputTimingSnapshot(void *timing) {
-    auto &t = *static_cast<ParviOutputTiming *>(timing);
+NSDictionary<NSString *, id> *ba_output_timing_snapshot(void *timing) {
+    auto &t = *static_cast<ba_output_timing *>(timing);
     for (int attempt = 0; attempt < 8; ++attempt) {
         auto before = t.sequence.load();
         if (!before || (before & 1)) continue;

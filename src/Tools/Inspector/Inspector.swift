@@ -30,16 +30,16 @@ struct Inspector {
                 .map { $0.appendingPathComponent("ebin").path }
         }
         process.arguments = ["-noshell", "-pa"] + libraries + [
-            "-start_epmd", "false", "-proto_dist", "parvi_webrtc",
+            "-start_epmd", "false", "-proto_dist", "ba_webrtc",
             "-kernel", "connect_all", "false", "dist_auto_connect", "never", "logger_level", "warning",
-            "-s", "parvi_inspector", "boot"
+            "-s", "ba_inspector", "boot"
         ]
         var env = ProcessInfo.processInfo.environment
-        env["PARVI_IDENTITY_SEED"] = identity.seedHex
-        env["PARVI_STATE_DIR"] = identity.stateDirectory.path
+        env["BA_IDENTITY_SEED"] = identity.seedHex
+        env["BA_STATE_DIR"] = identity.stateDirectory.path
         env["ERL_CRASH_DUMP"] = identity.stateDirectory.appendingPathComponent("erl_crash.dump").path
-        if let file = option("--join-file") { env["PARVI_INSPECTOR_JOIN_FILE"] = file }
-        else { env.removeValue(forKey: "PARVI_INSPECTOR_JOIN_FILE") }
+        if let file = option("--join-file") { env["BA_INSPECTOR_JOIN_FILE"] = file }
+        else { env.removeValue(forKey: "BA_INSPECTOR_JOIN_FILE") }
         process.environment = env
         let inputPipe = Pipe()
         if let input = option("--input") { process.standardInput = try FileHandle(forReadingFrom: URL(fileURLWithPath: input)) }

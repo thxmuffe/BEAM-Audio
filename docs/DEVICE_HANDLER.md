@@ -12,12 +12,12 @@ playback, DSP, app UI or arbitrary Worker module loading is implemented here.
 The `swarm_control` runtime now starts this local hierarchy:
 
 ```text
-parvi_sup                         one_for_one
-  parvi_device_sup                rest_for_one
-    parvi_device_handler          permanent
-    parvi_device_worker_sup       one_for_one
+ba_sup                         one_for_one
+  ba_device_sup                rest_for_one
+    ba_device_handler          permanent
+    ba_device_worker_sup       one_for_one
       test Workers                temporary, created only on local acceptance
-  parvi_swarm_control             permanent; existing linked Desk relay
+  ba_swarm_control             permanent; existing linked Desk relay
 ```
 
 The Handler owns local consent, capacity, Worker records and attempts. It builds
@@ -40,12 +40,12 @@ a separate sibling, and subsequent capability queries see the current Handler.
 After starting the configured headless Swarm runtime, these calls are available:
 
 ```erlang
-parvi_device_handler:capabilities().
-parvi_device_handler:status().
-ok = parvi_device_handler:enable_test(true).
-{ok, WorkerId} = parvi_device_handler:start(test, #{duration_ms => 1000}).
-ok = parvi_device_handler:cancel(WorkerId).
-ok = parvi_device_handler:enable_test(false).
+ba_device_handler:capabilities().
+ba_device_handler:status().
+ok = ba_device_handler:enable_test(true).
+{ok, WorkerId} = ba_device_handler:start(test, #{duration_ms => 1000}).
+ok = ba_device_handler:cancel(WorkerId).
+ok = ba_device_handler:enable_test(false).
 ```
 
 Only `test` is installed/advertised. It waits 20–10000 ms, reports ready and
@@ -86,7 +86,7 @@ Handler restart; revisions identify changes within one instance. Audio inputs,
 outputs and DSP are not advertised as supported by this test capability.
 
 An authenticated peer may call
-`parvi_swarm_control:read_capabilities(PeerId)` only when the receiving Device's
+`ba_swarm_control:read_capabilities(PeerId)` only when the receiving Device's
 local policy grants that peer `capabilities_read`. Configure grants as sorted,
 unique subsets of `[capabilities_read,job_offer,status_read]`. Status permission alone does
 not grant capability access, and neither permission grants execution.
@@ -106,7 +106,7 @@ separate execution permission/Contract, asynchronous evaluation and failure clea
 From `src/control`:
 
 ```sh
-rebar3 eunit --module=parvi_device_handler_tests,parvi_swarm_control_protocol_tests,parvi_relay_tests,parvi_native_tests
+rebar3 eunit --module=ba_device_handler_tests,ba_swarm_control_protocol_tests,ba_relay_tests,ba_native_tests
 rebar3 compile
 ```
 

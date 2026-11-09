@@ -22,7 +22,7 @@ target/
 DerivedData/
 xcuserdata/
 # Xcode regenerates this project's implicit, self-only workspace.
-/src/Apps/iOS/Parvi.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+/src/Apps/iOS/BEAM Audio.xcodeproj/project.xcworkspace/contents.xcworkspacedata
 __pycache__/
 
 # Local experiments and measurement captures

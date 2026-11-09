@@ -17,6 +17,6 @@ WORKDIR /app
 COPY --from=build --chown=1000:1000 /release ./
 RUN mkdir -p /app/tmp && chown 1000:1000 /app /app/tmp
 USER 1000:1000
-ENV HOME=/app PARVI_BROKER_BIND=0.0.0.0 PORT=10000 RELEASE_DISTRIBUTION=none RELEASE_TMP=/app/tmp
+ENV HOME=/app BA_DESK_BIND=0.0.0.0 PORT=10000 RELEASE_DISTRIBUTION=none RELEASE_TMP=/app/tmp
 EXPOSE 10000
 CMD ["/app/bin/reception_desk", "start"]

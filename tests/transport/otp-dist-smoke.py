@@ -26,8 +26,8 @@ assert (otp / 'releases/29/OTP_VERSION').read_text().strip() == '29.1.2', 'Use O
 ERLEXEC = otp / 'bin/erl.exe' if os.name == 'nt' else next(otp.glob('erts-*/bin/erlexec'))
 sources = sorted((ROOT / 'src/control/transport/experiments/otp_dist/src').glob('*.erl'))
 sources += [ROOT / 'src/control/src' / f'{name}.erl' for name in (
-    'parvi_cluster_auth', 'parvi_cluster_authority', 'parvi_cluster_trust',
-    'parvi_cluster_desk', 'parvi_dist_channel', 'parvi_media_channel', 'parvi_webrtc_dist')]
+    'ba_legacy_cluster_auth', 'ba_legacy_cluster_authority', 'ba_legacy_cluster_trust',
+    'ba_legacy_cluster_desk', 'ba_dist_channel', 'ba_media_channel', 'ba_webrtc_dist')]
 subprocess.run([str(otp / ('bin/erlc.exe' if os.name == 'nt' else 'bin/erlc')), '-Werror', '+debug_info', '-o', str(BUILD),
                 *map(str, sources)], check=True)
 paths = [BUILD]
@@ -35,24 +35,24 @@ transport = ROOT / ('builds/intermediates/Windows/transport/beam/dev/lib' if os.
                     else 'builds/intermediates/BeamTransport/dev/lib')
 paths += list(transport.glob('*/ebin'))
 paths += list((ROOT / 'builds/intermediates/tools/elixir/lib').glob('*/ebin'))
-assert any(p.parent.name == 'parvi_transport' for p in paths), 'Compile src/control/transport first'
+assert any(p.parent.name == 'ba_transport' for p in paths), 'Compile src/control/transport first'
 
 
 class Probe:
-    def __init__(self, label, name, peer, cookie, entry='parvi_dist_probe'):
+    def __init__(self, label, name, peer, cookie, entry='ba_dist_probe'):
         self.label, self.peer = label, None
         self.lines, self.replies = queue.Queue(), {}
         self.ready, self.booted, self.serial = False, None, 0
         self.log_path = BUILD / f'{label}.log'
         self.log = self.log_path.open('w')
         env = dict(os.environ, ROOTDIR=str(otp), BINDIR=str(ERLEXEC.parent), EMU='beam', PROGNAME='erl',
-            PARVI_PROBE_NAME=name, PARVI_PROBE_PEER=peer, PARVI_PROBE_COOKIE=cookie,
+            BA_PROBE_NAME=name, BA_PROBE_PEER=peer, BA_PROBE_COOKIE=cookie,
             DYLD_FALLBACK_LIBRARY_PATH='/opt/homebrew/opt/openssl@3/lib')
         env.pop('ERL_FLAGS', None)
         env.pop('ERL_AFLAGS', None)
         env.pop('ERL_ZFLAGS', None)
         self.process = subprocess.Popen([str(ERLEXEC), '-noshell', '-pa', *map(str, paths),
-            '-start_epmd', 'false', '-proto_dist', 'parvi_webrtc',
+            '-start_epmd', 'false', '-proto_dist', 'ba_webrtc',
             '-kernel', 'connect_all', 'false', 'dist_auto_connect', 'never',
             '-s', entry, 'main'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=self.log, text=True, encoding='utf-8', env=env)
@@ -129,7 +129,7 @@ def run(matching_cookies):
     global introductions
     introductions = True
     suffix = secrets.token_hex(5)
-    names = [f'parvi_probe_{i}_{suffix}@127.0.0.1' for i in range(2)]
+    names = [f'ba_probe_{i}_{suffix}@127.0.0.1' for i in range(2)]
     cookie = secrets.token_hex(32)
     case = 'trusted' if matching_cookies else 'wrong-cookie'
     try:

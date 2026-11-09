@@ -8,32 +8,32 @@ automatic Director failover or federation.
 
 ## Starting the headless runtime
 
-Supply a stable `PARVI_IDENTITY_SEED` from secure platform storage and a private
-`PARVI_STATE_DIR`. Both are required by this profile. No key is saved in checkpoint
+Supply a stable `BA_IDENTITY_SEED` from secure platform storage and a private
+`BA_STATE_DIR`. Both are required by this profile. No key is saved in checkpoint
 files. Start an unnamed BEAM; this profile rejects Distributed Erlang.
 
 ```erlang
-application:load(parvi).
-application:set_env(parvi,swarm_membership,
+application:load(ba_core).
+application:set_env(ba_core,swarm_membership,
     #{mode => create,desks => [DeskA,DeskB]}).
-{ok,_} = parvi:start(swarm_control).
-{ok,Invitation} = parvi_swarm_membership:invite(3600).
+{ok,_} = ba_runtime:start(swarm_control).
+{ok,Invitation} = ba_swarm_membership:invite(3600).
 ```
 
 On a second device, configure before starting:
 
 ```erlang
-application:set_env(parvi,swarm_membership,
+application:set_env(ba_core,swarm_membership,
     #{mode => join,invitation => Invitation,desk => DeskB}).
-{ok,_} = parvi:start(swarm_control).
+{ok,_} = ba_runtime:start(swarm_control).
 ```
 
 New members receive **no operation permissions**. On the authority explicitly set:
 
 ```erlang
-ok = parvi_swarm_membership:grant(DeviceId,
+ok = ba_swarm_membership:grant(DeviceId,
     [<<"capabilities_read">>,<<"status_read">>]).
-ok = parvi_swarm_membership:revoke(DeviceId).
+ok = ba_swarm_membership:revoke(DeviceId).
 ```
 
 Permission lists are sorted and unique. Step 6 adds separate `stream_read` and
@@ -49,7 +49,7 @@ and state directory. It retains identity and Passport but obtains a fresh author
 challenge and current policy before operating. The authority restarts with `create`
 and its original seed/state directory; existing authority state takes precedence
 over creating a new Swarm. Never share one directory between runtime instances.
-Use `parvi_swarm_membership:status/0` for public state; invitations are secrets and
+Use `ba_swarm_membership:status/0` for public state; invitations are secrets and
 must be transferred privately, not logged. Ordinary session APIs remain in the
 [control protocol guide](SWARM_CONTROL_PROTOCOL.md).
 
@@ -89,7 +89,7 @@ Backups/rollback-resistant storage and distributed durable storage are not suppl
 
 ## Desk ownership and limits
 
-`parvi_sup` uses `rest_for_one`: Desk adapter, membership owner, local Device
+`ba_sup` uses `rest_for_one`: Desk adapter, membership owner, local Device
 supervisor, then control. A Desk adapter failure restarts dependent branches;
 a membership owner failure resets local runtime/consent/session state. Ordinary
 socket disconnects reconnect through the existing relay and clear control sessions.
@@ -116,7 +116,7 @@ From `src/control`, compile and run the focused checks:
 
 ```sh
 rebar3 compile
-rebar3 eunit --module=parvi_swarm_passport_tests,parvi_swarm_job_tests,parvi_device_handler_tests,parvi_swarm_control_protocol_tests,parvi_relay_tests,parvi_native_tests
+rebar3 eunit --module=ba_swarm_passport_tests,ba_swarm_job_tests,ba_device_handler_tests,ba_swarm_control_protocol_tests,ba_relay_tests,ba_native_tests
 ```
 
 From the core root:

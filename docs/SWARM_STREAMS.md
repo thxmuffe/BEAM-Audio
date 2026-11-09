@@ -7,7 +7,7 @@ platform audio outputs have not been migrated or launched.
 
 ## Identity and ownership
 
-`parvi_audio:publish/2` creates a local supervised publication with an explicit
+`ba_audio:publish/2` creates a local supervised publication with an explicit
 stable `source_key` and fresh incarnation. Its local capture owner supplies every
 packet's target. Source pause keeps that publication/incarnation and its idle
 transports; unpublish or owner death ends the incarnation. Republish with the same
@@ -18,7 +18,7 @@ Swarm/publisher Device/source identity. Endpoint PID, control session, incarnati
 connection attempt and lease are separate volatile state. Each active endpoint is
 a temporary local OTP worker owning an independent ExWebRTC PeerConnection with a
 PCM data channel or Opus audio track. Failure or pause of one endpoint does not select, stop or retime another.
-`parvi_audio_sup` starts the mixer before the receiver with `rest_for_one`;
+`ba_audio_sup` starts the mixer before the receiver with `rest_for_one`;
 receiver failure resets dependent temporary media workers/publications. The mixer
 also monitors its receiver owner and discards its queues/output on owner death.
 
@@ -35,12 +35,12 @@ A local capture worker publishes, pushes and pauses its own source:
 ```erlang
 D = #{encoding => pcm,sample_format => pcm16_le,sample_rate => 48000,
       channel_count => 1,clock => SharedClockId}.
-{ok,Source} = parvi_audio:publish(
+{ok,Source} = ba_audio:publish(
     #{name => <<"Music">>,source_key => <<"music">>,profiles => #{channel => D}},self()).
-{ok,_} = parvi_audio:push(Source,channel,
+{ok,_} = ba_audio:push(Source,channel,
     #{playback_time => PacketTargetNs,channel_id => 0},PCM).
-ok = parvi_audio:pause(Source,true).
-ok = parvi_audio:pause(Source,false).
+ok = ba_audio:pause(Source,true).
+ok = ba_audio:pause(Source,false).
 ```
 
 Publication is an explicit local operation; remote requests cannot start capture.
@@ -50,16 +50,16 @@ from checkpoints:
 
 ```erlang
 %% On the publisher:
-ok = parvi_audio_receiver:set_contract(publish,ReceiverId,<<"music">>,ContractId,1).
+ok = ba_audio_receiver:set_contract(publish,ReceiverId,<<"music">>,ContractId,1).
 %% On the receiver:
-ok = parvi_audio_receiver:set_contract(receive_audio,PublisherId,<<"music">>,ContractId,1).
-ok = parvi_audio_receiver:refresh(PublisherId).
+ok = ba_audio_receiver:set_contract(receive_audio,PublisherId,<<"music">>,ContractId,1).
+ok = ba_audio_receiver:refresh(PublisherId).
 %% Wait for the authenticated catalogue offer in snapshot/0.
-{ok,SubscriptionId} = parvi_audio_receiver:subscribe(PublisherId,<<"music">>,channel).
+{ok,SubscriptionId} = ba_audio_receiver:subscribe(PublisherId,<<"music">>,channel).
 %% Wait for state => active before enabling its output.
-ok = parvi_audio_receiver:playback(SubscriptionId,start).
-ok = parvi_audio_receiver:playback(SubscriptionId,stop).
-ok = parvi_audio_receiver:stop(SubscriptionId).
+ok = ba_audio_receiver:playback(SubscriptionId,start).
+ok = ba_audio_receiver:playback(SubscriptionId,stop).
+ok = ba_audio_receiver:stop(SubscriptionId).
 ```
 
 Receiver pause retains subscription and transport while removing that stream's
@@ -128,7 +128,7 @@ A locally configured `audio_output_adapter` implements the existing `open/1`,
 clock and the adapter's reported latency, with at most 20 ms ahead of handoff
 passed to the sink. Software scheduling does not establish calibrated DAC timing.
 Already submitted mixed output cannot be selectively removed after a pause.
-The supported code path needs a valid common clock: default `parvi_clock` now supplies [authenticated shared Time/Offset](SWARM_TIME.md)
+The supported code path needs a valid common clock: default `ba_swarm_clock` now supplies [authenticated shared Time/Offset](SWARM_TIME.md)
 in the new headless profile. It never fabricates a fresh clock from membership or local arrival.
 
 Opus publications explicitly select `stream_handler => webrtc_audio_opus`,
@@ -136,7 +136,7 @@ Opus publications explicitly select `stream_handler => webrtc_audio_opus`,
 `rtp_timestamp_semantics => global_playback_48k_v1`. They use the **same** signed
 catalogue/Contract/subscription/SDP boundary, with a direct ExWebRTC Opus audio
 track. The local capture owner submits `{push_encoded,Timing,OpusPayload}` to its
-source; the existing `parvi_audio_rtp_time` encodes each target into that packet's
+source; the existing `ba_audio_rtp_time` encodes each target into that packet's
 RTP timestamp. There is no Opus-to-PCM transport fallback.
 
 The approved GStreamer binding `adapters/gstreamer/pcm_bridge.py` uses its existing
@@ -149,9 +149,9 @@ same scheduled mixer. The helper never opens an audio device, chooses a shared
 clock or schedules presentation. Bounds include 64 native input buffers, 32
 output buffers, 128 target associations and 4096 frames per decoded block.
 
-Configure this decoder locally with `PARVI_GSTREAMER_PCM_HELPER` (absolute helper
-path) and `PARVI_GSTREAMER_PYTHON` (GI-capable Python executable).
-`PARVI_GSTREAMER_RUNTIME` optionally locates the existing bundled GI libraries and
+Configure this decoder locally with `BA_GSTREAMER_PCM_HELPER` (absolute helper
+path) and `BA_GSTREAMER_PYTHON` (GI-capable Python executable).
+`BA_GSTREAMER_RUNTIME` optionally locates the existing bundled GI libraries and
 plugins. Missing configuration keeps intent in `waiting_for_backend` with
 `opus_decoder_unavailable`; it does not create repeated PeerConnections. PCM
 remains the default publication path. This qualifies the **headless decoded-audio
@@ -204,7 +204,7 @@ This needs the existing compiled `BeamTransport` ExWebRTC dependencies and local
 Elixir libraries. On this Homebrew Mac the precompiled libsrtp dependency requires:
 
 ```sh
-PARVI_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py
 ```
 
 The test uses OTP's direct launcher to preserve that local library path; it changes

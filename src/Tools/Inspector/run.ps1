@@ -1,6 +1,6 @@
 param(
-    [string]$OtpRoot = $env:PARVI_OTP_ROOT,
-    [string]$NativeLibRoot = $env:PARVI_WINDOWS_NATIVE_LIB,
+    [string]$OtpRoot = $env:BA_OTP_ROOT,
+    [string]$NativeLibRoot = $env:BA_WINDOWS_NATIVE_LIB,
     [string]$JoinFile,
     [string]$InputFile,
     [string]$StateDirectory,
@@ -50,7 +50,7 @@ try {
     if (!$OtpRoot) { $OtpRoot = Join-Path $repo 'builds\intermediates\Windows\otp' }
     $erl = Join-Path $OtpRoot 'bin\erl.exe'
     $ebin = Join-Path $repo 'builds\Inspector\ebin'
-    if (!(Test-Path -LiteralPath (Join-Path $ebin 'parvi_inspector.beam'))) {
+    if (!(Test-Path -LiteralPath (Join-Path $ebin 'ba_inspector.beam'))) {
         throw 'Run src/Tools/Inspector/build.ps1 first.'
     }
     if (!$NativeLibRoot) { $NativeLibRoot = Join-Path $repo 'builds\intermediates\Windows\transport\beam\dev\lib' }
@@ -63,7 +63,7 @@ try {
         $paths += Join-Path $repo "builds\intermediates\control\default\lib\$dep\ebin"
     }
     # No net_kernel, identity creation or desk connection during this preflight.
-    & $erl -noshell -pa @paths -eval 'case parvi_inspector:check() of ok -> halt(0); {error,R} -> io:format(standard_error,"Inspector transport unavailable: ~p~n",[R]), halt(1) end.'
+    & $erl -noshell -pa @paths -eval 'case ba_inspector:check() of ok -> halt(0); {error,R} -> io:format(standard_error,"Inspector transport unavailable: ~p~n",[R]), halt(1) end.'
     if ($LASTEXITCODE) { throw 'Windows native transport check failed; no cluster connection was attempted.' }
     if ($Check) { return }
     if (!$StateDirectory) { $StateDirectory = Join-Path $env:LOCALAPPDATA 'org.opensound.parvi\inspector' }
@@ -83,18 +83,18 @@ try {
         $encrypted = ConvertFrom-SecureString -SecureString $protectedSeed
         [System.IO.File]::WriteAllText($identityPath, $encrypted)
     }
-    $keys = @('PARVI_IDENTITY_SEED','PARVI_STATE_DIR','PARVI_INSPECTOR_JOIN_FILE','ERL_CRASH_DUMP')
+    $keys = @('BA_IDENTITY_SEED','BA_STATE_DIR','BA_INSPECTOR_JOIN_FILE','ERL_CRASH_DUMP')
     $saved = @{}
     foreach ($key in $keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
     try {
-        $env:PARVI_IDENTITY_SEED = $seed
-        $env:PARVI_STATE_DIR = $StateDirectory
-        $env:PARVI_INSPECTOR_JOIN_FILE = if ($JoinFile) { (Resolve-Path -LiteralPath $JoinFile).Path } else { $null }
+        $env:BA_IDENTITY_SEED = $seed
+        $env:BA_STATE_DIR = $StateDirectory
+        $env:BA_INSPECTOR_JOIN_FILE = if ($JoinFile) { (Resolve-Path -LiteralPath $JoinFile).Path } else { $null }
         $env:ERL_CRASH_DUMP = Join-Path $StateDirectory 'erl_crash.dump'
         $erlArguments = @('-noshell','-pa') + $paths + @(
-            '-start_epmd','false','-proto_dist','parvi_webrtc',
+            '-start_epmd','false','-proto_dist','ba_webrtc',
             '-kernel','connect_all','false','dist_auto_connect','never','logger_level','warning',
-            '-s','parvi_inspector','boot')
+            '-s','ba_inspector','boot')
         Invoke-InspectorHost $erl $erlArguments
     } finally {
         foreach ($key in $keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }

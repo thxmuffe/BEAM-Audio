@@ -17,20 +17,20 @@ APP_REPO = Path(os.environ.get('OPENSOUND_ROOT', REPO.parent / 'OpenSound'))
 BUILD = APP_REPO / 'builds/Windows/Parvi'
 ERL = BUILD / 'runtime/bin/erl.exe'
 EBIN = BUILD / 'ebin'
-BROKER = REPO / 'builds/Services/ReceptionDesk/lib/parvi_broker/ebin'
+BROKER = REPO / 'builds/Services/ReceptionDesk/lib/ba_desk/ebin'
 
 
 class Node:
     def __init__(self, suffix, cookie=None):
-        self.name = f'parvi_windows_{os.getpid()}{suffix}@127.0.0.1'
+        self.name = f'ba_windows_{os.getpid()}{suffix}@127.0.0.1'
         self.cookie = cookie or secrets.token_hex(24)
         self.lines = queue.Queue()
         self.process = subprocess.Popen([
             str(ERL), '-noshell', '-name', self.name, '-setcookie', self.cookie,
             '-kernel', 'inet_dist_use_interface', '{127,0,0,1}',
-            '-pa', str(EBIN), '-s', 'parvi_bridge', 'main'],
+            '-pa', str(EBIN), '-s', 'ba_bridge', 'main'],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, encoding='utf-8', env={**os.environ, 'ERL_EPMD_ADDRESS': '127.0.0.1', 'PARVI_RECEPTION_DESK_URL': ''})
+            text=True, encoding='utf-8', env={**os.environ, 'ERL_EPMD_ADDRESS': '127.0.0.1', 'BA_RECEPTION_DESK_URL': ''})
         threading.Thread(target=self.read, daemon=True).start()
 
     def read(self):
@@ -73,8 +73,8 @@ def main():
     url = f'http://127.0.0.1:{port}'
     broker = subprocess.Popen([
         str(ERL), '-noshell', '-noinput', '-pa', str(BROKER), '-eval',
-        f'application:load(parvi_broker), application:set_env(parvi_broker, port, {port}), '
-        '{ok, _} = application:ensure_all_started(parvi_broker), receive stop -> ok end.'
+        f'application:load(ba_desk), application:set_env(ba_desk, port, {port}), '
+        '{ok, _} = application:ensure_all_started(ba_desk), receive stop -> ok end.'
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     nodes = []
     try:
@@ -94,7 +94,7 @@ def main():
         assert discovery_error is None, discovery_error
         assert a.name in b.request('discover', url=url)['known_nodes']
         assert b.name in a.request('discover', url=url)['known_nodes']
-        assert a.request('connect', node='parvi_windows_1@192.168.1.5', cookie='test')['error']
+        assert a.request('connect', node='ba_windows_1@192.168.1.5', cookie='test')['error']
         connection = 'parvi://connect/v1?' + urllib.parse.urlencode({'node': b.name, 'cookie': b.cookie})
         assert a.request('connect', connection_string='invalid')['error']
         assert a.request('connect', connection_string=connection)['error'] is None
@@ -102,16 +102,16 @@ def main():
         await_snapshot(b, lambda r: a.name in r['peers'])
         # B accepted A using B's cookie. Asking B for A's connection string must
         # fetch A's actual default cookie, not reuse B's handshake cookie.
-        probe = f'parvi_windows_{os.getpid()}3@127.0.0.1'
-        code = (f'Expected = parvi_connection:format(<<"{a.name}">>, <<"{a.cookie}">>), '
+        probe = f'ba_windows_{os.getpid()}3@127.0.0.1'
+        code = (f'Expected = ba_legacy_connection:format(<<"{a.name}">>, <<"{a.cookie}">>), '
                 f'Expected = erpc:call(\'{b.name}\', erpc, call, '
-                f'[\'{a.name}\', parvi_connection, local, [], 2000], 3000), halt().')
+                f'[\'{a.name}\', ba_legacy_connection, local, [], 2000], 3000), halt().')
         subprocess.run([str(ERL), '-noshell', '-name', probe, '-setcookie', b.cookie,
                         '-kernel', 'inet_dist_use_interface', '{127,0,0,1}',
                         '-pa', str(EBIN), '-eval', code], check=True, timeout=10,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       env={**os.environ, 'ERL_EPMD_ADDRESS': '127.0.0.1', 'PARVI_RECEPTION_DESK_URL': ''})
-        text = 'Hello from Windows: Hei parvi! 🐦 <>&'
+                       env={**os.environ, 'ERL_EPMD_ADDRESS': '127.0.0.1', 'BA_RECEPTION_DESK_URL': ''})
+        text = 'Hello from Windows: Hei ba_core! 🐦 <>&'
         assert a.request('send', text=text)['error'] is None
         await_snapshot(b, lambda r: any(m['text'] == text for m in r['messages']))
         assert b.request('send', text='Reply from the second BEAM')['error'] is None

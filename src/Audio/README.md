@@ -1,5 +1,12 @@
 # Audio runtime and platform adapters
 
+Use the [canonical terminology](../../docs/TERMINOLOGY.md) and
+[core naming guide](../../docs/NAMING.md). `ba_audio_source` owns a Source's local
+publication, `ba_subscription` stores intent and `ba_media_session` owns a
+temporary connection. `ba_stream_handler_pcm` and `ba_stream_handler_opus` are
+Stream Handlers; `ba_audio_engine_*` modules bind Audio Engines. Core configuration
+uses `BA_*`; the OpenSound App integration remains step 9.
+
 ## Backend integration — step 8
 
 The [current stream path](../../docs/SWARM_STREAMS.md) supports PCM and explicit
@@ -65,7 +72,7 @@ cluster-clock mapping, output calibration and physical alignment remain pending.
 
 ## Replaceable receiver engines
 
-The native receiver now uses `parvi_audio_engine`, with libwebrtc and GStreamer
+The native receiver now uses `ba_audio_engine`, with libwebrtc and GStreamer
 adapters behind the same session-owned command/event interface. Stream handlers
 retain wire format and peer signaling; shared Erlang retains timing policy.
 See [the engine interface](../../docs/AUDIO_ENGINE_INTERFACE.md) for selection,
@@ -115,7 +122,7 @@ index, Opus lookahead, converter leading/trailing input frames). The prefix neve
 enters RTP: only the Opus payload is sent. The helper and bundled Erlang adapter
 must be rebuilt together. Real-time capture callbacks are unchanged.
 
-`parvi_webrtc_audio_timing` interprets observations in Erlang. Host/BEAM midpoint
+`ba_webrtc_audio_timing` interprets observations in Erlang. Host/BEAM midpoint
 calibration retains its measured round trip; encoded positions use a nominal
 48 kHz mapping within each capture segment. Discontinuous positions, changed
 drop counts or invalid timestamps invalidate the estimate without resetting RTP.
@@ -146,7 +153,7 @@ revision (M156 `2a990ce0ccd00a3ad449f2201a8e5c2dad53177d`). This is a version-co
 library interface: update binary and headers together. No dependency source is
 patched and no copied class/vtable layout is used.
 
-`parvi_audio_receiver:minimum_playout_delay(Milliseconds)` accepts integers
+`ba_audio_receiver:minimum_playout_delay(Milliseconds)` accepts integers
 0–10000, or `automatic` to restore NetEq defaults, for an active native subscription.
 The local JSON command is `set_audio_minimum_playout_delay` with string `delay_ms`
 (e.g. `"200"` or `"automatic"`). The supervised session waits for a matching native
@@ -170,9 +177,9 @@ completed a redistribution/release review or network-impairment measurement.
 
 ## Stream-handler boundary — 2026-11-02
 
-GStreamer integration is deferred. `parvi_audio_stream_handler` is the behaviour;
+GStreamer integration is deferred. `ba_stream_handler` is the behaviour;
 `default/0` selects the legacy implementation,
-`parvi_audio_stream_handler_legacy`. Existing OTP capture/publication/subscription/
+`ba_stream_handler_pcm`. Existing OTP capture/publication/subscription/
 receiver workers select a handler from the source descriptor. No registry or forwarding process is added.
 
 The legacy adapter, custom packet codec and playback worker are isolated in
@@ -182,7 +189,7 @@ publication validates blocks without constructing a throwaway full packet;
 selected packets are encoded for sending inside the handler. The wire layout,
 format preservation, WebRTC channel settings and deadlines are unchanged.
 
-`parvi_audio:handler/0` reports actual handler facts. `backend/0` and snapshot
+`ba_audio:handler/0` reports actual handler facts. `backend/0` and snapshot
 `backend` keys remain compatible with the current Apple clients. The identity is
 still `legacy_webrtc`, with `data_path=erlang_pcm`, unordered data channels,
 zero retransmissions, no jitter/reorder buffer, no loss concealment and no
@@ -214,7 +221,7 @@ path or Erlang clock policy; real LAN and synchronization evidence remain pendin
 
 The subsequent [clock revision](../../docs/decisions/0007-cluster-clock-pulls-and-monotonic-mapping.md)
 adds asynchronous discovery/pulls and a slewing mapping. Capture now calls
-`parvi_clock:map_times/1` for capture/expiry times from one snapshot; output uses
+`ba_swarm_clock:map_times/1` for capture/expiry times from one snapshot; output uses
 its deadline inverse. A usable holdover mapping remains available to the legacy
 prototype, with quality/coverage reported separately. This does not implement
 DAC resampling or prove synchronized speakers. Updated device playback with
@@ -231,7 +238,7 @@ src/Audio/
   adapters/iOS/        local Erlang output/clock binding and Swift AVAudio binding
 ```
 
-`src/` has no platform-adapter dependencies. `parvi_audio_input` owns publication
+`src/` has no platform-adapter dependencies. `ba_audio_input` owns publication
 lifetime, metering, presentation delay/expiry policy, packet splitting and delivery
 counters. It is an ordinary Erlang state module called from the adapter's existing
 OTP worker, with no additional process, queue, driver registry or native engine.
@@ -240,7 +247,7 @@ The input boundary is interleaved PCM plus a descriptor (`encoding`,
 `sample_format`, `sample_rate`, `channel_count`) and the first frame's capture time
 in this VM's Erlang monotonic nanoseconds. Source formats remain heterogeneous;
 this boundary does not impose a common rate, precision or channel count.
-`parvi_audio_input:open(Name, Descriptor)` publishes under the calling worker's
+`ba_audio_input:open(Name, Descriptor)` publishes under the calling worker's
 ownership and adds the shared clock ID. `captured(PCM, CaptureMonoNs, State)`
 returns updated state; `status/1`, `stop/1`, `failed/2` and `close/1` provide shared
 reporting/lifetime behavior. These functions run in the adapter owner, which
@@ -248,18 +255,18 @@ retains the returned context and forwards its source-monitor DOWN event.
 
 Platform adapters own helper/port lifetime, OS format/flag interpretation, raw
 buffer packing and translation from hardware timestamps into local monotonic
-time. `parvi_mac_audio` and `parvi_core_audio` now live with their native helper
+time. `ba_mac_audio` and `ba_core_audio` now live with their native helper
 under `adapters/macOS/`. The adapter hands normalized PCM/time to the shared input
 policy; it no longer owns presentation delay, expiry, metering or network packet
 sizes. Source names and platform diagnostics stay at the adapter boundary.
 
 The Windows adapter and native helper moved together under `adapters/Windows/`
 without behavior changes. Its existing local meter still uses the shared
-`parvi_audio_meter`; it has not been connected to publication/network delivery.
+`ba_audio_meter`; it has not been connected to publication/network delivery.
 The reorganization does not silently add broadcasting to the legacy Windows app.
 
 The shared `src/control/rebar.config` compiles portable sources and platform adapter
-folders into the existing `parvi` application; Windows packaging uses the same
+folders into the existing `ba_core` application; Windows packaging uses the same
 source directories. Native builds select only their platform's helper. No extra
 OTP application or service was introduced. See the [Windows guide](../../docs/apps/Windows/README.md),
 [Mac broadcast guide](../../docs/apps/macOS/README.md#broadcast-default-output), and
@@ -270,13 +277,13 @@ Android remains future work.
 
 ## Subscription control — step 1
 
-`parvi_audio` exposes source offers and subscription lifecycle control using
+`ba_audio` exposes source offers and subscription lifecycle control using
 `pg` discovery, a `gen_server` per publication and `gen_statem` endpoints under
 a dynamic `one_for_one` supervisor. The audio supervisor starts on demand as the
-last child of `parvi_sup`; merely starting an app does not start capture or
+last child of `ba_sup`; merely starting an app does not start capture or
 advertise audio. Existing startup profiles, app UIs and Windows capture are unchanged.
 
-The API requires Parvi to be running. On a fresh VM, `parvi:start(native_cluster)`
+The API requires BEAM Audio to be running. On a fresh VM, `ba_runtime:start(native_cluster)`
 starts the core without the desk unless explicitly configured. Native peer
 connections expose remote source PIDs through `pg`; the legacy WebSocket relay
 does not distribute process-group membership.
@@ -286,7 +293,7 @@ does not distribute process-group membership.
 Offers now require an implemented descriptor. For example, on the producer node:
 
 ```erlang
-{ok, Source} = parvi_audio:publish(#{
+{ok, Source} = ba_audio:publish(#{
     name => <<"Mock system output">>, mock => true,
     profiles => #{channel => #{encoding => pcm, sample_format => float32_le,
         sample_rate => 48000, channel_count => 2, clock => <<"mock-clock">>}}}).
@@ -296,13 +303,13 @@ On an already connected native peer, from a local consumer/runtime process
 (the example assumes one remote publication):
 
 ```erlang
-[Source] = [P || P <- parvi_audio:sources(), node(P) =/= node()].
-parvi_audio:describe(Source).
-{ok, Subscription, Descriptor} = parvi_audio:subscribe(Source,
+[Source] = [P || P <- ba_audio:sources(), node(P) =/= node()].
+ba_audio:describe(Source).
+{ok, Subscription, Descriptor} = ba_audio:subscribe(Source,
     #{profile => channel, selector => all}).
-ok = parvi_audio:listen(Subscription, self()).
-ok = parvi_audio:ready(Subscription).
-parvi_audio:status(Subscription). % state = active, media = open; received may be 0
+ok = ba_audio:listen(Subscription, self()).
+ok = ba_audio:ready(Subscription).
+ba_audio:status(Subscription). % state = active, media = open; received may be 0
 ```
 
 Call `ready/1` within five seconds of acceptance. It now registers the receiver's
@@ -316,7 +323,7 @@ The producer's local capture/runtime worker feeds blocks, for example explicit
 mock stereo PCM (one frame, both samples zero):
 
 ```erlang
-{ok, Results} = parvi_audio:push(Source, channel,
+{ok, Results} = ba_audio:push(Source, channel,
     #{playback_time => 1000000000, channel_id => 0}, <<0.0:32/little-float, 0.0:32/little-float>>).
 ```
 
@@ -324,7 +331,7 @@ mock stereo PCM (one frame, both samples zero):
 provider. Not-yet-active providers return an error; no subscribers gives `[]`.
 `ok` means locally enqueued, not acknowledged reception. The provider assigns
 sequence numbers; callers supply time and the profile's selectors. The local
-receiver consumer gets `{parvi_audio, Subscription, Header, PCM}`; Header includes
+receiver consumer gets `{ba_audio, Subscription, Header, PCM}`; Header includes
 the decoded fields and derived `frame_count`. Without a consumer, reception is
 counted and sample bodies are discarded. `listen/2` replaces the sole observer;
 its death detaches it without ending the runtime-owned subscription. Consumers
@@ -359,7 +366,7 @@ Temporary children do not resurrect obsolete sessions/publications.
 role, source/peer, request/descriptor, sent/received counters, invalid packets,
 last header and observed sequence gaps/reordering. Gaps are provisional when
 late packets arrive; there is no reorder/jitter buffer. `watch_sources/0` uses
-`pg:monitor/2`; stop it with `pg:demonitor(parvi_pg, Ref)`. Scope/runtime restart
+`pg:monitor/2`; stop it with `pg:demonitor(ba_pg, Ref)`. Scope/runtime restart
 ends publications and sessions; republishing/reconnection is not automatic.
 
 Validation: warnings-as-errors compilation and a focused manual two-node WebRTC
@@ -382,7 +389,7 @@ the earlier Mac-only scope; iPhone speaker rendering remains a separate step.
 
 ## Capture-owned publications
 
-`parvi_audio:publish(Offer, OwnerPid)` optionally binds a publication to a local
+`ba_audio:publish(Offer, OwnerPid)` optionally binds a publication to a local
 runtime worker. The source monitors that owner and stops on DOWN, cleaning its
 provider/receiver sessions through their existing dependencies. This is used by
 the Mac capture worker, whose own source monitor also stops a capture that has
@@ -404,14 +411,14 @@ build or hardware recording was performed for step 3.
 
 ## Runtime receive catalogue and meter
 
-`parvi_audio_receiver:snapshot()` starts the receiver/catalogue on demand and
+`ba_audio_receiver:snapshot()` starts the receiver/catalogue on demand and
 returns `#{offers => [...], receiver => Status}`. Offers contain opaque UI IDs,
 source names/nodes and supported descriptor summaries. The worker watches pg
 membership and asynchronously requests each remote source description once;
 it excludes local publications. IDs are looked up in that catalogue, never
 converted from user text into PIDs/atoms.
 
-`parvi_audio_receiver:subscribe(Id, channel | point)` queues asynchronous setup
+`ba_audio_receiver:subscribe(Id, channel | point)` queues asynchronous setup
 with the existing `all` selector and returns immediately; inspect the snapshot
 for opening/activating/readiness or an error. `stop/0` closes it. One session is
 active at a time. The endpoint explicitly monitors this runtime owner so a killed
@@ -427,16 +434,16 @@ focused checks used standard OTP control and synthetic packet notifications.
 
 ## Output boundary — first iPhone implementation
 
-`parvi_audio_receiver:playback(start | stop)` controls one temporary supervised
-`parvi_audio_output` process, owned by the receiver. Playback requires a channel
-subscription. Its configured `parvi` environment `audio_output_adapter` supplies
+`ba_audio_receiver:playback(start | stop)` controls one temporary supervised
+`ba_audio_output` process, owned by the receiver. Playback requires a channel
+subscription. Its configured `ba_core` environment `audio_output_adapter` supplies
 `open(Descriptor)`, `write(Device, RenderMonoNs, Frames, PlanarFloat32)` and
 `close(Device)`. The portable worker owns PCM conversion, deadline/order policy
 and counters; its adapter owns local sockets, native-clock mapping and OS calls.
 No native output is configured on Mac or Windows by this increment.
 
 The iPhone adapter connects to an app-local loopback listener configured through
-`PARVI_AUDIO_PORT`, separate from the existing JSON UI bridge. Records use a
+`BA_AUDIO_PORT`, separate from the existing JSON UI bridge. Records use a
 32-bit big-endian body length. Configure is `1, rate:u32, channels:u16`, answered
 by `1`. Clock request `3` returns `3, host_ns:u64, latency_ns:u64`. Buffer transfer
 is `2, host_ns:u64, frames:u32, planar_float32_le_bytes`. These are private device
@@ -470,7 +477,7 @@ Focused timing checks (from the repository root):
 
 ```sh
 cd src/control
-rebar3 eunit --module=parvi_webrtc_audio_timing_tests,parvi_clock_mapping_tests
+rebar3 eunit --module=ba_webrtc_audio_timing_tests,ba_swarm_clock_mapping_tests
 ```
 
 Seven recovery/timestamp checks plus three clock-mapping checks pass. They use a
@@ -480,8 +487,8 @@ Mac/iPhone run.
 
 ## Saved receive subscription
 
-`parvi_audio_receiver` is a permanent child of the on-demand audio supervisor.
-It owns `audio_subscription.term` through `parvi_audio_subscription_intent` and
+`ba_audio_receiver` is a permanent child of the on-demand audio supervisor.
+It owns `audio_subscription.term` through `ba_subscription` and
 the existing identity-scoped atomic cluster store. Save the current source/profile
 and desired playing state, not sessions or media. Publishers should provide a
 stable binary `source_key` for each logical source; absent that, the receiver
@@ -491,5 +498,5 @@ restoration requires matching cluster membership and a usable clock. iPhone
 targets are recreated. `stop/0` forgets intent; `playback(stop)` retains it paused.
 
 Run the focused lifecycle checks with
-`rebar3 eunit --module=parvi_audio_subscription_intent_tests,parvi_audio_cluster_settings_tests`.
+`rebar3 eunit --module=ba_subscription_tests,ba_audio_cluster_settings_tests`.
 They cover intent/recovery policy and supervision, not physical media output.

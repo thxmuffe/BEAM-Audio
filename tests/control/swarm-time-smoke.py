@@ -32,7 +32,7 @@ def main():
     args=parser.parse_args()
     root=control.ROOT;paths=list((root/'builds/intermediates/control/default/lib').glob('*/ebin'))
     out=root/'builds/intermediates/swarm-control-check';out.mkdir(parents=True,exist_ok=True)
-    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(out),str(HERE/'parvi_swarm_control_probe.erl')],check=True)
+    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(out),str(HERE/'ba_swarm_control_probe.erl')],check=True)
     ports=[]
     for _ in range(2):
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));ports.append(sock.getsockname()[1])

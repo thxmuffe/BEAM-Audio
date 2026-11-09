@@ -23,7 +23,7 @@ def main():
     desks,runtimes=[],[]
     paths=list((control.ROOT/'builds/intermediates/control/default/lib').glob('*/ebin'))
     output=control.ROOT/'builds/intermediates/swarm-control-check';output.mkdir(parents=True,exist_ok=True)
-    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(output),str(HERE/'parvi_swarm_control_probe.erl')],check=True)
+    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(output),str(HERE/'ba_swarm_control_probe.erl')],check=True)
     paths=[output,*paths]
     with tempfile.TemporaryDirectory() as state:
         def runtime(name,seed=None):

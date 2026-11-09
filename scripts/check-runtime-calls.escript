@@ -4,7 +4,7 @@ main([Root]) ->
     Files = lists:usort(filelib:wildcard(filename:join(Root,"lib/*/ebin/*.beam")) ++
         filelib:wildcard(filename:join(Root,"native_lib/*/ebin/*.beam"))),
     Exports = maps:from_list([begin {ok,{M,[{exports,E}]}}=beam_lib:chunks(P,[exports]),{M,E} end || P <- Files]),
-    Core = filelib:wildcard(filename:join(Root,"lib/parvi-*/ebin/*.beam")),
+    Core = filelib:wildcard(filename:join(Root,"lib/ba_core-*/ebin/*.beam")),
     case Core of [] -> io:format(standard_error,"No core BEAM modules under ~s~n",[Root]),halt(2); _ -> ok end,
     Imports = lists:usort(lists:flatmap(fun(P) -> {ok,{_,[{imports,I}]}}=beam_lib:chunks(P,[imports]),I end,Core)),
     Missing = [{M,F,A} || {M,F,A} <- Imports, not lists:member({F,A},maps:get(M,Exports,[])),

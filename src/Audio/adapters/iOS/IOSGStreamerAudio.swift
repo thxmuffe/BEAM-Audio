@@ -11,15 +11,15 @@ final class IOSGStreamerAudio {
     func start() throws -> UInt16 {
         try IOSGStreamerReceiver.initializeEngine()
         var port: UInt16 = 0
-        listener = parvi_bridge_listen(&port)
+        listener = ba_bridge_listen(&port)
         guard listener >= 0 else { throw NSError(domain: "GStreamer audio", code: 1) }
-        setenv("PARVI_AUDIO_ENGINE", "gstreamer", 1)
-        setenv("PARVI_GSTREAMER_SCHEDULE", "1", 1)
+        setenv("BA_AUDIO_ENGINE", "gstreamer", 1)
+        setenv("BA_GSTREAMER_SCHEDULE", "1", 1)
         NSLog("Audio receiver: GStreamer 1.28.8")
         let fd = listener
         DispatchQueue.global(qos: .userInitiated).async {
             while true {
-                let accepted = parvi_bridge_accept(fd)
+                let accepted = ba_bridge_accept(fd)
                 guard accepted >= 0 else { return }
                 self.lock.lock()
                 guard self.listener == fd else { self.lock.unlock(); close(accepted); return }

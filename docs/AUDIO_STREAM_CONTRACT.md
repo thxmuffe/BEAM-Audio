@@ -1,11 +1,17 @@
 # Audio, stream and subscription contract — draft 0.1
 
+> **Current naming/lifecycle:** [TERMINOLOGY.md](TERMINOLOGY.md) defines Source,
+> Stream, Subscription and Media Session. The implemented secure collection is
+> [SWARM_STREAMS.md](SWARM_STREAMS.md): transport closure retains Subscription
+> intent, and only a new Media Session/Stream incarnation needs a new descriptor.
+> The trusted-OTP subscription lifecycle below is historical, not the current API.
+
 > **Scope update — 2026-11-08:** This draft includes the original trusted-OTP
 > lifecycle design. Follow [PLAN.md](PLAN.md) for the secure Swarm migration.
 > Every packet independently carries its authoritative target as specified in
 > [AUDIO_ENGINE_INTERFACE.md](AUDIO_ENGINE_INTERFACE.md); older media-position
 > mappings here cannot replace a missing packet target. Rich spatial formats
-> remain outside the current nine steps.
+> remain outside the current ten steps.
 
 Date: 2026-11-01. Status: semantic draft with a first implemented PCM/WebRTC
 binding below. This is not an interoperability or synchronized-playback claim.
@@ -17,7 +23,7 @@ described at stream setup. Other encodings and richer layouts remain open.
 Sources publish audio plus the information needed to select, interpret and
 schedule it. Receivers can obtain a complete scene and select/render locally,
 or receive a subset selected upstream. Configuration chooses that policy;
-Parvi defines consistent descriptions and selection semantics.
+BEAM Audio defines consistent descriptions and selection semantics.
 
 Preserve heterogeneous source encodings/rates unless a processing or delivery
 requirement calls for conversion. No cluster-wide audio format, automatic quality
@@ -226,7 +232,7 @@ Render invitations, WAN delivery, sustained capture, rendering or synchronizatio
 
 ## First Mac-to-iPhone subscription lifecycle — researched 2026-11-01
 
-Step 1 implementation update: the shared `parvi_audio` API now implements
+Step 1 implementation update: the shared `ba_audio` API now implements
 publication/discovery and accepted/ready session ownership, documented in the
 [audio component guide](../src/Audio/README.md#subscription-control--step-1).
 The audio supervisor is attached on demand to preserve existing app startup.
@@ -245,7 +251,7 @@ acoustic synchronization are separate from showing actual packet reception.
 Use existing OTP facilities, without an additional broker or cluster manager:
 
 - A source `gen_server` owns the publication descriptor and input lifecycle.
-  It joins an audio-source group in the existing `parvi_pg` scope only when ready.
+  It joins an audio-source group in the existing `ba_pg` scope only when ready.
   `pg` provides live process discovery; descriptions are fetched from the source.
   A local catalogue can observe group changes for UI snapshots, without becoming
   another membership authority. A stale discovery result is validated on open.
@@ -290,7 +296,7 @@ Use existing OTP facilities, without an additional broker or cluster manager:
    on the presentation timeline. Media does not pass through the UI JSON bridge,
    source catalogue or shared message log.
 6. The receiving Erlang worker validates/depacketizes the agreed initial PCM
-   profile, updates packet/sample counters and reuses `parvi_audio_meter` to
+   profile, updates packet/sample counters and reuses `ba_audio_meter` to
    calculate peak/RMS from the received samples. No new metering algorithm or
    packet-level callback into Swift is needed.
 7. The iPhone app displays a volume/activity meter from those Erlang summaries,
@@ -321,8 +327,8 @@ when codec/receiver needs justify that binding. No ICE/DTLS connection is needed
 per subscription; media/control can share the peer connection while using
 different logical channels. They still share capacity/congestion.
 
-The `parvi_dist_channel` peer owner now delegates additional media contexts to
-`parvi_media_channel`, routing events by actual local DataChannel references to
+The `ba_dist_channel` peer owner now delegates additional media contexts to
+`ba_media_channel`, routing events by actual local DataChannel references to
 registered session owners while preserving native framing/admission. Library channel references are local, not
 portable Erlang references shared between devices. Closing audio must not close
 the native control connection. The binding needs app-visible packet sequencing
@@ -373,7 +379,7 @@ handling, plus the pinned WebRTC/SCTP libraries and public Core Audio APIs.
 Reuse the existing Erlang PCM meter. Do not introduce a broker, replacement
 registry/membership system, custom reliable-UDP protocol or new audio codec.
 
-OTP supplies the mechanisms, not a turnkey audio subscription product. Parvi
+OTP supplies the mechanisms, not a turnkey audio subscription product. BEAM Audio
 still needs small behavior callbacks connecting publication descriptions,
 request validation, open/ready/close transitions and cleanup to media-channel
 operations. It also needs the native capture/buffer adapter, UI snapshot wiring
@@ -382,7 +388,7 @@ than newly invented supervision or transport algorithms. Their correctness is
 not established merely by using tested dependencies.
 
 The native WebRTC distribution carrier/admission integration already in this
-repository is Parvi-specific; it is not an OTP-provided WebRTC transport.
+repository is BEAM Audio-specific; it is not an OTP-provided WebRTC transport.
 This increment reuses that existing boundary. OTP/WebRTC do not by themselves
 supply common audio-clock synchronization, hardware-output delay compensation
 or a spatial renderer. Those remain explicit later work rather than promises

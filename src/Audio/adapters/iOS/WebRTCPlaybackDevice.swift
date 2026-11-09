@@ -5,9 +5,9 @@ import WebRTC
 /// Output-only OS binding. NetEq supplies decoded S16 audio; RemoteIO renders it.
 /// No recording unit, microphone permission, jitter algorithm or extra scheduler.
 final class WebRTCPlaybackDevice: NSObject, RTCAudioDevice {
-    private let outputTiming = ParviOutputTimingCreate()
-    deinit { ParviOutputTimingDestroy(outputTiming) }
-    func timingSnapshot() -> [String: Any] { ParviOutputTimingSnapshot(outputTiming) }
+    private let outputTiming = ba_output_timing_create()
+    deinit { ba_output_timing_destroy(outputTiming) }
+    func timingSnapshot() -> [String: Any] { ba_output_timing_snapshot(outputTiming) }
 
     private var audioDelegate: RTCAudioDeviceDelegate?
     private var unit: AudioUnit?
@@ -52,7 +52,7 @@ final class WebRTCPlaybackDevice: NSObject, RTCAudioDevice {
             guard let data else { return noErr }
             if let delegate = device.audioDelegate {
                 let status = delegate.getPlayoutData(flags, timestamp, Int(bus), frames, data)
-                ParviOutputTimingRecord(device.outputTiming, timestamp, frames, status)
+                ba_output_timing_record(device.outputTiming, timestamp, frames, status)
                 return status
             }
             for buffer in UnsafeMutableAudioBufferListPointer(data) {

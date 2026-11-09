@@ -1,4 +1,11 @@
-# Receiver media engine interface
+# Audio Engine interface
+
+Current component names follow [TERMINOLOGY.md](TERMINOLOGY.md). Step 8's secure
+PCM/Opus path is documented in [SWARM_STREAMS.md](SWARM_STREAMS.md): the Media
+Session decodes through the local GStreamer binding, then the Erlang Mixer
+executes per-packet Presentation Targets. The native platform-engine bindings
+and experiments described below still require step-9 app qualification. Their
+historical transport/session APIs do not override the new Swarm boundary.
 
 Implemented 2026-11-03 as step 2 of the simultaneous-playback plan. The
 2026-11-04 contract correction replaces anchor-derived playback timing with
@@ -25,7 +32,7 @@ tick. No periodic source timing anchor is needed to resolve an individual target
 
 The shared clock resolves the nearest 32-bit era (wrap approximately every
 24.86 hours); a target more than 60 seconds from receiver reference time is
-rejected. Configured cluster target offset is at most 30 seconds. This conversion
+rejected. Configured Playback Offset is at most 30 seconds. This conversion
 uses the shared reference only, never neighbouring packets. Periodic source
 observations retained for diagnostics do not supply packet playback deadlines.
 
@@ -53,14 +60,14 @@ submission; none alone proves sound came out at the requested instant.
 | Receiver engine | Native media negotiation, jitter/decode, device execution, local output observations and lifecycle through its binding. |
 | Platform binding | Starts the installed native service, selects its local engine adapter, transfers native buffers and supplies OS timing. |
 
-`parvi_audio_stream_handler` remains the wire-format boundary, including the
-legacy PCM/data-channel implementation. `parvi_audio_engine` is the new native
+`ba_stream_handler` remains the wire-format boundary, including the
+legacy PCM/data-channel implementation. `ba_audio_engine` is the new native
 receiver execution behaviour. Both current engines implement the same WebRTC/
 Opus wire profile, so the sender, cluster transport and UI can stay unchanged
 when the receiver's native implementation changes. An uncompressed RTP backend
 would also need its corresponding wire handler and connectivity/security work.
 
-The existing `parvi_webrtc_audio_session` gen_statem owns the engine handle and
+The existing `ba_webrtc_audio_session` gen_statem owns the engine handle and
 socket. It calls the engine callbacks directly. The audio supervisor still owns
 session lifetime; source/peer/consumer monitoring and SDP/ICE routing remain in
 Erlang. There is no additional forwarding process, registry or OTP application.
@@ -68,17 +75,17 @@ This follows the standard [OTP behaviour/worker separation](https://www.erlang.o
 
 ## Implementations and selection
 
-- `parvi_audio_engine_libwebrtc`: current iPhone libwebrtc/NetEq and signed
+- `ba_audio_engine_libwebrtc`: current iPhone libwebrtc/NetEq and signed
   16-bit RemoteIO output binding.
-- `parvi_audio_engine_gstreamer`: current Windows webrtcbin/Opus and float32
+- `ba_audio_engine_gstreamer`: current Windows webrtcbin/Opus and float32
   WASAPI output binding.
-- `parvi_audio_native_engine`: their shared packet-4 JSON socket binding. Native
+- `ba_audio_native_engine`: their shared packet-4 JSON socket binding. Native
   Swift/Python implementations remain in their platform adapter directories.
 
-The platform binding sets `PARVI_AUDIO_ENGINE` to `libwebrtc` or `gstreamer`.
+The platform binding sets `BA_AUDIO_ENGINE` to `libwebrtc` or `gstreamer`.
 Only these locally installed identifiers select Erlang modules. Unset retains
 libwebrtc compatibility with previously built iPhone hosts; unknown identifiers
-fail explicitly. `PARVI_WEBRTC_AUDIO_PORT` retains its existing name/protocol.
+fail explicitly. `BA_WEBRTC_AUDIO_PORT` retains its existing name/protocol.
 
 An engine is selected when the native endpoint is prepared and stored in the
 session handle. Later configuration changes do not switch an open session.
@@ -104,7 +111,7 @@ capability description, not general format negotiation or proof of recovery.
 GStreamer's `loss_concealment=configured` records opusdec's PLC setting; its
 actual loss-event/recovery behavior still needs device evidence.
 
-`parvi_audio_receiver:control_output/1` dispatches through the selected stream
+`ba_audio_receiver:control_output/1` dispatches through the selected stream
 handler's `output_control/2`. Existing app/inspector APIs, including
 `minimum_playout_delay/1`, keep their entry points. The legacy PCM handler returns
 `unsupported_output_control` for these new native controls; its existing
@@ -133,7 +140,7 @@ Two additional explicit output operations establish the scheduling boundary:
 
 Erlang supplies a speaker target in the shared time reference and an earlier
 handoff in the receiver's local monotonic reference. Use the existing
-`parvi_audio_presentation:output_deadline/2` to map the shared target minus
+`ba_audio_presentation:output_deadline/2` to map the shared target minus
 calibrated path delay. Source position denotes the first source sample governed
 by the schedule; a new stream/clock timeline or revision invalidates an obsolete
 association. A correction revision belongs to that same schedule. The ppm bound
@@ -141,7 +148,7 @@ is nonnegative, and a native implementation must reject out-of-bound corrections
 or stale/unmappable schedules rather than reinterpret them as buffering requests.
 Positive correction means consume source samples faster per local elapsed time.
 
-The iPhone host opts in with local `PARVI_GSTREAMER_SCHEDULE=1`; only that
+The iPhone host opts in with local `BA_GSTREAMER_SCHEDULE=1`; only that
 GStreamer execution path advertises scheduling support. Rate correction remains
 an interface operation but is unsupported on this path. Native observations and
 plans are exchanged per packet as specified above. `reject_packet` explicitly
@@ -183,7 +190,7 @@ current Windows pipeline executes this contract.
 
 ## Validation and limits
 
-The focused `parvi_audio_engine_tests` exercise both real Erlang adapters against
+The focused `ba_audio_engine_tests` exercise both real Erlang adapters against
 an isolated loopback native-protocol endpoint: command encoding, repeated
 active-once events, endpoint closure, session pinning, rejected scheduling/rate
 commands sending no bytes, unknown selection and unavailable services, and
@@ -191,7 +198,7 @@ source-anchor/output-report separation. They do not run native media engines or
 physical devices. Run with the existing timing regressions:
 
 ```sh
-rebar3 eunit --module=parvi_audio_engine_tests,parvi_webrtc_audio_timing_tests
+rebar3 eunit --module=ba_audio_engine_tests,ba_webrtc_audio_timing_tests
 ```
 
 Socket tests need local loopback permission. Root Erlang compilation, the Windows

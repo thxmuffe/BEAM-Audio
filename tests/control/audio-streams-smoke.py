@@ -40,15 +40,15 @@ def main():
     out=root/'builds/intermediates/swarm-control-check';out.mkdir(parents=True,exist_ok=True)
     fixture=out/'opus-fixture.bin'
     if args.opus:
-        subprocess.run([os.environ['PARVI_GSTREAMER_PYTHON'],str(HERE/'opus-fixture.py'),str(fixture)],check=True)
+        subprocess.run([os.environ['BA_GSTREAMER_PYTHON'],str(HERE/'opus-fixture.py'),str(fixture)],check=True)
     subprocess.run([shutil.which('erlc'),'-Werror','-o',str(out),
-        str(HERE/'parvi_swarm_control_probe.erl'),str(HERE/'parvi_audio_stream_probe.erl')],check=True)
+        str(HERE/'ba_swarm_control_probe.erl'),str(HERE/'ba_audio_stream_probe.erl')],check=True)
     runtimes=[];desk=None
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
     try:
         desk=relay.start_desk(port);url=f'ws://127.0.0.1:{port}/relay/v1'
         executable=None;extra_env={}
-        native_lib=os.getenv('PARVI_TEST_NATIVE_LIBRARY_DIR')
+        native_lib=os.getenv('BA_TEST_NATIVE_LIBRARY_DIR')
         if sys.platform=='darwin' and native_lib:
             # The system shell removes DYLD variables; invoke OTP's launcher directly.
             erl_root=Path(shutil.which('erl')).resolve().parent.parent

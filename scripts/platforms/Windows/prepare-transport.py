@@ -169,7 +169,7 @@ def native():
             for notice in dep.glob('*'):
                 if notice.is_file() and notice.name.upper().startswith(('LICENSE','COPYING','NOTICE')):
                     shutil.copy2(notice, dest / notice.name)
-    licenses = app_root / 'parvi_transport'
+    licenses = app_root / 'ba_transport'
     for base in [openssl, srtp]:
         for notice in base.glob('*'):
             if notice.is_file() and notice.name.upper().startswith(('LICENSE','COPYING','NOTICE')):

@@ -147,7 +147,7 @@ private final class Receiver: NSObject, RTCPeerConnectionDelegate {
         case "minimum_delay":
             let delay = command["seconds"] as? NSNumber
             let receivers = pc?.receivers ?? []
-            let configured = !receivers.isEmpty && receivers.allSatisfy { ParviWebRTCSetMinimumDelay($0, delay) }
+            let configured = !receivers.isEmpty && receivers.allSatisfy { ba_webrtc_set_minimum_delay($0, delay) }
             send(["event": "minimum_delay", "configured": configured])
         case "stats", "finish":
             pc?.statistics { [self] report in

@@ -19,17 +19,17 @@ class Runtime:
     def __init__(self, paths, seed=None, state=None, executable=None, extra_env=None):
         env = dict(os.environ)
         # Never load app identities or remembered memberships/subscriptions.
-        for key in ("PARVI_STATE_DIR", "PARVI_RELAY_CA_FILE", "PARVI_RECEPTION_DESK_URL"):
+        for key in ("BA_STATE_DIR", "BA_RELAY_CA_FILE", "BA_RECEPTION_DESK_URL"):
             env.pop(key, None)
         self.state = tempfile.TemporaryDirectory() if state is None else None
-        env["PARVI_STATE_DIR"] = state or self.state.name
+        env["BA_STATE_DIR"] = state or self.state.name
         self.seed = seed or secrets.token_hex(32).upper()
-        env["PARVI_IDENTITY_SEED"] = self.seed
+        env["BA_IDENTITY_SEED"] = self.seed
         env.update(extra_env or {})
         self.messages = queue.Queue()
         self.process = subprocess.Popen(
             [executable or shutil.which("erl"), "+S", "2", "-noshell", "-pa", *map(str, paths),
-             "-s", "parvi_swarm_control_probe", "main"],
+             "-s", "ba_swarm_control_probe", "main"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, text=True, encoding="utf-8")
         threading.Thread(target=self.read, daemon=True).start()
@@ -40,13 +40,16 @@ class Runtime:
             try:
                 self.messages.put(json.loads(line))
             except json.JSONDecodeError:
-                if os.getenv("PARVI_TEST_VERBOSE"):
+                if os.getenv("BA_TEST_VERBOSE"):
                     print(line.rstrip(),file=sys.stderr)
 
     def request(self, op, **fields):
         self.process.stdin.write(json.dumps(dict(op=op, **fields)) + "\n")
         self.process.stdin.flush()
-        return self.messages.get(timeout=10)
+        reply=self.messages.get(timeout=10)
+        if op=='snapshot':
+            assert reply.get('old_core_loaded') is False,'Old core modules loaded: '+str(reply)
+        return reply
 
     def close(self):
         if self.process.poll() is not None:
@@ -90,7 +93,7 @@ def main():
     output = ROOT / "builds/intermediates/swarm-control-check"
     output.mkdir(parents=True, exist_ok=True)
     subprocess.run([shutil.which("erlc"), "-Werror", "-o", str(output),
-                    str(Path(__file__).with_name("parvi_swarm_control_probe.erl"))], check=True)
+                    str(Path(__file__).with_name("ba_swarm_control_probe.erl"))], check=True)
     runtimes = []
     try:
         for _ in range(2):
@@ -126,7 +129,7 @@ def main():
             s = runtime.request("snapshot")
             assert s["node"] == "nonode@nohost" and s["nodes"] == []
             assert not s["legacy_started"] and s["workers"] == 0
-            assert s["children"] == ["parvi_clock_sup", "parvi_device_sup", "parvi_swarm_control", "parvi_swarm_desks", "parvi_swarm_membership"]
+            assert s["children"] == sorted(["ba_swarm_clock_sup", "ba_device_sup", "ba_swarm_control", "ba_swarm_desks", "ba_swarm_membership"])
         director, receiver = a, b
         contract = secrets.token_hex(16).upper()
         assert receiver.request("enable_test")["ok"]

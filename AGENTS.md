@@ -77,11 +77,16 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 Use **Swarm** for logical, mutually untrusted device collaboration,
 **Desk** for public admission/introductions, and **Offset** for the shared playback
 target setting in new user-facing design. **BEAM Audio** is the open-source
-technology; **OpenSound** names only the commercial product. Legacy "cluster"
-labels may remain until a deliberate UI/protocol migration. Preserve established
-internal Parvi module/protocol names, bundle identifiers, identity storage and
-invitation schemes unless a separately planned compatibility migration requires
-changing them. See the accepted Swarm roadmap in docs/PLAN.md.
+technology; **OpenSound App** names only the commercial user interface. Use the
+canonical component terminology in docs/TERMINOLOGY.md. Core-owned Erlang modules,
+registered processes and native exports use the `ba_` prefix; the OTP application
+is `ba_core`, its facade is `ba_runtime`, and configuration uses `BA_*`. A
+Subscription is persistent intent; a Media Session is a temporary transport.
+Use Swarm Clock and Playback Offset consistently. Legacy "cluster" names describe
+only explicitly trusted Distributed Erlang code, never the secure Swarm boundary.
+Preserve device identity storage, established invitation schemes and signed/wire
+protocol constants unless an explicit migration changes them. See docs/NAMING.md
+and the accepted Swarm roadmap in docs/PLAN.md.
 
 BEAM Audio owns reusable runtime, audio handlers, platform bindings, services,
 tooling, tests and project documentation. Commercial UI/app sources live in the

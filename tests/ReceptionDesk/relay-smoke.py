@@ -13,21 +13,21 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = Path(os.environ.get("OPENSOUND_ROOT", ROOT.parent / "OpenSound"))
 APP = APP_ROOT / 'builds/Windows/Parvi'
-ERL = Path(os.environ.get('PARVI_TEST_ERL', APP / 'runtime/bin/erl.exe'))
-ELIXIR = Path(os.environ.get('PARVI_ELIXIR_ROOT', ROOT / 'builds/intermediates/tools/elixir'))
+ERL = Path(os.environ.get('BA_TEST_ERL', APP / 'runtime/bin/erl.exe'))
+ELIXIR = Path(os.environ.get('BA_ELIXIR_ROOT', ROOT / 'builds/intermediates/tools/elixir'))
 
 
 class Node:
     def __init__(self, desk, extra_env=None):
         self.lines = queue.Queue()
         env = dict(os.environ)
-        env.pop('PARVI_RECEPTION_DESK_URL', None)
+        env.pop('BA_RECEPTION_DESK_URL', None)
         if desk is not None:
-            env['PARVI_RECEPTION_DESK_URL'] = desk
+            env['BA_RECEPTION_DESK_URL'] = desk
         env.update(extra_env or {})
         # Deliberately no -name/-sname: Distributed Erlang cannot carry any traffic.
         self.process = subprocess.Popen([str(ERL), '-noshell', '-pa', str(APP / 'ebin'),
-            '-s', 'parvi_bridge', 'main'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            '-s', 'ba_bridge', 'main'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=None if '--verbose' in sys.argv else subprocess.DEVNULL, text=True, encoding='utf-8',
             env=env)
         threading.Thread(target=self.read, daemon=True).start()

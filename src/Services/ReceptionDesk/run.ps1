@@ -1,4 +1,4 @@
-param([string]$OtpRoot = $env:PARVI_OTP_ROOT)
+param([string]$OtpRoot = $env:BA_OTP_ROOT)
 $ErrorActionPreference = 'Stop'
 & "$PSScriptRoot\setup.ps1" -OtpRoot $OtpRoot
 Push-Location $PSScriptRoot

@@ -1,0 +1,103 @@
+%% Port-owned system capture + libopus; shared Erlang metering of pre-encode PCM.
+-module(ba_mac_opus_audio).
+-behaviour(gen_server).
+-export([start/0, stop/0, status/0, start_link/0]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+start() ->
+    ok = ba_audio_sup:ensure_started(),
+    case supervisor:start_child(ba_audio_sup, #{id => ?MODULE,
+        start => {?MODULE, start_link, []}, restart => temporary}) of
+        {ok, Pid} -> gen_server:call(Pid, start);
+        {error, {already_started, Pid}} -> gen_server:call(Pid, start);
+        Error -> Error
+    end.
+stop() -> case whereis(?MODULE) of undefined -> ok; Pid -> gen_server:stop(Pid) end.
+status() -> case whereis(?MODULE) of undefined -> #{state => stopped}; Pid -> gen_server:call(Pid, status) end.
+start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+init([]) -> {ok, #{state => stopped, frames => 0, blocks => 0, dropped_callbacks => 0, capture_timing => #{},
+    presentation_state => #{stream_id => binary:encode_hex(crypto:strong_rand_bytes(16))},
+    presentation_delay_ns => undefined,
+    skipped_frames => 0, send_errors => 0, available => os:getenv("BA_MAC_OPUS_HELPER") =/= false}}.
+handle_call(start, _, #{state := stopped} = S) ->
+    case os:getenv("BA_MAC_OPUS_HELPER") of
+        false -> {reply, {error, <<"Rebuild the Mac app with the Opus comparison helper.">>}, S};
+        Helper ->
+            Port = open_port({spawn_executable, Helper}, [binary, {packet,4}, exit_status, use_stdio]),
+            {reply, ok, S#{port => Port, state := starting}}
+    end;
+handle_call(start, _, S) -> {reply, ok, S};
+handle_call(status, _, S) -> {reply, maps:without([port, source, source_monitor], S), S};
+handle_call(_, _, S) -> {reply, {error, unsupported_request}, S}.
+handle_cast(_, S) -> {noreply, S}.
+handle_info({Port, {data, <<1, Metadata/binary>>}}, #{port := Port} = S) ->
+    Format = ba_core_audio:format(Metadata),
+    Descriptor = #{encoding => opus, sample_format => opus, sample_rate => 48000,
+        channel_count => 2, clock => ba_swarm_clock:id(),
+        stream_handler => webrtc_audio_opus,
+        rtp_timestamp_semantics => ba_audio_rtp_time:semantics(),
+        presentation_stream_id => maps:get(stream_id,maps:get(presentation_state,S))},
+    {ok, Source} = ba_audio:publish(#{source_key => <<"default-output">>,name => <<"Mac output - Opus / NetEq comparison">>,
+        profiles => #{channel => Descriptor}}, self()),
+    {noreply, read(S#{state := running, source => Source, source_monitor => monitor(process, Source),
+        source_clock => ba_swarm_clock:id(),capture_format => Format, format => #{rate => 48000, channels => 2}, handler => <<"webrtc_audio_opus">>})};
+handle_info({Port, {data, <<8, Host:64/little, Position:64/little-float,
+                          Dropped:64/little, Flags:32/little, _Buffers:32/little, Frames:32/little, OutputPosition:64/little>>}},
+            #{port := Port, capture_format := Format, capture_timing := Timing} = S) ->
+    Observation = #{valid => Flags band 3 =:= 3, position => Position, frames => Frames,
+        host_ns => ba_core_audio:host_ns(Host,Format), dropped => Dropped,
+        output_position => OutputPosition},
+    {noreply,S#{capture_timing := ba_webrtc_audio_timing:observe(Observation,Timing),
+               dropped_callbacks := Dropped}};
+handle_info({Port, {data, <<7, PCM/binary>>}}, #{port := Port} = S) ->
+    Now = erlang:monotonic_time(millisecond),
+    {Acc0, Started} = maps:get(meter_window, S, {ba_audio_meter:new(), Now}),
+    Acc = ba_audio_meter:accumulate(float32_le, PCM, Acc0),
+    Next = case Now - Started >= 100 of
+        true -> S#{meter => ba_audio_meter:levels(Acc), meter_updated => Now,
+                   meter_window => {ba_audio_meter:new(), Now}};
+        false -> S#{meter_window => {Acc, Started}}
+    end,
+    {noreply, Next};
+handle_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
+                          Leading:32/little, Trailing:32/little, Packet/binary>>}},
+            #{port := Port, source := Source, capture_timing := Timing} = S) ->
+    CaptureHeader = ba_webrtc_audio_timing:capture(Position,
+        #{encoder_lookahead_frames => Lookahead, converter_leading_input_frames => Leading,
+          converter_trailing_input_frames => Trailing,
+          capture_clock_round_trip_ns => maps:get(best_round_trip,S,null)},Timing),
+    {Delay,ClockTimeline} = case ba_swarm_clock:presentation([]) of
+        {ok,#{offset_ms := Offset,clock := Clock}} -> {Offset*1000000,Clock};
+        _ -> {undefined,undefined}
+    end,
+    {Header,Presentation} = ba_audio_presentation:stamp(CaptureHeader,
+        Delay,ClockTimeline,maps:get(presentation_state,S)),
+    NewClock = case ClockTimeline of undefined -> maps:get(source_clock,S);_ -> ClockTimeline end,
+    case NewClock=:=maps:get(source_clock,S) of true -> ok;false -> ok = ba_audio:rebind(Source,NewClock) end,
+    {ok,_} = gen_server:call(Source, {push_encoded, Header, Packet}),
+    {noreply, S#{source_clock := NewClock,frames := maps:get(frames,S)+960, blocks := maps:get(blocks,S)+1,
+                timeline => Header, presentation_state := Presentation}};
+handle_info({Port, {data, <<4>>}}, #{port := Port} = S) ->
+    erlang:send_after(10,self(),read), {noreply,S};
+handle_info(read, S) -> {noreply,read(S)};
+handle_info({Port, {data, <<5, Host:64/little>>}},
+            #{port := Port, request_sent := Sent, capture_format := Format} = S) ->
+    Now = erlang:monotonic_time(nanosecond), RTT = Now-Sent,
+    Next = case RTT < maps:get(best_round_trip,S,RTT+1) of
+        true ->
+            Offset = (Sent+Now) div 2 - ba_core_audio:host_ns(Host,Format),
+            S#{capture_timing := (maps:get(capture_timing,S))#{clock_offset_ns => Offset}, best_round_trip => RTT};
+        false -> S
+    end,
+    {noreply,Next};
+handle_info({Port, {data, <<3, _Code:32/little-signed, Text/binary>>}}, #{port := Port} = S) ->
+    logger:error("Opus capture failed: ~ts",[Text],#{domain => [ba_core,audio]}),
+    ba_events:notify(audio_input),
+    {stop, {capture_failed, Text}, S};
+handle_info({Port, {exit_status, Code}}, #{port := Port} = S) -> {stop, {capture_exit, Code}, S};
+handle_info({'DOWN', Ref, process, _, _}, #{source_monitor := Ref} = S) -> {stop, normal, S};
+handle_info(_, S) -> {noreply,S}.
+read(#{port := Port} = S) ->
+    Sent = erlang:monotonic_time(nanosecond), true = port_command(Port, <<$r>>), S#{request_sent => Sent}.
+terminate(_, S) ->
+    case maps:find(port,S) of {ok,P} -> try port_close(P) catch error:badarg -> ok end; _ -> ok end,
+    case maps:find(source,S) of {ok,Source} -> try ba_audio:unpublish(Source) catch exit:_ -> ok end; _ -> ok end.

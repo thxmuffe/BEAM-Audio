@@ -2,7 +2,7 @@ defmodule ReceptionDesk.Application do
   use Application
   def start(_type, _args) do
     Supervisor.start_link([
-      %{id: :parvi_reception_sessions, start: {:parvi_reception_sessions, :start_link, []}},
+      %{id: :ba_reception_sessions, start: {:ba_reception_sessions, :start_link, []}},
       {Phoenix.PubSub, name: ReceptionDesk.PubSub}, ReceptionDesk.Endpoint
     ], strategy: :rest_for_one, name: ReceptionDesk.Supervisor)
   end
@@ -29,9 +29,9 @@ defmodule ReceptionDesk.Router do
   get "/" do
     html = """
     <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-    <title>Parvi Reception Desk</title><body style="font:18px system-ui;max-width:44rem;margin:4rem auto;padding:1rem">
-    <h1>Parvi Reception Desk</h1><p>This desk relays messages between Parvi nodes over their open connections.</p>
-    <p>In Parvi, set this desk's WebSocket address (this origin with <code>/relay/v1</code>),
+    <title>BEAM Audio Reception Desk</title><body style="font:18px system-ui;max-width:44rem;margin:4rem auto;padding:1rem">
+    <h1>BEAM Audio Desk</h1><p>This Desk authenticates Devices, introduces them and routes messages over their open WebSocket connections.</p>
+    <p>In your app, set this Desk's WebSocket address (this origin with <code>/relay/v1</code>),
     select a swarm and share its invitation. Paste a member's invitation into <strong>Add a swarm</strong> to join.</p>
     <p>Your native app owns its node, swarm memberships and chats. The full browser app is separate.</p></body></html>
     """
@@ -82,11 +82,11 @@ defmodule ReceptionDesk.Socket do
     public = Base.decode16!(id, case: :upper)
     sig = Base.decode16!(signature, case: :upper)
     true = :crypto.verify(:eddsa, :none, "parvi-desk/v1:" <> state.nonce, sig, [public, :ed25519])
-    :ok = :parvi_reception_sessions.attach(id, self())
+    :ok = :ba_reception_sessions.attach(id, self())
     push(%{op: "ready", v: 1, id: id}, %{state | id: id, nonce: nil})
   end
   defp command(message, %{id: id} = state) when is_binary(id) do
-    result = :parvi_reception_sessions.command(id, self(), message)
+    result = :ba_reception_sessions.command(id, self(), message)
     case result do
       :ok -> {:ok, state}
       {:error, reason} -> push(%{op: "error", error: Atom.to_string(reason), request: message["request"]}, state)

@@ -1,6 +1,14 @@
-# Parvi Reception Desk
+# BEAM Audio Reception Desk
 
-A Phoenix/Cowboy host with supervised Erlang relay workers. Each Parvi node opens
+A **Desk** provides authentication, introduction and message routing for Devices.
+The current Phoenix/WebSocket service uses `ba_reception_sessions`; core Desk
+configuration is `BA_DESK_BIND` / `BA_DESK_PORT` (or conventional `PORT`). Existing
+signed protocol domains and the hosted service address remain unchanged.
+See [naming/migration](../../../docs/NAMING.md) and
+[canonical terminology](../../../docs/TERMINOLOGY.md).
+
+The remaining profile notes describe historical app integrations; step 9 has not
+updated those apps. A Phoenix/Cowboy host has supervised Erlang relay Workers. Each Device opens
 an outbound WebSocket connection and keeps it open. In the native profile the
 desk carries peer introductions/signaling; authenticated OTP membership and chat
 use the direct encrypted WebRTC DataChannel. It is not a TURN/data relay for
@@ -18,9 +26,9 @@ With the Windows app already built:
 
 The launcher prepares a private Elixir 1.19.5 build tool, uses the existing OTP
 runtime and resolves locked dependencies. Nothing is installed system-wide.
-Override `PARVI_OTP_ROOT` if needed. Subsequent runs reuse ignored build caches.
+Override `BA_OTP_ROOT` if needed. Subsequent runs reuse ignored build caches.
 The default desk is `ws://127.0.0.1:8765/relay/v1` and its landing page is
-`http://127.0.0.1:8765/`. `PARVI_BROKER_PORT` changes the development port.
+`http://127.0.0.1:8765/`. `BA_DESK_PORT` changes the development port.
 
 On macOS/Linux with Elixir 1.19 and a compatible OTP installed:
 
@@ -29,8 +37,8 @@ bash src/Services/ReceptionDesk/build.sh
 bash src/Services/ReceptionDesk/run.sh
 ```
 
-Rebuilt native apps automatically connect to the public Parvi desk configured in
-`src/control/src/parvi.app.src` (`default_reception_desk_url`). No URL entry is needed.
+Rebuilt native apps automatically connect to the public BEAM Audio desk configured in
+`src/control/src/ba_core.app.src` (`default_reception_desk_url`). No URL entry is needed.
 In the legacy UI, enter another **Reception desk URL** and select **Use desk (new
 session)** to switch desks, which replaces transient memberships. Native UI
 switching is currently disabled; supply a startup override instead. Select a swarm in one app, copy its
@@ -38,7 +46,7 @@ invitation and paste it into **Add a swarm** in another. Only one admission is
 needed. New and existing memberships stay independent. Changing UI selection
 never joins or leaves a swarm.
 
-Set `PARVI_RECEPTION_DESK_URL` to override the bundled default before startup.
+Set `BA_RECEPTION_DESK_URL` to override the bundled default before startup.
 Set it to an empty string for local-only development; an unset variable uses the
 public default. An explicit OTP `reception_desk_url` setting (including the UI
 choice) takes priority over both. Restart to apply startup configuration. Never use the
@@ -83,7 +91,7 @@ Separate-access-network testing remains a further check.
 
 Only `wss://` is accepted for public desk addresses. Plain `ws://` is restricted
 to localhost development. Clients verify certificate chains and hostnames.
-`PARVI_RELAY_CA_FILE` may select a private CA file without changing OS trust.
+`BA_RELAY_CA_FILE` may select a private CA file without changing OS trust.
 iOS preparation bundles public build-host trust anchors because BEAM cannot
 invoke macOS certificate-store commands inside the phone sandbox.
 
@@ -134,7 +142,7 @@ restart. `--idle` verifies ping/pong beyond the inactivity timeout. The TLS test
 uses a private temporary certificate; it checks WSS chat and rejects wrong
 hostnames and untrusted certificates. It never installs a trust anchor.
 The helper currently locates Windows build products and the portable Elixir
-cache; override `PARVI_TEST_ERL` / `PARVI_ELIXIR_ROOT` for another local runtime.
+cache; override `BA_TEST_ERL` / `BA_ELIXIR_ROOT` for another local runtime.
 The production release also boots locally with runtime configuration and
 distribution disabled (`tests/ReceptionDesk/release-smoke.py`). Docker image execution was not
 verified here because the Docker engine is not running; the image still needs

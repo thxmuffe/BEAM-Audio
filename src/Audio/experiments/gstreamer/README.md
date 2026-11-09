@@ -81,7 +81,7 @@ an association or receiving a new segment after arming invalidates the proof.
 Expected decoder format is checked. These checks qualify this clean, fixed
 20 ms Opus fixture; impairment and reset/relock recovery are not established.
 
-A separate escript compiles the isolated `parvi_audio_gstreamer_schedule.erl`
+A separate escript compiles the isolated `ba_audio_gstreamer_schedule.erl`
 policy and accepts control requests. Erlang computes the sink timestamp offset
 from the decoded segment running-time, clock/base-time, pipeline latency and
 render-delay. The native fixture applies that offset, leaving final waiting to

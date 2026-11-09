@@ -28,7 +28,7 @@ def main():
         ca, ca_key = Path(folder) / 'ca.pem', Path(folder) / 'ca-key.pem'
         csr, extensions = Path(folder) / 'server.csr', Path(folder) / 'server.ext'
         subprocess.run([openssl, 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-            '-keyout', str(ca_key), '-out', str(ca), '-days', '1', '-subj', '/CN=Parvi local test CA',
+            '-keyout', str(ca_key), '-out', str(ca), '-days', '1', '-subj', '/CN=BEAM Audio local test CA',
             '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign'],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run([openssl, 'req', '-new', '-newkey', 'rsa:2048', '-nodes',
@@ -50,7 +50,7 @@ def main():
                     '},{customize_hostname_check,[{match_fun,public_key:pkix_verify_hostname_match_fun(https)}]}],5000),'
                     'case R of {ok,S}->io:format("Direct TLS verified~n"),ssl:close(S); E->io:format("TLS diagnosis: ~p~n",[E]) end,halt().')
                 subprocess.run([str(r.ERL), '-noshell', '-eval', expression], check=True)
-            a, b = [r.Node(f'wss://localhost:{tls_port}/relay/v1', {'PARVI_RELAY_CA_FILE': str(ca)}) for _ in range(2)]
+            a, b = [r.Node(f'wss://localhost:{tls_port}/relay/v1', {'BA_RELAY_CA_FILE': str(ca)}) for _ in range(2)]
             nodes.extend([a, b])
             initial = r.wait(a, lambda s: s['relay']['connected'])
             r.wait(b, lambda s: s['relay']['connected'])
@@ -58,7 +58,7 @@ def main():
             assert b.request('join_swarm', invitation=swarm['invitation'])['error'] is None
             assert a.request('send_swarm', swarm_id=swarm['id'], text='TLS relay')['error'] is None
             r.wait(b, lambda s: any(m['text'] == 'TLS relay' for m in r.swarm(s, swarm['id'])['messages']))
-            bad_host = r.Node(f'wss://127.0.0.1:{tls_port}/relay/v1', {'PARVI_RELAY_CA_FILE': str(ca)})
+            bad_host = r.Node(f'wss://127.0.0.1:{tls_port}/relay/v1', {'BA_RELAY_CA_FILE': str(ca)})
             nodes.append(bad_host)
             r.wait(bad_host, lambda s: not s['relay']['connected'] and s['relay']['error'] is not None)
             untrusted = r.Node(f'wss://localhost:{tls_port}/relay/v1')

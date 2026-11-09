@@ -51,14 +51,14 @@ carrier.pump = pump
 
 
 def node(label):
-    name = f'parvi_trust_{label}_{secrets.token_hex(5)}@127.0.0.1'
-    p = carrier.Probe(f'trust-{label}', name, name, secrets.token_hex(32), entry='parvi_trust_probe')
+    name = f'ba_trust_{label}_{secrets.token_hex(5)}@127.0.0.1'
+    p = carrier.Probe(f'trust-{label}', name, name, secrets.token_hex(32), entry='ba_trust_probe')
     p.channels_ready, p.authorized, p.rejected = set(), set(), set()
     p.chat_events = []
     carrier.probes.append(p)
     carrier.wait(lambda: p.booted is not None)
     state = p.request('status')
-    assert state['legacy_workers'] == [] and sorted(state['workers']) == ['parvi_chat', 'parvi_pg']
+    assert state['legacy_workers'] == [] and sorted(state['workers']) == ['ba_chat', 'ba_pg']
     return p
 
 

@@ -32,5 +32,5 @@ their existing `test/` or Swift `Tests/` directories under `src/`.
 sender and ExRTP wire decoder without a network connection. Build the core/native
 transport first. It checks the actual RTP timestamp bytes and target recovery
 with nonuniform targets, a lost neighbour and reverse arrival. EUnit's
-`parvi_audio_rtp_time_tests` additionally covers clock wrap, assignment precision
+`ba_audio_rtp_time_tests` additionally covers clock wrap, assignment precision
 and rejection. These do not prove native playback or physical speaker timing.

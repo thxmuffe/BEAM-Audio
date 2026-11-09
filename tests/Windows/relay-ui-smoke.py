@@ -25,11 +25,11 @@ def main():
         with tempfile.TemporaryDirectory(dir=build) as temp:
             assert Path(temp).resolve().is_relative_to(build)
             subprocess.run([str(r.ERL.with_name('erlc.exe')), '-Werror', '-o', temp,
-                str(ROOT / 'tests/Windows/parvi_relay_ui_smoke.erl')], check=True)
+                str(ROOT / 'tests/Windows/ba_relay_ui_smoke.erl')], check=True)
             subprocess.run([str(r.ERL), '-noshell', '-noinput', '-pa', str(r.APP / 'ebin'), temp,
-                '-s', 'parvi_relay_ui_smoke', 'main'], check=True, timeout=30,
-                env={**os.environ, 'PARVI_RECEPTION_DESK_URL': f'ws://127.0.0.1:{port}/relay/v1',
-                     'PARVI_TEST_INVITATION': swarm['invitation']})
+                '-s', 'ba_relay_ui_smoke', 'main'], check=True, timeout=30,
+                env={**os.environ, 'BA_RECEPTION_DESK_URL': f'ws://127.0.0.1:{port}/relay/v1',
+                     'BA_TEST_INVITATION': swarm['invitation']})
             r.wait(peer, lambda s: any(m['text'] == 'native relay send' for m in r.swarm(s, swarm['id'])['messages']))
     finally:
         peer.close()

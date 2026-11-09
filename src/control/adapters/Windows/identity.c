@@ -26,7 +26,7 @@ int main(void) {
         value.CredentialBlobSize = sizeof(seed);
         value.CredentialBlob = seed;
         value.Persist = CRED_PERSIST_LOCAL_MACHINE;
-        value.UserName = L"Parvi";
+        value.UserName = L"BEAM Audio";
         if (!CredWriteW(&value, 0)) return 1;
     }
     _setmode(_fileno(stdout), _O_BINARY);

@@ -8,9 +8,9 @@ are implemented separately; media does not travel through this Desk protocol.
 
 ## Runtime and local configuration
 
-`parvi:start(swarm_control)` now uses the [step-5 membership configuration](SWARM_MEMBERSHIP.md).
+`ba_runtime:start(swarm_control)` now uses the [step-5 membership configuration](SWARM_MEMBERSHIP.md).
 The earlier locally provisioned peer-policy fixture has been replaced by
-nonce-bound authority admission and signed current policy. `parvi_swarm_desks`
+nonce-bound authority admission and signed current policy. `ba_swarm_desks`
 owns independent relay connections; the membership owner installs policy/routes
 into control. The local Device branch owns the Handler and its initially empty
 Worker supervisor. This profile starts no old chat, clock, trust/distribution
@@ -22,13 +22,13 @@ operation grants. Membership alone grants no operations. `job_offer` additionall
 requires the designated Director and recipient's local Contract/consent.
 The [Handler guide](DEVICE_HANDLER.md) describes that local lifecycle.
 
-Call `parvi_swarm_control:connect(PeerId)` on one endpoint, then wait until both
+Call `ba_swarm_control:connect(PeerId)` on one endpoint, then wait until both
 `snapshot/0` results show `stage => authorized` for the peer. Both endpoints can
 call `read_status(PeerId)`. Successful replies contain only
 `#{<<"protocol">> => 1, <<"session">> => <<"authorized">>}`.
 `read_capabilities(PeerId)` returns the Handler's bounded test capability snapshot
 when the peer has the separate capability grant; reading never enables Workers.
-`parvi:connect/1` is the old OTP API and is not used by this profile.
+`ba_runtime:connect/1` is the old OTP API and is not used by this profile.
 
 ## Wire, authentication and dispatch
 
@@ -117,7 +117,7 @@ and termination formatting redact private keys and internal message/log content.
 
 ## Previous membership and subscription state
 
-At the user's request, new builds ignore version-1 `parvi_cluster_store` records:
+At the user's request, new builds ignore version-1 `ba_device_store` records:
 policy, authority, remembered Desk routes and subscription intent. New saves use
 version 2; other unsupported formats fail visibly. Secure device identity keys
 are separate and unchanged. This is an intentional clean start, not a migration
@@ -131,7 +131,7 @@ From `src/control`:
 
 ```sh
 rebar3 compile
-rebar3 eunit --module=parvi_swarm_job_tests,parvi_device_handler_tests,parvi_swarm_control_protocol_tests,parvi_relay_tests,parvi_native_tests
+rebar3 eunit --module=ba_swarm_job_tests,ba_device_handler_tests,ba_swarm_control_protocol_tests,ba_relay_tests,ba_native_tests
 ```
 
 From the core root, explicitly run the real-Desk check:
@@ -148,7 +148,7 @@ lease-bounded Director-loss cleanup. Forbidden raw start, forged signer and repl
 checks remain; no arbitrary spawn, old/audio processes or OTP connections are
 allowed. EUnit additionally covers local lifecycle, Contract/grant/role boundaries,
 unchanged retry deadlines, bounded caches and malformed/oversize input. The earlier
-state-reset check remains in `parvi_cluster_store_tests`; that storage path is
+state-reset check remains in `ba_device_store_tests`; that storage path is
 unchanged by steps 3–4. See [the job guide](SWARM_JOBS.md) for failure limits.
 No app build, installation, listening or physical timing claim follows.
 

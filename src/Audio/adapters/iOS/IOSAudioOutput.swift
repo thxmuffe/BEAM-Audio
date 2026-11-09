@@ -4,19 +4,19 @@ import Darwin
 
 /// Thin local buffer binding. BEAM owns PCM conversion, packet order and deadlines.
 final class IOSAudioOutput {
-    private let queue = DispatchQueue(label: "org.opensound.parvi.audio-output")
+    private let queue = DispatchQueue(label: "org.beam-audio.audio-output")
     private let lock = NSLock()
     private var listener: Int32 = -1
     private var connection: Int32 = -1
 
     func start() throws -> UInt16 {
         var port: UInt16 = 0
-        let fd = parvi_bridge_listen(&port)
+        let fd = ba_bridge_listen(&port)
         guard fd >= 0 else { throw OutputError.failed }
         lock.lock(); listener = fd; lock.unlock()
         queue.async { [self] in
             while true {
-                let client = parvi_bridge_accept(fd)
+                let client = ba_bridge_accept(fd)
                 guard client >= 0 else { break }
                 var noSignal: Int32 = 1
                 setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout.size(ofValue: noSignal)))
@@ -97,7 +97,7 @@ final class IOSAudioOutput {
             }
         } catch {
             // EOF, OS errors and interruptions close the binding; OTP reports/owns recovery.
-            NSLog("Parvi audio output closed: %@", error.localizedDescription)
+            NSLog("BEAM Audio audio output closed: %@", error.localizedDescription)
             shutdown(fd, SHUT_RDWR)
         }
     }

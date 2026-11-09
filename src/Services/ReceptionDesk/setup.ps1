@@ -1,4 +1,4 @@
-param([string]$OtpRoot = $env:PARVI_OTP_ROOT)
+param([string]$OtpRoot = $env:BA_OTP_ROOT)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 if (!$OtpRoot) { $OtpRoot = Join-Path $repoRoot 'builds\intermediates\Windows\otp' }

@@ -1,5 +1,17 @@
 # Headless backend checks — step 8
 
+Core APIs now use `ba_`, application `ba_core` and environment `BA_*`.
+See [naming/migration](../../docs/NAMING.md) and
+[canonical terminology](../../docs/TERMINOLOGY.md). Check source naming with:
+
+```sh
+python3 tests/control/naming-check.py
+```
+
+The integration harness rejects snapshots if any old `parvi`/`parvi_*` Erlang
+module was loaded, so stale generated build directories cannot silently supply
+a missing renamed dependency.
+
 Run from the BEAM-Audio root unless noted. Every integration runtime is unnamed,
 uses a temporary state directory and fresh test identity, and exits at completion.
 No product app or audio device is opened. Local service/socket access is required.
@@ -10,7 +22,7 @@ From `src/control`, compile and run the focused unit/protocol regression:
 
 ```sh
 rebar3 compile
-rebar3 eunit --module=parvi_swarm_control_protocol_tests,parvi_swarm_passport_tests,parvi_swarm_job_tests,parvi_device_handler_tests,parvi_cluster_store_tests,parvi_audio_subscription_intent_tests,parvi_audio_restore_events_tests,parvi_audio_mix_tests,parvi_audio_opus_tests,parvi_audio_rtp_time_tests,parvi_webrtc_audio_timing_tests,parvi_audio_engine_tests,parvi_audio_gstreamer_schedule_tests,parvi_audio_gstreamer_control_tests,parvi_audio_meter_tests,parvi_clock_tests,parvi_clock_filter_tests,parvi_clock_mapping_tests,parvi_swarm_time_protocol_tests
+rebar3 eunit --module=ba_swarm_control_protocol_tests,ba_swarm_passport_tests,ba_swarm_job_tests,ba_device_handler_tests,ba_device_store_tests,ba_subscription_tests,ba_audio_restore_events_tests,ba_audio_mix_tests,ba_audio_opus_tests,ba_audio_rtp_time_tests,ba_webrtc_audio_timing_tests,ba_audio_engine_tests,ba_audio_gstreamer_schedule_tests,ba_audio_gstreamer_control_tests,ba_audio_meter_tests,ba_swarm_clock_tests,ba_swarm_clock_filter_tests,ba_swarm_clock_mapping_tests,ba_swarm_time_protocol_tests
 ```
 
 107 checks pass as of step 8. Native engine protocol checks use bounded loopback
@@ -25,7 +37,7 @@ python3 tests/control/swarm-control-smoke.py
 python3 tests/control/swarm-membership-smoke.py
 python3 tests/control/swarm-time-smoke.py
 python3 tests/control/swarm-time-smoke.py --production-cadence
-PARVI_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --sustained
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --sustained
 ```
 
 The first uses the existing public WSS Desk for signed status/capabilities,
@@ -44,10 +56,10 @@ omit or adapt it on other systems.
 For the real native codec/handoff proof on the existing Mac GStreamer runtime:
 
 ```sh
-export PARVI_GSTREAMER_RUNTIME="$PWD/builds/intermediates/gstreamer/runtime"
-export PARVI_GSTREAMER_PCM_HELPER="$PWD/src/Audio/adapters/gstreamer/pcm_bridge.py"
-export PARVI_GSTREAMER_PYTHON=/usr/bin/python3
-PARVI_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --opus
+export BA_GSTREAMER_RUNTIME="$PWD/builds/intermediates/gstreamer/runtime"
+export BA_GSTREAMER_PCM_HELPER="$PWD/src/Audio/adapters/gstreamer/pcm_bridge.py"
+export BA_GSTREAMER_PYTHON=/usr/bin/python3
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --opus
 ```
 
 Use a Python/GI installation matching that runtime (the bundled Mac GI is Python

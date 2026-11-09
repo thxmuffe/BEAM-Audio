@@ -50,8 +50,8 @@ for name in ['kernel', 'stdlib', 'inets', 'crypto', 'asn1', 'public_key', 'ssl']
     assert len(matches) == 1, (name, matches)
     app = matches[0]
     shutil.copytree(app / 'ebin', resources / 'lib' / app.name / 'ebin', dirs_exist_ok=True)
-shutil.copytree(ROOT / 'builds/intermediates/control/default/lib/parvi/ebin',
-                resources / 'lib/parvi-0.1.0/ebin', dirs_exist_ok=True)
+shutil.copytree(ROOT / 'builds/intermediates/control/default/lib/ba_core/ebin',
+                resources / 'lib/ba_core-0.1.0/ebin', dirs_exist_ok=True)
 for name in ['gun', 'cowlib']:
     shutil.copytree(ROOT / f'builds/intermediates/control/default/lib/{name}/ebin',
                     resources / f'lib/{name}/ebin', dirs_exist_ok=True)

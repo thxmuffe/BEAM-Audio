@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 import Security
 
-/// Platform storage only. Erlang owns cluster membership and reconnection.
+/// Platform storage only. Erlang owns Swarm membership and reconnection.
 public struct NativeIdentity: Sendable {
     public let seedHex: String
     public let publicKeyHex: String

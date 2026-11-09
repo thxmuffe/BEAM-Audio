@@ -15,7 +15,7 @@ otp = Path(subprocess.check_output([shutil.which('erl'), '-noshell', '-eval',
     'io:put_chars(code:root_dir()), halt().'], text=True))
 r.ERL = next(otp.glob('erts-*/bin/erlexec'))
 os.environ.update(ROOTDIR=str(otp), BINDIR=str(r.ERL.parent), EMU='beam', PROGNAME='erl')
-r.APP = ROOT / 'builds/intermediates/control/default/lib/parvi'
+r.APP = ROOT / 'builds/intermediates/control/default/lib/ba_core'
 transport = list((ROOT / 'builds/intermediates/BeamTransport/dev/lib').glob('*/ebin'))
 transport += list((ROOT / 'builds/intermediates/tools/elixir/lib').glob('*/ebin'))
 core = list((ROOT / 'builds/intermediates/control/default/lib').glob('*/ebin'))

@@ -20,8 +20,8 @@ not allow an arbitrary peer to claim that role or activate a resource.
 The receiver separately installs a narrow local Contract and opts in:
 
 ```erlang
-ok = parvi_device_handler:set_test_contract(DirectorId, ContractId, 1).
-ok = parvi_device_handler:enable_test(true).
+ok = ba_device_handler:set_test_contract(DirectorId, ContractId, 1).
+ok = ba_device_handler:enable_test(true).
 ```
 
 Contract IDs are 128-bit/32-uppercase-hex values; revisions are positive bounded
@@ -52,10 +52,10 @@ On the Director:
 Offer = #{<<"contract">> => ContractId, <<"contract_revision">> => 1,
           <<"capability">> => <<"test">>, <<"duration_ms">> => 1000,
           <<"lease_ms">> => 5000},
-{ok, JobId} = parvi_swarm_control:offer_job(ReceiverId, Offer).
-parvi_swarm_control:job_status(JobId).
-ok = parvi_swarm_control:retry_job(JobId).
-ok = parvi_swarm_control:cancel_job(JobId).
+{ok, JobId} = ba_swarm_control:offer_job(ReceiverId, Offer).
+ba_swarm_control:job_status(JobId).
+ok = ba_swarm_control:retry_job(JobId).
+ok = ba_swarm_control:cancel_job(JobId).
 ```
 
 Offers are directed advertisements to one Device in the first proof. No broker,
@@ -142,7 +142,7 @@ are not real-time native/audio deadline qualification or a new correction policy
 From `src/control`:
 
 ```sh
-rebar3 eunit --module=parvi_swarm_job_tests,parvi_device_handler_tests,parvi_swarm_control_protocol_tests,parvi_relay_tests,parvi_native_tests
+rebar3 eunit --module=ba_swarm_job_tests,ba_device_handler_tests,ba_swarm_control_protocol_tests,ba_relay_tests,ba_native_tests
 rebar3 compile
 ```
 

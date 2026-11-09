@@ -19,8 +19,9 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–8 complete for the headless backend; next: step 9 — update macOS,
-then Windows, then iOS with the common UI below.** The
+**Steps 1–8 complete for the headless backend. The requested core naming and
+terminology cleanup is complete; step 9 is not started.** See
+[canonical component names](TERMINOLOGY.md) and [API/configuration migration](NAMING.md). The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
 `swarm_control` runtime now provides signed, bounded status messaging through the
@@ -50,47 +51,18 @@ launched, rebuilt or installed to perform that reset.
 
 ### Vocabulary and ownership
 
-- **Swarm:** logical organization of independent, potentially untrusted devices.
-  Joining does not grant remote execution, hardware control or implicit trust.
-- **Device:** autonomous participant, running its own local Erlang/OTP runtime.
-  A Device may leave or disconnect at any moment, without revoking membership.
-- **Desk:** temporary/public authenticated entry and introduction endpoint.
-  Many Desks may lead to one Swarm. A Desk is not the Swarm authority and does not
-  carry audio. The current Reception Desk is the starting implementation.
-- **Passport:** persistent device identity and Swarm membership proof, permitting
-  fast, challenge-verified rejoin while membership is valid and not revoked.
-  Live session credentials and permissions are refreshed upon each return.
-- **Contract:** explicit, enforceable permission and responsibility boundary.
-  Local resource ownership remains with the Device Handler.
-- **Director:** Swarm coordinator that offers jobs and coordinates shared policy,
-  **not** a remote administrator of another device or a central worker dispatcher.
-  Initial scope can use one designated Director; failover/federation are later.
-- **Device Handler:** the device-local OTP owner of capability advertising,
-  contract evaluation, job acceptance and worker supervision.
-- **Worker:** local OTP process for an audio input, output, playback-stream,
-  DSP or other capacity. A Worker is **not** a separate distributed Erlang node.
-- **Capability:** discoverable description of a worker/device function and its
-  limits, including required user/OS permissions.
-- **Job:** scoped offer published by a Director, independently considered by
-  Device Handlers; acceptance establishes a bounded, cancellable obligation.
-- **Stream:** an independently identified audio publication carrying its
-  descriptor and per-packet authoritative presentation targets.
-- **Subscription:** persistent logical intent to receive a Stream. It is distinct
-  from a live WebRTC/media connection, current playback and Swarm membership.
-- **Active Player:** an admitted audio publisher whose stream should remain
-  subscribed; pausing may stop audio packets without cancelling subscriptions.
-- **Mixer / Stream Handler:** local mixing and output safety / replaceable
-  native transport, codec, buffering and execution respectively.
-- **Time:** common UTC-referenced Swarm presentation timeline; reference identity,
-  freshness and uncertainty matter, not merely agreement on a label.
-- **Playback Offset:** a versioned, Swarm-wide playback setting. Any admitted
-  device permitted by the Swarm Contract can request an update; policy ordering
-  resolves concurrent edits. This is not an unsupervised local preference.
+Use the 22 component names and boundaries in [TERMINOLOGY.md](TERMINOLOGY.md).
+In particular, a **Source** has a stable identity, a **Stream** is its audio
+publication, a **Subscription** is persistent intent to receive that Source, and
+a **Media Session** is a temporary transport. The **Swarm Clock** owns the shared
+timeline and **Playback Offset** policy; Audio Engines execute approved
+Presentation Targets. Device Identity and Passport are separate credentials.
 
-Use **BEAM Audio** for the open-source technology. **OpenSound** refers only to
-the commercial product. Use Swarm/Desk in new user-facing architecture and
-documentation; preserve legacy `parvi_*` module names, established invitation
-formats and stored identities until deliberate compatibility migrations.
+Core-owned names use `ba_`, application `ba_core` and configuration `BA_*`;
+[NAMING.md](NAMING.md) records the migration and retained identity/wire spellings.
+Use **BEAM Audio** for the core and **OpenSound App** for the commercial UI.
+Trusted Distributed Erlang terminology belongs only to explicitly historical
+trusted-cluster code; it is not the current Swarm boundary.
 
 ### Implementation sequence — approved order
 
@@ -309,7 +281,8 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Resume at step 9: integrate the verified backend into macOS first, then Windows,
+The next implementation phase remains step 9, pending the user's request:
+integrate the verified backend and renamed `ba_*` / `BA_*` interfaces into macOS first, then Windows,
 then iOS, with the common UI and immediate audio actions specified above. Package
 and verify native decoding/capture/output and record actual listening/timing limits.
 Time, Offset and media control now use restricted Swarm messages; preserve

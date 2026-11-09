@@ -60,7 +60,7 @@ relay still needs rebuilt Apple apps and physical-device interoperability checks
 
 ## Ownership
 
-`parvi_swarms` owns memberships and bounded session chat histories (200 messages
-per swarm). `parvi_network` supplies health and connectivity observations.
+`ba_swarms` owns memberships and bounded session chat histories (200 messages
+per swarm). `ba_network` supplies health and connectivity observations.
 Platform UI models own selection, drafts, pending actions and window/navigation
 state. Disposable windows do not own backend state or restore old chat data.

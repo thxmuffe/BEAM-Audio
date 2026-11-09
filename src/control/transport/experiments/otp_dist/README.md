@@ -22,12 +22,12 @@ under `builds/intermediates/OTPWebRTCProbe`. The trust script also compiles and
 loads the shared `control` application. Both check the installed OTP version.
 It uses the same local Elixir library paths and Mac OpenSSL 3 search path as the
 existing direct-transport experiment. Per-VM logs are in that build directory.
-It does not launch, install or modify any Parvi app or Reception Desk.
+It does not launch, install or modify any BEAM Audio app or Reception Desk.
 
 ## Shared OTP foundation (step 2a)
 
-The trust probe starts `parvi:start(native_cluster)`, which runs the existing
-`pg` scope and chat `gen_server` under `parvi_sup`. No custom swarm, relay-chat,
+The trust probe starts `ba_runtime:start(native_cluster)`, which runs the existing
+`pg` scope and chat `gen_server` under `ba_sup`. No custom swarm, relay-chat,
 direct application router, discovery or network/topology worker starts. The
 third-party WebRTC libraries carry native distribution; OTP supplies remote
 PIDs, process groups, casts, monitors and supervision. Invitation records
@@ -49,8 +49,8 @@ deliberately unchanged, except the native cluster's display name.
 
 ## Reception Desk introductions (step 3a, compiled only)
 
-`parvi_cluster_desk` replaces the local probe parent's SDP/ICE forwarding for
-an initial pair of nodes. It reuses `parvi_relay` and the existing desk protocol;
+`ba_legacy_cluster_desk` replaces the local probe parent's SDP/ICE forwarding for
+an initial pair of nodes. It reuses `ba_relay` and the existing desk protocol;
 the public service and working apps are unchanged. The relay client now accepts
 an explicit Erlang owner and raw-envelope delivery. Its default still decodes
 swarm messages for current apps.
@@ -84,20 +84,20 @@ erlc -Werror +debug_info -o builds/intermediates/OTPWebRTCProbe \
 ```
 
 For later manual use, launch independent named VMs with the core, transport and
-experiment library paths, `-proto_dist parvi_webrtc`, `-start_epmd false` and
+experiment library paths, `-proto_dist ba_webrtc`, `-start_epmd false` and
 `-kernel connect_all false dist_auto_connect never`, as in the probe launcher.
 Then, after `net_kernel` is started:
 
 ```erlang
-parvi:start(native_cluster).
-parvi_cluster_desk:start_link().
-parvi_cluster_desk:status(). % Wait for desk.connected = true.
+ba_runtime:start(native_cluster).
+ba_legacy_cluster_desk:start_link().
+ba_legacy_cluster_desk:status(). % Wait for desk.connected = true.
 % On the inviter:
-parvi_cluster_desk:create().
-parvi_cluster_desk:invite(259200).
+ba_legacy_cluster_desk:create().
+ba_legacy_cluster_desk:invite(259200).
 % On the joiner, with the returned link:
-parvi_cluster_desk:join(Invitation).
-% After OTP/pg shows the peer, use parvi:send/1 and history/0.
+ba_legacy_cluster_desk:join(Invitation).
+% After OTP/pg shows the peer, use ba_runtime:send/1 and history/0.
 ```
 
 `join/1` returning `ok` confirms submission to the relay client, not successful
@@ -106,8 +106,8 @@ Failed joins currently require restarting the connector; retry/session repair
 is deferred. The connector establishes only the inviter/joiner edge, with no
 automatic mesh or additional membership registry.
 
-`parvi_transport`'s `native_ice_servers` setting is passed to the library's
-`ice_servers` option. Its default uses `parvi.direct_stun_urls`. Explicit maps
+`ba_transport`'s `native_ice_servers` setting is passed to the library's
+`ice_servers` option. Its default uses `ba_core.direct_stun_urls`. Explicit maps
 can include TURN `urls`, `username` and `credential`. No TURN service or
 credentials are provisioned here. Reception Desk is not TURN and does not carry
 native-distribution fallback traffic.
@@ -119,11 +119,11 @@ are still later parts of step 3. No new tests or deployment in this slice.
 
 ## Responsibilities
 
-- `parvi_webrtc_dist`: OTP carrier callbacks and bindings for pre-established
+- `ba_webrtc_dist`: OTP carrier callbacks and bindings for pre-established
   channels. Reuses `dist_util` for cookie handshakes, negotiated distribution
   flags, connection supervision and ticks. A logical listener accepts channels;
   it opens no TCP distribution listener and does not register with EPMD.
-- `parvi_dist_channel`: the process registered with ERTS as distribution
+- `ba_dist_channel`: the process registered with ERTS as distribution
   controller. It passes opaque packets between `dist_ctrl_get_data/1`,
   `dist_ctrl_put_data/2` and the third-party `ex_webrtc`/`ex_sctp` libraries.
   Native terms, PIDs, atom caches, remote spawn, RPC and monitors are handled by
@@ -131,21 +131,21 @@ are still later parts of step 3. No new tests or deployment in this slice.
   control envelopes from native packets; 16 KiB chunks allow a native packet to
   span several SCTP messages. Native frames are rejected before their bodies
   arrive unless the connection has been authorized.
-- `parvi_dist_probe` and `otp-dist-smoke.py`: test orchestration. The parent
+- `ba_dist_probe` and `otp-dist-smoke.py`: test orchestration. The parent
   passes only SDP/ICE introductions between app-owned stdin/stdout pipes. It
   stops forwarding those signals before the native handshake starts. Test
   command results contain assertions/metadata, not the native payload stream.
 
-Only this carrier is selected with `-proto_dist parvi_webrtc`; EPMD startup is
+Only this carrier is selected with `-proto_dist ba_webrtc`; EPMD startup is
 disabled. Automatic transitive connections are disabled. The step-1 test
 explicitly configures a local fixture admission policy and provisions its cookie.
-The carrier's default is now `parvi_cluster_trust`: missing policy, missing trust
+The carrier's default is now `ba_legacy_cluster_trust`: missing policy, missing trust
 manager, unknown controller or mismatched peer name denies native distribution.
 The step-2 test does not provision shared cookies through its parent process.
 
 ## Invitation admission and cluster removal
 
-Each VM's `parvi_cluster_trust` worker generates an in-memory Ed25519 key pair.
+Each VM's `ba_legacy_cluster_trust` worker generates an in-memory Ed25519 key pair.
 There is no account, permanent device identity, certificate issuer service or
 shared cluster cookie. The new experimental invitation is explicitly a grant of
 whole-VM cluster trust:
@@ -179,7 +179,7 @@ fresh signed, channel-bound exchange and current membership validation. Restored
 old cookies or OTP allow-list entries alone cannot enable a new connection.
 OTP's cookie list is not a revocation mechanism; the explicit carrier gate is.
 
-`parvi_cluster_authority` is a serialized OTP actor inside the cluster, not a
+`ba_legacy_cluster_authority` is a serialized OTP actor inside the cluster, not a
 public Reception Desk or a permanently assigned machine. Any active node can
 request invitations. The authority stores hashes of live capabilities and the
 current membership snapshot. On removal of its own host, it transfers the policy

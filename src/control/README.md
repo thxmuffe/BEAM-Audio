@@ -1,4 +1,11 @@
-# Parvi chat: first prototype step
+# BEAM Audio control runtime
+
+Core entry point: `ba_runtime`; OTP application: `ba_core`; configuration: `BA_*`.
+Use the [canonical terminology](../../docs/TERMINOLOGY.md) and
+[migration guide](../../docs/NAMING.md). Subscriptions are saved intent;
+`ba_media_session` owns temporary connections. `ba_swarm_clock` owns shared time
+and Playback Offset. Historical trusted-cluster instructions below are not the
+current Swarm API or permission boundary.
 
 ## Verified Swarm backend — step 8
 
@@ -55,7 +62,7 @@ local acceptance, leases, idempotent retry and correlated outcomes. Step 2's
 [restricted status protocol](../../docs/SWARM_CONTROL_PROTOCOL.md) is implemented
 and verified between independent runtimes through the real Desk without OTP
 connectivity. Step 5 adds [durable Passports, current permissions and multi-Desk rejoin](../../docs/SWARM_MEMBERSHIP.md).
-Use `parvi:start(swarm_control)` with that membership configuration; the old explicit
+Use `ba_runtime:start(swarm_control)` with that membership configuration; the old explicit
 peer-policy fixture is replaced. The guides give limits and headless check commands.
 New builds ignore old version-1 membership/route/subscription records while
 retaining device keys. Step 3 adds scoped `capabilities.read` queries with their
@@ -80,7 +87,7 @@ The UI's existing minimum-level filter applies, and clock notices remain Trace.
 
 ## Headless inspection and control
 
-`parvi_node_api:request/1` exposes named commands over admitted OTP connections.
+`ba_node_api:request/1` exposes named commands over admitted OTP connections.
 The [macOS inspector](../Tools/Inspector/README.md) joins as a separate persistent
 node and accepts JSON lines, allowing scripts to read clocks/audio statistics and
 control subscriptions, playback, buffering and Mac Opus broadcasts without UI.
@@ -88,9 +95,9 @@ control subscriptions, playback, buffering and Mac Opus broadcasts without UI.
 
 ## Native cluster restart/rejoin — device-checked, 2026-11-01
 
-The Apple native hosts supply `PARVI_IDENTITY_SEED` from Keychain and
-`PARVI_STATE_DIR` under Application Support. The seed remains local; never copy
-it into logs or command examples. `parvi_cluster_store` checkpoints policy,
+The Apple native hosts supply `BA_IDENTITY_SEED` from Keychain and
+`BA_STATE_DIR` under Application Support. The seed remains local; never copy
+it into logs or command examples. `ba_device_store` checkpoints policy,
 authority invitation hashes and connector/mailbox routes outside the app bundle.
 Without these variables the existing probe/command-line profiles stay ephemeral.
 
@@ -99,7 +106,7 @@ identity and known peer routes across restart. The connector watches desk
 presence, creates fresh authenticated WebRTC channels and then calls OTP
 connection APIs. `dist_auto_connect=never` remains deliberate. Offline permission
 is not a live transport; failed sessions are released without deleting peers.
-Ordinary close retains membership; `parvi_cluster_desk:forget/0` clears local
+Ordinary close retains membership; `ba_legacy_cluster_desk:forget/0` clears local
 membership/routes. New invitations still need the original authority online.
 
 Known-member reconnect requires matching remembered membership tokens and epoch;
@@ -148,34 +155,34 @@ internal OTP EPMD registration query; this detail may need updating with OTP.
 From `src/control/`, start terminal A:
 
 ```sh
-ERL_EPMD_ADDRESS=127.0.0.1 rebar3 shell --name parvi_a@127.0.0.1 --setcookie local_parvi_demo
+ERL_EPMD_ADDRESS=127.0.0.1 rebar3 shell --name ba_a@127.0.0.1 --setcookie local_ba_demo
 ```
 
 From `src/control/`, start terminal B:
 
 ```sh
-ERL_EPMD_ADDRESS=127.0.0.1 rebar3 shell --name parvi_b@127.0.0.1 --setcookie local_parvi_demo
+ERL_EPMD_ADDRESS=127.0.0.1 rebar3 shell --name ba_b@127.0.0.1 --setcookie local_ba_demo
 ```
 
 In terminal A:
 
 ```erlang
-parvi:connect('parvi_b@127.0.0.1').
-parvi:status().
-parvi:send(<<"Hello from A!">>).
+ba_runtime:connect('ba_b@127.0.0.1').
+ba_runtime:status().
+ba_runtime:send(<<"Hello from A!">>).
 ```
 
-Group membership converges asynchronously. Wait until `parvi:status()` lists
+Group membership converges asynchronously. Wait until `ba_runtime:status()` lists
 both nodes in `chat_nodes` before sending. In terminal B:
 
 ```erlang
-parvi:history().
-parvi:send(<<"Hello back from B!">>).
+ba_runtime:history().
+ba_runtime:send(<<"Hello back from B!">>).
 ```
 
-Back in A, `parvi:history().` shows the reply. To observe UI events, use
-`parvi:subscribe().`, send from B, then `flush().` in A; events have the form
-`{parvi_message, MessageMap}`. Stop each shell with `q().`.
+Back in A, `ba_runtime:history().` shows the reply. To observe UI events, use
+`ba_runtime:subscribe().`, send from B, then `flush().` in A; events have the form
+`{ba_message, MessageMap}`. Stop each shell with `q().`.
 
 The shell is the initial interface; automatic chat rendering is deferred.
 `rebar3 shell` without name/cookie also works for a single local session.
@@ -183,15 +190,15 @@ The shell is the initial interface; automatic chat rendering is deferred.
 ## Process structure and semantics
 
 ```text
-parvi_app -> parvi_sup (rest_for_one)
-                +-- parvi_pg (OTP pg scope)
-                +-- parvi_chat (gen_server)
-                +-- parvi_discovery (local HTTP directory client)
-                +-- parvi_clock_sup (one_for_one)
-                      +-- parvi_clock (gen_server + read-only ETS snapshot)
+ba_app -> ba_sup (rest_for_one)
+                +-- ba_pg (OTP pg scope)
+                +-- ba_chat (gen_server)
+                +-- ba_discovery (local HTTP directory client)
+                +-- ba_swarm_clock_sup (one_for_one)
+                      +-- ba_swarm_clock (gen_server + read-only ETS snapshot)
 ```
 
-`parvi` is the UI boundary: send, history, status, subscribe/unsubscribe and manual
+`ba_core` is the UI boundary: send, history, status, subscribe/unsubscribe and manual
 connect/disconnect. The worker publishes directly to members of one versioned
 `pg` chat group. Messages do not pass through the optional discovery directory.
 Starting more named nodes with the same
@@ -219,7 +226,7 @@ Erlang/`pg` detects them. Reconnection is manual; prior history is not merged.
 
 ## Independent application clock
 
-The clock uses the existing `parvi_clock_sup` / `parvi_clock` supervision branch.
+The clock uses the existing `ba_swarm_clock_sup` / `ba_swarm_clock` supervision branch.
 The default reference mode is now `auto`: `pg` discovers clock workers in the
 current native cluster/permission epoch, and a deterministic ordering of stable
 node names selects the master among directly visible clock peers. Each worker
@@ -279,7 +286,7 @@ choice. The existing iOS in-process resolver remains in use.
 ### Monotonic mapping and audio
 
 Time advances from `erlang:monotonic_time/1`, never from the count of timer
-messages. `parvi_clock_mapping` contains the immutable mapping and deadline
+messages. `ba_swarm_clock_mapping` contains the immutable mapping and deadline
 inverse. Initial acquisition establishes a provisional offset. Once 20 measured
 offsets are available, the 30-second check compares their rolling median with
 the currently applied offset. Differences strictly greater than **2 ms** adjust
@@ -288,7 +295,7 @@ there is no backwards step. `remaining_correction_ns` reports convergence still
 in progress. This is application-clock correction, not DAC/sample-rate resampling.
 No OS clock is modified.
 
-`parvi_clock:filtered_utc_time/0` returns `{ok, UTCNanoseconds}` using the
+`ba_swarm_clock:filtered_utc_time/0` returns `{ok, UTCNanoseconds}` using the
 current monotonic mapping; `now/0` is its compatibility alias. `status/0` exposes
 `filtered_utc_time`, `filter_sample_count`, `filter_required_samples`,
 `filter_ready`, `filtered_offset_ns`, `sample_interval_ms` and `threshold_ns`.
@@ -297,10 +304,10 @@ from monotonic time between observations; it is not a cached timestamp or the
 average of old UTC readings. During follower warm-up, the value is provisional
 and state is `acquiring`. Existing audio timestamp APIs share this same mapping.
 
-`parvi_clock_filter` is a pure bounded median filter. `parvi_clock_sync` contains
+`ba_swarm_clock_filter` is a pure bounded median filter. `ba_swarm_clock_sync` contains
 pure four-timestamp measurement and threshold/correction functions.
-`parvi_clock_mapping` converts time and applies monotonic slewing. The supervised
-`parvi_clock` worker owns discovery, sampling, timers and state. Audio processes
+`ba_swarm_clock_mapping` converts time and applies monotonic slewing. The supervised
+`ba_swarm_clock` worker owns discovery, sampling, timers and state. Audio processes
 use these modules/service through composition; no class inheritance, new
 behaviour implementation, native code or Kalman library is needed.
 
@@ -328,12 +335,12 @@ assumption that a fixed `offset_ns` can describe an actively slewing interval.
 Previously submitted OS buffers are not rescheduled by this change.
 
 ```erlang
-parvi_clock:status().
-{ok, UTC} = parvi_clock:now().
-{ok, LocalDeadline} = parvi_clock:to_monotonic(UTC + 100000000).
-{ok, [CaptureUTC, NowUTC]} = parvi_clock:map_times([CaptureMono, NowMono]).
-ok = parvi_clock:resync().             % explicit internal pull/upstream refresh
-ok = parvi_clock:set_reference(auto).  % resume connected-peer discovery
+ba_swarm_clock:status().
+{ok, UTC} = ba_swarm_clock:now().
+{ok, LocalDeadline} = ba_swarm_clock:to_monotonic(UTC + 100000000).
+{ok, [CaptureUTC, NowUTC]} = ba_swarm_clock:map_times([CaptureMono, NowMono]).
+ok = ba_swarm_clock:resync().             % explicit internal pull/upstream refresh
+ok = ba_swarm_clock:set_reference(auto).  % resume connected-peer discovery
 ```
 
 `status/0` is a mailbox-free ETS read. It reports role/master, local instance,
@@ -371,7 +378,7 @@ the automatic mode's cold source. `clock_interval_ms` defaults to 30000 (correct
 Run the approved focused checks from `src/control`:
 
 ```sh
-rebar3 eunit --module=parvi_clock_filter_tests,parvi_clock_mapping_tests,parvi_clock_tests,parvi_native_tests
+rebar3 eunit --module=ba_swarm_clock_filter_tests,ba_swarm_clock_mapping_tests,ba_swarm_clock_tests,ba_native_tests
 ```
 
 These use a loopback SNTP fixture and two supervised local OTP nodes. They cover
@@ -383,9 +390,9 @@ clock or acoustic-alignment result. App rebuild/deployment remains separate.
 
 ## Native cluster foundation (opt-in)
 
-`parvi:start(native_cluster)` starts the shared `parvi_pg`, `parvi_chat` and
-independent `parvi_clock_sup` branch under the standard supervisor. It must be called before
-the application starts. The default `parvi:start()` keeps the current apps'
+`ba_runtime:start(native_cluster)` starts the shared `ba_pg`, `ba_chat` and
+independent `ba_swarm_clock_sup` branch under the standard supervisor. It must be called before
+the application starts. The default `ba_runtime:start()` keeps the current apps'
 compatibility workers. The selected profile is application configuration and
 persists across application stops; unset `runtime_profile` to return to the
 default before restarting.
@@ -401,7 +408,7 @@ now runs this same core and verifies chat, observers, supervision and revocation
 across independent VMs. The profile does not itself introduce peers, establish
 WebRTC channels or build a connection mesh. Those remain carrier/admission and
 step-3 recovery work. The Mac source now enables `native_desk=true` alongside
-this profile: `parvi_sup` then also supervises `parvi_cluster_desk`, which owns
+this profile: `ba_sup` then also supervises `ba_legacy_cluster_desk`, which owns
 the trust worker, relay client and WebRTC channels. The native JSON bridge
 adapts this single cluster to the existing chat UI. iPhone sources now also
 select the native path by default, with an explicit relay build option; current
@@ -430,24 +437,24 @@ and [progress log](../../docs/PROGRESS.md) for the next hardware gate.
 
 ## Reception Desk transport
 
-`parvi_relay` now provides an outbound Gun WebSocket adapter with authenticated
+`ba_relay` now provides an outbound Gun WebSocket adapter with authenticated
 binary node identities, scoped mailboxes, verified WSS and reconnect. The shared
-OTP settings in `src/parvi.app.src` provide `default_reception_desk_url`, bundled
-with every native app. Override with `PARVI_RECEPTION_DESK_URL` at startup (an
+OTP settings in `src/ba_core.app.src` provide `default_reception_desk_url`, bundled
+with every native app. Override with `BA_RECEPTION_DESK_URL` at startup (an
 empty value selects local-only transport), or issue bridge `configure_desk` with `url`
 to explicitly start a fresh session. Swarm v2 invitations route through that desk;
 local v1 invitations remain the separate developer transport.
 
-`parvi_swarm_wire` defines the validated JSON schema. `parvi_swarms` owns admission,
+`ba_swarm_wire` defines the validated JSON schema. `ba_swarms` owns admission,
 membership, bounded histories and revocation for either transport. Its relay
-admission path is asynchronous. `parvi_network` reports relay connection presence
+admission path is asynchronous. `ba_network` reports relay connection presence
 without inventing direct distribution edges. The desk never receives Erlang
 cookies or executable terms. See [protocol](../../docs/RELAY_PROTOCOL.md) and
 [launch/deployment guide](../Services/ReceptionDesk/README.md).
 
 ## On-demand audio diagnostics
 
-`parvi_node_diagnostics:read(NodeNameBinary)` checks current native cluster
+`ba_node_diagnostics:read(NodeNameBinary)` checks current native cluster
 membership and already-connected OTP node names, then uses
 [`erpc:call/5`](https://www.erlang.org/doc/apps/kernel/erpc.html#call/5) with a
 one-second requested timeout to read that node's `snapshot/0`. No new atom or

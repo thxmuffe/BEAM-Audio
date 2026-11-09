@@ -448,7 +448,7 @@ static void statsReceived(GstPromise *promise, gpointer data) {
     _peer = gst_bin_get_by_name(GST_BIN(_pipeline), "peer");
     _volume = gst_bin_get_by_name(GST_BIN(_pipeline), "volume");
     _output = gst_bin_get_by_name(GST_BIN(_pipeline), "output");
-    _scheduleClock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "parvi-scheduled-output", NULL);
+    _scheduleClock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "ba_scheduled_output", NULL);
     gst_pipeline_use_clock(GST_PIPELINE(_pipeline),_scheduleClock);
     g_object_set(_output,"slave-method",GST_AUDIO_BASE_SINK_SLAVE_NONE,NULL);
     GstElement *depay = gst_bin_get_by_name(GST_BIN(_pipeline),"depay");

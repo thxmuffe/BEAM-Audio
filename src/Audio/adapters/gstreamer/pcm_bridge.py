@@ -6,7 +6,7 @@ import struct
 import sys
 import threading
 
-runtime = os.getenv('PARVI_GSTREAMER_RUNTIME')
+runtime = os.getenv('BA_GSTREAMER_RUNTIME')
 if runtime:
     runtime = Path(runtime).resolve()
     sys.path.insert(0, str(runtime / f'lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages'))

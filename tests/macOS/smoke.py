@@ -13,19 +13,19 @@ RUNTIME = Path(os.environ.get("OPENSOUND_ROOT", Path(__file__).resolve().parents
 class Instance:
     def __init__(self, index, desk=""):
         erts = next(RUNTIME.glob("erts-*"))
-        self.node = f"parvi_mac_{os.getpid() * 10 + index}@127.0.0.1"
+        self.node = f"ba_mac_{os.getpid() * 10 + index}@127.0.0.1"
         self.cookie = uuid.uuid4().hex
         env = dict(os.environ, ROOTDIR=str(RUNTIME), BINDIR=str(erts / "bin"),
-                   EMU="beam", PROGNAME="erl", ERL_EPMD_ADDRESS="127.0.0.1", PARVI_RECEPTION_DESK_URL="")
+                   EMU="beam", PROGNAME="erl", ERL_EPMD_ADDRESS="127.0.0.1", BA_RECEPTION_DESK_URL="")
         if desk is None:
-            env.pop("PARVI_RECEPTION_DESK_URL", None)  # Exercise the bundled default.
+            env.pop("BA_RECEPTION_DESK_URL", None)  # Exercise the bundled default.
         else:
-            env["PARVI_RECEPTION_DESK_URL"] = desk
+            env["BA_RECEPTION_DESK_URL"] = desk
         self.process = subprocess.Popen([
             str(erts / "bin/erlexec"), "-boot",
             str(RUNTIME / "releases/0.1.0/start"), "-noshell", "-name", self.node,
             "-setcookie", self.cookie, "-kernel", "inet_dist_use_interface", "{127,0,0,1}",
-            "-s", "parvi_bridge", "main"], env=env, stdin=subprocess.PIPE,
+            "-s", "ba_bridge", "main"], env=env, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, bufsize=0)
         self.buffer = b""
 

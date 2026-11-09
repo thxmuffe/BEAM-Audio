@@ -1,6 +1,6 @@
-# Authenticated Time and Swarm Offset — step 7
+# Swarm Clock and Playback Offset — step 7
 
-The `swarm_control` profile now starts a local `parvi_clock` under its existing
+The `swarm_control` profile now starts a local `ba_swarm_clock` under its existing
 clock supervisor, after control and before on-demand audio. It uses the Swarm
 authority as the initial pinned reference and Offset writer. Devices never elect
 an arbitrary reachable clock or promote themselves when the authority disappears.
@@ -15,7 +15,7 @@ Offset edit. Neither Passport membership, status access nor an audio grant impli
 these permissions. On the authority, for example:
 
 ```erlang
-ok = parvi_swarm_membership:grant(DeviceId,
+ok = ba_swarm_membership:grant(DeviceId,
     [<<"offset_write">>,<<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>]).
 ```
 
@@ -32,14 +32,14 @@ UTC accuracy. Configuration changes are retained in the running application's
 configuration; mapping/anchor state is never checkpointed.
 
 ```erlang
-parvi_clock:status().
-parvi_clock:offset_status().
-{ok,OffsetMs} = parvi_clock:offset().
-ok = parvi_clock:set_offset(250).
+ba_swarm_clock:status().
+ba_swarm_clock:offset_status().
+{ok,OffsetMs} = ba_swarm_clock:offset().
+ok = ba_swarm_clock:set_offset(250).
 %% A caller that observed revision 3 can explicitly compare-and-set:
-ok = parvi_clock:set_offset(300,3).
-{ok,UTC} = parvi_clock:now().
-{ok,LocalDeadline} = parvi_clock:to_monotonic(UTC).
+ok = ba_swarm_clock:set_offset(300,3).
+{ok,UTC} = ba_swarm_clock:now().
+{ok,LocalDeadline} = ba_swarm_clock:to_monotonic(UTC).
 ```
 
 Offset remains 5–30000 ms, initially 1000 ms. A local authority edit and an authorized
@@ -61,7 +61,7 @@ rather than silently retiming already assigned audio.
 ## Signed wire and timestamp measurement
 
 The existing signed control envelope adds `time.message`. Its flat payload schemas
-are defined in `parvi_swarm_time_protocol`; normal peer/session/Swarm/policy/sequence
+are defined in `ba_swarm_time_protocol`; normal peer/session/Swarm/policy/sequence
 checks still apply. Requests require their separate permission before dispatch.
 Unknown operations, extra fields and malformed timestamps are rejected. Replies
 must match the pinned authority, current control session, request ID, operation,
@@ -151,7 +151,7 @@ From `src/control`:
 
 ```sh
 rebar3 compile
-rebar3 eunit --module=parvi_clock_tests,parvi_clock_mapping_tests,parvi_clock_filter_tests,parvi_swarm_time_protocol_tests,parvi_swarm_control_protocol_tests
+rebar3 eunit --module=ba_swarm_clock_tests,ba_swarm_clock_mapping_tests,ba_swarm_clock_filter_tests,ba_swarm_time_protocol_tests,ba_swarm_control_protocol_tests
 ```
 
 From the core root:
@@ -159,7 +159,7 @@ From the core root:
 ```sh
 python3 tests/control/swarm-time-smoke.py
 python3 tests/control/swarm-time-smoke.py --production-cadence
-PARVI_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time
 ```
 
 The first proof uses two independent temporary Desk services and three unnamed

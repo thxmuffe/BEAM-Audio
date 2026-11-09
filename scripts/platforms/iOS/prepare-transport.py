@@ -140,16 +140,16 @@ def nif(name, sources, headers, host_nif):
         objects.append(obj)
 
 dtls = deps / 'ex_dtls/c_src/ex_dtls'
-nif('parvi_dtls', [*sorted(dtls.glob('*.c')), dtls / '_generated/nif/native.c', *common_sources],
+nif('ba_dtls', [*sorted(dtls.glob('*.c')), dtls / '_generated/nif/native.c', *common_sources],
     [dtls, dtls / '_generated/nif', *common_includes],
     host / 'ex_dtls/priv/bundlex/nif/native.so')
 srtp_nif = deps / 'ex_libsrtp/c_src/ex_libsrtp'
-nif('parvi_srtp', [*sorted(srtp_nif.glob('*.c')), srtp_nif / '_generated/nif/srtp.c', *common_sources],
+nif('ba_srtp', [*sorted(srtp_nif.glob('*.c')), srtp_nif / '_generated/nif/srtp.c', *common_sources],
     [srtp_nif, srtp_nif / '_generated/nif', srtp_headers.parent, srtp / 'include', srtp / 'crypto/include',
      build / 'srtp-build', *common_includes], host / 'ex_libsrtp/priv/bundlex/nif/srtp.so')
 crc = deps / 'crc/c_src/nif'
-nif('parvi_crc', sorted(crc.glob('*.c')), [crc, include], host / 'crc/priv/crc_nif.so')
-archive = lib / 'libparvi_transport.a'
+nif('ba_crc', sorted(crc.glob('*.c')), [crc, include], host / 'crc/priv/crc_nif.so')
+archive = lib / 'libba_transport.a'
 archive.unlink(missing_ok=True)
 run(['xcrun', 'ar', 'rcs', archive, *objects])
 

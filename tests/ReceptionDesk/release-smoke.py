@@ -15,7 +15,7 @@ def main():
         port = sock.getsockname()[1]
     release = ROOT / 'builds/Services/ReceptionDesk/bin/reception_desk.bat'
     assert release.exists(), 'Build mix release first'
-    env = {**os.environ, 'PORT': str(port), 'PARVI_BROKER_BIND': '127.0.0.1',
+    env = {**os.environ, 'PORT': str(port), 'BA_DESK_BIND': '127.0.0.1',
            'RELEASE_DISTRIBUTION': 'none', 'SECRET_KEY_BASE': 'local-release-smoke-' * 8}
     proc = subprocess.Popen([os.environ['COMSPEC'], '/d', '/c', str(release), 'start'],
                             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

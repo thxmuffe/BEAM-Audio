@@ -17,7 +17,7 @@ with socket.socket() as probe:
     probe.bind(("127.0.0.1", 0))
     port = probe.getsockname()[1]
 base = f"http://127.0.0.1:{port}"
-env = dict(os.environ, PARVI_BROKER_BIND="127.0.0.1", PARVI_BROKER_PORT=str(port))
+env = dict(os.environ, BA_DESK_BIND="127.0.0.1", BA_DESK_PORT=str(port))
 
 
 def start():
@@ -59,8 +59,8 @@ try:
         probe.bind(("127.0.0.1", 0))
         web_port = probe.getsockname()[1]
     web = subprocess.Popen(["bash", "src/Apps/WebApp/run.sh"], cwd=ROOT,
-                           env=dict(os.environ, PARVI_WEBAPP_PORT=str(web_port),
-                                    PARVI_RECEPTION_DESK_URL=base),
+                           env=dict(os.environ, BA_WEBAPP_PORT=str(web_port),
+                                    BA_RECEPTION_DESK_URL=base),
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(100):
         try:

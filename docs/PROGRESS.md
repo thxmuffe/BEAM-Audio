@@ -1,5 +1,46 @@
 # Progress
 
+## 2026-11-09 — Core naming and terminology cleanup before step 9
+
+Renamed core-owned Erlang modules/files, registered processes, OTP metadata,
+native exports and their script/test references from `parvi_*` to `ba_*`.
+The application is `ba_core`, facade `ba_runtime`, dependency application
+`ba_transport`, and configuration `BA_*` (`BA_DESK_*` for the Desk host).
+No old-name forwarding stack or configuration aliases were introduced.
+
+Clarified actual component names: `ba_swarm_clock*`, `ba_device_store`,
+`ba_media_session` for temporary transport, `ba_subscription` for persistent
+receive intent, and `ba_stream_handler_pcm` / `ba_stream_handler_opus` under the
+Stream Handler behaviour. Current PCM bindings are under `handlers/pcm/`, not
+labelled legacy. Historical trusted-cluster modules/profile documentation are
+explicitly distinguished from the secure Swarm API. Core Windows capture now
+uses `ba_audio_sup`, removing its product window-supervisor dependency.
+
+The user's 22 canonical components are defined in [TERMINOLOGY.md](TERMINOLOGY.md).
+[NAMING.md](NAMING.md) records the API/configuration migration and intentionally
+retained wire/identity spellings. Updated current guides, builders and repository
+instructions; preserved dated progress, historical decisions and product naming.
+Existing invitation schemes, cryptographic domains, media labels, Device Identity
+storage, checkpoint formats and public Desk address remain unchanged. Existing
+clock/filter/slew and Presentation Target arithmetic are preserved.
+
+Validation: warnings-as-errors core/Desk/transport compilation, 107 focused EUnit
+checks and 2 Phoenix Desk authentication/routing tests pass. Real headless two-Desk
+Passport/revocation, public WSS Director/Job/failure, sustained PCM/clock-rebind
+and native Opus decode/mix proofs pass under the new namespace. Probe snapshots
+now reject any loaded old core module, preventing stale generated artifacts from
+masking a missing renamed dependency. Naming checks cover all 117 project Erlang
+files; Python parsing, current documentation/source links and the C runtime bridge
+syntax (including native transport declarations) pass. The renamed supervisor
+test expectation now sorts names rather than assuming the previous lexical order.
+
+Limits: no full Apple/Windows native build, OpenSound app build/launch, audio
+hardware or deployment was performed. The OpenSound repository is unchanged and
+must adopt the new modules, `BA_*` launch environment, native symbols and artifact
+paths in step 9. Existing generated bundles are not renamed in place. Step-8
+physical timing/lease-renewal limitations remain. This cleanup is complete;
+**step 9 has not started**, and abandoned-Swarm recovery remains step 10.
+
 ## 2026-11-09 — Step 8: headless backend integration and verification
 
 Integrated Opus publications into the same authenticated catalogue, local Contracts,

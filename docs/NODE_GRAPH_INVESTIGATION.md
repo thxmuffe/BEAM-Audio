@@ -1,7 +1,7 @@
 # Native node-graph investigation
 
 2026-10-27. Investigated and exercised locally with Windows OTP 29.1.2,
-Reltool 1.1 and wxErlang 2.7. No Parvi application UI or running node was changed.
+Reltool 1.1 and wxErlang 2.7. No BEAM Audio application UI or running node was changed.
 
 ## Result
 
@@ -19,17 +19,17 @@ describes dragging, selection, locking, freezing and force-layout controls.
 
 `reltool_fgraph_win:new(ParentWindow, Options)` shares the caller's wx environment
 and returns `{GraphPid, Sizer}`. The second value is a **sizer**, not a panel.
-It can be attached to a panel inside a larger Parvi window.
+It can be attached to a panel inside a larger BEAM Audio window.
 
 The graph accepts asynchronous `add_node`, `del_node`, `change_node`, `add_link`
 and `del_link` calls. Node colours can be RGB tuples or separate outline/fill
-colours, so the existing RabbitMQ-derived Parvi status palette works directly.
+colours, so the existing RabbitMQ-derived BEAM Audio status palette works directly.
 Deleting a vertex removes its incident edges. Labels are generated from node keys.
 
-`tests/Windows/parvi_graph_probe.erl` compiled with warnings as errors and passed
+`tests/Windows/ba_graph_probe.erl` compiled with warnings as errors and passed
 native embedding, synthetic node/link addition and deletion, colour updates,
 continued force-layout execution, and cleanup. These were synthetic vertices,
-not observations of live Parvi connections.
+not observations of live BEAM Audio connections.
 
 ## Necessary adaptations
 
@@ -48,7 +48,7 @@ not observations of live Parvi connections.
 
 ## Recommendation
 
-Reuse the pinned OTP graph/layout implementation through a small Parvi-specific
+Reuse the pinned OTP graph/layout implementation through a small BEAM Audio-specific
 adapter or an attributed source adaptation. Avoid a browser UI and avoid writing
 a new force-layout algorithm. Keep topology state outside the disposable viewer.
 

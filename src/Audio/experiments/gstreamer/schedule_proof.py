@@ -110,7 +110,7 @@ def main():
             after = time.perf_counter_ns()
             host_ns = (before+after)//2
             # Fixture only: use native monotonic time as the local reference.
-            # App integration must instead supply parvi_clock's real bridge/target.
+            # App integration must instead supply ba_swarm_clock's real bridge/target.
             target = host_ns+1500000000
             request = {'target':{'local_handoff_time_ns':target,'revision':1,
                 'stream_id':'isolated-fixture','clock_timeline':'local-proof-only'},

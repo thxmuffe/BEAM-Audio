@@ -1,5 +1,11 @@
 # Building after the repository split
 
+Core module/application/configuration names now use `ba_*` / `ba_core` / `BA_*`.
+See [NAMING.md](NAMING.md) before rebuilding consumers. The OpenSound repository
+has not been migrated to those entry points; its app integration remains step 9.
+Old generated artifacts are not renamed in place, and no product app is needed
+for core compilation or the headless backend checks.
+
 ## Root build commands
 
 Both repositories now have `build.sh` (macOS host) and `build.ps1` (Windows host).
@@ -82,7 +88,7 @@ bash src/Apps/iOS/build.sh device native
 
 Mac output: `OpenSound/builds/macOS/Parvi.app`. iPhone unsigned verification
 output: `OpenSound/builds/iOS/Debug-iphoneos/Parvi.app`. Sign/install/run with
-`OpenSound/src/Apps/Parvi.xcworkspace` in Xcode; select **Parvi Both** to build the
+`OpenSound/src/Apps/BEAM Audio.xcworkspace` in Xcode; select **BEAM Audio Both** to build the
 Mac companion too. Runtime preparation may take time after an empty cache.
 Unsigned compilation does not install the app or prove playback.
 
@@ -121,7 +127,7 @@ are introduced by the split. No service deployment is needed for local repairs.
 ## Manual baseline check for this handoff
 
 1. Launch the rebuilt `OpenSound/builds/macOS/Parvi.app`.
-2. Open `OpenSound/src/Apps/Parvi.xcworkspace`, select the iPhone or **Parvi Both**
+2. Open `OpenSound/src/Apps/BEAM Audio.xcworkspace`, select the iPhone or **BEAM Audio Both**
    scheme and your physical iPhone, then Run to sign/install the current sources.
 3. On Windows, pull both repositories and run the Windows preparation/packaging
    commands above. Updating only OpenSound cannot update the core sources.

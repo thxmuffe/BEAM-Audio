@@ -35,7 +35,7 @@ static void wirePacket(uint8_t type, const void *data, uint32_t bytes) {
     writeBytes(header, sizeof(header)); writeBytes(data, bytes);
 }
 
-#ifdef PARVI_OPUS_COMPARISON
+#ifdef BA_OPUS_COMPARISON
 #include "opus_capture.inc"
 #else
 static void packet(uint8_t type, const void *data, uint32_t bytes) { wirePacket(type, data, bytes); }
@@ -96,11 +96,11 @@ public:
         if (output == kAudioObjectUnknown) throw Failure{-1, "No default output device"};
         NSString *uid = CFBridgingRelease(property<CFStringRef>(output, kAudioDevicePropertyDeviceUID));
         CATapDescription *description = [[CATapDescription alloc] initExcludingProcesses:@[] andDeviceUID:uid withStream:0];
-        description.name = @"Parvi default output";
+        description.name = @"BEAM Audio default output";
         description.privateTap = YES; description.muteBehavior = CATapUnmuted;
         check(AudioHardwareCreateProcessTap(description, &tap), "Create system audio tap (requires System Audio Recording permission)");
         NSDictionary *composition = @{
-            @kAudioAggregateDeviceNameKey: @"Parvi capture",
+            @kAudioAggregateDeviceNameKey: @"BEAM Audio capture",
             @kAudioAggregateDeviceUIDKey: NSUUID.UUID.UUIDString,
             @kAudioAggregateDeviceIsPrivateKey: @YES,
             @kAudioAggregateDeviceTapListKey: @[@{@kAudioSubTapUIDKey: description.UUID.UUIDString}],

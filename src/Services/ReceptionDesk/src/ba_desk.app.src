@@ -1,0 +1,9 @@
+{application, ba_desk, [
+    {description, "Local BEAM Audio node discovery directory"},
+    {vsn, "0.1.0"},
+    {registered, [ba_desk_sup, ba_desk_directory, ba_desk_http]},
+    {mod, {ba_desk_app, []}},
+    {applications, [kernel, stdlib, inets]},
+    {env, [{bind_address, {127,0,0,1}}, {port, 8765}]},
+    {licenses, ["Apache-2.0"]}
+]}.

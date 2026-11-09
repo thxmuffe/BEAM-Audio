@@ -9,7 +9,7 @@ services:
     envVars:
       - key: SECRET_KEY_BASE
         generateValue: true
-      - key: PARVI_BROKER_BIND
+      - key: BA_DESK_BIND
         value: 0.0.0.0
       - key: PORT
         value: 10000

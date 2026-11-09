@@ -4,7 +4,7 @@ param(
     [double]$RatePPM = 25,
     [string]$OpenSoundRoot = $env:OPENSOUND_ROOT,
     [string]$AudioRuntime,
-    [string]$OtpRoot = $env:PARVI_OTP_ROOT,
+    [string]$OtpRoot = $env:BA_OTP_ROOT,
     [string]$OutputFile
 )
 $ErrorActionPreference = 'Stop'

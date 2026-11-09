@@ -7,10 +7,10 @@ introductions. See [Mac usage and limitations](../../../docs/apps/macOS/README.m
 Probe drivers remain experimental. The older application transport below is
 retained for the current iPhone/Windows path and existing regression helpers.
 
-Parvi reuses **ex_webrtc 0.17.0** and **ex_sctp 0.1.3**, pinned in `mix.lock`.
-These third-party libraries implement WebRTC and SCTP. All Parvi transport
-logic is Erlang: `parvi_direct` owns peer routing and
-`src/control/src/parvi_peer_connection.erl` owns each connection's signalling and
+BEAM Audio reuses **ex_webrtc 0.17.0** and **ex_sctp 0.1.3**, pinned in `mix.lock`.
+These third-party libraries implement WebRTC and SCTP. All BEAM Audio transport
+logic is Erlang: `ba_direct` owns peer routing and
+`src/control/src/ba_peer_connection.erl` owns each connection's signalling and
 lifecycle, calling the library's public BEAM API directly. There is no custom
 Elixir peer module or language-interoperability adapter.
 
@@ -78,7 +78,7 @@ Mac and iPhone sources now package the native carrier and dependencies. Neither
 new app path has been verified running. iPhone uses target-built static NIFs;
 see [its preparation guide](../../../docs/apps/iOS/README.md). Device compilation/linkage
 passes; simulator native compilation and on-device connection remain unverified.
-In the older runtime profile, `parvi_direct` remains optional and the existing
+In the older runtime profile, `ba_direct` remains optional and the existing
 relay continues to work without those libraries.
 
 Although most protocol code is Elixir, this is not a 100% pure-language stack:

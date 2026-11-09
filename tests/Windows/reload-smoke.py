@@ -11,7 +11,7 @@ from smoke import Node, ROOT, REPO, APP_REPO, ERL, EBIN
 
 def main():
     erlc = ERL.with_name('erlc.exe')
-    tests = ROOT / 'parvi_reload_smoke.erl'
+    tests = ROOT / 'ba_reload_smoke.erl'
     build = (REPO / 'builds/intermediates/Windows').resolve()
     build.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='ui-reload-test-', dir=build) as temp:
@@ -29,15 +29,15 @@ def main():
             assert peer.request()['node'] == peer.name
             assert other.request()['node'] == other.name
             assert peer.request('connect', node=other.name, cookie=other.cookie)['error'] is None
-            env = {**os.environ, 'ERL_EPMD_ADDRESS': '127.0.0.1', 'PARVI_RECEPTION_DESK_URL': '',
-                   'PARVI_TEST_PEER': peer.name, 'PARVI_TEST_PEER_COOKIE': peer.cookie,
-                   'PARVI_TEST_OTHER': other.name,
-                   'PARVI_TEST_UI_SOURCE': str(APP_REPO / 'src/Apps/Windows/src/parvi_windows.erl')}
+            env = {**os.environ, 'ERL_EPMD_ADDRESS': '127.0.0.1', 'BA_RECEPTION_DESK_URL': '',
+                   'BA_TEST_PEER': peer.name, 'BA_TEST_PEER_COOKIE': peer.cookie,
+                   'BA_TEST_OTHER': other.name,
+                   'BA_TEST_UI_SOURCE': str(APP_REPO / 'src/Apps/Windows/src/parvi_windows.erl')}
             result = subprocess.run([str(ERL), '-noshell', '-noinput',
-                            '-name', f'parvi_windows_{os.getpid()}9@127.0.0.1',
+                            '-name', f'ba_windows_{os.getpid()}9@127.0.0.1',
                             '-setcookie', gui_cookie,
                             '-kernel', 'inet_dist_use_interface', '{127,0,0,1}',
-                            '-pa', str(ebin), '-s', 'parvi_reload_smoke', 'main'],
+                            '-pa', str(ebin), '-s', 'ba_reload_smoke', 'main'],
                            timeout=60, env=env, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True)
             print(result.stdout)

@@ -10,14 +10,14 @@ final class IOSWebRTCAudio {
     private let lock = NSLock()
     func start() throws -> UInt16 {
         var port: UInt16 = 0
-        listener = parvi_bridge_listen(&port)
+        listener = ba_bridge_listen(&port)
         guard listener >= 0 else { throw NSError(domain: "WebRTC audio", code: 1) }
-        setenv("PARVI_AUDIO_ENGINE", "libwebrtc", 1)
+        setenv("BA_AUDIO_ENGINE", "libwebrtc", 1)
         let fd = listener
         RTCInitializeSSL()
         DispatchQueue.global(qos: .userInitiated).async {
             while true {
-                let accepted = parvi_bridge_accept(fd)
+                let accepted = ba_bridge_accept(fd)
                 guard accepted >= 0 else { return }
                 self.lock.lock()
                 guard self.listener == fd else { self.lock.unlock(); close(accepted); return }
@@ -38,7 +38,7 @@ final class IOSWebRTCAudio {
 private final class NativeAudioConnection: NSObject, RTCPeerConnectionDelegate {
     private let socket: Int32
     private let writeLock = NSLock()
-    private let state = DispatchQueue(label: "org.opensound.parvi.native-audio-state")
+    private let state = DispatchQueue(label: "org.beam-audio.native-audio-state")
     private var closed = false
     private var factory: RTCPeerConnectionFactory?
     private var audioDevice: WebRTCPlaybackDevice?
@@ -138,7 +138,7 @@ private final class NativeAudioConnection: NSObject, RTCPeerConnectionDelegate {
             }
             let receivers = (pc?.receivers ?? []).filter { $0.track?.kind == "audio" }
             let seconds = milliseconds.map { NSNumber(value: $0 / 1000) }
-            let configured = !receivers.isEmpty && receivers.allSatisfy { ParviWebRTCSetMinimumDelay($0, seconds) }
+            let configured = !receivers.isEmpty && receivers.allSatisfy { ba_webrtc_set_minimum_delay($0, seconds) }
             minimumDelayControlAvailable = configured
             if configured { minimumDelayMS = milliseconds }
             send(["event": "minimum_delay", "configured": configured,

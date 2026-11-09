@@ -1,14 +1,18 @@
-# Cluster inspector
+# Historical trusted-cluster inspector
+
+This tool uses the old trusted Distributed Erlang boundary. It is not the scoped
+Swarm inspector planned for the OpenSound App in step 9. Its core modules now use
+`ba_*`; see [naming/migration](../../../docs/NAMING.md).
 
 A headless, admitted cluster member. Commands are JSON lines on stdin; replies
 are JSON lines on stdout, with logs on stderr. It uses the existing WebRTC OTP
 transport and `erpc`, without UI automation or an HTTP server.
 
 The command loop, node naming, session cookie, admission, rejoin and remote
-queries live in platform-independent Erlang (`parvi_inspector` and
-`parvi_node_api`). The platform hosts only provide runtime/library paths,
+queries live in platform-independent Erlang (`ba_inspector` and
+`ba_node_api`). The platform hosts only provide runtime/library paths,
 protected identity storage and process/stdin handling: Swift/Keychain on macOS,
-PowerShell/user DPAPI on Windows. Both call `parvi_inspector:boot/0` with the same
+PowerShell/user DPAPI on Windows. Both call `ba_inspector:boot/0` with the same
 JSON command interface. The Mac host must be rebuilt to pick up this entry point.
 
 ## Windows
@@ -37,9 +41,9 @@ prepared bundle without creating an identity or attempting admission:
 ```
 
 Then run with the same `-NativeLibRoot` and `-JoinFile invitation.txt` once;
-omit `-JoinFile` on later runs. `-OtpRoot` defaults to `PARVI_OTP_ROOT`, or the
+omit `-JoinFile` on later runs. `-OtpRoot` defaults to `BA_OTP_ROOT`, or the
 private runtime from Windows setup. `-NativeLibRoot` defaults to
-`PARVI_WINDOWS_NATIVE_LIB`, or `builds/intermediates/Windows/transport/beam/dev/lib`. The inspector
+`BA_WINDOWS_NATIVE_LIB`, or `builds/intermediates/Windows/transport/beam/dev/lib`. The inspector
 stores its own encrypted seed and membership under
 `%LOCALAPPDATA%\org.opensound.parvi\inspector`; `-StateDirectory` chooses another
 identity/state directory. Windows user DPAPI protects `identity.dpapi`; it is
@@ -188,7 +192,7 @@ Its name sorts after current app node names so it does not displace their master
 if it is the only available node, normal election rules apply. An offline saved
 member can affect clock coverage under the existing membership policy.
 
-The Erlang entry point is `parvi_node_api:request/1`, with binary JSON-style map
+The Erlang entry point is `ba_node_api:request/1`, with binary JSON-style map
 keys. Graph diagnostics use that resolver too; deployed apps acquire this small
 refactor on their next normal rebuild. Existing snapshot/audio endpoints can be
 called without rebuilding either app.
@@ -247,5 +251,5 @@ intent diagnostics, not measured speaker time or synchronization error. The
 broadcaster uses `audio_presentation_delay_ms` (existing default 250 ms), held for
 its lifetime; changing the setting requires restarting broadcast. No UI calibration
 or scheduled Opus output is implemented. The default path's quality/volume settings
-are unchanged. `parvi_audio_presentation:output_deadline/2` is policy only: a caller
+are unchanged. `ba_audio_presentation:output_deadline/2` is policy only: a caller
 must supply measured handoff-to-speaker delay in ns and implement native execution.
