@@ -30,83 +30,9 @@ request(JSON) ->
     end.
 
 swarm_request(JSON) ->
-    Reply = try
-        Request = json:decode(JSON),
-        Result = swarm_command(Request),
-        Response = case Result of
-            {ok, Data} -> (swarm_snapshot())#{<<"error">> => null, <<"result">> => Data};
-            ok -> (swarm_snapshot())#{<<"error">> => null};
-            null -> (swarm_snapshot())#{<<"error">> => null};
-            {error, Reason} -> (swarm_snapshot())#{<<"error">> => format_error(Reason)};
-            _ -> (swarm_snapshot())#{<<"error">> => Result}
-        end,
-        maps:merge(Response, maps:with([<<"request_id">>], Request))
-    catch
-        _:_ -> (swarm_snapshot())#{<<"error">> => <<"Invalid request or unavailable worker.">>}
-    end,
+    Reply=try ba_device_api:request(json:decode(JSON))
+          catch _:_ -> ba_device_api:request(#{}) end,
     iolist_to_binary(json:encode(Reply)).
-
-swarm_command(#{<<"method">> := <<"audio_lifecycle">>,<<"active">> := Active}) when is_boolean(Active) ->
-    application:set_env(ba_core,audio_suspended,not Active),
-    case whereis(ba_audio_receiver) of
-        undefined -> ok;
-        _ when Active -> ba_audio_receiver:resume();
-        _ -> ba_audio_receiver:suspend()
-    end,
-    case whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end;
-swarm_command(#{<<"method">> := <<"network_changed">>}) ->
-    case whereis(ba_audio_receiver) of undefined -> ok;_ -> ba_audio_receiver:network_changed(),ok end;
-swarm_command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}) ->
-    Key=case K of <<"speaker">> -> speaker;<<"microphone">> -> microphone;<<"broadcast">> -> broadcast end,
-    ba_app_session:capability(Key,B);
-swarm_command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);
-swarm_command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_swarm_chat:send(Text);
-swarm_command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_swarm_clock:set_offset(Offset);
-swarm_command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
-    {Pub,_}=ba_device_store:identity(),
-    case Device=:=binary:encode_hex(Pub) of true -> {ok,ba_device_handler:capabilities()};false -> ba_swarm_control:read_capabilities(Device) end;
-swarm_command(#{<<"method">> := <<"invitation">>}) -> ba_swarm_membership:invite(3600);
-swarm_command(#{<<"method">> := <<"snapshot">>}) -> null;
-swarm_command(#{<<"method">> := <<"list_contacts">>}) ->
-    {ok, ba_contacts:list()};
-swarm_command(#{<<"method">> := <<"save_contact">>,<<"value">> := Value,<<"name">> := Name}) ->
-    case ba_swarm_job:hex(Value,64) of
-        true -> ba_contacts:put(Value,Name);
-        false -> {_,I}=ba_swarm_passport:parse_invitation(Value),ba_contacts:put(maps:get(<<"authority">>,I),Name)
-    end;
-swarm_command(#{<<"method">> := <<"contact_from_invitation">>,<<"invitation">> := Link,<<"name">> := Name}) ->
-    {_,I}=ba_swarm_passport:parse_invitation(Link),ba_contacts:put(maps:get(<<"authority">>,I),Name);
-swarm_command(#{<<"method">> := <<"put_contact">>, <<"id">> := Id, <<"name">> := Name}) ->
-    ba_contacts:put(Id, Name);
-swarm_command(#{<<"method">> := <<"delete_contact">>, <<"id">> := Id}) ->
-    ba_contacts:delete(Id);
-swarm_command(#{<<"method">> := <<"put_group">>, <<"name">> := Name, <<"ids">> := Ids}) ->
-    ba_contacts:group(Name, Ids);
-swarm_command(#{<<"method">> := <<"delete_group">>, <<"name">> := Name}) ->
-    ba_contacts:delete_group(Name);
-swarm_command(#{<<"method">> := <<"create_swarm">>, <<"name">> := Name, <<"desks">> := Desks}) ->
-    ba_swarm:create(Name, Desks);
-swarm_command(#{<<"method">> := <<"join_swarm">>, <<"invitation">> := Link}) ->
-    ba_swarm:join(Link);
-swarm_command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
-    TTL = maps:get(<<"ttl">>, Req, 3600),
-    Selection = case Sel of
-        #{<<"group">> := G} -> {group, G};
-        Ids when is_list(Ids) -> Ids
-    end,
-    ba_swarm:invite(Selection, TTL);
-swarm_command(#{<<"method">> := <<"leave_swarm">>}) ->
-    ba_swarm:leave();
-swarm_command(#{<<"method">> := <<"end_swarm">>}) ->
-    ba_swarm:end_swarm();
-swarm_command(_) ->
-    {error, <<"Unsupported request.">>}.
-
-swarm_snapshot() -> ba_app_session:snapshot().
-
-format_error(Reason) when is_binary(Reason) -> Reason;
-format_error(Reason) when is_atom(Reason) -> atom_to_binary(Reason);
-format_error(Reason) -> iolist_to_binary(io_lib:format("~p", [Reason])).
 
 legacy_request(JSON) ->
     Reply = try

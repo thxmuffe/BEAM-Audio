@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>org.beam-audio.cli.audio-input</string>
+<key>CFBundleName</key><string>BEAM Audio CLI Capture</string>
+<key>NSMicrophoneUsageDescription</key><string>Publish microphone audio when you explicitly enable mic for a CLI Device.</string>
+<key>NSAudioCaptureUsageDescription</key><string>Publish system output when you explicitly enable broadcast for a CLI Device.</string>
+</dict></plist>

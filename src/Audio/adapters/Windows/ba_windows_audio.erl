@@ -34,7 +34,7 @@ notify_changed(_,_) -> ba_events:notify(audio_input).
 input_call(start, _, #{port := undefined} = S) ->
     Root = filename:dirname(filename:dirname(code:which(?MODULE))),
     try open_port({spawn_executable, filename:join(Root, "ba_audio_input.exe")},
-                  [binary, {packet, 4}, exit_status, use_stdio, hide]) of
+                  [binary, {packet, 4}, exit_status, use_stdio, hide,{env,ba_native_env:without_secrets()}]) of
         Port -> {reply, ok, #{state => starting, port => Port}}
     catch error:Reason -> {reply, {error, Reason}, S#{state := error, error => <<"Build ba_audio_input.exe first.">>}} end;
 input_call(start, _, S) -> {reply, ok, S};

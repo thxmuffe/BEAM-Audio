@@ -7,7 +7,8 @@ this checkout; the core builds without product UI sources.
 
 - [Canonical terminology](docs/TERMINOLOGY.md) and [core naming/migration](docs/NAMING.md)
 - [Active ten-step Swarm plan](docs/PLAN.md) and [progress/validation limits](docs/PROGRESS.md)
-- [Future ideas](docs/IDEAS.md) and [archived plans/proposals](docs/old-ideas/README.md)
+- [Headless Device CLI](src/Tools/CLI/README.md) (`bin/beam-audio`)
+- [Future ideas](docs/possibly-useful/IDEAS.md) and [discarded plans/proposals](docs/discarded-ideas/README.md)
 - [Build and repository layout](docs/BUILDING.md)
 - [Audio architecture](src/Audio/README.md) and [platform app guides](../OpenSound/docs)
 

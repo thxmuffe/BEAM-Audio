@@ -1,0 +1,107 @@
+%% Device-local commands shared by app bridges and CLI. Never network RPC.
+-module(ba_device_api).
+-export([request/1,readiness/1,readiness/2]).
+request(Request) when is_map(Request) ->
+    Reply=try command(Request) of
+        {ok,Data} -> (ba_app_session:snapshot())#{<<"error">> => null,<<"result">> => Data};
+        ok -> (ba_app_session:snapshot())#{<<"error">> => null};
+        null -> (ba_app_session:snapshot())#{<<"error">> => null};
+        {error,R} -> (ba_app_session:snapshot())#{<<"error">> => printable(R)}
+    catch _:_ -> (ba_app_session:snapshot())#{<<"error">> => <<"Invalid request or unavailable worker.">>} end,
+    maps:merge(Reply,maps:with([<<"request_id">>],Request));
+request(_) -> request(#{}).
+printable(R) when is_binary(R) -> R;
+printable(R) when is_atom(R) -> atom_to_binary(R);
+printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
+
+command(#{<<"method">> := <<"readiness">>}=R) ->
+    {ok,readiness(ba_app_session:snapshot(),maps:get(<<"previous">>,R,#{}))};
+command(#{<<"method">> := <<"audio_lifecycle">>,<<"active">> := Active}) when is_boolean(Active) ->
+    application:set_env(ba_core,audio_suspended,not Active),
+    case whereis(ba_audio_receiver) of
+        undefined -> ok;
+        _ when Active -> ba_audio_receiver:resume();
+        _ -> ba_audio_receiver:suspend()
+    end,
+    case whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end;
+command(#{<<"method">> := <<"network_changed">>}) ->
+    case whereis(ba_audio_receiver) of undefined -> ok;_ -> ba_audio_receiver:network_changed(),ok end;
+command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}) ->
+    Key=case K of <<"speaker">> -> speaker;<<"microphone">> -> microphone;<<"broadcast">> -> broadcast end,
+    ba_app_session:capability(Key,B);
+command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);
+command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_swarm_chat:send(Text);
+command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_swarm_clock:set_offset(Offset);
+command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
+    {Pub,_}=ba_device_store:identity(),
+    case Device=:=binary:encode_hex(Pub) of true -> {ok,ba_device_handler:capabilities()};false -> ba_swarm_control:read_capabilities(Device) end;
+command(#{<<"method">> := <<"invitation">>}) -> ba_swarm_membership:invite(3600);
+command(#{<<"method">> := <<"snapshot">>}) -> null;
+command(#{<<"method">> := <<"list_contacts">>}) ->
+    {ok, ba_contacts:list()};
+command(#{<<"method">> := <<"save_contact">>,<<"value">> := Value,<<"name">> := Name}) ->
+    case ba_swarm_job:hex(Value,64) of
+        true -> ba_contacts:put(Value,Name);
+        false -> {_,I}=ba_swarm_passport:parse_invitation(Value),ba_contacts:put(maps:get(<<"authority">>,I),Name)
+    end;
+command(#{<<"method">> := <<"contact_from_invitation">>,<<"invitation">> := Link,<<"name">> := Name}) ->
+    {_,I}=ba_swarm_passport:parse_invitation(Link),ba_contacts:put(maps:get(<<"authority">>,I),Name);
+command(#{<<"method">> := <<"put_contact">>, <<"id">> := Id, <<"name">> := Name}) ->
+    ba_contacts:put(Id, Name);
+command(#{<<"method">> := <<"delete_contact">>, <<"id">> := Id}) ->
+    ba_contacts:delete(Id);
+command(#{<<"method">> := <<"put_group">>, <<"name">> := Name, <<"ids">> := Ids}) ->
+    ba_contacts:group(Name, Ids);
+command(#{<<"method">> := <<"delete_group">>, <<"name">> := Name}) ->
+    ba_contacts:delete_group(Name);
+command(#{<<"method">> := <<"create_swarm">>, <<"name">> := Name, <<"desks">> := Desks}) ->
+    ba_swarm:create(Name, Desks);
+command(#{<<"method">> := <<"join_swarm">>, <<"invitation">> := Link}) ->
+    ba_swarm:join(Link);
+command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
+    TTL = maps:get(<<"ttl">>, Req, 3600),
+    Selection = case Sel of
+        #{<<"group">> := G} -> {group, G};
+        Ids when is_list(Ids) -> Ids
+    end,
+    ba_swarm:invite(Selection, TTL);
+command(#{<<"method">> := <<"leave_swarm">>}) ->
+    ba_swarm:leave();
+command(#{<<"method">> := <<"end_swarm">>}) ->
+    ba_swarm:end_swarm();
+command(_) ->
+    {error, <<"Unsupported request.">>}.
+
+
+%% Predicates are shared policy, not delays chosen by individual UIs/scripts.
+readiness(S) ->
+    Swarm=maps:get(swarm,S),Consent=maps:get(consent,S),
+    Rows=maps:get(audio,maps:get(handler,S,#{}),#{}),
+    Failures=[#{capability => K,error => maps:get(error,R,<<"Audio failed.">>)} || {K,R} <- maps:to_list(Rows),maps:get(state,R,waiting)=:=error],
+    Captures=lists:all(fun(K) -> not maps:get(K,Consent) orelse maps:get(state,maps:get(K,Rows,#{}),waiting)=:=running end,[microphone,broadcast]),
+    Authorized=maps:get(state,Swarm,idle)=:=authorized,
+    Clock=maps:get(state,maps:get(clock,S,#{}),idle),
+    ClockReady=Clock=:=synchronized andalso maps:get(ready,maps:get(offset_policy,maps:get(clock,S,#{}),#{}),false),
+    Subs=maps:get(subscriptions,maps:get(audio,S,#{}),#{}),
+    Receiving=lists:any(fun(I) -> maps:get(state,I,waiting)=:=active andalso maps:get(playing,I,false) andalso maps:get(mix_ready,I,false) end,maps:values(Subs)),
+    Progress=#{microphone => maps:get(blocks,maps:get(microphone,Rows,#{}),0),
+        broadcast => maps:get(blocks,maps:get(broadcast,Rows,#{}),0),
+        speaker => maps:get(rendered,maps:get(mixer,maps:get(audio,S,#{}),#{}),0)},
+    #{endpoint => true,admitted => Authorized,clock => ClockReady,consent => Consent,
+      membership_state => maps:get(state,Swarm,idle),
+      clock_status => maps:with([state,last_error,filter_sample_count,filter_required_samples,offset_policy,uncertainty_ns],maps:get(clock,S,#{})),
+      capabilities => Rows,desks => maps:get(desks,S,#{}),
+      receiving => Receiving,progress => Progress,
+      ready => Authorized andalso ClockReady andalso Captures andalso Failures=:=[],
+      failures => Failures}.
+
+flowing(#{ready := true,consent := Consent,progress := Progress,receiving := Receiving},Previous) ->
+    Enabled=[K || {K,true} <- maps:to_list(Consent)],
+    Enabled=/=[] andalso lists:all(fun(K) ->
+        (K=/=speaker orelse Receiving) andalso
+        maps:get(K,Progress,0)>maps:get(atom_to_binary(K),Previous,maps:get(K,Previous,0))
+    end,Enabled);
+flowing(_,_) -> false.
+
+readiness(S,Previous) ->
+    View=readiness(S),View#{'audio-flowing' => flowing(View,Previous)}.

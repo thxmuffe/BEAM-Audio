@@ -41,7 +41,7 @@ handle_call(start, _, #{port := undefined,kind := Kind} = S) ->
         {false, _} -> {reply, {error, <<"Mac audio helper is unavailable; rebuild the Mac app (macOS 14.2+).">>}, S};
         {_, {error, _}} -> {reply, {error,waiting_for_clock}, S};
         {true, ok} ->
-            try open_port({spawn_executable, helper(Kind)}, [binary, {packet, 4}, exit_status, use_stdio,{args,case Kind of microphone -> ["mic"];broadcast -> [] end}]) of
+            try open_port({spawn_executable, helper(Kind)}, [binary, {packet, 4}, exit_status, use_stdio,{env,ba_native_env:without_secrets()},{args,case Kind of microphone -> ["mic"];broadcast -> [] end}]) of
                 Port -> {reply, ok, (initial(Kind))#{port := Port, input := (ba_audio_input:new())#{state := starting}}}
             catch error:Reason -> {reply, {error, Reason}, S} end
     end;

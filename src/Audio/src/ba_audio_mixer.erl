@@ -23,6 +23,7 @@ clock() ->
     Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
     try {ok,Module:id(),Module:now()} catch _:_ -> {error,clock_unavailable} end.
 init([]) ->
+    process_flag(trap_exit,true),
     erlang:send_after(2,self(),render),
     {ok,#{mix => undefined,descriptors => #{},device => undefined,dropped => 0,rendered => 0,last_error => null}}.
 handle_call({renew,Id,Until},{Owner,_},#{owner := Owner,descriptors := Ds}=S) ->
@@ -86,8 +87,9 @@ handle_info(render,S) ->
     Next = render(S),erlang:send_after(2,self(),render),{noreply,Next};
 handle_info({'DOWN',Ref,process,_,_},#{owner_monitor := Ref} = S) ->
     {noreply,(maps:without([owner,owner_monitor],close(S)))#{mix := undefined,descriptors := #{}}};
-handle_info({tcp_closed,_},S) -> {stop,output_closed,S};
-handle_info({tcp_error,_,Reason},S) -> {stop,{output_error,Reason},S};
+handle_info({tcp_closed,Socket},#{device := {_,#{socket := Socket}}}=S) -> {noreply,output_failed(output_closed,S)};
+handle_info({tcp_error,Socket,_},#{device := {_,#{socket := Socket}}}=S) -> {noreply,output_failed(output_error,S)};
+handle_info({'EXIT',Pid,_},#{device := {_,#{pid := Pid}}}=S) -> {noreply,output_failed(output_closed,S)};
 handle_info(_,S) -> {noreply,S}.
 open(#{device := undefined,mix := Mix} = S) ->
     case {clock(),application:get_env(ba_core,audio_output_adapter)} of
@@ -139,13 +141,20 @@ render_authorized(Mono,Handoff,Now,A,Device,#{mix := Mix,descriptors := Ds}=S) -
                     case Handoff>erlang:monotonic_time(nanosecond) of
                         false -> drop(missed_packet_target,S#{mix := Next});
                         true ->
-                            case A:write(Device,Handoff,Frames,Output) of
+                            Result=try A:write(Device,Handoff,Frames,Output) catch exit:_ -> {error,output_closed} end,
+                            case Result of
                                 ok -> S#{mix := Next,rendered := maps:get(rendered,S)+1};
-                                {error,R} -> exit({output_write_failed,R})
+                                {error,_} -> output_failed(output_write_failed,S#{mix := Next})
                             end
                     end
             end
     end.
+%% An OS sink failing is not a failed publication or transport. Fence and flush
+%% affected playback only; notify its owner to retry through normal authorization.
+output_failed(Reason,S) ->
+    case maps:find(owner,S) of {ok,P} -> P ! {audio_output_failed,self(),Reason};error -> ok end,
+    drop(Reason,close((flush(S))#{mix := undefined,descriptors := #{}})).
+
 owner(Owner,#{owner := Owner} = S) -> S;
 owner(Owner,S) ->
     case maps:find(owner_monitor,S) of {ok,Ref} -> demonitor(Ref,[flush]);error -> ok end,
@@ -163,10 +172,11 @@ expire_inputs(#{descriptors := Ds,mix := Mix} = S) when Mix=/=undefined ->
 expire_inputs(S) -> S.
 now_ms() -> erlang:monotonic_time(millisecond).
 
+flush(#{mix := undefined}=S) -> S;
 flush(#{mix := Mix} = S) ->
     Next = maps:fold(fun(Id,I,Acc) -> ba_audio_mix:enable(Id,maps:get(enabled,I),Acc) end,Mix,maps:get(streams,Mix)),S#{mix := Next}.
 drop(R,S) -> ba_diagnostics:count(R,S#{dropped := maps:get(dropped,S)+1,last_error := R}).
-close(#{device := {A,D}} = S) -> A:close(D),S#{device := undefined};
+close(#{device := {A,D}} = S) -> try A:close(D) catch exit:_ -> ok end,S#{device := undefined};
 close(S) -> S.
 terminate(_,S) -> close(S),ok.
 format_status(Status) ->

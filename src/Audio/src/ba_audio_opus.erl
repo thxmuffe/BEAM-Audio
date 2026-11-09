@@ -7,7 +7,7 @@ open() ->
         false -> {error,opus_decoder_unavailable};
         true ->
             Python = os:getenv("BA_GSTREAMER_PYTHON"),Helper = os:getenv("BA_GSTREAMER_PCM_HELPER"),
-            Port = open_port({spawn_executable,Python},[binary,{packet,4},exit_status,use_stdio,
+            Port = open_port({spawn_executable,Python},[binary,{packet,4},exit_status,use_stdio,{env,ba_native_env:without_secrets()},
                 {busy_limits_msgq,{65536,131072}},{args,[Helper]}]),
             {ok,Port}
     end.

@@ -37,7 +37,7 @@ init([]) ->
 waiting(I) -> #{intent => I,state => waiting_for_source,session => undefined,retry_at => now_ms(),packets => 0}.
 handle_call(snapshot,_,S) ->
     View = maps:map(fun(_,R) ->
-        I = maps:get(intent,R),(maps:merge(I,maps:with([state,packets,source_paused,error],R)))#{transport => transport_status(R)}
+        I = maps:get(intent,R),(maps:merge(I,maps:with([state,packets,source_paused,error,mix_ready],R)))#{transport => transport_status(R)}
     end,maps:get(subscriptions,S)),
     Rows = [O#{device => Peer,source_key => Key} || {{Peer,Key},O} <- maps:to_list(maps:get(offers,S))],
     {reply,#{subscriptions => View,offers => Rows,publications => map_size(maps:get(sources,S)),
@@ -127,7 +127,21 @@ handle_info(tick,S) ->
         false -> S#{catalogs := Catalogs}
     end,
     Final = lists:foldl(fun(Id,Acc) -> restore_one(Id,true,Acc) end,Next,maps:keys(maps:get(subscriptions,Next))),
-    {noreply,Final};
+    Recovered=case maps:get(suspended,Final) of
+        true -> Final;
+        false -> Final#{subscriptions := maps:map(fun(Id,R) ->
+            case maps:get(state,R)=:=active andalso not maps:get(mix_ready,R,false) of
+                true -> start_playback(Id,R);false -> R
+            end end,maps:get(subscriptions,Final))}
+    end,
+    {noreply,Recovered};
+handle_info({audio_output_failed,Mixer,Reason},S) ->
+    case Mixer=:=whereis(ba_audio_mixer) of
+        true ->
+            Items=maps:map(fun(_,R) -> R#{mix_ready => false,error => Reason} end,maps:get(subscriptions,S)),
+            {noreply,ba_diagnostics:count(Reason,S#{subscriptions := Items})};
+        false -> {noreply,S}
+    end;
 handle_info({swarm_audio,Context,Id,P},S) ->
     try
         #{peer := Peer,session := Session,swarm := Swarm,deadline := Deadline} = Context,

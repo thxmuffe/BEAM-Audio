@@ -155,3 +155,21 @@ and automatic eligible peer reconnection while preserving authorization.
 App integration/listening is step 9; ordinary-member-first abandoned-Swarm
 recovery is step 10. Historical trusted app profiles remain unmigrated, but none
 of these backend checks starts their remote-OTP control stack.
+
+## Device CLI (no UI/hardware)
+
+Build `bash src/Tools/CLI/build.sh`, then:
+
+```sh
+python3 tests/control/cli-smoke.py
+python3 tests/control/cli-swarm-smoke.py
+```
+
+These use temporary identities/state and local sockets. The first creates two
+idle real VMs with all audio disabled; the second adds a temporary loopback Desk,
+explicit system clock reference and accelerated clock sampling for admission /
+scoped-inspection checks. Neither opens audio or contacts the shared Desk. They
+are not production clock/audio timing evidence. `ba_cli_tests` adds readiness,
+child-environment secret removal and supervised native-output failure checks.
+See [CLI usage/limitations](../../src/Tools/CLI/README.md) for real user-led audio
+commands and the explicitly deferred saved-configuration/undo work.

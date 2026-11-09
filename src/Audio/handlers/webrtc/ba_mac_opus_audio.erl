@@ -22,7 +22,7 @@ handle_call(start, _, #{state := stopped} = S) ->
     case os:getenv("BA_MAC_OPUS_HELPER") of
         false -> {reply, {error, <<"Rebuild the Mac app with the Opus comparison helper.">>}, S};
         Helper ->
-            Port = open_port({spawn_executable, Helper}, [binary, {packet,4}, exit_status, use_stdio]),
+            Port = open_port({spawn_executable, Helper}, [binary, {packet,4}, exit_status, use_stdio,{env,ba_native_env:without_secrets()}]),
             {reply, ok, S#{port => Port, state := starting}}
     end;
 handle_call(start, _, S) -> {reply, ok, S};

@@ -14,7 +14,7 @@ start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 init([]) ->
     Root = filename:dirname(filename:dirname(code:which(?MODULE))),
     Port = open_port({spawn_executable,filename:join([Root,"audio-runtime","python.exe"])},
-        [binary,exit_status,use_stdio,hide,{line,4096},
+        [binary,exit_status,use_stdio,hide,{env,ba_native_env:without_secrets()},{line,4096},
          {args,[filename:join(Root,"webrtc_output.py")]}]),
     receive
         {Port,{data,{eol,Line}}} ->

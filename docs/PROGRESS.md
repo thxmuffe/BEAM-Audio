@@ -1,5 +1,54 @@
 # Progress
 
+## 2026-11-09 — CLI steps 1–2 implemented; step 3 deferred
+
+Added `bin/beam-audio`, an OTP argparse/escript CLI and a supervised per-Device
+local endpoint. Named Devices are independent unnamed VMs, use protected random
+Unix sockets with instance checks, and live beyond command completion. Names have
+isolated owner-only identity directories; the CLI's new seed files are mode 0600,
+not Keychain-encrypted and never reuse app/Inspector identities. Only identity
+persists: no saved capability/settings profiles or runtime snapshots. New/inspect/
+get/set/wait/stop/kill commands exist. Legacy Inspector is unchanged and available
+through the explicit `inspect legacy` shell delegation. There is no remote
+shell/RPC, remote deployment, UI attachment, start-from-saved-config or undo.
+
+Moved current app Swarm commands into `ba_device_api`; app pipes and CLI share
+that allowlisted API. Added reusable explicit Device configuration and OTP
+readiness/progress predicates. JSON/scalar output is separated from errors/logs;
+waits expose membership, Desk, clock, capability and counter state. Admission is
+separate from clock/capture readiness and sustained scheduled-output progress.
+The first Device never waits for a future peer during creation. Production clock
+math/default cadence, per-packet targets and expiry/revocation rules are retained.
+
+Built the existing Mac audio adapters without product sources. Capture now checks
+OS mic permission in the native binding; CLI helper embeds usage descriptions.
+Mac product builder gets only the necessary AVFoundation link flags. Same-host
+capture excludes playback using the configured helper path across local CLI VMs,
+including later-started outputs; actual capture-loop behavior is unverified.
+Removed BA_IDENTITY_SEED from every audio helper's child environment. Known native
+output write/closure failures no longer crash Mixer or cascade into publication /
+transport teardown: affected playback is fenced/flushed and receiver retries with
+existing session/source identities. Unexpected Mixer/receiver crashes still have
+the broader existing supervision behavior; no full failure-domain rewrite claim.
+Policy/route changes still reset sessions, separate from ordinary lease renewal.
+
+Validation: CLI/helpers compile; 77 focused EUnit checks pass, including pure
+readiness/fresh-progress checks, synthetic helper-secret removal and an actual
+supervised output-closure check preserving Mixer/receiver/other child PIDs. The
+real two-idle-VM CLI smoke passes identity/process isolation, duplicate-name and
+wrong-instance rejection, private socket/seed modes, timeout and stop/kill cleanup.
+A second CLI check passes create/invite/join, shared readiness and scoped peer
+inspection through a temporary loopback Desk with all audio disabled and an
+explicit shortened system-clock fixture. No shared Desk, app launch, microphone,
+speaker, OS permission prompt or actual audio capture/playback was used. Hardware
+flow, permissions, sustained media and physical timing remain user-led acceptance;
+earlier 8d maximum-Offset continuity remains open. No deployment or commit made.
+
+Usage: [CLI README](../src/Tools/CLI/README.md). User explicitly deferred step 3;
+saved startup recipes, snapshots, automatic restoration and settings undo remain
+unimplemented.
+
+
 ## 2026-11-09 — CLI-first testing and shared OTP interface planned
 
 Reviewed the reorganized active/historical plans, current Inspector and audio /

@@ -1,6 +1,7 @@
 // Core Audio binding only: tap/device lifetime and bounded raw-buffer transfer.
 #import <Foundation/Foundation.h>
 #import <CoreAudio/CoreAudio.h>
+#import <AVFoundation/AVCaptureDevice.h>
 #import <CoreAudio/CATapDescription.h>
 #import <CoreAudio/AudioHardwareTapping.h>
 #include <mach/mach_time.h>
@@ -15,10 +16,28 @@
 #include <libproc.h>
 #include <unistd.h>
 #include <cstdlib>
+#include <poll.h>
 
 struct Failure { OSStatus code; const char *operation; };
 static void check(OSStatus code, const char *operation) {
     if (code != noErr) throw Failure{code, operation};
+}
+// OS authorization belongs to this binding too: headless hosts have no UI
+// requestAccess call. Cancelling the owning port must cancel pending startup.
+static void microphonePermission() {
+    if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] == AVAuthorizationStatusNotDetermined) {
+        dispatch_semaphore_t completed = dispatch_semaphore_create(0);
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
+            (void)granted; dispatch_semaphore_signal(completed);
+        }];
+        while (dispatch_semaphore_wait(completed, dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC)) != 0) {
+            pollfd owner = {STDIN_FILENO, POLLIN, 0};
+            if (poll(&owner, 1, 0) > 0 && (owner.revents & (POLLHUP | POLLERR | POLLNVAL)))
+                throw Failure{-1, "Microphone startup cancelled by Device"};
+        }
+    }
+    if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] != AVAuthorizationStatusAuthorized)
+        throw Failure{-1, "Microphone access denied; allow the launching terminal/helper in macOS Privacy & Security"};
 }
 static AudioObjectPropertyAddress address(AudioObjectPropertySelector selector,
         AudioObjectPropertyScope scope = kAudioObjectPropertyScopeGlobal) {
@@ -30,8 +49,8 @@ template<class T> static T property(AudioObjectID object, AudioObjectPropertySel
     check(AudioObjectGetPropertyData(object, &a, 0, nullptr, &size, &value), "Read audio property");
     return value;
 }
-// Exclude this Device's playback helpers from system capture, including helpers
-// started after the tap. This prevents received Swarm audio being republished.
+// Exclude local BEAM Audio playback helpers, including those started later by
+// another CLI Device on this host. Received audio must not enter a capture loop.
 static NSArray<NSNumber *> *localAudioProcesses() {
     auto a = address(kAudioHardwarePropertyProcessObjectList);
     UInt32 size = 0;
@@ -48,7 +67,11 @@ static NSArray<NSNumber *> *localAudioProcesses() {
         struct proc_bsdinfo info{};
         const bool sibling = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)
             && info.pbi_ppid == uint32_t(getppid());
-        if (pid == app || pid == getpid() || sibling) [excluded addObject:@(process)];
+        const char *outputHelper = getenv("BA_MAC_DEVICE_AUDIO_HELPER");
+        char executable[PROC_PIDPATHINFO_MAXSIZE] = {};
+        const bool localOutput = outputHelper && proc_pidpath(pid, executable, sizeof(executable)) > 0
+            && strcmp(executable, outputHelper) == 0;
+        if (pid == app || pid == getpid() || sibling || localOutput) [excluded addObject:@(process)];
     }
     return excluded;
 }
@@ -129,6 +152,7 @@ public:
     void run(bool mic = false) {
         microphone = mic;
         if (microphone) {
+            microphonePermission();
             device = property<AudioObjectID>(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultInputDevice);
             if (device == kAudioObjectUnknown) throw Failure{-1, "No default microphone"};
         } else {

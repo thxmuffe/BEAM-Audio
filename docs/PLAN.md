@@ -37,6 +37,11 @@ Product guides now live in [OpenSound docs](../../OpenSound/docs/README.md).
 
 ### Next three steps — CLI first (2026-11-09)
 
+**Status:** steps 1–2 are implemented for macOS with the validation limits below;
+step 3 is explicitly not started. [CLI build/usage and limits](../src/Tools/CLI/README.md).
+The source-tree escript uses installed OTP and existing native packaging; standalone
+relx distribution is deferred. Actual audio/permission acceptance remains user-led.
+
 These are the immediate implementation sequence, before further UI work. They
 refine the existing CLI follow-up in step 10; they do not restart steps 1–9 or
 require implementing the independent review's entire proposed redesign.
@@ -65,8 +70,13 @@ require implementing the independent review's entire proposed redesign.
    system/default-output audio, so avoid ambiguous `publish` as a fourth mode.
    Disabled capabilities must never open their hardware. Missing permissions or
    adapters report failure. Keep synthetic clock/sink fixtures explicitly separate.
-   **Exit:** create/start/inspect/stop one named Device without a UI, with honest
-   readiness/errors and cleanup. Help/status alone starts no audio or Swarm.
+   **Exit — verified without audio:** an idle real unnamed VM outlives its CLI,
+   is inspected/stopped through its protected endpoint and retains only its own
+   identity. Help creates no state. App bridge and CLI use `ba_device_api`; CLI
+   defaults all capabilities off. CLI identities currently use mode-0600 files
+   in mode-0700 directories, not app Keychain entries. No saved startup settings.
+   Native capture/output helpers compile, including explicit mic permission and
+   a same-host playback-helper exclusion; real permission/audio checks are pending.
 
 2. **Two-Device workflow, scoped inspection and deterministic waits.**
    Expose the commands below through `beam-audio`; keep argument names consistent.
@@ -85,10 +95,11 @@ require implementing the independent review's entire proposed redesign.
    beam-audio inspect device --devicename test1
    beam-audio inspect swarm --swarmid "$swarm"
    beam-audio stop device --all
-   beam-audio start device --devicename test1,test2
+   # Step 3, not implemented:
+   # beam-audio start device --devicename test1,test2
    ```
 
-   Syntax above is the **planned interface**, not existing commands. `get swarm`
+   Commands above exist except the explicitly commented step-3 restart command. `get swarm`
    returns the ID; joining requires an invitation, not that ID. Inspect Swarm
    uses a selected locally running authorized participant's view; an ID is not a
    credential or a globally queryable registry. Ambiguous/unavailable views must
@@ -113,13 +124,21 @@ require implementing the independent review's entire proposed redesign.
    clean scalar `get` output and logs on stderr; redact keys and invitation values
    from general inspection/logging. No fixed test clock in real-hardware mode.
 
-   **Exit:** speaker-only test1 plus broadcast-only test2 form a fresh Swarm and
-   automate Contracts/Subscriptions through existing OTP audio work. Scripted
-   waits replace guessed pauses. Run proportionate offline checks first; actual
-   audio/permissions/listening remain explicit user-led acceptance. Add targeted
-   output failure/worker restart, failed admission, no-Source and timeout cases.
-   Record join/route-change disruption separately from ordinary lease renewal.
-   Apply the two confirmed review corrections below within this increment.
+   **Implementation/validation:** independent CLI Device management, create/join,
+   scoped reads, capability changes, get, stop/kill and shared readiness/counter
+   waits are implemented. Two isolated CLI checks pass: idle VM/identity/socket /
+   timeout/cleanup behavior, and create/join/readiness/scoped reads through a
+   temporary loopback Desk. The latter explicitly uses a system-reference/short
+   clock fixture and disables all audio; it is not production-clock/media evidence.
+   77 focused EUnit checks pass. Helpers no longer inherit the signing seed.
+   Native output closure/write errors are now handled without restarting Mixer,
+   receiver, Sources or unrelated transport children, with explicit playback
+   fencing/flush/retry. Unexpected Mixer/receiver crashes still have the existing
+   wider supervision behavior; a full crash-domain redesign is not claimed.
+   The speaker/broadcast pair is wired to existing automatic Contracts/Subscriptions
+   and real OS helpers, but physical permission/capture/playback, sustained flow
+   and timing still await user checks. Membership/route changes still reset control
+   sessions; ordinary authorization renewal is distinct. Step 3 stays deferred.
 
 3. **OTP-owned saved configuration, restart and bounded settings undo.**
    Persist named Device configuration and an explicit test-group recipe: identity
@@ -159,17 +178,19 @@ examined an older commit and executed no tests. Its severity labels and suggeste
 sequence are not automatically accepted. The following current-source findings
 inform the CLI milestone:
 
-- **Confirmed: output failure can take down unrelated audio.** `ba_audio_sup`
+- **Partly corrected: output failures previously took down unrelated audio.** `ba_audio_sup`
   remains `rest_for_one` with Mixer/receiver before dynamic Sources/Media Sessions;
-  `ba_audio_mixer` exits on output-write failure. In step 2 isolate output/receive
-  failure from publication and unrelated sessions using ordinary supervisors and
-  explicit recovery/cleanup. Demonstrate retained unaffected process identities;
-  changing the supervisor strategy alone is not sufficient. Preserve revocation
-  fencing and independent packet targets; do not hide missed deadlines.
-- **Confirmed: helper processes inherit identity material.** Mac input/output and
-  Opus `open_port` calls do not scrub `BA_IDENTITY_SEED`. In step 2 remove signing
-  secrets from all child-helper environments and prove it with a synthetic helper;
-  native helpers have no signing role. Do not add a signer service/NIF for this.
+  `ba_audio_mixer` previously exited on output-write failure. Step 2 now handles
+  known OS output write/closure errors locally, fences/flushes affected playback
+  and retries through the receiver. A running-supervisor check retains Mixer,
+  receiver and unrelated Source/session sentinel identities. Revocation fencing
+  and packet targets are preserved. Unexpected Mixer/receiver crashes can still
+  trigger broader rest_for_one recovery; do not claim general isolation is solved.
+- **Corrected: helper processes inherited identity material.** Mac input/output and
+  Opus `open_port` calls previously did not scrub `BA_IDENTITY_SEED`. Step 2 now
+  removes it from every audio child-helper environment, including Windows and
+  the optional Opus comparison helper. A synthetic subprocess check verifies
+  absence while the parent retains its identity. No signer service/NIF was added.
 - **Confirmed: membership/route changes still reset control sessions.**
   `ba_swarm_membership:admit/5` bumps policy revision for a new member/route;
   `ba_swarm_control` resets sessions when its policy/routes change. This can
@@ -417,8 +438,9 @@ trusted-cluster code; it is not the current Swarm boundary.
    hardware was launched by the agent. The iOS migration now also compiles for
    user-led acceptance: [current iPhone behavior and limits](../../OpenSound/docs/iOS/README.md).
    It reuses the shared Swarm UI and Device Handler, with native mic/speaker and
-   iOS 27 system-picker audio broadcast. Windows remains unmigrated. The CLI hardware test
-   entry point below is planned, not implemented. Native mixing/RTP adoption and
+   iOS 27 system-picker audio broadcast. Windows remains unmigrated. CLI steps 1–2
+   are now implemented; the top section records evidence and remaining hardware
+   checks. Native mixing/RTP adoption and
    the earlier 8d maximum-Offset continuity qualification remain open.
 
    Integrate the new runtime and permission/state model into each app in that
@@ -586,10 +608,10 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Next: **CLI step 1 — shared OTP interface and one real headless Device**, then
-CLI step 2 (two Devices/inspection/waits/focused failure fixes), then CLI step 3
-(saved configuration/restart/settings undo). Resume user-led Mac/iPhone acceptance
-and Windows migration afterward. No app or audio hardware is launched merely to
+Next: **user-led CLI speaker/broadcast acceptance** using the new commands;
+steps 1–2 have the implementation/offline evidence above. Step 3 (saved startup
+configuration/restart/settings undo) is explicitly deferred at the user's request.
+Resume that step or further app work only when requested. No app or audio hardware is launched merely to
 update this plan. Keep the existing clock/per-packet target policy and ephemeral
 membership model; earlier 8d maximum-Offset and physical-output limits remain open.
 See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),

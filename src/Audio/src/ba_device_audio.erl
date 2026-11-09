@@ -57,8 +57,9 @@ reconcile(S) ->
             Speaker=case maps:get(speaker,Consent) of
                 false -> #{state => disabled};
                 true ->
-                    Failures=[R || {error,R} <- Playback],
-                    Playing=lists:any(fun(I) -> maps:get(playing,I,false) andalso maps:get(state,I)=:=active end,
+                    Failures=[R || {error,R} <- Playback]++[maps:get(error,I) || I <- maps:values(maps:get(subscriptions,NextView)),
+                        maps:get(playing,I,false),maps:is_key(error,I)],
+                    Playing=lists:any(fun(I) -> maps:get(playing,I,false) andalso maps:get(state,I)=:=active andalso maps:get(mix_ready,I,false) end,
                         maps:values(maps:get(subscriptions,NextView))),
                     case Failures of
                         [Reason|_] -> #{state => error,error => printable(Reason)};

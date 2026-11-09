@@ -17,7 +17,7 @@ close(#{pid := P}) -> try gen_server:stop(P) catch exit:_ -> ok end.
 init(Rate) ->
     process_flag(trap_exit,true),
     Port=open_port({spawn_executable,os:getenv("BA_MAC_DEVICE_AUDIO_HELPER")},
-        [binary,{packet,4},exit_status,use_stdio,{args,["output",integer_to_list(Rate)]}]),
+        [binary,{packet,4},exit_status,use_stdio,{env,ba_native_env:without_secrets()},{args,["output",integer_to_list(Rate)]}]),
     receive
         {Port,{data,<<1>>}} -> calibrate(Port);
         {Port,{data,<<3,_:32/little-signed,Error/binary>>}} -> port_close(Port),{stop,{native_output_open_failed,Error}};

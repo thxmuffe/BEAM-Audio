@@ -1,22 +1,23 @@
 %% Local app boundary. Consent is device-local; no remote caller can enable it.
 -module(ba_app_session).
--export([configure/0,consent/0,capability/2,snapshot/0,exclude/2,excluded/1,exclusions/0,contract/3,permissions/0]).
+-export([configure/0,configure/1,consent/0,capability/2,snapshot/0,exclude/2,excluded/1,exclusions/0,contract/3,permissions/0]).
 configure() ->
     case os:getenv("BA_PLATFORM") of
-        "mac" ->
-            application:set_env(ba_core,audio_automation,true),
-            application:set_env(ba_core,audio_capture_adapter,ba_mac_audio),
-            application:set_env(ba_core,audio_output_adapter,ba_mac_output),
-            application:set_env(ba_core,swarm_default_permissions,permissions()),
-            forget_snapshots();
-        "ios" ->
-            application:set_env(ba_core,audio_automation,true),
-            application:set_env(ba_core,audio_capture_adapter,ba_ios_input),
-            application:set_env(ba_core,audio_output_adapter,ba_ios_audio),
-            application:set_env(ba_core,swarm_default_permissions,permissions()),
-            forget_snapshots();
+        "mac" -> configure(#{platform => mac}),forget_snapshots();
+        "ios" -> configure(#{platform => ios}),forget_snapshots();
         _ -> ok
     end.
+configure(#{platform := Platform}=Options) ->
+    {Capture,Output}=case Platform of mac -> {ba_mac_audio,ba_mac_output};ios -> {ba_ios_input,ba_ios_audio} end,
+    application:set_env(ba_core,audio_automation,true),
+    application:set_env(ba_core,audio_capture_adapter,Capture),
+    application:set_env(ba_core,audio_output_adapter,Output),
+    application:set_env(ba_core,swarm_default_permissions,permissions()),
+    case maps:find(consent,Options) of
+        {ok,#{speaker := S,microphone := M,broadcast := B}=C} when is_boolean(S),is_boolean(M),is_boolean(B) -> application:set_env(ba_core,audio_consent,C);
+        error -> ok
+    end.
+
 permissions() -> [<<"capabilities_read">>,<<"job_offer">>,<<"offset_write">>,<<"status_read">>,
     <<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>].
 consent() -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false}).
@@ -41,6 +42,7 @@ snapshot() ->
     {Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
     Swarm=ba_swarm:status(),
     Base=#{profile => swarm_control,device => Id,swarm => Swarm,contacts => ba_contacts:list(),
+        desks => safe(fun ba_swarm_desks:status/0,#{}),
         default_desk => application:get_env(ba_core,default_reception_desk_url,<<>>),
         consent => consent(),excluded => exclusions(),messages => [],devices => [],jobs => [],
         audio => #{},clock => #{state => idle},passport => #{}},
