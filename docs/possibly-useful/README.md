@@ -1,3 +1,10 @@
 # Possibly useful ideas
 
-Ideas that were explored or considered, but are not part of the active implementation path yet. These are candidates for future revisit, not current work.
+These items are not active work, but they may still be useful for future design or platform work.
+
+Moved content:
+
+- audio-system-trust-and-coordination.md
+- notes 20261026.md
+- IDEAS.md
+- RabbitMQ plans.docx

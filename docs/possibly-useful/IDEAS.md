@@ -1,26 +1,33 @@
 # Ideas for later
 
-These are deferred possibilities, outside the [active nine-step Swarm
-plan](PLAN.md). They add no prerequisites or implementation commitments.
-Original discussions are preserved in [old-ideas/](old-ideas/README.md).
+These are deferred possibilities, outside the [active architecture plan](PLAN.md).
+They add no prerequisites or implementation commitments.
+
+The repository now uses three buckets for non-active concepts:
+- [discarded-ideas/](../discarded-ideas/README.md): intentionally rejected for the
+  current architecture and not expected to return without a fresh decision.
+- [possibly-useful/](README.md): ideas worth revisiting later,
+  but not part of the active implementation path.
+- [old-ideas/](../old-ideas/README.md): retained as historical provenance only.
+  This is not a planning area and should not be used as guidance for current work.
 
 ## Longer-term directions
 
 - Discrete multichannel/home cinema, spatial/object/ambisonic rendering,
-  upmixing and video lip-sync: [cinema vision](old-ideas/CINEMA_SYSTEMS.md).
+  upmixing and video lip-sync: [cinema vision](../discarded-ideas/CINEMA_SYSTEMS.md).
 - DSP algorithms, room EQ, crossovers and acoustic feedback/calibration during
-  music: [earlier idea record](old-ideas/PLAN-before-swarm-2026-11-08.md#audio-and-calibration-ideas--recorded-2026-10-30).
+  music: [earlier idea record](../discarded-ideas/PLAN-before-swarm-2026-11-08.md#audio-and-calibration-ideas--recorded-2026-10-30).
   The current plan's test Workers and local multi-stream mixer do not require
   implementing these systems.
 - Federation, recursive groups, Director failover and large-event routing/time
-  distribution: [coordination discussion](old-ideas/audio-system-trust-and-coordination.md).
+  distribution: [coordination discussion](audio-system-trust-and-coordination.md).
   Several Desks for one Swarm remain in current step 5.
 - Additional native backends, lossless formats, general capability negotiation,
   AES67/PTP interoperability, browser work and new platforms:
-  [earlier provider proposal](old-ideas/BEAM_Audio_Codex_Implementation_Spec.md)
-  and [historical plan](old-ideas/PLAN-before-swarm-2026-11-08.md).
+  [earlier provider proposal](../discarded-ideas/BEAM_Audio_Codex_Implementation_Spec.md)
+  and [historical plan](../discarded-ideas/PLAN-before-swarm-2026-11-08.md).
 - Accounts, paid tiers, turnkey hardware and managed services:
-  [business ideas](old-ideas/BUSINESS_MODEL.md). Prices, capacities and feature
+  [business ideas](../discarded-ideas/BUSINESS_MODEL.md). Prices, capacities and feature
   claims there are proposals, not a product specification.
 
 ## Receiver accountability and periodic contract reports

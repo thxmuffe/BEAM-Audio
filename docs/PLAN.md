@@ -5,8 +5,10 @@
 This is the **next architecture roadmap** for BEAM Audio. It supersedes the older
 trusted-cross-device-OTP-cluster design as the *target architecture*. Reuse useful
 Mac/iPhone and Windows code without preserving old architecture solely for
-compatibility. Superseded plans and exploratory proposals
-are preserved in [old-ideas/](old-ideas/README.md). Build in small independently
+compatibility. Superseded plans and exploratory proposals are preserved in
+[old-ideas/](old-ideas/README.md), while current non-active topics are classified
+under [discarded-ideas/](discarded-ideas/README.md) and
+[possibly-useful/](possibly-useful/README.md). Build in small independently
 verifiable increments; do not attempt a large-scale network optimization in
 this phase.
 

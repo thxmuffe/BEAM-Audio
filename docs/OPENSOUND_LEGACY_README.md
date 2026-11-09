@@ -34,7 +34,7 @@ Rebuilt apps connect automatically using the shared OTP settings in
 `src/control/src/parvi.app.src`; `PARVI_RECEPTION_DESK_URL` overrides the default.
 The full browser [WebApp](apps/WebApp/README.md) remains deferred.
 
-The newer [Parvi Audio handover](old-ideas/notes%2020261026.md) sets the immediate goal:
+The newer [Parvi Audio handover](possibly-useful/notes%2020261026.md) sets the immediate goal:
 real Erlang chat on Mac and iPhone, before audio. The first Mac step is implemented
 in [src/control/](src/control/README.md), with supervised chat actors and a two-node local
 smoke test. iPhone runtime execution is verified on the physical phone; see the

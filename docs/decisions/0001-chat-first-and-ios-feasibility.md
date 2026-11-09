@@ -4,7 +4,7 @@ Date: 2026-10-26. Status: Mac baseline implemented; iOS recommendation provision
 
 ## Scope and decision
 
-The newer [handover](../old-ideas/notes%2020261026.md) explicitly defers audio and starts
+The newer [handover](../possibly-useful/notes%2020261026.md) explicitly defers audio and starts
 with Erlang chat on Mac and iPhone. Follow that scope before the older audio
 milestones in [PLAN.md](../PLAN.md). Keep the original audio plans as future
 research, rather than presenting chat as a synchronization experiment.
