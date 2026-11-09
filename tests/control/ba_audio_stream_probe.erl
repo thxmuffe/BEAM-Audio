@@ -6,24 +6,48 @@ now() -> {ok,erlang:system_time(nanosecond)}.
 status() -> #{state => synchronized,role => master,last_sync => erlang:monotonic_time(nanosecond),filtered_utc_time => erlang:system_time(nanosecond)}.
 to_monotonic(Time) -> {ok,Time-erlang:time_offset(nanosecond)}.
 from_monotonic(Time) -> {ok,Time+erlang:time_offset(nanosecond)}.
-open(_) -> {ok,#{latency_ns => 0}}.
-write(_,Time,Frames,PCM) ->
-    Values = [V || <<V:32/little-float>> <= PCM],
+open(_) -> {ok,#{latency_ns => 0,observer => whereis(ba_audio_test_sink)}}.
+write(#{observer := Observer},Time,Frames,PCM) ->
     Clock = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
     {ok,Target} = Clock:from_monotonic(Time),{ok,Written} = Clock:now(),
-    Record = #{target_ns => Target,frames => Frames,
-        peak => lists:max([abs(V) || V <- Values]),first => hd(Values),
-        write_ns => Written},
-    ets:insert(ba_audio_test_output,{erlang:unique_integer([positive,monotonic]),Record}),
-    case ets:info(ba_audio_test_output,size)>128 of true -> ets:delete(ba_audio_test_output,ets:first(ba_audio_test_output));false -> ok end,ok.
+    case process_info(Observer,message_queue_len) of
+        {message_queue_len,N} when N<128 ->
+            Observer ! {output,#{target_ns => Target,frames => Frames,write_ns => Written},PCM},ok;
+        _ -> {error,output_probe_overloaded}
+    end.
+start_observer() ->
+    register(ba_audio_test_sink,spawn_link(fun observe/0)).
+observe() ->
+    receive
+        {output,Header,PCM} ->
+            Values = [V || <<V:32/little-float>> <= PCM],
+            Record = Header#{peak => lists:max([abs(V) || V <- Values]),first => hd(Values),
+                minimum => lists:min(Values),maximum => lists:max(Values)},
+            update_stats(Record),
+            ets:insert(ba_audio_test_output,{erlang:unique_integer([positive,monotonic]),Record}),
+            case ets:info(ba_audio_test_output,size)>128 of
+                true -> ets:delete(ba_audio_test_output,ets:first(ba_audio_test_output));false -> ok
+            end,
+            observe();
+        {barrier,Ref,Caller} -> Caller ! {Ref,ok},observe()
+    end.
+output_barrier() ->
+    Ref = make_ref(),Caller = self(),Observer = whereis(ba_audio_test_sink),
+    %% Order the barrier behind every accepted write from the Mixer process.
+    sys:replace_state(ba_audio_mixer,fun(S) -> Observer ! {barrier,Ref,Caller},S end),
+    receive {Ref,ok} -> ok after 5000 -> error(output_probe_timeout) end.
 close(_) -> ok.
 command(#{<<"op">> := <<"swarm_audio_prepare">>}) ->
     _ = ets:new(ba_audio_test_output,[named_table,public,ordered_set]),
+    _ = ets:new(ba_audio_test_stats,[named_table,public]),
+    start_observer(),
     application:unset_env(ba_core,audio_clock_adapter),
     application:set_env(ba_core,audio_output_adapter,?MODULE),
     result(ba_audio_sup:ensure_started());
 command(#{<<"op">> := <<"audio_prepare">>}) ->
     _ = ets:new(ba_audio_test_output,[named_table,public,ordered_set]),
+    _ = ets:new(ba_audio_test_stats,[named_table,public]),
+    start_observer(),
     application:set_env(ba_core,audio_clock_adapter,?MODULE),
     application:set_env(ba_core,audio_output_adapter,?MODULE),
     result(ba_audio_sup:ensure_started());
@@ -31,9 +55,18 @@ command(#{<<"op">> := <<"audio_restart_receiver">>}) ->
     Old = whereis(ba_audio_receiver),Ref = monitor(process,Old),exit(Old,kill),
     receive {'DOWN',Ref,process,Old,_} -> ok after 1000 -> error(receiver_not_down) end,
     await_receiver(Old,100),#{ok => true};
+command(#{<<"op">> := <<"audio_ids">>}) ->
+    S = sys:get_state(ba_audio_receiver),
+    #{subscriptions => maps:map(fun(_,R) -> pid_string(maps:get(session,R)) end,maps:get(subscriptions,S)),
+      providers => lists:sort([pid_string(maps:get(session,R)) || R <- maps:values(maps:get(providers,S))]),
+      sources => maps:map(fun(_,E) -> #{pid => pid_string(maps:get(pid,E)),incarnation => maps:get(incarnation,maps:get(offer,E))} end,maps:get(sources,S))};
+command(#{<<"op">> := <<"audio_stats">>}) ->
+    output_barrier(),
+    case ets:lookup(ba_audio_test_stats,summary) of [{_,V}] -> V;[] -> #{frames => 0} end;
+command(#{<<"op">> := <<"audio_reset_stats">>}) -> output_barrier(),ets:delete_all_objects(ba_audio_test_stats),#{ok => true};
 command(#{<<"op">> := <<"audio_snapshot">>}) -> ba_audio_receiver:snapshot();
-command(#{<<"op">> := <<"audio_output">>}) -> #{blocks => [R || {_,R} <- ets:tab2list(ba_audio_test_output)]};
-command(#{<<"op">> := <<"audio_clear_output">>}) -> ets:delete_all_objects(ba_audio_test_output),#{ok => true};
+command(#{<<"op">> := <<"audio_output">>}) -> output_barrier(),#{blocks => [R || {_,R} <- ets:tab2list(ba_audio_test_output)]};
+command(#{<<"op">> := <<"audio_clear_output">>}) -> output_barrier(),ets:delete_all_objects(ba_audio_test_output),#{ok => true};
 command(#{<<"op">> := <<"publish_opus">>,<<"source">> := Key,<<"fixture">> := File}) ->
     D = #{encoding => opus,sample_format => opus,sample_rate => 48000,channel_count => 2,clock => clock_id(),
         stream_handler => webrtc_audio_opus,rtp_timestamp_semantics => global_playback_48k_v1},
@@ -103,3 +136,18 @@ pcm(Key,Value,Frames) ->
 
 fixture(<<>>,Acc) -> lists:reverse(Acc);
 fixture(<<Size:32,Packet:Size/binary,Rest/binary>>,Acc) -> fixture(Rest,[Packet|Acc]).
+
+pid_string(P) when is_pid(P) -> list_to_binary(pid_to_list(P));
+pid_string(_) -> null.
+update_stats(#{target_ns := Target,frames := Frames,peak := Peak,minimum := Min,maximum := Max,write_ns := Written}) ->
+    Old = case ets:lookup(ba_audio_test_stats,summary) of
+        [{_,V}] -> V;
+        [] -> #{frames => 0,blocks => 0,gaps => 0,late => 0,bad_mix => 0,min_peak => Peak,max_peak => Peak,next => Target,first_target => Target}
+    end,
+    Next = Old#{frames := maps:get(frames,Old)+Frames,blocks := maps:get(blocks,Old)+1,
+        gaps := maps:get(gaps,Old)+case abs(Target-maps:get(next,Old))>22000 of true -> 1;false -> 0 end,
+        late := maps:get(late,Old)+case Written>=Target of true -> 1;false -> 0 end,
+        bad_mix := maps:get(bad_mix,Old)+case abs(Min-0.75)>0.0001 orelse abs(Max-0.75)>0.0001 of true -> 1;false -> 0 end,
+        min_peak := min(Peak,maps:get(min_peak,Old)),max_peak := max(Peak,maps:get(max_peak,Old)),
+        next := Target+Frames*1000000000 div 48000},
+    ets:insert(ba_audio_test_stats,{summary,Next}).

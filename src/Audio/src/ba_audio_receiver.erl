@@ -37,12 +37,14 @@ init([]) ->
 waiting(I) -> #{intent => I,state => waiting_for_source,session => undefined,retry_at => now_ms(),packets => 0}.
 handle_call(snapshot,_,S) ->
     View = maps:map(fun(_,R) ->
-        I = maps:get(intent,R),maps:merge(I,maps:with([state,packets,source_paused,error],R))
+        I = maps:get(intent,R),(maps:merge(I,maps:with([state,packets,source_paused,error],R)))#{transport => transport_status(R)}
     end,maps:get(subscriptions,S)),
     Rows = [O#{device => Peer,source_key => Key} || {{Peer,Key},O} <- maps:to_list(maps:get(offers,S))],
     {reply,#{subscriptions => View,offers => Rows,publications => map_size(maps:get(sources,S)),
-             providers => map_size(maps:get(providers,S)),mixer => ba_audio_mixer:status(),
-             rejected => maps:get(rejected,S)},S};
+             providers => map_size(maps:get(providers,S)),
+             provider_status => [#{peer => maps:get(peer,maps:get(context,R)),source => maps:get(source,R),
+                 transport => transport_status(R)} || R <- maps:values(maps:get(providers,S))],mixer => ba_audio_mixer:status(),
+             rejected => maps:get(rejected,S),diagnostics => ba_diagnostics:view(S)},S};
 handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pid)=:=node(),map_size(Sources)<16 ->
     try
         Offer = gen_server:call(Pid,describe,100),Key = maps:get(source_key,Offer),
@@ -59,8 +61,13 @@ handle_call({contract,Direction,Peer,Key,Id,Revision},_,#{contracts := Contracts
         true = is_integer(Revision) andalso Revision>0 andalso Revision=<9007199254740991,
         ContractKey = {Direction,Peer,Key},
         true = maps:is_key(ContractKey,Contracts) orelse map_size(Contracts)<32,
-        Next = stop_contract(ContractKey,S),
-        {reply,ok,Next#{contracts := Contracts#{ContractKey => #{id => Id,revision => Revision}}}}
+        Contract = #{id => Id,revision => Revision},
+        case maps:get(ContractKey,Contracts,undefined) of
+            Contract -> {reply,ok,S};
+            #{id := Id,revision := Old} when Revision<Old -> {reply,{error,stale_contract},S};
+            _ -> Next = stop_contract(ContractKey,S),
+                 {reply,ok,Next#{contracts := Contracts#{ContractKey => Contract}}}
+        end
     catch _:_ -> {reply,{error,invalid_contract},S} end;
 handle_call({clear_contract,Direction,Peer,Key},_,S) when Direction=:=publish;Direction=:=receive_audio ->
     C = {Direction,Peer,Key},Next = stop_contract(C,S),
@@ -129,6 +136,15 @@ handle_info({swarm_audio,Context,Id,P},S) ->
         incoming(Context,Id,P,S)
     of Next -> {noreply,Next}
     catch _:_ -> {noreply,reject(S)} end;
+handle_info({audio_session_renewed,#{peer := Peer,session := Session,deadline := Until}},S) ->
+    %% The authenticated owner emits this only after a fresh two-way nonce proof.
+    case context(Peer) of
+        {ok,#{session := Session,deadline := Until}} ->
+            Subs = maps:map(fun(Id,R) -> renew_media(Id,Peer,Session,Until,R) end,maps:get(subscriptions,S)),
+            Providers = maps:map(fun(_,R) -> renew_media(undefined,Peer,Session,Until,R) end,maps:get(providers,S)),
+            {noreply,S#{subscriptions := Subs,providers := Providers}};
+        _ -> {noreply,reject(S)}
+    end;
 handle_info({audio_session_down,Peer,Session},S) ->
     Next = stop_matching(fun(R) -> scoped(Peer,Session,R) end,S),
     Offers = maps:filter(fun({P,_},_) -> P=/=Peer end,maps:get(offers,Next)),
@@ -154,11 +170,12 @@ handle_info({audio_transport,Pid,open},S) ->
 handle_info({audio_pcm,Pid,H,PCM},S) ->
     case transport(Pid,S) of
         {receiver,Id,#{intent := I,descriptor := D,context := #{deadline := Deadline}} = R} ->
-            case maps:get(playing,I) andalso maps:get(mix_ready,R,false) andalso not maps:get(source_paused,R,false) andalso now_ms()<Deadline of
+            Delivery = case maps:get(playing,I) andalso maps:get(mix_ready,R,false) andalso not maps:get(source_paused,R,false) andalso now_ms()<Deadline of
                 true -> ba_audio_mixer:push(Id,ba_audio_opus:descriptor(D),H,PCM);
-                false -> ok
+                false -> {error,playback_not_enabled}
             end,
-            {noreply,put_sub(Id,R#{packets := maps:get(packets,R)+1},S)};
+            Next = case Delivery of {error,playback_not_enabled} -> S;{error,R0} -> ba_diagnostics:count(R0,S);_ -> S end,
+            {noreply,put_sub(Id,R#{packets := maps:get(packets,R)+1},Next)};
         _ -> {noreply,reject(S)}
     end;
 handle_info({publication_rebound,Pid,Offer},#{sources := Sources}=S) ->
@@ -186,11 +203,17 @@ handle_info({publication_state,Pid,B},#{sources := Sources} = S) ->
         _ -> {noreply,reject(S)}
     end;
 handle_info({'DOWN',_,process,Pid,_},#{control := Pid} = S) -> {stop,normal,S};
-handle_info({'DOWN',Ref,process,Pid,_},S) ->
+handle_info({'DOWN',Ref,process,Pid,Reason},S) ->
     Next = case transport(Pid,S) of
-        {receiver,Id,R} -> put_sub(Id,closed(Id,R),S);
+        {receiver,Id,R} ->
+            Failure = ba_diagnostics:reason(Reason),
+            case Failure of
+                normal -> put_sub(Id,closed(Id,R),S);
+                _ -> put_sub(Id,(closed(Id,R))#{error => Failure},ba_diagnostics:count(Failure,S))
+            end;
         {provider,Key,R} -> _ = wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),
-            S#{providers := maps:remove(Key,maps:get(providers,S))};
+            Removed = S#{providers := maps:remove(Key,maps:get(providers,S))},
+            case Reason of normal -> Removed;_ -> ba_diagnostics:count(Reason,Removed) end;
         none -> S
     end,
     Sources = maps:filter(fun(_,#{monitor := M}) -> M=/=Ref end,maps:get(sources,Next)),
@@ -400,7 +423,7 @@ stop_contract({Direction,Peer,Key},S) ->
 disconnect_all(S) -> stop_matching(fun(_) -> true end,S).
 persist(S) ->
     ok = ba_subscription:save(maps:map(fun(_,R) -> maps:get(intent,R) end,maps:get(subscriptions,S))),S.
-reject(S) -> S#{rejected := maps:get(rejected,S)+1}.
+reject(S) -> ba_diagnostics:count(invalid_control_or_attempt,S#{rejected := maps:get(rejected,S)+1}).
 fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
 now_ms() -> erlang:monotonic_time(millisecond).
 terminate(_,S) ->
@@ -412,3 +435,21 @@ format_status(Status) -> maps:map(fun(state,S) -> maps:with([suspended,rejected]
 resync_clock() ->
     Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
     try Module:resync() catch _:_ -> unavailable end.
+
+renew_media(Id,Peer,Session,Until,#{context := #{peer := Peer,session := Session,deadline := Old}=C,session := P}=R)
+        when Until>Old ->
+    gen_server:cast(P,{renew,self(),Until}),
+    Updated = R#{context := C#{deadline := Until}},
+    case Id=/=undefined andalso maps:get(mix_ready,R,false) of
+        true ->
+            case ba_audio_mixer:renew(Id,Until) of
+                ok -> Updated;
+                _ -> start_playback(Id,Updated#{mix_ready => false})
+            end;
+        false -> Updated
+    end;
+renew_media(_,_,_,_,R) -> R.
+
+transport_status(#{session := P}) when is_pid(P) ->
+    try gen_server:call(P,status,100) catch exit:_ -> #{error => unavailable} end;
+transport_status(_) -> #{}.

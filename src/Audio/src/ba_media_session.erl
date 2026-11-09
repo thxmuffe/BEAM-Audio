@@ -23,35 +23,43 @@ init(#{owner := Owner,context := #{deadline := Deadline},role := Role,descriptor
             Track = 'Elixir.ExWebRTC.MediaStreamTrack':new(audio),{ok,_} = ?PC:add_track(PC,Track),#{track => maps:get(id,Track)};
         _ -> #{}
     end,
-    monitor(process,PC),erlang:send_after(max(1,Deadline-now_ms()),self(),lease_expired),
+    monitor(process,PC),erlang:send_after(max(1,Deadline-now_ms()),self(),{lease_expired,Deadline}),
     erlang:send_after(10000,self(),setup_timeout),
     S = (maps:merge(Args,Extra))#{pc => PC,opus => Opus,channel => undefined,open => false,remote_ready => false,pending_ice => [],
               sequence => 0,last_sequence => undefined,received => 0,sent => 0,rejected => 0},
     case Role of provider -> self() ! offer;receiver -> ok end,
     {ok,S}.
-handle_call(status,_,S) -> {reply,maps:with([role,open,received,sent,rejected],S),S};
+handle_call(status,_,S) -> {reply,(maps:with([role,open,received,sent,rejected],S))#{diagnostics => ba_diagnostics:view(S)},S};
 handle_call({encoded,Timing,Payload},{Source,_},#{role := provider,source_pid := Source,opus := true,open := true,
             pc := PC,track := Track,sequence := Seq}=S) ->
-    case live(S) andalso below_limit(PC,256) of
-        true -> case ba_audio_rtp_time:packet(Payload,Timing,Seq,Seq=:=0) of
+    case admit_send(S,PC) of
+        ok -> case ba_audio_rtp_time:packet(Payload,Timing,Seq,maps:get(sent,S)=:=0) of
             {ok,RTP} -> ok = ?PC:send_rtp(PC,Track,RTP),{reply,ok,S#{sequence := (Seq+1) band 16#ffff,sent := maps:get(sent,S)+1}};
-            Error -> {reply,Error,S}
+            {error,R0}=Error -> {reply,Error,reject(R0,S)}
         end;
-        false -> {reply,{error,expired_or_busy},S}
+        {error,R} -> {reply,{error,R},ba_diagnostics:count(R,S)}
     end;
 handle_call({push,H,PCM},{Source,_},#{role := provider,source_pid := Source,open := true,
                                    pc := PC,channel := Ref,descriptor := D,sequence := Seq} = S) ->
-    case live(S) andalso below_limit(PC,256) of
-        true ->
+    case admit_send(S,PC) of
+        ok ->
             case ba_audio_packet:encode(channel,D,H#{sequence => Seq},PCM) of
                 {ok,Packet} ->
                     Reply = ?PC:send_data(PC,Ref,Packet,binary),
-                    {reply,Reply,S#{sequence := (Seq+1) band 16#ffffffff,sent := maps:get(sent,S)+1}};
-                Error -> {reply,Error,S}
+                    Next = case Reply of ok -> S;{error,R1} -> reject(R1,S) end,
+                    {reply,Reply,Next#{sequence := (Seq+1) band 16#ffffffff,sent := maps:get(sent,S)+1}};
+                {error,R0}=Error -> {reply,Error,reject(R0,S)}
             end;
-        false -> {reply,{error,expired_or_busy},S}
+        {error,R} -> {reply,{error,R},ba_diagnostics:count(R,S)}
     end;
 handle_call(_,_,S) -> {reply,{error,media_not_open_or_owner},S}.
+handle_cast({renew,Owner,Deadline},#{owner := Owner,context := #{deadline := Old}=C}=S)
+        when Deadline>Old ->
+    case now_ms()<Old of
+        true -> erlang:send_after(max(1,Deadline-now_ms()),self(),{lease_expired,Deadline}),
+                {noreply,S#{context := C#{deadline := Deadline}}};
+        false -> {stop,authorization_expired,S}
+    end;
 handle_cast({signal,P},S) ->
     try live(S) orelse error(expired),incoming_signal(P,S) of
         Next -> {noreply,Next}
@@ -74,7 +82,7 @@ handle_info({ex_webrtc,PC,{rtp,Track,_,Packet}},#{pc := PC,opus := true,role := 
         true ->
             Encoded = 'Elixir.ExRTP.Packet':encode(Packet#{payload_type := 111}),
             case ba_audio_opus:push(Decoder,Encoded) of
-                ok -> {noreply,S};_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+                ok -> {noreply,S};_ -> {noreply,reject(native_input_overloaded,S)}
             end;
         false -> {stop,normal,S}
     end;
@@ -96,22 +104,23 @@ handle_info({ex_webrtc,PC,{data,Ref,Packet}},#{pc := PC,channel := Ref,role := r
                     Delta = case Last of undefined -> 1;_ -> (Seq-Last) band 16#ffffffff end,
                     case Delta>0 andalso Delta<16#80000000 of
                         true ->
-                            bounded_notify({audio_pcm,self(),H,PCM},S),
-                            {noreply,S#{last_sequence := Seq,received := maps:get(received,S)+1}};
-                        false -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+                            Next = deliver({audio_pcm,self(),H,PCM},S),
+                            {noreply,Next#{last_sequence := Seq,received := maps:get(received,S)+1}};
+                        false -> {noreply,reject(invalid_media_packet,S)}
                     end;
-                _ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+                _ -> {noreply,reject(invalid_media_packet,S)}
             end
     end;
 handle_info({ex_webrtc,PC,{ice_candidate,C}},#{pc := PC} = S) ->
     J = ?ICE:to_json(C),
     notify_signal(#{<<"kind">> => <<"signal.candidate">>,<<"candidate">> => maps:get(<<"candidate">>,J),
         <<"mid">> => maps:get(<<"sdpMid">>,J),<<"line">> => maps:get(<<"sdpMLineIndex">>,J)},S),{noreply,S};
-handle_info({ex_webrtc,PC,{connection_state_change,State}},#{pc := PC} = S)
-        when State=:=failed;State=:=closed -> {stop,normal,S};
+handle_info({ex_webrtc,PC,{connection_state_change,failed}},#{pc := PC} = S) -> {stop,transport_failed,S};
+handle_info({ex_webrtc,PC,{connection_state_change,closed}},#{pc := PC} = S) -> {stop,normal,S};
 handle_info({ex_webrtc,PC,{data_channel_state_change,Ref,closed}},#{pc := PC,channel := Ref} = S) -> {stop,normal,S};
 handle_info(setup_timeout,#{open := false} = S) -> {stop,setup_timeout,S};
-handle_info(lease_expired,S) -> {stop,normal,S};
+handle_info({lease_expired,Deadline},#{context := #{deadline := Deadline}}=S) -> {stop,authorization_expired,S};
+handle_info({lease_expired,_},S) -> {noreply,S};
 handle_info({'DOWN',_,process,_,_},S) -> {stop,normal,S};
 handle_info({'EXIT',PC,_},#{pc := PC} = S) -> {stop,normal,S};
 handle_info(Message,#{decoder := Decoder}=S) ->
@@ -122,14 +131,16 @@ handle_info(Message,#{decoder := Decoder}=S) ->
             case {live(S),Module:now(),Module:id()=:=maps:get(clock,maps:get(descriptor,S))} of
                 {true,{ok,Now},true} ->
                     case ba_audio_rtp_time:decode(RTP,Now) of
-                        {ok,Time} -> bounded_notify({audio_pcm,self(),#{playback_time => Time,frame_count => Frames,channel_id => 0},PCM},S),
-                            {noreply,S#{received := maps:get(received,S)+1}};
-                        _ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+                        {ok,Time} -> Next = deliver({audio_pcm,self(),#{playback_time => Time,frame_count => Frames,channel_id => 0},PCM},S),
+                            {noreply,Next#{received := maps:get(received,S)+1}};
+                        _ -> {noreply,reject(invalid_presentation_target,S)}
                     end;
-                _ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+                _ -> {noreply,reject(clock_unavailable,S)}
             end;
-        {error,_} -> {noreply,S#{rejected := maps:get(rejected,S)+1}};
-        closed -> {stop,decoder_closed,S};
+        {error,R} -> {noreply,reject(R,S)};
+        closed ->
+            Reason = case maps:get(last_error,ba_diagnostics:view(S)) of null -> decoder_closed;R0 -> R0 end,
+            {stop,Reason,S};
         ignore -> {noreply,S}
     end;
 handle_info(_,S) -> {noreply,S}.
@@ -152,9 +163,15 @@ incoming_signal(#{<<"kind">> := <<"signal.candidate">>,<<"candidate">> := C,<<"m
     end.
 flush_ice(S) -> [add_ice(C,S) || C <- lists:reverse(maps:get(pending_ice,S))],S#{remote_ready := true,pending_ice := []}.
 add_ice(C,#{pc := PC}) -> ok = ?PC:add_ice_candidate(PC,?ICE:from_json(C)).
-notify_signal(P,S) -> bounded_notify({audio_signal,self(),P},S).
+notify_signal(P,S) ->
+    case bounded_notify({audio_signal,self(),P},S) of
+        ok -> ok;_ -> exit(signaling_mailbox_overloaded)
+    end.
+deliver(Message,S) ->
+    case bounded_notify(Message,S) of ok -> S;_ -> reject(owner_mailbox_overloaded,S) end.
+reject(Reason,S) -> ba_diagnostics:count(Reason,S#{rejected := maps:get(rejected,S)+1}).
 bounded_notify(Message,#{owner := Owner}) ->
-    case process_info(Owner,message_queue_len) of {message_queue_len,N} when N<64 -> Owner ! Message;_ -> ok end.
+    case process_info(Owner,message_queue_len) of {message_queue_len,N} when N<64 -> Owner ! Message,ok;_ -> {error,overloaded} end.
 label(#{subscription := Id,attempt := Attempt}) -> <<"parvi-audio/v2/",Id/binary,"/",Attempt/binary>>.
 live(#{context := #{deadline := Deadline}}) -> now_ms()<Deadline.
 now_ms() -> erlang:monotonic_time(millisecond).
@@ -165,3 +182,9 @@ terminate(_,#{pc := PC}=S) ->
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([role,open,received,sent,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
 below_limit(Pid,Limit) -> case process_info(Pid,message_queue_len) of {message_queue_len,N} -> N<Limit;_ -> false end.
+
+admit_send(S,PC) ->
+    case live(S) of
+        false -> {error,authorization_expired};
+        true -> case below_limit(PC,256) of true -> ok;false -> {error,transport_mailbox_overloaded} end
+    end.

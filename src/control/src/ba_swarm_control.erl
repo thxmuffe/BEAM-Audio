@@ -33,7 +33,7 @@ init([]) ->
     end,
     Config = maps:with([policy,routes],View),
     Protocol = (ba_swarm_control_protocol:new(Identity,maps:get(policy,View)))#{
-        membership_deadline => maps:get(until,View)},
+        membership_deadline => maps:get(until,View),lease_ms => application:get_env(ba_core,control_session_lease_ms,60000)},
     erlang:send_after(250,self(),expire),
     {ok,#{protocol => Protocol,config => Config,callers => #{},jobs => #{},
           handler_requests => gen_server:reqids_new(),handler_monitor => monitor(process,whereis(ba_device_handler)),
@@ -42,7 +42,7 @@ init([]) ->
 handle_call(snapshot,_,S) ->
     Public = ba_swarm_control_protocol:snapshot(maps:get(protocol,S)),
     {reply,Public#{relay => ba_swarm_desks:status(),membership => ba_swarm_membership:status(),rejected => maps:get(rejected,S),
-        last_rejection => maps:get(last_rejection,S),jobs => maps:map(fun(_,J) -> public_job(J) end,maps:get(jobs,S))},S};
+        last_rejection => maps:get(last_rejection,S),diagnostics => ba_diagnostics:view(S),jobs => maps:map(fun(_,J) -> public_job(J) end,maps:get(jobs,S))},S};
 handle_call({audio_context,Peer},_,S) ->
     Result = try {ok,ba_swarm_control_protocol:context(Peer,now_ms(),maps:get(protocol,S))}
         catch _:_ -> {error,no_authorized_session} end,
@@ -141,7 +141,8 @@ handle_info({membership_authorized,View},S) ->
             Cleared#{config := Config,protocol := ba_swarm_control_protocol:new(
                 ba_device_store:identity(),maps:get(policy,View))}
     end,
-    {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => maps:get(until,View)}}};
+    {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => maps:get(until,View),
+        lease_ms => application:get_env(ba_core,control_session_lease_ms,60000)}}};
 handle_info(membership_invalidated,S) ->
     Next = reset(membership_invalidated,S),
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => now_ms()}}};
@@ -162,20 +163,21 @@ handle_info({desk_delivery,_,Peer,Packet},S0) ->
                     end,
                     case lists:all(fun(P) -> send(Peer,P,Next) =:= ok end,Packets) of
                         true -> {noreply,Next};
-                        false -> {noreply,reset(transport_failed,Next)}
+                        false -> {noreply,rejected(transport_failed,Next)}
                     end;
                 {error,Reason,_} -> {noreply,rejected(Reason,S)}
             end;
         false -> {noreply,rejected(membership_expired,S)}
     end;
-handle_info({desk_event,_,disconnected},S) -> {noreply,reset(disconnected,S)};
+handle_info({desk_event,_,disconnected},S) -> {noreply,S};
 handle_info({desk_event,URL,{presence,Online}},#{config := #{routes := Routes}} = S) ->
     Peers = maps:keys(maps:get(sessions,maps:get(protocol,S))),
     Next = lists:foldl(fun(Peer,Acc) ->
         case maps:find(Peer,Routes) of
             {ok,#{<<"desk">> := URL}} ->
                 case lists:member(Peer,Online) of
-                    true -> Acc;false -> close_peer(Peer,peer_disconnected,Acc)
+                    true -> Acc;false ->
+                        case ba_swarm_desks:peer_online(Peer) of true -> Acc;false -> close_peer(Peer,peer_disconnected,Acc) end
                 end;
             _ -> Acc
         end
@@ -192,7 +194,7 @@ handle_info(expire,S) ->
             _ -> reply(Peer,{error,Reason},Acc)
         end
     end,S#{protocol := Protocol},Events),
-    Final = expire_jobs(ensure_handler_monitor(Next)),
+    Final = renew_sessions(expire_jobs(ensure_handler_monitor(Next))),
     erlang:send_after(250,self(),expire), {noreply,Final};
 handle_info({'DOWN',Ref,process,_,_},#{handler_monitor := Ref} = S) ->
     {noreply,reset(handler_restarted,S#{handler_monitor := undefined})};
@@ -223,14 +225,20 @@ event(Peer,{capabilities_read,Request},S) ->
         {ok,Packet,Protocol} ->
             case send(Peer,Packet,S) of
                 ok -> S#{protocol := Protocol};
-                _ -> reset(transport_failed,S)
+                _ -> rejected(transport_failed,S)
             end;
         {error,_,_} -> reset(capability_reply_failed,S)
     end;
 event(_,{time,Id,Payload,Context},S) ->
-    time_notify({swarm_time,Context#{received_at_ns => maps:get(received_at_ns,S)},Id,Payload}),S;
+    case time_notify({swarm_time,Context#{received_at_ns => maps:get(received_at_ns,S)},Id,Payload}) of
+        {error,overloaded} -> ba_diagnostics:count(clock_owner_overloaded,S);
+        _ -> S
+    end;
 event(_,{audio,Id,Payload,Context},S) ->
-    audio_notify({swarm_audio,Context,Id,Payload}),S;
+    case audio_notify({swarm_audio,Context,Id,Payload}) of
+        {error,overloaded} -> ba_diagnostics:count(audio_owner_overloaded,S);
+        _ -> S
+    end;
 event(_,{job,Operation,Id,Payload,Context},#{handler_requests := Requests} = S) ->
     case gen_server:reqids_size(Requests) < 32 of
         false -> send_job_report(Context,Id,ba_swarm_job:report(null,<<"rejected">>,<<"job_limit">>),S);
@@ -245,7 +253,20 @@ event(_,{job,Operation,Id,Payload,Context},#{handler_requests := Requests} = S) 
 event(_,{job_report,Id,Report,Context},S) -> receive_job_report(Context,Id,Report,S);
 event(Peer,{session_replaced,Old},S) ->
     drop_session(Peer,Old),fence_peer_jobs(Peer,reply(Peer,{error,session_replaced},S));
+event(_,{session_renewed,Context},S) ->
+    audio_notify({audio_session_renewed,Context}),S;
 event(_,authorized,S) -> S.
+renew_sessions(S) ->
+    lists:foldl(fun(Peer,Acc) ->
+        case ba_swarm_control_protocol:renew(Peer,now_ms(),maps:get(protocol,Acc)) of
+            {ok,Packet,P} ->
+                case send(Peer,Packet,Acc) of
+                    ok -> Acc#{protocol := P};
+                    _ -> rejected(renewal_transport_failed,Acc#{protocol := P})
+                end;
+            _ -> Acc
+        end
+    end,S,ba_swarm_control_protocol:renew_due(now_ms(),maps:get(protocol,S))).
 reply(Peer,Result,#{callers := Callers} = S) ->
     case maps:take(Peer,Callers) of
         {From,Rest} -> gen_server:reply(From,Result), S#{callers := Rest};
@@ -259,7 +280,7 @@ reset(Reason,#{callers := Callers,protocol := Protocol} = S) ->
     Jobs = maps:map(fun(_,J) -> fence_job(J) end,maps:get(jobs,S)),
     S#{callers := #{},protocol := ba_swarm_control_protocol:reset(Protocol),
        handler_requests := gen_server:reqids_new(),jobs := Jobs}.
-rejected(Reason,S) -> S#{rejected := maps:get(rejected,S)+1,last_rejection := Reason}.
+rejected(Reason,S) -> ba_diagnostics:count(Reason,S#{rejected := maps:get(rejected,S)+1,last_rejection := Reason}).
 now_ms() -> erlang:monotonic_time(millisecond).
 terminate(_,S) ->
     _ = reset(stopped,S), ok.
@@ -287,7 +308,7 @@ send_job_report(#{peer := Peer,session := Session},Id,Report,#{protocol := Proto
         {ok,Packet,Next} = ba_swarm_control_protocol:job_message(Peer,<<"job.report">>,Id,Report,now_ms(),Protocol),
         case send(Peer,Packet,S) of
             ok -> S#{protocol := Next};
-            _ -> reset(transport_failed,S)
+            _ -> rejected(transport_failed,S)
         end
     catch _:_ -> S end.
 receive_job_report(#{peer := Peer,session := Session},Id,Report,#{jobs := Jobs} = S) ->
@@ -348,12 +369,14 @@ expire_jobs(#{jobs := Jobs} = S) ->
         end
     end,S,maps:to_list(Jobs)).
 
+audio_notify({audio_session_down,_,_}=Event) -> critical_audio_notify(Event);
+audio_notify({audio_session_renewed,_}=Event) -> critical_audio_notify(Event);
 audio_notify(Event) ->
     case whereis(ba_audio_receiver) of
         undefined -> ok;
         Pid -> case process_info(Pid,message_queue_len) of
-            {message_queue_len,N} when N < 64 -> Pid ! Event;
-            _ -> ok
+            {message_queue_len,N} when N < 64 -> Pid ! Event,ok;
+            _ -> {error,overloaded}
         end
     end.
 
@@ -364,8 +387,11 @@ time_notify(Event) ->
             case Event of
                 {time_session_down,_,_} -> Pid ! Event;
                 _ -> case process_info(Pid,message_queue_len) of
-                    {message_queue_len,N} when N<64 -> Pid ! Event;
-                    _ -> ok
+                    {message_queue_len,N} when N<64 -> Pid ! Event,ok;
+                    _ -> {error,overloaded}
                 end
             end
     end.
+
+critical_audio_notify(Event) ->
+    case whereis(ba_audio_receiver) of undefined -> ok;P -> P ! Event,ok end.

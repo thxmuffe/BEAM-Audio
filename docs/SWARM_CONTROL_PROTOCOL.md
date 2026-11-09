@@ -1,4 +1,4 @@
-# Swarm control protocol v1 — steps 2–7
+# Swarm control protocol v1 — steps 2–8d
 
 Implemented 2026-11-08 under the [Swarm plan](PLAN.md) and
 [boundary contract](SWARM_CONTRACT.md). This implements authenticated status
@@ -11,10 +11,11 @@ are implemented separately; media does not travel through this Desk protocol.
 `ba_runtime:start(swarm_control)` now uses the [step-5 membership configuration](SWARM_MEMBERSHIP.md).
 The earlier locally provisioned peer-policy fixture has been replaced by
 nonce-bound authority admission and signed current policy. `ba_swarm_desks`
-owns independent relay connections; the membership owner installs policy/routes
+owns desired Desk routes; independently supervised relay Workers own connections.
+The membership owner installs policy/routes
 into control. The local Device branch owns the Handler and its initially empty
-Worker supervisor. This profile starts no old chat, clock, trust/distribution
-carrier or audio supervisor. Both stable identity seed and private state directory
+Worker supervisor. This profile starts the Swarm Clock, not old chat or the
+trust/distribution carrier; audio starts on local demand. Both stable identity seed and private state directory
 are required. Product app integration remains step 9.
 
 Current runtime policy pins Swarm, authority, Director, epoch/revision and per-sender
@@ -58,6 +59,10 @@ with `parvi-swarm-control/v1:`. The body has these exact fields:
 | `challenge` | Echoes `a`, supplies fresh 256-bit/64-hex responder nonce `b`. Matching pending hello. |
 | `proof` | Echoes both nonces. Matching pending challenge. |
 | `ready` | Echoes both nonces. Matching pending proof. Completes mutual authentication. |
+| `lease.request` | Fresh correlation ID and nonce `a`, `b`: null, within an already authorized session. Starts bounded proactive renewal. |
+| `lease.challenge` | Echoes `a`, supplies fresh `b`; must match the pending renewal request. |
+| `lease.proof` | Echoes both renewal nonces; a valid matching fresh proof permits the responder's lease extension. |
+| `lease.ready` | Confirms both renewal nonces; a valid matching confirmation permits the initiator's extension. |
 | `status.read` | Empty object. Authorized unexpired session, new sequence and peer's local `status_read` grant. |
 | `status.reply` | `protocol`: 1, `session`: `authorized`. Matching outstanding unexpired read to that peer. |
 | `status.error` | `reason`: `forbidden`. Correlated response when peer lacks read permission. |
@@ -70,8 +75,9 @@ with `parvi-swarm-control/v1:`. The body has these exact fields:
 | `job.cancel` | Empty object; designated Director, same grant and owned Job/session scope. |
 | `job.report` | Exact attempt/state/reason object. Adapter checks the Director record's assignee, session, Job ID, attempt and result fence. |
 
-Handshake messages use sequence 0 and `request == session`; application messages
-start at 1. All messages bind both identities, Swarm, session and policy version;
+Initial handshake messages use sequence 0 and `request == session`; application
+messages, including lease renewal, use the existing strictly increasing sequence.
+All messages bind both identities, Swarm, session and policy version;
 handshake continuations bind both nonces. Replayed hello can obtain a bounded
 fresh challenge after an old session is gone, but captured proof cannot answer it.
 
@@ -91,19 +97,33 @@ and its DTLS fingerprint binding are not implemented or claimed by this step.
 
 ## Limits and failure behavior
 
-Handshake expiry is 10 seconds; each authorized local session lasts at most
-60 seconds from completion. One status or capability request per peer may be outstanding,
+Initial handshake expiry is 10 seconds; authorization lasts at most 60 seconds
+from the latest completed fresh proof, capped by current local membership.
+The lower Device ID initiates renewal after one third of that interval (normally
+20 s). An exchange has a 5 s timeout and one pending record per peer; premature
+or repeated exchanges are rejected. Failed exchanges retry while the old lease
+remains valid; failure never extends it. Exact current policy, fresh nonce proof
+and the replay sequence remain mandatory. The session ID/sequence continue, so
+eligible media retains its transport and buffers on ordinary renewal.
+
+One status or capability request per peer may be outstanding,
 with a 5-second response deadline. Local monotonic deadlines are checked on
-receive/request and on a 250 ms cleanup tick. Expiry/Desk loss drops sessions and
-completes waiting callers with an error. Duplicate/lower sequences and replies
-without a live correlation are rejected. The clock renews its own authority link. A bounded parallel challenge permits
+receive/request and on a 250 ms cleanup tick. Expiry or policy invalidation drops
+affected sessions and completes waiting callers with an error. Desk loss alone
+does not reset authorization or healthy sessions. Routes can use another configured
+Desk; lack of timely fresh authorization still enforces expiry. Presence cleanup
+checks other live Desks before declaring a peer unavailable. Duplicate/lower
+sequences and replies without a live correlation are rejected. The clock reconnects
+to its authority if a session is actually lost. A bounded parallel challenge permits
 a fresh proof to replace a surviving remote session after owner restart; a hello
 alone never tears it down. General simultaneous-open resolution is not implemented.
 
 Relay deliveries are dropped when the control owner's mailbox already has 64
 messages; outgoing traffic retains existing relay queue/frame bounds. The Desk
 retains its own limits. Local send acceptance is not remote receipt; overload/drop
-may produce a request timeout. This is bounded prototype behavior, not a public
+may produce a request timeout. Bounded diagnostics identify owner overload and
+transport failures; local media renewal/fencing notifications are not silently
+dropped behind PCM traffic. This is bounded prototype behavior, not a public
 capacity claim. The pure protocol module owns validation/transitions; the control
 process owns timers, waiting local callers, Director job records and Desk I/O.
 Verified job offers/cancels use bounded OTP asynchronous Handler requests, not a
@@ -112,7 +132,8 @@ request triggers a bounded 100 ms local Handler read; failure produces unavailab
 Capability responses include a signed instance/revision, fixed support/consent/
 availability flags and bounded capacity/duration counts, without process IDs.
 Public snapshots expose
-identity, session stages, relay status and rejection summaries only. OTP status
+identity, session stages/deadlines/renewal counts, relay status, bounded diagnostic
+counters and rejection summaries, without keys or nonce state. OTP status
 and termination formatting redact private keys and internal message/log content.
 
 ## Previous membership and subscription state

@@ -107,8 +107,9 @@ reply carries its reference revision; changing either resets the follower filter
 A lower revision for the same incarnation is rejected. Authority clock restart
 creates a new timeline; followers cannot use samples or mappings from the old one.
 A same-timeline reference refresh resets the filter while preserving bounded
-mapping continuity. Old publication descriptors remain fenced until republished
-with the new clock ID; automatic native capture rebind is an integration gate.
+mapping continuity. Old publication descriptors remain fenced until rebound to a
+new incarnation with the new clock ID; step 8's PCM recovery proof verifies that
+automatic path. Native capture/output qualification remains step 9.
 
 Mapping reads check membership authorization, sample-session authorization, filter
 readiness and a last-sample age of at most two sampling periods synchronously.
@@ -123,10 +124,13 @@ On control-owner restart, a new authenticated hello can prepare one bounded fres
 challenge beside the old session. Only a valid new proof replaces the old session
 and fences its jobs/media; replaying a hello alone cannot tear down active work.
 Candidates expire after 10 seconds. The clock reconnects to its pinned authority,
-fetches current Offset and requires a fresh sample. Ordinary session renewal
-retains observations of the same still-fresh reference, while invalidating
-readiness until new-session evidence arrives. Resetting the entire window on
-every 60-second renewal would prevent the default 20 × 5-second acquisition.
+fetches current Offset and requires a fresh sample. Step 8d now renews ordinary
+authorization in place using fresh two-way nonce proof: the session ID, live clock
+mapping and observations remain, and subsequent signed samples carry the new
+bounded deadline. If a session is actually lost, readiness is invalidated until
+fresh evidence returns; same-reference fresh observations may be retained.
+Resetting the entire window on every 60-second renewal would prevent the default
+20 × 5-second acquisition.
 Changed scope/reference, stale observations and explicit resync still clear the
 window; clock restart restores no observations. Simultaneous-open resolution for
 general peers is still outside this prototype.

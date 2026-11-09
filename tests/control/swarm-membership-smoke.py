@@ -4,6 +4,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
@@ -55,6 +56,24 @@ def main():
             sync(a,x,y);connect(x,y)
             assert x.request('read',peer=y.identity['id'])['ok']
             assert y.request('read',peer=x.identity['id'])['ok']
+            # A single Desk worker or service failure cannot cascade into core
+            # owners, sessions or an accepted Worker using the other Desk.
+            connect(a,y);contract='D'*32
+            assert y.request('enable_test')['ok']
+            assert y.request('allow_jobs',director=a.identity['id'],contract=contract)['ok']
+            job=a.request('offer_job',peer=y.identity['id'],contract=contract,duration_ms=10000,lease_ms=10000)['value']
+            control.job_state(a,job,'accepted')
+            identities=[r.request('backend_ids') for r in (a,x,y)]
+            for _ in range(3):
+                assert a.request('desk_crash',desk=urls[0])['ok']
+                control.wait(a,lambda s:s['relay']['desks'][urls[0]]['connected'])
+            desks[0].kill();desks[0].wait(timeout=5)
+            time.sleep(.5)
+            assert x.request('read',peer=y.identity['id'])['ok']
+            for r,old in zip((a,x,y),identities):assert r.request('backend_ids')==old
+            desks[0]=relay.start_desk(ports[0])
+            control.wait(a,lambda s:s['relay']['desks'][urls[0]]['connected'])
+            assert a.request('cancel_job',id=job)['ok']
             old_id,seed=x.identity['id'],x.seed;x.close();x=runtime('member0',seed)
             assert x.identity['id']==old_id
             assert x.request('resume',desk=urls[1])['ok']

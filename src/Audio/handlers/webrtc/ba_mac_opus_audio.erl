@@ -73,8 +73,9 @@ handle_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
         Delay,ClockTimeline,maps:get(presentation_state,S)),
     NewClock = case ClockTimeline of undefined -> maps:get(source_clock,S);_ -> ClockTimeline end,
     case NewClock=:=maps:get(source_clock,S) of true -> ok;false -> ok = ba_audio:rebind(Source,NewClock) end,
-    {ok,_} = gen_server:call(Source, {push_encoded, Header, Packet}),
-    {noreply, S#{source_clock := NewClock,frames := maps:get(frames,S)+960, blocks := maps:get(blocks,S)+1,
+    {ok,Replies} = gen_server:call(Source, {push_encoded, Header, Packet}),
+    Errors = length([ok || {_,{error,_}} <- Replies]),
+    {noreply, S#{send_errors := maps:get(send_errors,S)+Errors,source_clock := NewClock,frames := maps:get(frames,S)+960, blocks := maps:get(blocks,S)+1,
                 timeline => Header, presentation_state := Presentation}};
 handle_info({Port, {data, <<4>>}}, #{port := Port} = S) ->
     erlang:send_after(10,self(),read), {noreply,S};

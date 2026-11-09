@@ -1,5 +1,14 @@
 # Audio runtime and platform adapters
 
+Step 8a–8d now isolates Desk failures, preserves live media on unchanged Contract
+installation and renews eligible authorization with fresh nonce proof without
+restarting Media Sessions/decoders or clearing queues. The Mixer admits bounded
+future audio but enforces the current permission on every output span. Bounded
+failure diagnostics are visible in local receiver/transport/Mixer snapshots.
+Continuous loopback PCM passes at 1000 and 30000 ms Offset across actual renewal;
+expiry/revocation still discards future audio. See [stream semantics](../../docs/SWARM_STREAMS.md)
+and [checks/limits](../../tests/control/README.md). No app or physical output was used.
+
 Use the [canonical terminology](../../docs/TERMINOLOGY.md) and
 [core naming guide](../../docs/NAMING.md). `ba_audio_source` owns a Source's local
 publication, `ba_subscription` stores intent and `ba_media_session` owns a

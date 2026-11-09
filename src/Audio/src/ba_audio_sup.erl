@@ -1,4 +1,4 @@
-%% Started on demand under ba_sup; no separate application or cluster manager.
+%% On demand after the clock in the dependency-ordered runtime branch.
 -module(ba_audio_sup).
 -behaviour(supervisor).
 -export([start_link/0, ensure_started/0, start_source/1, start_session/1, sessions/0, init/1]).
@@ -9,7 +9,7 @@ ensure_started() ->
     case whereis(ba_swarm_control) of
         undefined -> {error, swarm_control_not_started};
         _ ->
-            case supervisor:start_child(ba_sup,
+            case supervisor:start_child(ba_swarm_runtime_sup,
                     #{id => ?MODULE, start => {?MODULE, start_link, []},
                       type => supervisor, shutdown => infinity}) of
                 {ok, _} -> ok;

@@ -70,3 +70,16 @@ drain(Mix,Rate,N) ->
             ?assertEqual(binary:copy(<<0.5:32/little-float>>,1920),PCM),
             drain(Next,Rate,N+maps:get(frame_count,H))
     end.
+
+maximum_block_overlap_and_adjacent_boundaries_test() ->
+    D = descriptor(float32_le,2),
+    Push = fun(Start,Frames,S) ->
+        Time = 1000000000+Start*1000000000 div 48000,
+        PCM = binary:copy(<<0.25:32/little-float>>,Frames*2),
+        ba_audio_mix:push(a,D,header(Time,Frames),PCM,0,S)
+    end,
+    {ok,S} = Push(0,4096,new()),
+    [?assertMatch({error,overlapping_packet,_},Push(Start,N,S)) ||
+        {Start,N} <- [{0,1},{4095,1},{-1,2},{-1,4096}]],
+    ?assertMatch({ok,_},Push(4096,1,S)),
+    ?assertMatch({ok,_},Push(-4096,4096,S)).

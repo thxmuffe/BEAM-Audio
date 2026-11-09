@@ -1,17 +1,22 @@
 %% One local output clock/device; independent input queues and explicit failures.
 -module(ba_audio_mixer).
 -behaviour(gen_server).
--export([start_link/0,add/3,remove/1,enable/2,gain/2,push/4,status/0,clock/0]).
--export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
+-export([start_link/0,add/3,remove/1,enable/2,gain/2,push/4,renew/2,status/0,clock/0]).
+-export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 add(Id,D,G) -> gen_server:call(?MODULE,{add,Id,D,G}).
 remove(Id) -> gen_server:call(?MODULE,{remove,Id}).
 enable(Id,B) -> gen_server:call(?MODULE,{enable,Id,B}).
 gain(Id,G) -> gen_server:call(?MODULE,{gain,Id,G}).
+renew(Id,Until) -> gen_server:call(?MODULE,{renew,Id,Until}).
 push(Id,D,H,PCM) ->
-    case process_info(whereis(?MODULE),message_queue_len) of
-        {message_queue_len,N} when N<64 -> gen_server:cast(?MODULE,{packet,Id,D,H,PCM});
-        _ -> {error,overloaded}
+    case whereis(?MODULE) of
+        P when is_pid(P) ->
+            case process_info(P,message_queue_len) of
+                {message_queue_len,N} when N<64 -> gen_server:cast(P,{packet,Id,D,H,PCM});
+                _ -> {error,mixer_mailbox_overloaded}
+            end;
+        _ -> {error,mixer_unavailable}
     end.
 status() -> gen_server:call(?MODULE,status).
 clock() ->
@@ -20,6 +25,15 @@ clock() ->
 init([]) ->
     erlang:send_after(2,self(),render),
     {ok,#{mix => undefined,descriptors => #{},device => undefined,dropped => 0,rendered => 0,last_error => null}}.
+handle_call({renew,Id,Until},{Owner,_},#{owner := Owner,descriptors := Ds}=S) ->
+    case maps:find(Id,Ds) of
+        {ok,#{authorization_deadline := Old}=D} when Until>Old ->
+            case now_ms()<Old of
+                true -> {reply,ok,S#{descriptors := Ds#{Id := D#{authorization_deadline := Until}}}};
+                false -> {reply,{error,authorization_expired},S}
+            end;
+        _ -> {reply,{error,unknown_or_unchanged_authorization},S}
+    end;
 handle_call({add,Id,#{sample_rate := Rate,clock := Clock} = D,G},{Owner,_},S0) ->
     S = owner(Owner,S0),
     Mix = case maps:get(mix,S) of undefined -> ba_audio_mix:new(Rate,Clock);M -> M end,
@@ -52,7 +66,7 @@ handle_call({enable,Id,B},_,S) ->
 handle_call({gain,Id,G},_,S) -> {reply,ok,S#{mix := ba_audio_mix:gain(Id,G,maps:get(mix,S))}};
 handle_call(status,_,S) ->
     View = case maps:get(mix,S) of undefined -> #{streams => 0,queued_blocks => 0,clipped_frames => 0};M -> ba_audio_mix:snapshot(M) end,
-    {reply,View#{dropped => maps:get(dropped,S),rendered => maps:get(rendered,S),last_error => maps:get(last_error,S)},S};
+    {reply,View#{dropped => maps:get(dropped,S),rendered => maps:get(rendered,S),last_error => maps:get(last_error,S),diagnostics => ba_diagnostics:view(S)},S};
 handle_call(_,_,S) -> {reply,ok,S}.
 handle_cast({packet,Id,D,H,PCM},S) ->
     case {clock(),maps:get(mix,S)} of
@@ -94,19 +108,7 @@ render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
                     case Handoff-Now=<20000000 of
                         false -> S;
                         true ->
-                            {H,PCM,Next} = ba_audio_mix:take(256,Mix),
-                            case Handoff>Now of
-                                false -> drop(missed_packet_target,S#{mix := Next});
-                                true ->
-                                    Frames = maps:get(frame_count,H),
-                                    %% Platform binding consumes stereo planar float32.
-                                    Left = [<<L:32/little-float>> || <<L:32/little-float,_:32/little-float>> <= PCM],
-                                    Right = [<<R:32/little-float>> || <<_:32/little-float,R:32/little-float>> <= PCM],
-                                    case A:write(Device,Handoff,Frames,iolist_to_binary([Left,Right])) of
-                                        ok -> S#{mix := Next,rendered := maps:get(rendered,S)+1};
-                                        {error,R} -> exit({output_write_failed,R})
-                                    end
-                            end
+                            render_authorized(Mono,Handoff,Now,A,Device,S)
                     end;
                 _ -> drop(clock_unavailable,flush(S))
             end;
@@ -114,19 +116,45 @@ render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
         _ -> drop(clock_unavailable,flush(S))
     end;
 render_live(S) -> S.
+render_authorized(Mono,Handoff,Now,A,Device,#{mix := Mix,descriptors := Ds}=S) ->
+    Rate = maps:get(rate,Mix),
+    Expired = [Id || {Id,D} <- maps:to_list(Ds),
+        (maps:get(authorization_deadline,D)*1000000-Mono)*Rate div 1000000000<1],
+    case Expired of
+        [_|_] ->
+            Next = lists:foldl(fun(Id,Acc) -> Acc#{mix := ba_audio_mix:remove(Id,maps:get(mix,Acc)),
+                descriptors := maps:remove(Id,maps:get(descriptors,Acc))} end,S,Expired),
+            render_live(drop(authorization_deadline,Next));
+        [] ->
+            Max = lists:min([256|[(maps:get(authorization_deadline,D)*1000000-Mono)*Rate div 1000000000 || D <- maps:values(Ds)]]),
+            {H,PCM,Next} = ba_audio_mix:take(Max,Mix),
+            case Handoff>Now of
+                false -> drop(missed_packet_target,S#{mix := Next});
+                true ->
+                    Frames = maps:get(frame_count,H),
+                    %% Platform binding consumes stereo planar float32.
+                    Left = [<<L:32/little-float>> || <<L:32/little-float,_:32/little-float>> <= PCM],
+                    Right = [<<R:32/little-float>> || <<_:32/little-float,R:32/little-float>> <= PCM],
+                    Output = iolist_to_binary([Left,Right]),
+                    case Handoff>erlang:monotonic_time(nanosecond) of
+                        false -> drop(missed_packet_target,S#{mix := Next});
+                        true ->
+                            case A:write(Device,Handoff,Frames,Output) of
+                                ok -> S#{mix := Next,rendered := maps:get(rendered,S)+1};
+                                {error,R} -> exit({output_write_failed,R})
+                            end
+                    end
+            end
+    end.
 owner(Owner,#{owner := Owner} = S) -> S;
 owner(Owner,S) ->
     case maps:find(owner_monitor,S) of {ok,Ref} -> demonitor(Ref,[flush]);error -> ok end,
     (close(S))#{mix := undefined,descriptors := #{},owner => Owner,owner_monitor => monitor(process,Owner)}.
 
-packet_authorized(Id,#{playback_time := Time,frame_count := Frames},#{descriptors := Ds}) ->
-    try
-        D = maps:get(Id,Ds),Deadline = maps:get(authorization_deadline,D),
-        Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
-        {ok,End} = Module:to_monotonic(Time+Frames*1000000000 div maps:get(sample_rate,D)),
-        now_ms()<Deadline andalso End=<Deadline*1000000
-    catch _:_ -> false end;
-packet_authorized(_,_,_) -> false.
+%% Buffering future targets does not authorize execution after the lease.
+%% render_authorized checks each actual output span against current permissions.
+packet_authorized(Id,_,#{descriptors := Ds}) ->
+    case maps:find(Id,Ds) of {ok,D} -> now_ms()<maps:get(authorization_deadline,D);error -> false end.
 expire_inputs(#{descriptors := Ds,mix := Mix} = S) when Mix=/=undefined ->
     Now = now_ms(),Expired = [Id || {Id,D} <- maps:to_list(Ds),maps:get(authorization_deadline,D)=<Now],
     Next = lists:foldl(fun(Id,Acc) -> Acc#{mix := ba_audio_mix:remove(Id,maps:get(mix,Acc)),
@@ -137,7 +165,10 @@ now_ms() -> erlang:monotonic_time(millisecond).
 
 flush(#{mix := Mix} = S) ->
     Next = maps:fold(fun(Id,I,Acc) -> ba_audio_mix:enable(Id,maps:get(enabled,I),Acc) end,Mix,maps:get(streams,Mix)),S#{mix := Next}.
-drop(R,S) -> S#{dropped := maps:get(dropped,S)+1,last_error := R}.
+drop(R,S) -> ba_diagnostics:count(R,S#{dropped := maps:get(dropped,S)+1,last_error := R}).
 close(#{device := {A,D}} = S) -> A:close(D),S#{device := undefined};
 close(S) -> S.
 terminate(_,S) -> close(S),ok.
+format_status(Status) ->
+    maps:map(fun(state,S) -> (maps:with([dropped,rendered,last_error],S))#{diagnostics => ba_diagnostics:view(S)};
+        (log,_) -> [];(_,_) -> redacted end,Status).

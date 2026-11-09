@@ -7,14 +7,10 @@ start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 init([]) ->
     case application:get_env(ba_core,runtime_profile,legacy_apps) of
         swarm_control ->
-            {ok,{#{strategy => rest_for_one,intensity => 5,period => 10},
-                 [#{id => ba_swarm_desks,start => {ba_swarm_desks,start_link,[]}},
-                  #{id => ba_swarm_membership,start => {ba_swarm_membership,start_link,[]}},
-                  #{id => ba_device_sup,start => {ba_device_sup,start_link,[]},
-                    type => supervisor,shutdown => infinity},
-                  #{id => ba_swarm_control,start => {ba_swarm_control,start_link,[]}},
-                  #{id => ba_swarm_clock_sup,start => {ba_swarm_clock_sup,start_link,[]},
-                    type => supervisor,shutdown => infinity}]}};
+            {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
+                 [#{id => ba_desk_connections_sup,start => {ba_desk_connections_sup,start_link,[]},type => supervisor,shutdown => infinity},
+                  #{id => ba_swarm_desks,start => {ba_swarm_desks,start_link,[]}},
+                  #{id => ba_swarm_runtime_sup,start => {ba_swarm_runtime_sup,start_link,[]},type => supervisor,shutdown => infinity}]}};
         _ -> existing_profile()
     end.
 

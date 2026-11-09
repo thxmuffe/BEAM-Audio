@@ -1,4 +1,4 @@
-# Independent Streams and Subscriptions — steps 6–8
+# Independent Streams and Subscriptions — steps 6–8d
 
 The headless `swarm_control` runtime now has a collection of independent PCM/Opus
 subscriptions and one local scheduled mixer. The old single receive slot and
@@ -68,9 +68,14 @@ Unsubscribe removes only that local intent and endpoint. `stop/0` deliberately
 unsubscribes all. `gain(Id,0.0..1.0)` controls only that subscription's mixer input;
 existing product gain/Music settings are untouched. `clear_contract/3` closes only
 the affected direction/device/source's work; remaining subscriptions continue.
+Installing the identical current Contract ID/revision is a no-op: publications,
+Media Sessions and buffered output are preserved. An older revision of the same
+Contract is rejected. Changed authorization bindings are reauthorized only for
+their own scope; persistent intent and Source identity remain separate.
 
 `snapshot/0` exposes `subscriptions` keyed by local ID, authenticated `offers`,
-publication/provider counts and mixer counters/errors. It exposes no session PIDs,
+publication/provider counts, per-Subscription/provider transport diagnostics and
+mixer counters/errors. It exposes no session PIDs,
 SDP, ICE secrets or PCM. The old singular snapshot/UI command shape is replaced;
 app adaptation belongs to step 9.
 
@@ -87,16 +92,35 @@ peer, control session, source key/incarnation, local subscription ID and fresh
 attempt ID. Unknown or old attempts cannot acquire an endpoint or forward generic
 signaling. Contracts are checked before provider creation. Before dispatch the
 receiver rechecks the current local control context and deadline, including when
-its own mailbox was delayed by other work. Session/policy/Desk loss drops live
-endpoints while retaining declarative intent. Each endpoint independently expires
-with its authenticated control-session lease and checks it on media send/receive.
-The mixer independently expires input queues and rejects packet spans extending
-past their authorization deadline, even if receiver cleanup is delayed.
-There is no silent lease renewal or uncertain packet replay.
-Packets whose presentation span exceeds the current authorization lease are
-rejected; a fresh session opens a fresh media attempt. These checks do not promise
-gap-free media across lease renewal, especially with large Offsets. General peer
-reconnection/automatic eligible work is part of the app integration in step 9.
+its own mailbox was delayed by other work. Actual session loss, expiry or policy
+invalidation stops live endpoints while retaining declarative intent. Losing one
+Desk does not itself cancel permission or media through healthy routes.
+
+Step 8d's fresh two-way nonce proof renews eligible control authorization in place,
+retaining its session ID/replay sequence. The authenticated control owner passes
+the new deadline to matching Media Sessions and the Mixer. Queues, publication
+identities, decoder processes and original packet targets are retained. Stale
+expiry timers cannot terminate renewed sessions. No cached state or timer alone
+extends authorization, and an expired endpoint is not resurrected.
+
+Buffer admission and execution are separate: authorized receivers may queue future
+targets within the bounded 31 s lead even when those targets cross the current
+lease. This permits sustained 30 s Offset. Before handoff, the Mixer checks the
+current deadline and limits the output span so it cannot execute beyond that
+permission. Failed renewal/expiry removes affected contributions and future queues;
+revocation still fences them. A late renewal after a handoff has already been denied
+can recover output but cannot replay missed audio or choose a replacement target.
+Changed policy or a restarted control owner may still require a new media attempt.
+General peer reconnection/automatic eligible work remains app integration in step 9.
+
+Lightweight `diagnostics` contain bounded reason counters and a last-error code:
+buffer full, late/overlapping/missing targets, missed handoffs, unavailable clocks,
+transport/owner/Mixer mailbox overload and native decoder failures. Counts describe
+events at each component's boundary; `sent` means submitted, not remote receipt.
+Signaling overload ends a failed attempt visibly instead of silently stalling setup;
+PCM overload drops are counted. Permission fencing/renewal is not dropped behind
+PCM. OTP failure reports redact PCM/internal messages; counters are live process
+state, not a persistent monitoring/history service.
 
 The signed SDP carries the expected SHA-256 DTLS fingerprint; ExWebRTC performs
 the DTLS certificate checks. A dedicated data-channel label binds subscription
@@ -221,8 +245,9 @@ Step 8 adds `--swarm-time --sustained`: four seconds of continuous production
 capture at the default 1000 ms Offset, zero mixer drops, queue drain and automatic
 publication recovery after reference restart. A virtual-time EUnit proof queues
 and drains two complete 30-second sources (23,040,000 PCM bytes) at their exact
-targets. This full-range software proof does not claim real-time 30-second
-network playback or successful execution at a 5 ms lead on every backend.
+targets. Step 8d subsequently verifies real loopback WebRTC playback across renewal
+at 30-second Offset; this still does not qualify arbitrary Internet paths or
+successful execution at a 5 ms lead on every backend.
 `--swarm-time --opus` uses real GStreamer-encoded sine packets and the decoder,
 checks two-source mixing, independent lifecycle, targets and headless handoff.
 Reproduction commands and platform limits are in [the backend checks](../tests/control/README.md).

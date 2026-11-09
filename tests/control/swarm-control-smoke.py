@@ -129,7 +129,7 @@ def main():
             s = runtime.request("snapshot")
             assert s["node"] == "nonode@nohost" and s["nodes"] == []
             assert not s["legacy_started"] and s["workers"] == 0
-            assert s["children"] == sorted(["ba_swarm_clock_sup", "ba_device_sup", "ba_swarm_control", "ba_swarm_desks", "ba_swarm_membership"])
+            assert s["children"] == sorted(["ba_desk_connections_sup", "ba_swarm_runtime_sup", "ba_swarm_desks"])
         director, receiver = a, b
         contract = secrets.token_hex(16).upper()
         assert receiver.request("enable_test")["ok"]

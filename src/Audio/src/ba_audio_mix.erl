@@ -3,6 +3,7 @@
 -export([new/2,add/3,remove/2,enable/3,gain/3,push/6,next_time/1,take/2,snapshot/1]).
 -define(MAX_BYTES,33554432).
 -define(MAX_BLOCKS,8192).
+-define(MAX_FRAMES,4096).
 new(Rate,Clock) -> #{rate => Rate,clock => Clock,streams => #{},cursor => undefined,
     queued_bytes => 0,queued_blocks => 0,clipped => 0}.
 add(Id,G,S) ->
@@ -22,22 +23,34 @@ gain(Id,G,#{streams := Items}=S) when is_number(G),G>=0,G=<1 ->
 push(Id,#{sample_rate := Rate,clock := Clock,channel_count := C,sample_format := F}=D,
      #{playback_time := Target,frame_count := Frames},PCM,Now,#{rate := Rate,clock := Clock,streams := Items}=S) ->
     try
-        true = is_integer(Target) andalso Target>Now andalso Target-Now=<31000000000,
-        true = is_integer(Frames) andalso Frames>0 andalso Frames=<4096,
+        ensure(is_integer(Target),invalid_target),ensure(Target>Now,late_packet),ensure(Target-Now=<31000000000,target_too_far),
+        true = is_integer(Frames) andalso Frames>0 andalso Frames=< ?MAX_FRAMES,
         true = C=:=1 orelse C=:=2,true = byte_size(PCM)=:=Frames*ba_audio_packet:frame_bytes(D),
         I = maps:get(Id,Items),true = maps:get(enabled,I),Tree = maps:get(blocks,I),
-        true = maps:get(count,I)<4096 andalso maps:get(queued_blocks,S)<?MAX_BLOCKS,
+        ensure(maps:get(count,I)<4096 andalso maps:get(queued_blocks,S)<?MAX_BLOCKS,buffer_full),
         Start = (Target*Rate+500000000) div 1000000000,End = Start+Frames,
-        Cursor = maps:get(cursor,S),true = Cursor=:=undefined orelse Start>=Cursor,
-        true = lists:all(fun({T,{N,_}}) -> End=<T orelse Start>=T+N end,gb_trees:to_list(Tree)),
+        Cursor = maps:get(cursor,S),ensure(Cursor=:=undefined orelse Start>=Cursor,late_packet),
+        ensure(no_overlap(Start,End,gb_trees:iterator_from(Start-?MAX_FRAMES+1,Tree)),overlapping_packet),
         Values = stereo(samples(PCM,F),C),true = length(Values)=:=Frames,
         true = lists:all(fun({L,R}) -> abs(L)=<16 andalso abs(R)=<16 end,Values),
         Bin = iolist_to_binary([<<L:32/little-float,R:32/little-float>> || {L,R} <- Values]),Size = byte_size(Bin),
-        true = maps:get(queued_bytes,S)+Size=< ?MAX_BYTES,
+        ensure(maps:get(queued_bytes,S)+Size=< ?MAX_BYTES,buffer_full),
         Next = I#{blocks := gb_trees:insert(Start,{Frames,Bin},Tree),bytes := maps:get(bytes,I)+Size,count := maps:get(count,I)+1},
         {ok,S#{streams := Items#{Id := Next},queued_bytes := maps:get(queued_bytes,S)+Size,queued_blocks := maps:get(queued_blocks,S)+1}}
-    catch _:_ -> {error,invalid_late_or_full,S} end;
+    catch throw:R -> {error,R,S};_:_ -> {error,invalid_packet,S} end;
+push(_,_,H,_,_,S) when is_map(H),not is_map_key(playback_time,H) -> {error,missing_presentation_target,S};
 push(_,_,_,_,_,S) -> {error,unsupported_mix_format_or_clock,S}.
+%% No accepted block spans more than MAX_FRAMES. Older blocks cannot overlap;
+%% avoid allocating/scanning the entire 30-second queue on each admission.
+no_overlap(Start,End,Iterator) ->
+    case gb_trees:next(Iterator) of
+        none -> true;
+        {T,_,_} when T>=End -> true;
+        {T,{N,_},Next} when T+N=<Start -> no_overlap(Start,End,Next);
+        _ -> false
+    end.
+ensure(true,_) -> ok;
+ensure(false,R) -> throw(R).
 active(S) -> [I || #{enabled := true,count := N}=I <- maps:values(maps:get(streams,S)),N>0].
 next_time(#{rate := Rate}=S) ->
     case active(S) of [] -> none;Inputs ->

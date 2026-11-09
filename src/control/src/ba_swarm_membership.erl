@@ -105,7 +105,7 @@ handle_info(tick,S0) ->
     end,
     erlang:send_after(250,self(),tick),{noreply,S2};
 handle_info({desk_event,URL,disconnected},#{role := member,primary := URL} = S) ->
-    invalidate(),{noreply,S#{state := waiting,until := 0,request := undefined}};
+    {noreply,S};
 handle_info({desk_event,_,_},S) -> {noreply,S};
 handle_info({desk_delivery,_,From,Packet},S) ->
     try

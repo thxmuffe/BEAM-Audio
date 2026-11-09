@@ -253,3 +253,42 @@ new_handshake_after_expiry_discards_an_older_candidate_test() ->
     {ok,[Proof],[],A2} = p(receive_packet,[B,Challenge,61002,A1]),
     {ok,[Ready],[],_} = p(receive_packet,[A,Proof,61003,B1]),
     ?assertMatch({ok,[],[authorized],_},p(receive_packet,[B,Ready,61004,A2])).
+
+renewal_requires_fresh_nonce_proof_and_preserves_session_test() ->
+    {A,B,KA,_,SA,SB,_,_,_,_} = handshake(),
+    OldA = p(context,[B,100,SA]),OldB = p(context,[A,100,SB]),
+    {ok,Request,A1} = p(renew,[B,20000,SA]),
+    {ok,[Challenge],[],B1} = p(receive_packet,[A,Request,20001,SB]),
+    ?assertEqual(OldB,p(context,[A,20001,B1])),
+    {ok,[Proof],[],A2} = p(receive_packet,[B,Challenge,20002,A1]),
+    Bad = resign(Proof,KA,fun(M) -> M#{<<"payload">> := (maps:get(<<"payload">>,M))#{<<"b">> := binary:copy(<<"0">>,64)}} end),
+    ?assertMatch({error,_,B1},p(receive_packet,[A,Bad,20003,B1])),
+    {ok,[Ready],[{session_renewed,CB}],B2} = p(receive_packet,[A,Proof,20003,B1]),
+    {ok,[],[{session_renewed,CA}],A3} = p(receive_packet,[B,Ready,20004,A2]),
+    ?assertEqual(maps:get(session,OldA),maps:get(session,CA)),
+    ?assertEqual(maps:get(session,OldB),maps:get(session,CB)),
+    ?assert(maps:get(deadline,CA)>maps:get(deadline,OldA)),
+    ?assertMatch({error,_,A3},p(receive_packet,[B,Ready,20005,A3])),
+    ?assertMatch({error,_,B2},p(receive_packet,[A,Proof,20005,B2])),
+    {ok,Query,A4} = p(request_status,[B,60005,A3]),
+    ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Query,60006,B2])),
+    ?assertMatch({error,_,A4},p(renew,[B,90000,A4])).
+
+withheld_renewal_does_not_extend_authorization_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    {ok,Request,A1} = p(renew,[B,20000,SA]),
+    {ok,[_],[],B1} = p(receive_packet,[A,Request,20001,SB]),
+    {_,A2} = p(expire,[25001,A1]),{_,B2} = p(expire,[25002,B1]),
+    ?assertEqual(p(context,[B,100,SA]),p(context,[B,30000,A2])),
+    ?assertEqual(p(context,[A,100,SB]),p(context,[A,30000,B2])),
+    ?assertMatch({error,_,_},p(request_status,[B,60005,A2])),
+    ?assertEqual(1,length(p(renew_due,[30000,A2]))+length(p(renew_due,[30000,B2]))).
+
+renewal_is_capped_by_fresh_membership_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    {ok,Request,A1} = p(renew,[B,20000,SA#{membership_deadline => 65000}]),
+    {ok,[Challenge],[],B1} = p(receive_packet,[A,Request,20001,SB#{membership_deadline => 66000}]),
+    {ok,[Proof],[],A2} = p(receive_packet,[B,Challenge,20002,A1]),
+    {ok,[Ready],_,_} = p(receive_packet,[A,Proof,20003,B1]),
+    {ok,[],[{session_renewed,#{deadline := 65000}}],A3} = p(receive_packet,[B,Ready,20004,A2]),
+    ?assertMatch({error,_,A3},p(request_status,[B,65000,A3])).

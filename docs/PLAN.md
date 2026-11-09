@@ -19,9 +19,11 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**The original steps 1–8 and core naming/terminology cleanup are complete.
-Next: the approved backend follow-ups 8a–8d below, before starting the macOS app.
-Step 9 is not started; app order is macOS → iOS → Windows.** See
+**Steps 1–8, the core naming cleanup and backend follow-ups 8a–8c are complete
+for the headless runtime. 8d is implemented; its maximum-Offset continuity exit
+check remains open because repeat runs miss output deadlines. Diagnose that
+remaining scheduling issue before declaring 8d verified. Step 9 has not started;
+app order remains macOS → iOS → Windows.** See
 [canonical component names](TERMINOLOGY.md) and [API/configuration migration](NAMING.md). The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
@@ -157,7 +159,7 @@ trusted-cluster code; it is not the current Swarm boundary.
    obsolete remote-PID native session and retired the old PCM carrier. Installed
    app profiles and physical output are explicitly unqualified until step 9.
 
-   **Approved backend follow-ups before step 9 — pending, in this order:**
+   **Approved backend follow-ups before step 9 — 8a–8c verified; 8d qualification open:**
 
    **8a. Isolate Desk failures.** Supervise each Desk connection independently,
    using established OTP supervision. A connection crash or disconnect must not
@@ -169,6 +171,10 @@ trusted-cluster code; it is not the current Swarm boundary.
    and expiry still apply. **Exit:** with two Desks and active work, disconnect
    and crash either connection; unaffected process/session identities and work
    survive, and the failed connection can recover independently.
+   **Complete:** independent temporary relay Workers, bounded desired-connection
+   reconciliation, isolated runtime supervision and alternate-Desk routing. The
+   two-Desk proof preserves core/session/Worker identities through three relay
+   crashes and one service crash, then recovers and continues rejoin/revocation.
 
    **8b. Make Contract installation idempotent.** Reinstalling the unchanged
    current Contract is a no-op. Preserve publications, Subscription intent,
@@ -177,6 +183,9 @@ trusted-cluster code; it is not the current Swarm boundary.
    must not create duplicate resources. **Exit:** repeated identical installation
    preserves live resource identities/buffers; actual permission withdrawal still
    stops the affected work without disturbing another Source.
+   **Complete:** unchanged installs preserve resources/buffers; stale revisions
+   of the same Contract are rejected. Continuous media proofs reinstall identical
+   publisher/receiver Contracts every second without changing live identities.
 
    **8c. Make failures observable.** Count packet drops, mailbox overload,
    missing targets, missed deadlines and buffering/decoder failures by clear
@@ -187,6 +196,10 @@ trusted-cluster code; it is not the current Swarm boundary.
    than a silently stalled setup. **Exit:** deliberately exercise each supported
    failure path and observe its reason without unbounded diagnostic state or
    disclosure of credentials/audio payloads. UI presentation follows in step 9.
+   **Complete:** bounded owner-local counters/last-error codes, per-transport
+   diagnostics and explicit signaling-overload failure. Unit checks cover failure
+   reasons, overload, expiry and PCM redaction; supervisor child arguments contain
+   no private key. No new monitoring service or packet-by-packet logging was added.
 
    **8d. Renew authorization without interrupting eligible media.** Proactively
    renew control authorization and media permissions with fresh authenticated
@@ -200,9 +213,21 @@ trusted-cluster code; it is not the current Swarm boundary.
    maximum Playback Offset, retains eligible Media Sessions and original targets
    without renewal-induced gaps; withheld renewal and revocation still stop
    unauthorized playback and buffered output at the required boundary.
+   **Implemented; continuity qualification remains open:** fresh nonce renewal
+   retains session IDs/replay sequence, Media Sessions, decoders and buffered
+   targets. Real two-source PCM passes 125 s at 1000 ms Offset with exact frame,
+   full-sample and target accounting at production 60 s authorization lifetimes.
+   Earlier 85 s/30000 ms runs passed, but repeat runs miss output deadlines despite
+   stable identities and correct mixed samples. The latest run drops seven
+   256-frame output blocks; no late output is submitted. Do not mark this exit
+   complete until the maximum-Offset scheduling issue is understood and resolved.
+   Clock sampling is explicitly accelerated in these fixtures. Withheld-proof
+   and post-renewal revocation checks discard future audio; Opus lifecycle passes
+   repeated renewal with accelerated leases. See [reproduction and limits](../tests/control/README.md).
+
 
    These are backend corrections, not new app UI or a new clock algorithm.
-   Continue using isolated headless checks; do not launch installed product apps.
+   Verification used isolated headless checks; no product app was launched.
 
 9. **Update and verify the applications — macOS, then iOS, then Windows.**
    Integrate the new runtime and permission/state model into each app in that
@@ -321,7 +346,8 @@ trusted-cluster code; it is not the current Swarm boundary.
   **not** automatically authorize active microphone, playback or job operations.
 - Reuse existing WebRTC/Opus and GStreamer media engine boundaries and preserve
   per-packet playback timing. Working app behavior between steps is not required.
-- Follow-ups 8a–8d precede app integration. Native mixing and RTP header-extension
+- Follow-ups 8a–8c are complete; 8d maximum-Offset continuity qualification
+  remains open before app integration. Native mixing and RTP header-extension
   work are bounded evaluations during macOS audio integration; neither changes
   the accepted default or packet format without evidence and a recorded decision.
 - Paused Streams retain logical subscriptions; idle transports may remain open
@@ -370,15 +396,14 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Next: **8a — Desk failure isolation**, then **8b — idempotent Contracts**,
-**8c — observable failures**, and **8d — seamless authorization renewal**.
-After those backend checks pass, begin step 9 with macOS runtime/UI integration
-and the combined native-mixing/RTP timing evaluation. Finalize and verify the
+Next: **diagnose and resolve the remaining 8d maximum-Offset deadline misses**.
+Then **step 9 — macOS runtime/UI integration**, when requested, including
+the combined native-mixing/RTP timing evaluation. Finalize and verify the
 macOS audio boundary before updating iOS, then Windows. No product app is launched
 for the preparatory backend work. Preserve independent packet targets, stored
 Device Identity and the common UI requirements; start updated apps with forgotten
 old Swarms/subscriptions. Abandoned-Swarm recovery remains step 10 and is not a
-prerequisite for the macOS work. This plan update does not implement any follow-up
-or start app integration.
+prerequisite for the macOS work. Follow-ups 8a–8d are implemented; step 9 has not
+started. App/device listening and physical output timing remain unqualified.
 See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),
 [membership](SWARM_MEMBERSHIP.md) and [jobs](SWARM_JOBS.md).

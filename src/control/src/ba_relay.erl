@@ -66,7 +66,7 @@ init(#{owner := Owner, delivery := Delivery} = Options) ->
            ready => false, boxes => #{}, watch => [], online => [], backoff => 500, error => null}}.
 handle_call(status, _, S) ->
     {reply, #{id => name(maps:get(identity,S)),url => case maps:get(url,S) of undefined -> null; U -> U end,
-              connected => maps:get(ready, S), online => maps:get(online, S), watched => maps:get(watch, S), error => maps:get(error, S)}, S};
+              connected => maps:get(ready, S), online => maps:get(online, S), watched => maps:get(watch, S), error => maps:get(error, S),diagnostics => ba_diagnostics:view(S)}, S};
 handle_call({send, To, Cap, Payload}, _, #{ready := true} = S) ->
     Frame = #{op => <<"send">>, to => To, mailbox => Cap, payload => Payload,
               request => maps:get(<<"request">>, Payload, null)},
@@ -105,20 +105,20 @@ handle_info_event(connect, #{conn := undefined, url := URL} = S) when is_binary(
         monitor(process, Pid),
         erlang:send_after(10000, self(), {handshake_timeout, Pid}),
         {noreply, S#{conn := Pid}}
-    catch _:_ -> {noreply, retry(S)} end;
+    catch _:_ -> {noreply, retry(connect_failed,S)} end;
 handle_info_event({gun_up, Pid, http}, #{conn := Pid} = S) ->
     Stream = gun:ws_upgrade(Pid, "/relay/v1", [],
         #{max_frame_size => 131072, compress => false}),
     {noreply, S#{stream := Stream}};
 handle_info_event({gun_upgrade, Pid, Stream, [<<"websocket">>], _}, #{conn := Pid, stream := Stream} = S) -> {noreply, S};
 handle_info_event({gun_ws, Pid, Stream, {text, Text}}, #{conn := Pid, stream := Stream} = S) when byte_size(Text) =< 131072 ->
-    try {noreply, incoming(json:decode(Text), S)} catch _:_ -> {noreply, retry(S)} end;
-handle_info_event({gun_down, Pid, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info_event({'DOWN', _, process, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info_event({handshake_timeout, Pid}, #{conn := Pid, ready := false} = S) -> {noreply, retry(S)};
-handle_info_event({gun_error, Pid, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info_event({gun_error, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
-handle_info_event({gun_response, Pid, _, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(S)};
+    try {noreply, incoming(json:decode(Text), S)} catch _:_ -> {noreply, retry(invalid_desk_message,S)} end;
+handle_info_event({gun_down, Pid, _, Reason, _}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
+handle_info_event({'DOWN', _, process, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(connection_closed,S)};
+handle_info_event({handshake_timeout, Pid}, #{conn := Pid, ready := false} = S) -> {noreply, retry(handshake_timeout,S)};
+handle_info_event({gun_error, Pid, _, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
+handle_info_event({gun_error, Pid, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
+handle_info_event({gun_response, Pid, _, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(http_upgrade_rejected,S)};
 handle_info_event(_, S) -> {noreply, S}.
 incoming(#{<<"op">> := <<"challenge">>, <<"v">> := 1, <<"nonce">> := Nonce}, S)
         when is_binary(Nonce), byte_size(Nonce) =:= 64 ->
@@ -130,7 +130,7 @@ incoming(#{<<"op">> := <<"ready">>, <<"v">> := 1, <<"id">> := Id}, S) ->
     ws(#{op => <<"watch">>, nodes => maps:get(watch, S)}, Next),
     notify(connected, Next), Next;
 incoming(#{<<"op">> := <<"delivery">>, <<"from">> := From, <<"mailbox">> := Cap, <<"payload">> := Payload}, #{boxes := Boxes} = S) ->
-    case maps:find(Cap, Boxes) of
+    Delivery = case maps:find(Cap, Boxes) of
         {ok, Swarm} ->
             case maps:get(delivery, S) of
                 raw ->
@@ -145,12 +145,14 @@ incoming(#{<<"op">> := <<"delivery">>, <<"from">> := From, <<"mailbox">> := Cap,
                     end
             end;
         _ -> ok
-    end, S;
+    end,
+    case Delivery of {error,overloaded} -> ba_diagnostics:count(desk_owner_overloaded,S);_ -> S end;
 incoming(#{<<"op">> := <<"presence">>, <<"online">> := Online}, S) when is_list(Online), length(Online) =< 256 ->
     notify({presence, Online}, S), S#{online := Online};
 incoming(#{<<"op">> := <<"error">>, <<"request">> := Request, <<"error">> := Error}, S) ->
     notify({error, Request, Error}, S), S#{error := Error};
 incoming(_, S) -> S.
+retry(Reason,S) -> retry(ba_diagnostics:count(Reason,S)).
 retry(#{conn := Pid, backoff := Delay} = S) ->
     case Pid of undefined -> ok; _ -> try gun:close(Pid) catch _:_ -> ok end end,
     erlang:send_after(Delay + rand:uniform(250), self(), connect), notify(disconnected, S),
@@ -176,7 +178,7 @@ notify({delivery,_,_,_} = Event, #{owner := Owner} = S) when is_pid(Owner) ->
     end;
 notify(Event,#{owner := Owner} = S) when is_pid(Owner) -> Owner ! owner_message(Event,S);
 notify(Event,#{owner := Name} = S) ->
-    case whereis(Name) of undefined -> ok; Pid -> Pid ! owner_message(Event,S) end.
+    case whereis(Name) of undefined -> {error,unavailable}; Pid -> notify(Event,S#{owner := Pid}) end.
 owner_message(Event,S) ->
     case maps:get(tag,S,undefined) of undefined -> {relay,Event}; Tag -> {relay,Tag,Event} end.
 name(N) when is_atom(N) -> atom_to_binary(N);

@@ -31,6 +31,11 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--swarm-time",action="store_true")
     parser.add_argument('--opus',action='store_true',help='Exercise the configured GStreamer decoder, no hardware')
     parser.add_argument('--sustained',action='store_true',help='Continuous PCM capture at the default 1000ms Offset, then reference restart/rebind')
+    parser.add_argument('--renewal',action='store_true',help='Continuous two-source lease renewal proof; returns before lifecycle checks')
+    parser.add_argument('--seconds',type=int,default=12)
+    parser.add_argument('--offset-ms',type=int,default=1000)
+    parser.add_argument('--lease-ms',type=int,default=60000)
+    parser.add_argument('--deny-renewal',action='store_true',help='Test-only packet filter withholds control proofs while keeping the test clock fresh')
     args=parser.parse_args()
     root=control.ROOT
     paths=list((root/'builds/intermediates/control/default/lib').glob('*/ebin'))
@@ -57,6 +62,7 @@ def main():
                        'BINDIR':str(Path(executable).parent),'EMU':'beam','PROGNAME':'erl'}
         a,b,c=[control.Runtime([out,*paths],executable=executable,extra_env=extra_env) for _ in range(3)]
         runtimes.extend([a,b,c])
+        for r in runtimes:assert r.request('renewal_prepare',lease_ms=args.lease_ms)['ok']
         if args.swarm_time:
             for r in runtimes:assert r.request('clock_prepare',interval_ms=250,samples=3)['ok']
         assert a.request('create',desks=[url])['ok']
@@ -98,7 +104,7 @@ def main():
         assert publish(a,'music','pcm16_le',1)['ok']
         assert publish(c,'microphone','float32_le',2)['ok']
         wait_audio(b,lambda s:len(s['offers'])==2)
-        subscriptions=[]
+        subscriptions=[];contracts=[]
         for r,key in ((a,'music'),(c,'microphone')):
             contract=secrets.token_hex(16).upper()
             assert r.request('audio_contract',direction='publish',peer=b.identity['id'],source=key,contract=contract)['ok']
@@ -106,9 +112,74 @@ def main():
             result=b.request('audio_subscribe',peer=r.identity['id'],source=key)
             assert result.get('ok'),result
             subscriptions.append(result['value'])
+            contracts.append((r,key,contract))
         x,y=subscriptions
         wait_audio(b,lambda s:all(s['subscriptions'][i]['state']=='active' for i in subscriptions))
         for i in subscriptions:assert b.request('audio_play',id=i,playing=True)['ok']
+        if args.renewal:
+            assert not args.opus,'PCM is used for exact continuous frame/mix accounting'
+            if args.swarm_time:
+                assert b.request('offset_set',offset_ms=args.offset_ms)['ok']
+                for r in runtimes:
+                    end=time.monotonic()+10
+                    while r.request('clock_snapshot')['offset_policy']['offset_ms']!=args.offset_ms:
+                        assert time.monotonic()<end;time.sleep(.05)
+            identities=[r.request('audio_ids') for r in runtimes]
+            before=b.request('audio_snapshot')['mixer'];b.request('audio_reset_stats')
+            target=time.time_ns()+args.offset_ms*1_000_000
+            start=time.monotonic()
+            for n in range(args.seconds*50):
+                for r,key,value in ((a,'music',.25),(c,'microphone',.5)):
+                    if args.swarm_time:
+                        reply=r.request('capture_source',source=key,capture_ns=target-args.offset_ms*1_000_000+n*20_000_000,value=value,frames=960)
+                        assert reply['send_errors']==0,reply
+                    else:
+                        reply=r.request('push_source',source=key,target_ns=target+n*20_000_000,value=value,frames=960)
+                        assert reply['deliveries']==1,reply
+                if n%50==0:
+                    for r,old in zip(runtimes,identities):assert r.request('audio_ids')==old
+                    # Reinstall exactly the same Contracts during live playback.
+                    for r,key,contract in contracts:
+                        assert r.request('audio_contract',direction='publish',peer=b.identity['id'],source=key,contract=contract)['ok']
+                        assert b.request('audio_contract',direction='receive',peer=r.identity['id'],source=key,contract=contract)['ok']
+                time.sleep(max(0,start+(n+1)*.02-time.monotonic()))
+            if args.deny_renewal:
+                assert not args.swarm_time,'Keep the independent test clock fresh to isolate authorization expiry'
+                for r in runtimes:assert r.request('block_handshakes')['ok']
+                time.sleep(args.lease_ms/1000+.5)
+                stopped=b.request('audio_snapshot')
+                assert all(s['state']!='active' for s in stopped['subscriptions'].values()),stopped
+                assert stopped['mixer']['streams']==0,stopped
+                # Future audio was buffered under the previous lease, but cannot
+                # execute after expiry, even though the test clock stays ready.
+                if args.offset_ms>args.seconds*1000+args.lease_ms+1000:
+                    assert b.request('audio_stats')['frames']==0
+                print('PASS: withheld nonce proofs stop Media Sessions and discard future buffers at authorization expiry, with an independently healthy test clock')
+                return
+            time.sleep(args.offset_ms/1000+.2)
+            after=b.request('audio_snapshot')['mixer'];stats=b.request('audio_stats')
+            assert after['dropped']==before['dropped'],(before,after,stats)
+            assert stats['frames']==args.seconds*48000 and stats['gaps']==0 and stats['bad_mix']==0 and stats['late']==0,stats
+            assert abs(stats['first_target']-target)<22000,stats
+            assert after['queued_bytes']==0,after
+            for r,old in zip(runtimes,identities):assert r.request('audio_ids')==old
+            for r in (a,c):
+                session=b.request('snapshot')['sessions'][r.identity['id']]
+                assert session.get('renewals',0)>=2,session
+            # Revocation must still invalidate authorized media and future
+            # buffers after successful in-place renewal.
+            frames_before=b.request('audio_stats')['frames'];future=time.time_ns()+700_000_000
+            for r,key,value in ((a,'music',.25),(c,'microphone',.5)):
+                assert r.request('push_source',source=key,target_ns=future,value=value,frames=960)['deliveries']==1
+            end=time.monotonic()+2
+            while b.request('audio_snapshot')['mixer']['queued_bytes']==0:
+                assert time.monotonic()<end;time.sleep(.01)
+            assert a.request('revoke',peer=b.identity['id'])['ok']
+            wait_audio(b,lambda s:s['mixer']['streams']==0 and all(v['state']!='active' for v in s['subscriptions'].values()))
+            time.sleep(.75)
+            assert b.request('audio_stats')['frames']==frames_before,'Revoked future PCM was rendered'
+            print(f'PASS: {args.seconds}s continuous two-source PCM at {args.offset_ms}ms Offset; exact frame/mix/target accounting, no gaps/drops, unchanged Media Sessions and publications across authenticated renewal and repeated identical Contracts')
+            return
         def mixed(expected,first=True):
             b.request('audio_clear_output')
             target=time.time_ns()+300_000_000

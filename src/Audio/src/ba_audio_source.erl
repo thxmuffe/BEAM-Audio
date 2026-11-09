@@ -1,7 +1,7 @@
 %% A local publication; source identity survives pause, incarnation does not restart.
 -module(ba_audio_source).
 -behaviour(gen_server).
--export([start_link/1,init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
+-export([start_link/1,init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link(Args) -> gen_server:start_link(?MODULE,Args,[]).
 init({#{source_key := Key} = Offer,Owner}) when is_pid(Owner),node(Owner)=:=node() ->
     ok = ba_audio:validate_offer(Offer),monitor(process,Owner),
@@ -50,3 +50,5 @@ handle_info({'DOWN',Ref,process,Pid,_},#{owner := Pid} = S) -> _ = Ref,{stop,nor
 handle_info({'DOWN',Ref,process,_,_},#{sessions := Sessions} = S) -> {noreply,S#{sessions := maps:remove(Ref,Sessions)}};
 handle_info(_,S) -> {noreply,S}.
 terminate(_,_) -> ok.
+format_status(Status) ->
+    maps:map(fun(state,S) -> maps:with([source_key,incarnation],S);(log,_) -> [];(_,_) -> redacted end,Status).

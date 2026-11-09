@@ -89,14 +89,26 @@ Backups/rollback-resistant storage and distributed durable storage are not suppl
 
 ## Desk ownership and limits
 
-`ba_sup` uses `rest_for_one`: Desk adapter, membership owner, local Device
-supervisor, then control. A Desk adapter failure restarts dependent branches;
-a membership owner failure resets local runtime/consent/session state. Ordinary
-socket disconnects reconnect through the existing relay and clear control sessions.
+`ba_sup` uses `one_for_one` to separate the Desk connection supervisor, Desk
+route owner and dependency-ordered runtime branch. `ba_swarm_runtime_sup` retains
+`rest_for_one` for membership → Device supervisor → control → Swarm Clock →
+on-demand audio. Thus membership/control failures still reset dependent state,
+while one Desk connection failure cannot restart those owners or their Workers.
+
+Relay Workers are temporary supervised children. The Desk owner reconciles desired
+connections once per second and reinstalls their mailbox/watch state; repeated
+Worker crashes do not consume a shared automatic-restart budget or tear down a
+healthy Desk. Ordinary socket failures retain the relay's bounded reconnect backoff.
+The route owner checkpoints declarative configuration, not live PIDs. Status calls
+tolerate a missing/stalled connection. Loss of a member's primary Desk preserves
+its unexpired membership and pending proof; another configured Desk can carry the
+refresh. Failure to obtain fresh proof still expires permission normally.
 
 Each device registers its stable identity/mailbox at all explicitly configured
 Desks. The authority-signed directory names each recipient's primary Desk and
-mailbox; senders use that route, including across initial introduction Desks.
+mailbox; senders try that route first, then another configured Desk if sending
+fails, without broadcasting duplicates. This uses the same mailbox registered at
+each permitted Desk, with the same signed peer/Swarm binding.
 A returning member may choose another permitted primary. Route changes increment
 policy revision. The authority must maintain connections at the participating
 Desks; Desks require no shared database or membership logic. Unknown Desk URLs

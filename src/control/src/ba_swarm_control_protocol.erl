@@ -2,7 +2,7 @@
 -module(ba_swarm_control_protocol).
 -export([new/2, connect/3, request_status/3, request_capabilities/3, reply_capabilities/5,
          receive_packet/4, expire/2, reset/1,
-         snapshot/1, seal/2,job_message/6,context/3,audio_message/5,time_message/5]).
+         snapshot/1, seal/2,renew/3,renew_due/2,job_message/6,context/3,audio_message/5,time_message/5]).
 -define(DOMAIN, <<"parvi-swarm-control/v1:">>).
 -define(MAX, 32768).
 -define(INT, 9007199254740991).
@@ -39,6 +39,24 @@ connect(Peer, Now, S) ->
                                  nonces(Session),Session,S),
         {ok,Packet,Next}
     end,S).
+
+%% Stable session/replay sequence, fresh two-way nonce proof for each lease.
+%% One deterministic initiator avoids simultaneous renewals.
+renew_due(Now,S) ->
+    [Peer || {Peer,#{stage := authorized}=Session} <- maps:to_list(maps:get(sessions,S)),
+        maps:get(id,S)<Peer,Now>=maps:get(renew_after,Session,infinity),
+        not maps:is_key(renewal,Session),Now<maps:get(deadline,Session)].
+renew(Peer,Now,S) ->
+    attempt(fun() ->
+        Session = active(Peer,Now,S),false = maps:is_key(renewal,Session),
+        R = #{id => fresh(16),a => fresh(32),b => null,stage => request,deadline => Now+5000},
+        {Packet,Next} = outgoing(Peer,<<"lease.request">>,maps:get(id,R),nonces(R),Session#{renewal => R},S),
+        {ok,Packet,Next}
+    end,S).
+lease_ms(S) -> maps:get(lease_ms,S,60000).
+extend(Session,Now,S) ->
+    (maps:remove(renewal,Session))#{deadline := min(Now+lease_ms(S),maps:get(membership_deadline,S,infinity)),
+        renew_after => Now+lease_ms(S) div 3,renewals => maps:get(renewals,Session,0)+1}.
 
 request_status(Peer, Now, S) ->
     request(Peer,status,<<"status.read">>,Now,S).
@@ -151,10 +169,10 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := 0,<<"session">> := Id,
             {<<"proof">>,Session#{b := B,stage := proof}};
         {<<"proof">>,challenge} ->
             Payload = nonces(Session),
-            {<<"ready">>,Session#{stage := authorized,deadline := min(Now+60000,maps:get(membership_deadline,S,infinity))}};
+            {<<"ready">>,Session#{stage := authorized,deadline := min(Now+lease_ms(S),maps:get(membership_deadline,S,infinity)),renew_after => Now+lease_ms(S) div 3}};
         {<<"ready">>,proof} ->
             Payload = nonces(Session),
-            {none,Session#{stage := authorized,deadline := min(Now+60000,maps:get(membership_deadline,S,infinity))}}
+            {none,Session#{stage := authorized,deadline := min(Now+lease_ms(S),maps:get(membership_deadline,S,infinity)),renew_after => Now+lease_ms(S) div 3}}
     end,
     case Reply of
         none -> {ok,[],[authorized],put(Peer,Updated,S)};
@@ -168,6 +186,9 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
     true = Sequence > Last,
     Received = Session#{received := Sequence},
     case Op of
+        _ when Op=:= <<"lease.request">>;Op=:= <<"lease.challenge">>;
+               Op=:= <<"lease.proof">>;Op=:= <<"lease.ready">> ->
+            lease(Peer,Op,Request,Payload,Received,Now,S);
         <<"time.message">> ->
             Grant = ba_swarm_time_protocol:permission(maps:get(<<"kind">>,Payload)),
             Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
@@ -225,6 +246,31 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
             {ok,[],[{reply,Op,Payload}],Next}
     end.
 
+lease(Peer,<<"lease.request">>,Id,#{<<"a">> := A,<<"b">> := null},Session,Now,S) ->
+    %% One bounded exchange per renewal interval, even for an authenticated peer.
+    %% Critical local renewal notifications cannot become a per-packet flood.
+    false = maps:is_key(renewal,Session),
+    true = Now+min(1000,lease_ms(S) div 6)>=maps:get(renew_after,Session),
+    R = #{id => Id,a => A,b => fresh(32),stage => challenge,deadline => Now+5000},
+    {Packet,Next} = outgoing(Peer,<<"lease.challenge">>,Id,nonces(R),Session#{renewal => R},S),
+    {ok,[Packet],[],Next};
+lease(Peer,Op,Id,Payload,Session,Now,S) ->
+    #{id := Id,deadline := Until}=R = maps:get(renewal,Session),true = Now<Until,
+    case {Op,maps:get(stage,R)} of
+        {<<"lease.challenge">>,request} ->
+            #{<<"a">> := A,<<"b">> := B} = Payload,A = maps:get(a,R),true = hex(B,64),
+            NextR = R#{b := B,stage := proof},
+            {Packet,Next} = outgoing(Peer,<<"lease.proof">>,Id,nonces(NextR),Session#{renewal := NextR},S),
+            {ok,[Packet],[],Next};
+        {<<"lease.proof">>,challenge} ->
+            Payload = nonces(R),Updated = extend(Session,Now,S),
+            {Packet,Next} = outgoing(Peer,<<"lease.ready">>,Id,Payload,Updated,S),
+            {ok,[Packet],[{session_renewed,context(Peer,Now,Next)}],Next};
+        {<<"lease.ready">>,proof} ->
+            Payload = nonces(R),Next = put(Peer,extend(Session,Now,S),S),
+            {ok,[],[{session_renewed,context(Peer,Now,Next)}],Next}
+    end.
+
 active(Peer, Now, S) ->
     #{stage := authorized,deadline := Deadline} = Session = maps:get(Peer,maps:get(sessions,S)),
     true = Now < Deadline,true = Now < maps:get(membership_deadline,S,infinity), Session.
@@ -238,7 +284,12 @@ expire(Now, #{sessions := Sessions} = S) ->
                 case maps:get(request_deadline,Session,infinity) =< Now of
                     true -> {Acc#{Peer => maps:without([pending,pending_kind,request_deadline],Session)},
                              [{Peer,request_timeout}|Es]};
-                    false -> {Acc#{Peer => Session},Es}
+                    false ->
+                        Live = case maps:get(renewal,Session,undefined) of
+                            #{deadline := Due} when Now>=Due -> maps:remove(renewal,Session#{renew_after => Now+1000});
+                            _ -> Session
+                        end,
+                        {Acc#{Peer => Live},Es}
                 end
         end
     end,{#{},[]},Sessions),
@@ -247,7 +298,7 @@ expire(Now, #{sessions := Sessions} = S) ->
 reset(S) -> S#{sessions := #{},rekeys => #{}}.
 snapshot(S) ->
     #{id => maps:get(id,S),sessions => maps:map(fun(_,V) ->
-        maps:with([stage],V) end,maps:get(sessions,S))}.
+        maps:with([stage,deadline,renewals],V) end,maps:get(sessions,S))}.
 
 outgoing(Peer, Op, Request, Payload, Session, S) ->
     #{swarm := Swarm,authority := Authority,director := Director,epoch := Epoch,revision := Revision} = maps:get(policy,S),
@@ -287,7 +338,9 @@ verify(Packet, From) when is_binary(Packet), byte_size(Packet) =< ?MAX ->
     payload(maps:get(<<"op">>,Body),maps:get(<<"payload">>,Body)), Body.
 
 payload(Op,P) when Op =:= <<"hello">>; Op =:= <<"challenge">>;
-                   Op =:= <<"proof">>; Op =:= <<"ready">> ->
+                   Op =:= <<"proof">>; Op =:= <<"ready">>;
+                   Op =:= <<"lease.request">>;Op =:= <<"lease.challenge">>;
+                   Op =:= <<"lease.proof">>;Op =:= <<"lease.ready">> ->
     exact(P,[<<"a">>,<<"b">>]), true = hex(maps:get(<<"a">>,P),64),
     B = maps:get(<<"b">>,P), true = B =:= null orelse hex(B,64);
 payload(<<"status.read">>,P) -> exact(P,[]);

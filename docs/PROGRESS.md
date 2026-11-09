@@ -1,5 +1,94 @@
 # Progress
 
+## 2026-11-09 — Completed 8a–8c; implemented 8d with maximum-Offset qualification open
+
+Separated Desk connections/route ownership from the dependency-ordered runtime
+supervisor. Temporary relay Workers reconcile from desired configuration once
+per second; repeated child crashes do not exhaust an automatic-restart budget or
+stop other connections. Socket failures keep the existing bounded relay backoff.
+Membership/control/Device/clock/audio owners do not restart on one Desk failure;
+primary-Desk loss preserves unexpired authorization. Sends try the advertised
+route then another configured Desk without duplicate fanout. Presence cleanup
+checks other live connections. Runtime membership/control/clock failures still
+restart their own dependent branch in order. Desk child specifications load
+identity internally rather than containing a key that a supervisor report could log.
+
+Reinstalling the same Contract ID/revision is a no-op. Older revisions of that
+Contract fail; changed bindings/removal still invalidate only their affected
+work. Added bounded, owner-local reason counters and last-error codes for packet,
+deadline/buffer, mailbox, transport and decoder failures. Per-Subscription/provider
+transport diagnostics are visible through the local snapshot API; signaling
+overload fails its attempt explicitly. PCM/credentials/internal messages are
+redacted from OTP status/crash output. Native Opus capture now counts returned
+send errors. No telemetry framework, durable diagnostic store or per-packet log
+was added.
+
+Control renews eligible sessions proactively through signed lease.request /
+challenge / proof / ready operations. Nonces, current peer/policy/session and the
+strict replay sequence are verified; one bounded exchange is admitted per interval.
+The lower Device ID initiates after one third of the lease (20 s of the default
+60 s). Successful fresh proof extends only up to current local membership.
+Session ID/sequence, transports, decoders, Source identities and buffered targets
+continue. Renewal/fencing notifications cannot silently drop behind PCM; old
+expiry timers cannot terminate renewed Media Sessions. Lost proof cannot extend
+authorization, and policy changes/revocation/control-owner restart still fence work.
+
+Buffering does not authorize future execution: live receivers may queue targets
+past the current lease within the existing bounded lead. At handoff, the Mixer
+checks the current authorization and shortens spans at its boundary; expiry or
+revocation removes affected future queues. Late proof cannot replay missed audio.
+The clock/filter/slew and per-packet target calculations and wire audio formats
+are unchanged. The Opus marker now denotes the first sent packet, not a sequence
+counter wrap in a long-lived Media Session.
+
+Validation: warnings-as-errors compilation and 117 focused EUnit checks pass.
+The two-Desk proof preserves owner/session/accepted-Worker identities through
+three relay crashes and a Desk service crash, then passes rejoin/revocation.
+Actual 60 s control/membership leases pass 125 s of two-source PCM at 1000 ms
+Offset: every expected frame, sample and target is accounted for, no gaps/drops
+and unchanged Media Sessions/publications while Contracts are reinstalled every
+second. Earlier 85 s/30000 ms runs passed, but stricter repeat runs fail on missed
+handoff deadlines. The latest serial maximum-Offset run, after the changes below,
+reports seven dropped 256-frame blocks (4078208 of 4080000 frames), one output
+gap, zero late submissions and correct samples for all rendered audio; the queue
+drains and live identities remain unchanged. Its continuity exit is **not met**.
+Clock cadence/window are accelerated explicitly; authorization lifetimes are
+production defaults, and these are not physical clock-accuracy measurements.
+Accelerated-lease checks additionally pass
+post-renewal revocation, and withheld handshakes/proofs stop media and discard
+future buffers with an independently healthy test clock. Native Opus lifecycle
+passes repeated accelerated renewals. Shared clock/Offset/restart and public WSS
+status/Job/Worker-failure regressions pass. One WSS attempt failed before
+authentication; HTTPS health passed and WSS passed on retry. Its intermittent
+failure cause remains unestablished. [Repeatable checks](../tests/control/README.md).
+
+Stricter parallel reruns with full-sample validation exposed missed handoffs
+without session/publication changes; successfully rendered samples still mixed
+correctly. The original test sink performed PCM analysis inside the Mixer process.
+The sink now hands off to a bounded observer, timestamps before analysis and uses
+an ordered barrier for snapshots. Production output also rechecks its deadline
+after mixing/format conversion, immediately before adapter submission, and reports
+missed targets rather than submitting them late. This does not change target
+calculation or the existing 20 ms handoff horizon. These observations do not prove
+that observer overhead was the only cause of scheduling stalls: a subsequent
+maximum-Offset run also missed targets. Packet admission now uses a bounded
+nearby-block lookup instead of allocating/scanning the entire buffered queue.
+A regression checks overlap rejection and adjacent boundaries for maximum-sized
+blocks. This reduces queue-length-dependent work without changing admission
+semantics or presentation times.
+
+Limits: same-host software scheduling does not establish Internet reliability,
+external UTC accuracy or physical speaker alignment. Clock freshness, actual
+expiry, policy changes and unrecoverable failures can still interrupt playback;
+no arbitrary-network continuity guarantee is implied. Already submitted native
+output cannot be selectively retracted. Counter history is lost with its owner.
+No product app, audio device, platform build or deployment was used; OpenSound
+is unchanged. **8a–8c are complete; 8d is implemented but its maximum-Offset
+continuity check remains open. Next: diagnose that scheduling limitation before
+marking 8d verified. Step 9 (macOS) has not started.**
+Native mixing/RTP-extension evaluation and app work remain step 9; abandoned-Swarm
+recovery remains step 10.
+
 ## 2026-11-09 — Architectural follow-ups scheduled before macOS integration
 
 Updated PLAN.md with the accepted preparation order: 8a Desk failure isolation,

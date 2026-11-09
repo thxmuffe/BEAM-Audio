@@ -88,6 +88,27 @@ command(#{<<"op">> := <<"clock_reference">>},_,_) -> result(ba_swarm_clock:set_r
 command(#{<<"op">> := <<"clock_restart">>},_,_) ->
     restart(ba_swarm_clock),#{ok => true,initial => ba_swarm_clock:status()};
 command(#{<<"op">> := <<"control_reset">>},_,_) -> restart(ba_swarm_control),#{ok => true};
+command(#{<<"op">> := <<"backend_ids">>},_,_) ->
+    %% Supervisor reports include child start arguments. Identity must be loaded
+    %% inside each relay, never supplied in its child specification.
+    {_,Private} = ba_device_store:identity(),
+    [begin {ok,Spec} = supervisor:get_childspec(ba_desk_connections_sup,URL),
+        nomatch = binary:match(term_to_binary(Spec),Private)
+     end || URL <- maps:keys(ba_desk_connections_sup:connections())],
+    #{processes => maps:from_list([{atom_to_binary(N),list_to_binary(pid_to_list(whereis(N)))} || N <-
+        [ba_swarm_desks,ba_swarm_membership,ba_device_sup,ba_device_worker_sup,ba_swarm_control,ba_swarm_clock]]),
+      sessions => maps:map(fun(_,V) -> maps:get(id,V) end,maps:get(sessions,maps:get(protocol,sys:get_state(ba_swarm_control)))),
+      workers => lists:sort([list_to_binary(pid_to_list(P)) || {_,P,_,_} <- supervisor:which_children(ba_device_worker_sup),is_pid(P)])};
+command(#{<<"op">> := <<"desk_crash">>,<<"desk">> := URL},_,_) ->
+    P = maps:get(URL,ba_desk_connections_sup:connections()),exit(P,kill),#{ok => true};
+command(#{<<"op">> := <<"renewal_prepare">>,<<"lease_ms">> := Lease},_,_) when Lease>=2000,Lease=<60000 ->
+    application:load(ba_core),application:set_env(ba_core,control_session_lease_ms,Lease),#{ok => true};
+command(#{<<"op">> := <<"block_handshakes">>},_,_) ->
+    %% Test-only network fault: keep membership/time/data traffic, drop control
+    %% handshakes and renewal proofs. Production code has no such bypass/switch.
+    Filter = spawn(fun filter_handshakes/0),
+    [sys:replace_state(P,fun(S) -> S#{owner := Filter} end) || P <- maps:values(ba_desk_connections_sup:connections())],
+    #{ok => true};
 command(Other,_,_) -> ba_audio_stream_probe:command(Other).
 start(Config) ->
     application:load(ba_core),application:set_env(ba_core,clock_reference,system),
@@ -107,4 +128,17 @@ await_owner(Module,Old,N) ->
     case whereis(Module) of
         New when is_pid(New),New=/=Old -> _ = gen_server:call(New,test_ready),ok;
         _ -> receive after 10 -> await_owner(Module,Old,N-1) end
+    end.
+
+filter_handshakes() ->
+    receive
+        Message ->
+            Drop = try
+                {relay,_,{delivery,_,_,#{<<"type">> := <<"swarm_control">>,<<"packet">> := P}}} = Message,
+                #{<<"body">> := B} = json:decode(P),#{<<"op">> := Op} = json:decode(base64:decode(B)),
+                lists:member(Op,[<<"hello">>,<<"challenge">>,<<"proof">>,<<"ready">>,
+                    <<"lease.request">>,<<"lease.challenge">>,<<"lease.proof">>,<<"lease.ready">>])
+            catch _:_ -> false end,
+            case Drop of true -> ok;false -> ba_swarm_desks ! Message end,
+            filter_handshakes()
     end.

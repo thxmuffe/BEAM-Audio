@@ -1,5 +1,14 @@
 # BEAM Audio control runtime
 
+Follow-ups 8a–8d are implemented: independently supervised Desk connections and
+route fallback, unchanged Contract no-ops, bounded failure diagnostics and fresh
+nonce-based authorization renewal retaining eligible media. The root supervisor
+isolates Desk ownership from `ba_swarm_runtime_sup`'s dependency-ordered runtime;
+ordinary route loss is not revocation. Exact current policy and expiry remain
+enforced. See [control/renewal](../../docs/SWARM_CONTROL_PROTOCOL.md),
+[Desk ownership](../../docs/SWARM_MEMBERSHIP.md) and [checks](../../tests/control/README.md).
+Step 9/app integration has not started.
+
 Core entry point: `ba_runtime`; OTP application: `ba_core`; configuration: `BA_*`.
 Use the [canonical terminology](../../docs/TERMINOLOGY.md) and
 [migration guide](../../docs/NAMING.md). Subscriptions are saved intent;
