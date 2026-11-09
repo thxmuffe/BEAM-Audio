@@ -118,7 +118,7 @@ in OpenSound/builds. The Windows build must be run on Windows.
 
 BEAM Audio contains project documentation, Reception Desk and its Render/Docker
 configuration, tools and checks. Product code and app packaging remain in
-OpenSound/src/Apps. App platform guides are under `BEAM-Audio/docs/apps/`; their
+OpenSound/src/Apps. App platform guides are under `../OpenSound/docs/`; their
 older command examples describe the monorepo unless updated here. Existing UI
 checks are now under tests/UI and can be run with `bash scripts/test-app-ui.sh`.
 Shared runtime checks use the existing rebar3/component commands. No new tests
