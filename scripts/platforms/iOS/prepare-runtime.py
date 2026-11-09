@@ -43,6 +43,9 @@ subprocess.run(['rebar3', 'compile'], cwd=ROOT / 'src/control', env=env, check=T
 if args.transport == 'native':
     subprocess.run([sys.executable, str(ROOT / 'scripts/platforms/iOS/prepare-transport.py'), '--target', target], check=True)
 resources = ROOT / f'builds/intermediates/iOS/Resources-{args.transport}-{target}/runtime'
+# Resources are generated: replace, never merge obsolete modules into the app.
+if resources.exists():
+    shutil.rmtree(resources)
 resources.mkdir(parents=True, exist_ok=True)
 for name in ['kernel', 'stdlib', 'inets', 'crypto', 'asn1', 'public_key', 'ssl'] + (
         ['compiler'] if args.transport == 'native' else []):

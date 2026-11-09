@@ -74,21 +74,11 @@ void ba_beam_start(const char *root, const char *data_directory, uint16_t port) 
     setenv("ERL_CRASH_DUMP", dump, 1);
     setenv("BA_BRIDGE_PORT", port_string, 1);
     setenv("BA_PROOF_PATH", proof, 1);
-#ifdef BA_NATIVE_TRANSPORT
-    char cookie[33];
-    unsigned char random_cookie[16];
-    arc4random_buf(random_cookie, sizeof(random_cookie));
-    for (int i = 0; i < 16; i++) snprintf(cookie + i * 2, 3, "%02x", random_cookie[i]);
-#endif
     const char *values[] = {"beam", "-S", "1:1", "-SDcpu", "1:1", "-SDio", "1", "-A", "1",
         "-sbwt", "none", "-MIscs", "128", "--", "-root", root,
         "-bindir", bindir, "-progname", "erl", "--", "-noshell", "-noinput",
         "-start_epmd", "false", "-boot", boot, "-pa", beams,
-#ifdef BA_NATIVE_TRANSPORT
-        "-setcookie", cookie, "-proto_dist", "ba_webrtc",
-        "-kernel", "connect_all", "false", "dist_auto_connect", "never",
-        "-ba_core", "runtime_profile", "native_cluster", "native_desk", "true",
-#endif
+        "-ba_core", "runtime_profile", "swarm_control",
         "-s", "ba_ios", "main", NULL};
     int count = 0;
     while (values[count]) count++;

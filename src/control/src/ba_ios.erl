@@ -1,6 +1,6 @@
 %% Runs inside the iPhone BEAM, sharing the actual OTP app and JSON handler.
 -module(ba_ios).
--export([main/0, probe/0, resolve_host/1]).
+-export([main/0, resolve_host/1]).
 main() ->
     Root = code:root_dir(),
     code:add_paths(filelib:wildcard(filename:join([Root, "lib", "*", "ebin"]))),
@@ -16,23 +16,15 @@ main() ->
     end,
     CA = filename:join(code:root_dir(), "cacerts.pem"),
     case filelib:is_file(CA) of true -> application:set_env(ba_core, relay_cacertfile, CA); false -> ok end,
-    case application:get_env(ba_core, runtime_profile, legacy_apps) of
-        native_cluster ->
-            {ok, _} = application:ensure_all_started(crypto),
-            Name = ba_device_store:node_name(<<"ios">>),
-            {ok, _} = net_kernel:start(Name, #{name_domain => longnames}),
-            {ok, _} = application:ensure_all_started(ba_transport),
-            resolve_ice_servers();
-        legacy_apps -> ok
-    end,
+    %% The embedded app is always an unnamed, scoped Swarm Device.
+    {ok,swarm_control} = application:get_env(ba_core,runtime_profile),
+    {ok, _} = application:ensure_all_started(crypto),
+    resolve_ice_servers(),
+    ba_app_session:configure(),
     {ok, _} = application:ensure_all_started(ba_core),
-    %% The earlier feasibility test is opt-in; normal launch does not kill workers.
-    Proof = case os:getenv("BA_RUNTIME_PROBE") of
-        "1" -> probe();
-        _ -> #{status => <<"running">>, otp => list_to_binary(erlang:system_info(otp_release)),
-               erts => list_to_binary(erlang:system_info(version)),
-               os_pid => list_to_binary(os:getpid()), node => atom_to_binary(node())}
-    end,
+    Proof = #{status => <<"running">>, otp => list_to_binary(erlang:system_info(otp_release)),
+              erts => list_to_binary(erlang:system_info(version)),
+              os_pid => list_to_binary(os:getpid()), node => atom_to_binary(node())},
     case os:getenv("BA_PROOF_PATH") of
         false -> ok;
         Path -> ok = file:write_file(Path, json:encode(Proof))
@@ -61,6 +53,7 @@ resolve_ice_servers() ->
     %% the same in-process platform resolver as Gun; never spawn inet_gethost.
     Servers = application:get_env(ba_transport, native_ice_servers,
         [#{urls => application:get_env(ba_core, direct_stun_urls, [])}]),
+    application:set_env(ba_transport,native_ice_servers,Servers),
     URLs = lists:append([case maps:get(urls, S, []) of
         U when is_binary(U) -> [U]; Us -> Us end || S <- Servers]),
     lists:foreach(fun(URL) -> case 'Elixir.ExSTUN.URI':parse(URL) of
@@ -77,45 +70,6 @@ serve(Socket) ->
         {error, _} ->
             %% Do not call init:stop: the VM shares the native app process.
             gen_tcp:close(Socket),
+            ba_swarm:leave(),
             ok
-    end.
-
-%% Initial runtime feasibility check, completed before the UI connects.
-%% The test messages pass through the same gen_server used by both apps.
-probe() ->
-    Before = whereis(ba_chat),
-    {ok, Sent} = ba_runtime:send(<<"On-device runtime self-test">>),
-    true = lists:member(Sent, ba_runtime:history()),
-    Ref = monitor(process, Before),
-    exit(Before, kill),
-    receive {'DOWN', Ref, process, Before, _} -> ok after 2000 -> error(worker_did_not_stop) end,
-    After = await_worker(Before, 100),
-    %% Independent clock diagnostics may already have arrived after restart.
-    false = lists:member(Sent, ba_runtime:history()),
-    {ok, _} = ba_runtime:send(<<"On-device Erlang self-test passed.">>),
-    case application:get_env(ba_core, runtime_profile, legacy_apps) of
-        native_cluster -> ok;
-        legacy_apps ->
-            [#{id := SwarmId} | _] = ba_swarms:snapshot(),
-            case ba_relay:enabled() of
-                false -> ok = ba_swarms:send(SwarmId, <<"On-device Erlang self-test passed.">>);
-                true -> ok
-            end
-    end,
-    #{status => <<"passed">>, otp => list_to_binary(erlang:system_info(otp_release)),
-      erts => list_to_binary(erlang:system_info(version)),
-      os_pid => list_to_binary(os:getpid()),
-      worker_before => list_to_binary(pid_to_list(Before)),
-      worker_after => list_to_binary(pid_to_list(After)),
-      message_verified => true, supervisor_restart_verified => true}.
-
-await_worker(_Before, 0) -> error(worker_restart_timeout);
-await_worker(Before, Attempts) ->
-    Ready = case application:get_env(ba_core, runtime_profile, legacy_apps) of
-        native_cluster -> is_pid(whereis(ba_legacy_cluster_desk));
-        legacy_apps -> is_pid(whereis(ba_discovery)) andalso is_pid(whereis(ba_swarms))
-    end,
-    case whereis(ba_chat) of
-        Pid when is_pid(Pid), Pid =/= Before, Ready -> Pid;
-        _ -> timer:sleep(20), await_worker(Before, Attempts - 1)
     end.

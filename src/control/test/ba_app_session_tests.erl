@@ -31,3 +31,25 @@ exclusions_are_memory_only_test() ->
         restore([{runtime_profile,Old}])
     end.
 restore(Entries) -> [case V of undefined -> application:unset_env(ba_core,K);{ok,X} -> application:set_env(ba_core,K,X) end || {K,V} <- Entries],ok.
+
+ios_configuration_discards_only_old_swarm_snapshots_test() ->
+    Keys=[audio_automation,audio_capture_adapter,audio_output_adapter,swarm_default_permissions],
+    Old=[{K,application:get_env(ba_core,K)} || K <- Keys],
+    Platform=os:getenv("BA_PLATFORM"),State=os:getenv("BA_STATE_DIR"),
+    Dir=filename:join("/tmp","ba-ios-migration-"++integer_to_list(erlang:unique_integer([positive]))),
+    ok=file:make_dir(Dir),
+    try
+        [ok=file:write_file(filename:join(Dir,F),<<"keep or discard">>) || F <- ["swarm_member.term","contacts.term","identity.term"]],
+        os:putenv("BA_PLATFORM","ios"),os:putenv("BA_STATE_DIR",Dir),
+        ok=ba_app_session:configure(),
+        ?assertEqual({ok,ba_ios_input},application:get_env(ba_core,audio_capture_adapter)),
+        ?assertEqual({ok,ba_ios_audio},application:get_env(ba_core,audio_output_adapter)),
+        ?assertEqual({ok,true},application:get_env(ba_core,audio_automation)),
+        ?assertNot(filelib:is_file(filename:join(Dir,"swarm_member.term"))),
+        ?assert(filelib:is_file(filename:join(Dir,"contacts.term"))),
+        ?assert(filelib:is_file(filename:join(Dir,"identity.term")))
+    after
+        restore(Old),
+        [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- [{"BA_PLATFORM",Platform},{"BA_STATE_DIR",State}]],
+        file:del_dir_r(Dir)
+    end.

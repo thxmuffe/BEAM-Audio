@@ -46,6 +46,16 @@ swarm_request(JSON) ->
     end,
     iolist_to_binary(json:encode(Reply)).
 
+swarm_command(#{<<"method">> := <<"audio_lifecycle">>,<<"active">> := Active}) when is_boolean(Active) ->
+    application:set_env(ba_core,audio_suspended,not Active),
+    case whereis(ba_audio_receiver) of
+        undefined -> ok;
+        _ when Active -> ba_audio_receiver:resume();
+        _ -> ba_audio_receiver:suspend()
+    end,
+    case whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end;
+swarm_command(#{<<"method">> := <<"network_changed">>}) ->
+    case whereis(ba_audio_receiver) of undefined -> ok;_ -> ba_audio_receiver:network_changed(),ok end;
 swarm_command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}) ->
     Key=case K of <<"speaker">> -> speaker;<<"microphone">> -> microphone;<<"broadcast">> -> broadcast end,
     ba_app_session:capability(Key,B);

@@ -9,6 +9,12 @@ configure() ->
             application:set_env(ba_core,audio_output_adapter,ba_mac_output),
             application:set_env(ba_core,swarm_default_permissions,permissions()),
             forget_snapshots();
+        "ios" ->
+            application:set_env(ba_core,audio_automation,true),
+            application:set_env(ba_core,audio_capture_adapter,ba_ios_input),
+            application:set_env(ba_core,audio_output_adapter,ba_ios_audio),
+            application:set_env(ba_core,swarm_default_permissions,permissions()),
+            forget_snapshots();
         _ -> ok
     end.
 permissions() -> [<<"capabilities_read">>,<<"job_offer">>,<<"offset_write">>,<<"status_read">>,

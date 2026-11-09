@@ -16,7 +16,10 @@ handle_info(tick,S) -> erlang:send_after(250,self(),tick),{noreply,reconcile(S)}
 handle_info({'DOWN',_,process,_,_},S) -> {stop,normal,S};
 handle_info(_,S) -> {noreply,S}.
 reconcile(S) ->
-    Consent=ba_app_session:consent(),Adapter=application:get_env(ba_core,audio_capture_adapter,ba_mac_audio),
+    Desired=ba_app_session:consent(),
+    Consent=case application:get_env(ba_core,audio_suspended,false) of
+        true -> maps:map(fun(_,_) -> false end,Desired);false -> Desired
+    end,Adapter=application:get_env(ba_core,audio_capture_adapter,ba_mac_audio),
     [Adapter:stop(K) || K <- [microphone,broadcast],not maps:get(K,Consent),maps:get(state,Adapter:status(K))=/=stopped],
     case ba_swarm_membership:current() of
         {ok,#{policy := #{swarm := Swarm,peers := Peers},routes := _}} ->

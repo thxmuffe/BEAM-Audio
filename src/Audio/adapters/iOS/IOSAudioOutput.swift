@@ -41,12 +41,13 @@ final class IOSAudioOutput {
     private func serve(_ fd: Int32) {
         let engine = AVAudioEngine()
         let player = AVAudioPlayerNode()
-        let session = AVAudioSession.sharedInstance()
+        var sessionToken: UUID?
+        let scheduled = IOSOutputQueue()
         var observers: [NSObjectProtocol] = []
         defer {
             observers.forEach(NotificationCenter.default.removeObserver)
             player.stop(); engine.stop()
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            IOSAudioSession.shared.release(sessionToken)
         }
         do {
             let config = try readPacket(fd)
@@ -55,8 +56,7 @@ final class IOSAudioOutput {
             guard (1...2).contains(channels), (8000...192000).contains(rate),
                   let format = AVAudioFormat(standardFormatWithSampleRate: Double(rate),
                                              channels: AVAudioChannelCount(channels)) else { throw OutputError.failed }
-            try session.setCategory(.playback, mode: .default)
-            try session.setActive(true)
+            sessionToken = try IOSAudioSession.shared.acquire(microphone: false)
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: format)
             engine.prepare()
@@ -65,7 +65,7 @@ final class IOSAudioOutput {
             // Interruptions or route/configuration changes end this output. No hidden restart policy.
             for name in [AVAudioSession.interruptionNotification, AVAudioSession.routeChangeNotification,
                          .AVAudioEngineConfigurationChange] {
-                observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { _ in
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: name == .AVAudioEngineConfigurationChange ? engine : nil, queue: nil) { _ in
                     shutdown(fd, SHUT_RDWR)
                 })
             }
@@ -81,7 +81,7 @@ final class IOSAudioOutput {
                 case 2:
                     guard packet.count >= 13 else { throw OutputError.failed }
                     let hostNS = integer(packet, 1, 8), frames = Int(integer(packet, 9, 4))
-                    guard frames > 0, packet.count == 13 + frames * channels * 4,
+                    guard frames > 0, frames <= 4096, packet.count == 13 + frames * channels * 4,
                           let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
                           let planes = buffer.floatChannelData else { throw OutputError.failed }
                     buffer.frameLength = AVAudioFrameCount(frames)
@@ -90,8 +90,11 @@ final class IOSAudioOutput {
                             memcpy(planes[channel], raw.baseAddress!.advanced(by: 13 + channel * frames * 4), frames * 4)
                         }
                     }
+                    let nowNS = UInt64(AVAudioTime.seconds(forHostTime: mach_absolute_time()) * 1_000_000_000)
+                    guard hostNS > nowNS, hostNS - nowNS <= 35_000_000_000 else { throw OutputError.invalidTarget }
+                    guard scheduled.reserve() else { throw OutputError.queueFull }
                     let host = AVAudioTime.hostTime(forSeconds: Double(hostNS) / 1_000_000_000)
-                    player.scheduleBuffer(buffer, at: AVAudioTime(hostTime: host), options: [])
+                    player.scheduleBuffer(buffer, at: AVAudioTime(hostTime: host), options: [], completionCallbackType: .dataPlayedBack) { _ in scheduled.complete() }
                 default: throw OutputError.failed
                 }
             }
@@ -102,7 +105,16 @@ final class IOSAudioOutput {
         }
     }
 
-    private enum OutputError: Error { case failed }
+    private enum OutputError: LocalizedError {
+        case failed, invalidTarget, queueFull
+        var errorDescription: String? {
+            switch self {
+            case .failed: return "Audio output closed or received an invalid local packet."
+            case .invalidTarget: return "Audio presentation target is late or beyond the scheduling bound."
+            case .queueFull: return "Native audio output scheduling queue is full."
+            }
+        }
+    }
     private func readExactly(_ fd: Int32, _ count: Int) throws -> Data {
         var data = Data(count: count)
         try data.withUnsafeMutableBytes { raw in
@@ -140,4 +152,15 @@ final class IOSAudioOutput {
         var big = value.bigEndian
         withUnsafeBytes(of: &big) { data.append(contentsOf: $0) }
     }
+}
+
+private final class IOSOutputQueue {
+    private let lock = NSLock()
+    private var count = 0
+    func reserve() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard count < 2048 else { return false }
+        count += 1; return true
+    }
+    func complete() { lock.lock(); count = max(0, count - 1); lock.unlock() }
 }
