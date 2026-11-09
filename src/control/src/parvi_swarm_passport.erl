@@ -35,13 +35,15 @@ runtime_policy(P,Self) ->
       director => maps:get(<<"director">>,P),epoch => maps:get(<<"epoch">>,P),revision => maps:get(<<"revision">>,P),
       peers => maps:map(fun(_,M) -> lists:sort([permission(X) || X <- maps:get(<<"permissions">>,M)]) end,maps:remove(Self,Members))}.
 permissions(L) ->
-    true = is_list(L) andalso length(L) =< 5 andalso lists:usort(L) =:= L,
+    true = is_list(L) andalso length(L) =< 7 andalso lists:usort(L) =:= L,
     [permission(P) || P <- L],ok.
 permission(<<"capabilities_read">>) -> capabilities_read;
 permission(<<"job_offer">>) -> job_offer;
 permission(<<"status_read">>) -> status_read;
 permission(<<"stream_read">>) -> stream_read;
-permission(<<"stream_subscribe">>) -> stream_subscribe.
+permission(<<"stream_subscribe">>) -> stream_subscribe;
+permission(<<"time_read">>) -> time_read;
+permission(<<"offset_write">>) -> offset_write.
 invitation(Packet) -> <<"parvi://swarm/v3?",(uri_string:compose_query([{<<"ticket">>,base64:encode(Packet)}]))/binary>>.
 parse_invitation(Link) when is_binary(Link),byte_size(Link) =< 32768 ->
     #{scheme := <<"parvi">>,host := <<"swarm">>,path := <<"/v3">>,query := Q} = U = uri_string:parse(Link),

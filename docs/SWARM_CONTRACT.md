@@ -1,6 +1,6 @@
 # Secure Swarm boundary and migration contract
 
-Date: 2026-11-08. Step 1 design contract for the [nine-step roadmap](PLAN.md).
+Date: 2026-11-08. Step 1 design contract for the [active roadmap](PLAN.md).
 This specifies the whole target boundary. Step 2's restricted signed status
 exchange is now implemented; [its guide](SWARM_CONTROL_PROTOCOL.md) records the
 actual scope and limits. Step 3's [local Handler/test Worker lifecycle](DEVICE_HANDLER.md)

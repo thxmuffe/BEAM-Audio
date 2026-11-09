@@ -2,9 +2,10 @@
 -module(parvi_swarm_control).
 -behaviour(gen_server).
 -export([start_link/0, snapshot/0, connect/1, read_status/1,read_capabilities/1]).
--export([offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,audio_context/1]).
+-export([offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,audio_context/1,time_message/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 
+time_message(Peer,Id,Payload) -> gen_server:call(?MODULE,{time_message,Peer,Id,Payload}).
 audio_message(Peer,Id,Payload) -> gen_server:call(?MODULE,{audio_message,Peer,Id,Payload}).
 audio_context(Peer) -> gen_server:call(?MODULE,{audio_context,Peer}).
 
@@ -46,6 +47,19 @@ handle_call({audio_context,Peer},_,S) ->
     Result = try {ok,parvi_swarm_control_protocol:context(Peer,now_ms(),maps:get(protocol,S))}
         catch _:_ -> {error,no_authorized_session} end,
     {reply,Result,S};
+handle_call({time_message,Peer,Id,Payload},{Owner,_},S) ->
+    case Owner=:=whereis(parvi_clock) of
+        false -> {reply,{error,not_clock_owner},S};
+        true ->
+            case parvi_swarm_control_protocol:time_message(Peer,Id,Payload,now_ms(),maps:get(protocol,S)) of
+                {ok,Packet,Protocol} ->
+                    case send(Peer,Packet,S) of
+                        ok -> {reply,ok,S#{protocol := Protocol}};
+                        Error -> {reply,Error,S}
+                    end;
+                {error,R,_} -> {reply,{error,R},S}
+            end
+    end;
 handle_call({audio_message,Peer,Id,Payload},{Owner,_},S) ->
     case Owner =:= whereis(parvi_audio_receiver) of
         false -> {reply,{error,not_audio_owner},S};
@@ -131,7 +145,8 @@ handle_info({membership_authorized,View},S) ->
 handle_info(membership_invalidated,S) ->
     Next = reset(membership_invalidated,S),
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => now_ms()}}};
-handle_info({desk_delivery,_,Peer,Packet},S) ->
+handle_info({desk_delivery,_,Peer,Packet},S0) ->
+    S = S0#{received_at_ns => erlang:monotonic_time(nanosecond)},
     case now_ms() < maps:get(membership_deadline,maps:get(protocol,S)) of
         true ->
             case parvi_swarm_control_protocol:receive_packet(Peer,Packet,now_ms(),maps:get(protocol,S)) of
@@ -212,6 +227,8 @@ event(Peer,{capabilities_read,Request},S) ->
             end;
         {error,_,_} -> reset(capability_reply_failed,S)
     end;
+event(_,{time,Id,Payload,Context},S) ->
+    time_notify({swarm_time,Context#{received_at_ns => maps:get(received_at_ns,S)},Id,Payload}),S;
 event(_,{audio,Id,Payload,Context},S) ->
     audio_notify({swarm_audio,Context,Id,Payload}),S;
 event(_,{job,Operation,Id,Payload,Context},#{handler_requests := Requests} = S) ->
@@ -226,6 +243,8 @@ event(_,{job,Operation,Id,Payload,Context},#{handler_requests := Requests} = S) 
             S#{handler_requests := gen_server:reqids_add(Ref,{Context,Id},Requests)}
     end;
 event(_,{job_report,Id,Report,Context},S) -> receive_job_report(Context,Id,Report,S);
+event(Peer,{session_replaced,Old},S) ->
+    drop_session(Peer,Old),fence_peer_jobs(Peer,reply(Peer,{error,session_replaced},S));
 event(_,authorized,S) -> S.
 reply(Peer,Result,#{callers := Callers} = S) ->
     case maps:take(Peer,Callers) of
@@ -306,8 +325,9 @@ close_peer(Peer,Reason,#{protocol := Protocol} = S) ->
         {ok,Session} -> drop_session(Peer,maps:get(id,Session));
         error -> ok
     end,
-    fence_peer_jobs(Peer,reply(Peer,{error,Reason},S#{protocol := Protocol#{sessions := maps:remove(Peer,Sessions)}})).
+    fence_peer_jobs(Peer,reply(Peer,{error,Reason},S#{protocol := Protocol#{sessions := maps:remove(Peer,Sessions),rekeys => maps:remove(Peer,maps:get(rekeys,Protocol,#{}))}})).
 drop_session(Peer,Session) ->
+    time_notify({time_session_down,Peer,Session}),
     audio_notify({audio_session_down,Peer,Session}),
     Ref = gen_server:send_request(parvi_device_handler,{session_down,Peer,Session}),
     try gen_server:receive_response(Ref,0) catch _:_ -> ok end, ok.
@@ -335,4 +355,17 @@ audio_notify(Event) ->
             {message_queue_len,N} when N < 64 -> Pid ! Event;
             _ -> ok
         end
+    end.
+
+time_notify(Event) ->
+    case whereis(parvi_clock) of
+        undefined -> ok;
+        Pid ->
+            case Event of
+                {time_session_down,_,_} -> Pid ! Event;
+                _ -> case process_info(Pid,message_queue_len) of
+                    {message_queue_len,N} when N<64 -> Pid ! Event;
+                    _ -> ok
+                end
+            end
     end.

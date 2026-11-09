@@ -21,12 +21,12 @@ old_single_subscription_is_not_imported_test() -> with_store(fun() ->
     ?assertEqual(#{},parvi_audio_subscription_intent:load())
 end).
 fresh_clock_required_after_resume_test() ->
-    Clock = #{filter_ready => true,last_sync => 100,age_ns => 0},
+    Clock = #{state => synchronized,filter_ready => true,last_sync => 100,age_ns => 0},
     ?assertNot(parvi_audio_subscription_intent:clock_ready(Clock,101)),
     ?assert(parvi_audio_subscription_intent:clock_ready(Clock#{last_sync := 102},101)),
     ?assertNot(parvi_audio_subscription_intent:clock_ready(Clock#{age_ns := 11000000000},undefined)),
     ?assertNot(parvi_audio_subscription_intent:clock_ready(Clock#{age_ns := -1},undefined)),
-    ?assert(parvi_audio_subscription_intent:clock_ready(#{role => master,filtered_utc_time => 1000},101)).
+    ?assert(parvi_audio_subscription_intent:clock_ready(#{state => synchronized,role => master,filtered_utc_time => 1000,last_sync => 102},101)).
 with_store(Fun) ->
     Dir = filename:join("/tmp","parvi-subscriptions-"++integer_to_list(erlang:unique_integer([positive]))),
     Saved = [{K,os:getenv(K)} || K <- ["PARVI_STATE_DIR","PARVI_IDENTITY_SEED"]],

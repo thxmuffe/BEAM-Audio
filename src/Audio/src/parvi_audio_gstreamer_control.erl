@@ -16,7 +16,5 @@ target(#{rtp_timestamp_semantics := global_playback_48k_v1,presentation_stream_i
             end
     end;
 target(_,_,_) -> {error,packet_target_clock_unavailable}.
-clock_ready(#{role := master}) -> true;
 clock_ready(#{state := synchronized}) -> true;
-clock_ready(#{role := follower,filter_ready := true,state := holdover}) -> true;
 clock_ready(_) -> false.

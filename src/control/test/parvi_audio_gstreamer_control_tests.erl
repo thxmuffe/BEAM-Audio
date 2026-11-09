@@ -17,6 +17,6 @@ legacy_stream_counter_is_not_a_target_test() ->
     ?assertEqual({error,packet_target_clock_unavailable},
         parvi_audio_gstreamer_control:target(#{},#{rtp_timestamp => 1000},reference())).
 
-master_with_partial_coverage_can_schedule_test() ->
-    ?assertMatch({ok,_},parvi_audio_gstreamer_control:target(descriptor(),observation(1793820001000000000),
+holdover_master_is_not_fresh_authority_test() ->
+    ?assertMatch({error,source_or_receiver_clock_unavailable},parvi_audio_gstreamer_control:target(descriptor(),observation(1793820001000000000),
         (reference())#{role => master,state => holdover,filter_ready => false})).

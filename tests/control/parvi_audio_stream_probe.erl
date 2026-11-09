@@ -1,19 +1,27 @@
 %% Test-only clock and output binding. Never bundled with product apps.
 -module(parvi_audio_stream_probe).
--export([command/1,id/0,now/0,status/0,to_monotonic/1,open/1,write/4,close/1]).
+-export([command/1,id/0,now/0,status/0,to_monotonic/1,from_monotonic/1,open/1,write/4,close/1]).
 id() -> <<"headless-shared-test-clock">>.
 now() -> {ok,erlang:system_time(nanosecond)}.
-status() -> #{role => master,filtered_utc_time => erlang:system_time(nanosecond)}.
+status() -> #{state => synchronized,role => master,last_sync => erlang:monotonic_time(nanosecond),filtered_utc_time => erlang:system_time(nanosecond)}.
 to_monotonic(Time) -> {ok,Time-erlang:time_offset(nanosecond)}.
+from_monotonic(Time) -> {ok,Time+erlang:time_offset(nanosecond)}.
 open(_) -> {ok,#{latency_ns => 0}}.
 write(_,Time,Frames,PCM) ->
     Values = [V || <<V:32/little-float>> <= PCM],
-    Record = #{target_ns => Time+erlang:time_offset(nanosecond),frames => Frames,
+    Clock = application:get_env(parvi,audio_clock_adapter,parvi_clock),
+    {ok,Target} = Clock:from_monotonic(Time),{ok,Written} = Clock:now(),
+    Record = #{target_ns => Target,frames => Frames,
         peak => lists:max([abs(V) || V <- Values]),first => hd(Values),
-        write_ns => erlang:system_time(nanosecond)},
+        write_ns => Written},
     ets:insert(parvi_audio_test_output,{erlang:unique_integer([positive,monotonic]),Record}),
     case ets:info(parvi_audio_test_output,size)>128 of true -> ets:delete(parvi_audio_test_output,ets:first(parvi_audio_test_output));false -> ok end,ok.
 close(_) -> ok.
+command(#{<<"op">> := <<"swarm_audio_prepare">>}) ->
+    _ = ets:new(parvi_audio_test_output,[named_table,public,ordered_set]),
+    application:unset_env(parvi,audio_clock_adapter),
+    application:set_env(parvi,audio_output_adapter,?MODULE),
+    result(parvi_audio_sup:ensure_started());
 command(#{<<"op">> := <<"audio_prepare">>}) ->
     _ = ets:new(parvi_audio_test_output,[named_table,public,ordered_set]),
     application:set_env(parvi,audio_clock_adapter,?MODULE),
@@ -28,19 +36,21 @@ command(#{<<"op">> := <<"audio_output">>}) -> #{blocks => [R || {_,R} <- ets:tab
 command(#{<<"op">> := <<"audio_clear_output">>}) -> ets:delete_all_objects(parvi_audio_test_output),#{ok => true};
 command(#{<<"op">> := <<"publish">>,<<"source">> := Key,<<"format">> := F,<<"channels">> := Channels}) ->
     Format = format(F),
-    D = #{encoding => pcm,sample_format => Format,sample_rate => 48000,channel_count => Channels,clock => id()},
+    D = #{encoding => pcm,sample_format => Format,sample_rate => 48000,channel_count => Channels,clock => clock_id()},
     case parvi_audio:publish(#{source_key => Key,name => Key,profiles => #{channel => D}},self()) of
         {ok,Pid} -> put({source,Key},Pid),put({descriptor,Key},D),#{ok => true};
         Error -> result(Error)
     end;
 command(#{<<"op">> := <<"unpublish">>,<<"source">> := Key}) -> result(parvi_audio:unpublish(get({source,Key})));
 command(#{<<"op">> := <<"pause_source">>,<<"source">> := Key,<<"paused">> := B}) -> result(parvi_audio:pause(get({source,Key}),B));
+command(#{<<"op">> := <<"capture_source">>,<<"source">> := Key,<<"capture_ns">> := Capture,<<"value">> := Value,<<"frames">> := Frames}) ->
+    D = get({descriptor,Key}),PCM = pcm(Key,Value,Frames),
+    {ok,Mono} = parvi_clock:to_monotonic(Capture),
+    Input = (parvi_audio_input:new())#{descriptor => D,source => get({source,Key}),handler => parvi_audio_stream_handler_legacy},
+    Next = parvi_audio_input:captured(PCM,Mono,Input),
+    #{ok => true,blocks => maps:get(blocks,Next),send_errors => maps:get(send_errors,Next)};
 command(#{<<"op">> := <<"push_source">>,<<"source">> := Key,<<"target_ns">> := Target,<<"value">> := Value,<<"frames">> := Frames}) ->
-    D = get({descriptor,Key}),Sample = case maps:get(sample_format,D) of
-        float32_le -> <<Value:32/little-float>>;
-        pcm16_le -> <<(round(Value*32768)):16/little-signed>>
-    end,
-    PCM = binary:copy(Sample,Frames*maps:get(channel_count,D)),
+    PCM = pcm(Key,Value,Frames),
     case parvi_audio:push(get({source,Key}),channel,#{playback_time => Target,channel_id => 0},PCM) of
         {ok,Replies} -> #{ok => true,deliveries => length([ok || {_,ok} <- Replies])};
         Error -> result(Error)
@@ -69,3 +79,11 @@ await_receiver(Old,N) ->
         New when is_pid(New),New=/=Old -> gen_server:call(New,snapshot),ok;
         _ -> receive after 10 -> await_receiver(Old,N-1) end
     end.
+
+clock_id() -> Module = application:get_env(parvi,audio_clock_adapter,parvi_clock),Module:id().
+
+pcm(Key,Value,Frames) ->
+    D = get({descriptor,Key}),Sample = case maps:get(sample_format,D) of
+        float32_le -> <<Value:32/little-float>>;
+        pcm16_le -> <<(round(Value*32768)):16/little-signed>>
+    end,binary:copy(Sample,Frames*maps:get(channel_count,D)).

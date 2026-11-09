@@ -247,7 +247,8 @@ checkpoint_authority(S) -> save(swarm_authority,maps:with([policy,invitations,ro
 save(Name,Data) ->
     try parvi_cluster_store:save(Name,Data)
     catch _:_ -> exit({membership_storage_failed,Name}) end.
-view(S) -> #{policy => parvi_swarm_passport:runtime_policy(maps:get(policy,S),maps:get(id,S)),
+view(S) -> #{local_permissions => maps:get(<<"permissions">>,maps:get(maps:get(id,S),maps:get(<<"members">>,maps:get(policy,S)))),
+              policy => parvi_swarm_passport:runtime_policy(maps:get(policy,S),maps:get(id,S)),
               routes => maps:remove(maps:get(id,S),maps:get(routes,S)),until => maps:get(until,S)}.
 publish(S) -> notify({membership_authorized,view(S)}).
 invalidate() -> notify(membership_invalidated).

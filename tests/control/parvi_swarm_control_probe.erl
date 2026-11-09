@@ -33,7 +33,7 @@ command(#{<<"op">> := <<"snapshot">>},_,_) ->
     (parvi_swarm_control:snapshot())#{node => atom_to_binary(node()),
         nodes => [atom_to_binary(N) || N <- nodes()],
         legacy_started => lists:any(fun(N) -> whereis(N) =/= undefined end,
-            [parvi_cluster_desk,parvi_cluster_trust,parvi_chat,parvi_clock,parvi_audio_sup]),
+            [parvi_cluster_desk,parvi_cluster_trust,parvi_chat,parvi_audio_sup]),
         workers => proplists:get_value(active,supervisor:count_children(parvi_device_worker_sup)),
         worker_outcomes => [maps:get(state,W) || W <- maps:get(history,parvi_device_handler:status())],
         children => lists:sort([atom_to_binary(N) || {N,_,_,_} <- supervisor:which_children(parvi_sup)])};
@@ -72,11 +72,36 @@ command(#{<<"op">> := <<"attack">>,<<"peer">> := Peer},Id,_) ->
     Replay = parvi_swarm_control_protocol:seal(Body#{<<"seq">> := 0,<<"op">> := <<"status.read">>},Private),
     [ok = parvi_swarm_desks:send(Peer,<<"swarm_control">>,Wire) || Wire <- [Forbidden,Forged,Replay]],
     #{ok => true};
+command(#{<<"op">> := <<"clock_snapshot">>},_,_) -> parvi_clock:status();
+command(#{<<"op">> := <<"clock_prepare">>,<<"interval_ms">> := I,<<"samples">> := Count},_,_) ->
+    application:load(parvi),application:set_env(parvi,clock_reference,system),
+    application:set_env(parvi,clock_sample_interval_ms,I),application:set_env(parvi,clock_filter_samples,Count),
+    #{ok => true};
+command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value,<<"revision">> := Rev},_,_) ->
+    result(parvi_clock:set_offset(Value,Rev));
+command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value},_,_) -> result(parvi_clock:set_offset(Value));
+command(#{<<"op">> := <<"clock_resync">>},_,_) -> result(parvi_clock:resync());
+command(#{<<"op">> := <<"clock_reference">>},_,_) -> result(parvi_clock:set_reference(system));
+command(#{<<"op">> := <<"clock_restart">>},_,_) ->
+    restart(parvi_clock),#{ok => true,initial => parvi_clock:status()};
+command(#{<<"op">> := <<"control_reset">>},_,_) -> restart(parvi_swarm_control),#{ok => true};
 command(Other,_,_) -> parvi_audio_stream_probe:command(Other).
 start(Config) ->
-    application:load(parvi),application:set_env(parvi,swarm_membership,Config),
+    application:load(parvi),application:set_env(parvi,clock_reference,system),
+    application:set_env(parvi,swarm_membership,Config),
     {ok,_} = parvi:start(swarm_control),#{ok => true}.
 result(ok) -> #{ok => true};
 result({ok,V}) -> #{ok => true,value => V};
 result({error,R}) -> #{error => R}.
 emit(Value) -> io:put_chars([json:encode(Value),$\n]).
+
+restart(Module) ->
+    Old = whereis(Module),Ref = monitor(process,Old),exit(Old,kill),
+    receive {'DOWN',Ref,process,Old,_} -> ok after 1000 -> error(owner_not_down) end,
+    await_owner(Module,Old,100).
+await_owner(_,_,0) -> error(owner_not_restarted);
+await_owner(Module,Old,N) ->
+    case whereis(Module) of
+        New when is_pid(New),New=/=Old -> _ = gen_server:call(New,test_ready),ok;
+        _ -> receive after 10 -> await_owner(Module,Old,N-1) end
+    end.

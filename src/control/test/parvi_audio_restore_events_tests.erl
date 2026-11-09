@@ -4,11 +4,11 @@
 status() -> get(test_clock).
 restore_requires_fresh_clock_and_local_contract_test() ->
     fixture(fun(S,Id) ->
-        put(test_clock,#{filter_ready => true,last_sync => 99,age_ns => 0}),
+        put(test_clock,#{state => synchronized,filter_ready => true,last_sync => 99,age_ns => 0}),
         {noreply,NoClock} = parvi_audio_receiver:handle_info(tick,S),
         ?assertEqual(waiting_for_source,maps:get(state,maps:get(Id,maps:get(subscriptions,NoClock)))),
         no_attempt(),
-        put(test_clock,#{filter_ready => true,last_sync => 101,age_ns => 0}),
+        put(test_clock,#{state => synchronized,filter_ready => true,last_sync => 101,age_ns => 0}),
         {noreply,_} = parvi_audio_receiver:handle_info(tick,S#{contracts := #{}}),no_attempt(),
         {noreply,Opening} = parvi_audio_receiver:handle_info(tick,S),
         receive {attempt,Id,#{<<"kind">> := <<"subscribe">>,<<"contract">> := C}} ->

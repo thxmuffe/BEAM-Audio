@@ -1,5 +1,6 @@
 """Three unnamed BEAM devices, real Desk signaling and real WebRTC PCM, test clock/sink."""
 import importlib.util
+import argparse
 import secrets
 import os
 import sys
@@ -27,6 +28,8 @@ def wait_audio(r,predicate):
     raise AssertionError('Audio did not converge: '+str(s))
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--swarm-time",action="store_true")
+    args=parser.parse_args()
     root=control.ROOT
     paths=list((root/'builds/intermediates/control/default/lib').glob('*/ebin'))
     paths+=list((root/'builds/intermediates/BeamTransport/dev/lib').glob('*/ebin'))
@@ -49,19 +52,42 @@ def main():
                        'BINDIR':str(Path(executable).parent),'EMU':'beam','PROGNAME':'erl'}
         a,b,c=[control.Runtime([out,*paths],executable=executable,extra_env=extra_env) for _ in range(3)]
         runtimes.extend([a,b,c])
+        if args.swarm_time:
+            for r in runtimes:assert r.request('clock_prepare',interval_ms=250,samples=3)['ok']
         assert a.request('create',desks=[url])['ok']
         control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
         for r in (b,c):
             assert r.request('join',invitation=a.request('invite')['value'],desk=url)['ok']
             control.wait(r,lambda s:s['membership']['state']=='authorized')
-        assert a.request('grant',peer=b.identity['id'],permissions=['status_read','stream_read','stream_subscribe'])['ok']
+        permissions=['status_read','stream_read','stream_subscribe']
+        if args.swarm_time:
+            permissions=['offset_write',*permissions,'time_read']
+            assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
+        assert a.request('grant',peer=b.identity['id'],permissions=permissions)['ok']
         revision=a.request('snapshot')['membership']['revision']
         for r in (b,c):control.wait(r,lambda s:s['membership']['state']=='authorized' and s['membership']['revision']==revision)
         for r in (a,c):
-            assert b.request('connect',peer=r.identity['id'])['ok']
+            current=b.request('snapshot')['sessions'].get(r.identity['id'],{}).get('stage')
+            if current!='authorized':
+                assert b.request('connect',peer=r.identity['id'])['ok']
             control.wait(b,lambda s:s['sessions'].get(r.identity['id'],{}).get('stage')=='authorized')
             control.wait(r,lambda s:s['sessions'].get(b.identity['id'],{}).get('stage')=='authorized')
-        for r in runtimes:assert r.request('audio_prepare')['ok']
+        if args.swarm_time:
+            for r in runtimes:
+                deadline=time.monotonic()+20
+                while time.monotonic()<deadline:
+                    clock=r.request('clock_snapshot')
+                    if clock['state']=='synchronized' and clock['offset_policy']['ready']:break
+                    time.sleep(.05)
+                else:raise AssertionError(clock)
+            assert b.request('offset_set',offset_ms=250)['ok']
+            for r in runtimes:
+                deadline=time.monotonic()+10
+                while time.monotonic()<deadline:
+                    if r.request('clock_snapshot')['offset_policy']['offset_ms']==250:break
+                    time.sleep(.05)
+                else:raise AssertionError('Offset did not reach publisher')
+        for r in runtimes:assert r.request('swarm_audio_prepare' if args.swarm_time else 'audio_prepare')['ok']
         assert a.request('publish',source='music',format='pcm16_le',channels=1)['ok']
         assert c.request('publish',source='microphone',format='float32_le',channels=2)['ok']
         wait_audio(b,lambda s:len(s['offers'])==2)
@@ -80,8 +106,12 @@ def main():
             b.request('audio_clear_output')
             target=time.time_ns()+300_000_000
             for r,key,value in ((a,'music',.25),(c,'microphone',.5)):
-                reply=r.request('push_source',source=key,target_ns=target,value=value,frames=960)
-                if first:assert reply['deliveries']==1,reply
+                if args.swarm_time:
+                    reply=r.request('capture_source',source=key,capture_ns=target-250_000_000,value=value,frames=960)
+                    if first:assert reply.get('blocks')==1 and reply['send_errors']==0,reply
+                else:
+                    reply=r.request('push_source',source=key,target_ns=target,value=value,frames=960)
+                    if first:assert reply['deliveries']==1,reply
             time.sleep(.35)
             blocks=b.request('audio_output')['blocks']
             assert blocks and all(abs(s['first']-expected)<.0001 for s in blocks),blocks
@@ -120,7 +150,7 @@ def main():
         assert b.request('audio_clear_contract',direction='receive',peer=c.identity['id'],source='microphone')['ok']
         wait_audio(b,lambda s:s['subscriptions'][y]['state']=='waiting_for_source')
         assert all(r.request('snapshot')['nodes']==[] for r in runtimes)
-        print('PASS: real WebRTC PCM from two publishers mixed at their packet targets; independent receiver/source pause and resume; disappearance and new-incarnation restore; scoped unsubscribe and Contract revocation; no OTP distribution, product apps or hardware output')
+        print(('PASS: authenticated shared Swarm clock and Offset; ' if args.swarm_time else 'PASS: test clock; ')+'real WebRTC PCM from two publishers mixed at their packet targets; independent receiver/source pause and resume; disappearance and new-incarnation restore; scoped unsubscribe and Contract revocation; no OTP distribution, product apps or hardware output')
     finally:
         for r in runtimes:r.close()
         if desk is not None:desk.terminate();desk.wait(timeout=5)

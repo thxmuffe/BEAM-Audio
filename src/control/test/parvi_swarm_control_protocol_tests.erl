@@ -222,3 +222,34 @@ stream_control_requires_grants_and_exact_schema_test() ->
     Base = #{<<"source">> => <<"music">>,<<"incarnation">> => Id,<<"attempt">> => Id},
     ?assertMatch({error,_,_},p(audio_message,[B,Id,Base#{<<"kind">> => <<"signal.offer">>,<<"sdp">> => <<"unsigned generic SDP">>},5,SA])),
     ?assertMatch({error,_,_},p(audio_message,[B,Id,P#{<<"pcm">> => <<"audio is not control">>},5,SA])).
+
+fresh_reconnect_does_not_replace_active_session_until_proven_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    Old = maps:get(id,maps:get(A,maps:get(sessions,SB))),
+    {ok,Hello,A1} = p(connect,[B,10,p(reset,[SA])]),
+    {ok,[Challenge],[],B1} = p(receive_packet,[A,Hello,11,SB]),
+    ?assertEqual(maps:get(sessions,SB),maps:get(sessions,B1)),
+    {ok,Proof,A2} = case p(receive_packet,[B,Challenge,12,A1]) of {ok,[P],[],N} -> {ok,P,N} end,
+    {ok,[Ready],[{session_replaced,Old}],B2} = p(receive_packet,[A,Proof,13,B1]),
+    {ok,[],[authorized],_} = p(receive_packet,[B,Ready,14,A2]),
+    ?assertNotEqual(Old,maps:get(id,maps:get(A,maps:get(sessions,B2)))),
+    ?assertMatch({error,_,B2},p(receive_packet,[A,Proof,15,B2])).
+
+time_permission_is_not_implied_by_status_or_membership_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),Id = binary:copy(<<"A">>,32),
+    P = #{<<"kind">> => <<"offset.set">>,<<"revision">> => 1,<<"offset_ms">> => 250},
+    {ok,Packet,_} = p(time_message,[B,Id,P,5,SA]),
+    ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Packet,6,SB])),
+    Policy = maps:get(policy,SB),Granted = SB#{policy := Policy#{peers := #{A => [offset_write]}}},
+    ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Granted])).
+
+new_handshake_after_expiry_discards_an_older_candidate_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    {ok,FirstHello,_} = p(connect,[B,59000,p(reset,[SA])]),
+    {ok,[_],[],CandidateB} = p(receive_packet,[A,FirstHello,59001,SB]),
+    {_,ExpiredB} = p(expire,[60004,CandidateB]),
+    {ok,Hello,A1} = p(connect,[B,61000,p(reset,[SA])]),
+    {ok,[Challenge],[],B1} = p(receive_packet,[A,Hello,61001,ExpiredB]),
+    {ok,[Proof],[],A2} = p(receive_packet,[B,Challenge,61002,A1]),
+    {ok,[Ready],[],_} = p(receive_packet,[A,Proof,61003,B1]),
+    ?assertMatch({ok,[],[authorized],_},p(receive_packet,[B,Ready,61004,A2])).

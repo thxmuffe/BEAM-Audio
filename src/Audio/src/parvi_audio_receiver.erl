@@ -107,9 +107,10 @@ handle_call({gain,Id,G},_,#{subscriptions := Items} = S) when is_number(G),G>=0,
     end;
 handle_call(suspend,_,S) -> {reply,ok,disconnect_all(S#{suspended := true})};
 handle_call(resume,_,S) ->
+    resync_clock(),
     {reply,ok,disconnect_all(S#{suspended := false,resume_after := erlang:monotonic_time(nanosecond)})};
 handle_call(_,_,S) -> {reply,{error,unsupported_request},S}.
-handle_cast(network_changed,S) -> {noreply,disconnect_all(S#{resume_after := erlang:monotonic_time(nanosecond)})};
+handle_cast(network_changed,S) -> resync_clock(),{noreply,disconnect_all(S#{resume_after := erlang:monotonic_time(nanosecond)})};
 handle_cast(_,S) -> {noreply,S}.
 handle_info(tick,S) ->
     erlang:send_after(250,self(),tick),
@@ -391,3 +392,7 @@ terminate(_,S) ->
     [stop_worker(maps:get(session,R)) || R <- maps:values(maps:get(providers,S))],ok.
 
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([suspended,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).
+
+resync_clock() ->
+    Module = application:get_env(parvi,audio_clock_adapter,parvi_clock),
+    try Module:resync() catch _:_ -> unavailable end.

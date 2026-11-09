@@ -12,7 +12,9 @@ init([]) ->
                   #{id => parvi_swarm_membership,start => {parvi_swarm_membership,start_link,[]}},
                   #{id => parvi_device_sup,start => {parvi_device_sup,start_link,[]},
                     type => supervisor,shutdown => infinity},
-                  #{id => parvi_swarm_control,start => {parvi_swarm_control,start_link,[]}}]}};
+                  #{id => parvi_swarm_control,start => {parvi_swarm_control,start_link,[]}},
+                  #{id => parvi_clock_sup,start => {parvi_clock_sup,start_link,[]},
+                    type => supervisor,shutdown => infinity}]}};
         _ -> existing_profile()
     end.
 

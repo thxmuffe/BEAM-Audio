@@ -29,7 +29,7 @@ handle_call({push,channel,H,PCM},{Owner,_},#{owner := Owner,offer := #{paused :=
             {reply,{ok,Replies},S};
         Error -> {reply,Error,S}
     end;
-handle_call({push,_,_,_},_,#{offer := #{paused := true}} = S) -> {reply,{error,source_paused},S};
+handle_call({push,_,_,_},_,#{offer := #{paused := true}} = S) -> {reply,{ok,[]},S};
 handle_call(_,_,S) -> {reply,{error,invalid_request_or_owner},S}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info({'DOWN',Ref,process,Pid,_},#{owner := Pid} = S) -> _ = Ref,{stop,normal,S};

@@ -1,6 +1,80 @@
 # Progress
 
 
+## 2026-11-09 — Step 7: authenticated shared Time and revisioned Offset
+
+Replaced clock pg/erpc discovery and sampling with exact signed time.message
+schemas, separate time_read/offset_write grants and the authority-pinned reference.
+No automatic promotion/failover or follower reference override is permitted.
+Timestamp exchanges preserve full nanosecond precision as canonical decimal
+strings and bind request, peer, control session and reference incarnation/revision.
+Raw control ingress times provide the receive timestamps before verification;
+the existing four-timestamp measurement, median window, deadband and bounded slew
+remain the timing policy. Production defaults stay 5 s / 20 samples / 30 s checks,
+2 ms deadband and 500 ppm. Reference changes reset obsolete sample windows.
+
+One serialized authority writer checkpoints Offset before acknowledgement and
+broadcast. Compare-and-set rejects stale/concurrent edits; member checkpoints
+retain only a version/value floor, never freshness. Same-revision conflicting
+values fail. Clock readiness and Offset freshness/authorization are checked at
+read time, including negative monotonic times and absent-deadline sentinels.
+PCM capture now stamps from one immutable clock/Offset snapshot; native Opus
+capture reads the shared API but its media/mixing integration remains pending.
+Existing packet targets are never recomputed by an Offset update.
+
+A fresh proof can replace a remote control session after local owner restart,
+with one bounded candidate challenge kept separately from active work. A replayed
+hello alone cannot stop the active session. Replacement fences its old jobs/media.
+Clock reconnect/reacquisition uses only the pinned authority. Explicit resync and
+audio resume/handover require fresh evidence; holdover/master labels alone do not
+authorize playback. Clock actor restart changes reference incarnation, restores
+Offset declarative state and rebuilds mapping/filter rather than replaying them.
+
+Validation: warnings-as-errors compilation and 95 focused EUnit checks pass,
+covering existing mapping/filter invariants, clock/Offset freshness, cached member
+rejoin without self-promotion, durable compare-and-set, source capture targets,
+strict wire/grant boundaries, safe session replacement and earlier job/media tests.
+The two-Desk/three-runtime proof passes signed timing, forbidden/stale Offset,
+competing edits, broadcasts, durable Offset, owner reconnect and fresh filtering
+after reference restart. The real WebRTC two-source proof also passes using the
+production capture-stamping path, authenticated clock and shared Offset, with
+only the output device replaced by a headless sink. Cadence/window are explicitly
+accelerated in test fixtures; all processes are unnamed and test state isolated.
+
+Limits: same-host/loopback service evidence is not Internet clock asymmetry,
+external UTC accuracy, physical speaker timing or native app verification. The
+PCM queue/lead bounds do not yet qualify sustained playback at the full 5–30000 ms
+Offset range. Native Opus handoff/mixing, automatic publication rebind on reference
+restart, old native logging/app dependencies and platform execution remain step-8
+integration gates. No product app build/launch, native output device or deployment
+was performed. [Usage and detailed boundaries](SWARM_TIME.md).
+Next: step 8. User-requested common app UI is step 9; return to an abandoned Swarm
+(including ordinary-member-first recovery) is separately step 10.
+
+
+## 2026-11-09 — Step 9 UI requirements clarified
+
+Recorded a consistent Swarm/graph/audio/chat layout and feature parity for macOS,
+Windows and iOS. Graph shows Handlers/children, master clock/time, Director/jobs
+and inspectors. Audio has immediate-action speaker, microphone and default-output
+broadcast toggles (symbols with tooltip/help labels), optional default-on speaker,
+shared Offset and no separate Subscribe/Playback actions. Graph/audio device
+exclusions control automatic eligible work. Chat remains unchanged apart from
+reachable Passport details, with no new tab. These are step-9 requirements only;
+no product app was launched or edited to implement them during step 7.
+
+
+## 2026-11-09 — Step 10 added: return to an abandoned Swarm
+
+The user wants Swarm identity to remain revisitable after the last runtime exits,
+including when an ordinary former member returns first. Added this as a separate
+step after app integration; it does not change the current step-7 implementation.
+Step 5 already retains authority registry/Swarm identity and member Passports on
+disk, so the original authority can reopen the same Swarm after total shutdown.
+Ordinary members currently wait for that authority; safe member-first recovery
+without losing revocation history or silently forking identity remains unsolved.
+
+
 ## 2026-11-09 — Step 6: independent PCM Streams and Subscriptions
 
 Replaced the single receiver/intent with a bounded durable collection keyed by

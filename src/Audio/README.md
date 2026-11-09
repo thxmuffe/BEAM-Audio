@@ -1,6 +1,18 @@
 # Audio runtime and platform adapters
 
 
+## Shared Time and Offset — step 7
+
+[Authenticated Time and revisioned Swarm Offset](../../docs/SWARM_TIME.md) replaces
+cross-device clock RPC/discovery. The authority is the initial clock reference and
+single Offset writer. Explicit time_read/offset_write grants, fresh four-timestamp
+samples and existing median/slew policy gate scheduling. Capture stamps from one
+current clock/Offset snapshot; cached policy is not a local override. The real
+WebRTC PCM proof now also runs with this shared clock and a headless output sink.
+Native Opus/mixing, sustained buffering and platform output remain step-8/9 gates.
+The revised shared app UI is specified in step 9; abandoned-Swarm return is step 10.
+
+
 ## Current Swarm audio path — step 6
 
 [Independent Streams and Subscriptions](../../docs/SWARM_STREAMS.md) replaces the
@@ -10,8 +22,7 @@ Contracts and separate stream grants are required. Sources may pause or restart
 without removing intent or disturbing another stream. Old singular APIs and
 cross-device PID discovery are retired on this path.
 
-The headless proof uses real WebRTC media with a test clock/output sink. Default
-shared-clock/Offset integration is step 7. Mixed output currently supports PCM
+The headless proof uses real WebRTC media with a test clock/output sink. Shared-clock/Offset integration is now step 7. Mixed output currently supports PCM
 mono/stereo at one shared output rate/reference; native Opus mixing/platform
 handoff remains a backend/app integration gate. No product apps were launched.
 The historical checkpoints below do not provide the active receiver API.

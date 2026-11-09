@@ -124,9 +124,8 @@ A locally configured `audio_output_adapter` implements the existing `open/1`,
 clock and the adapter's reported latency, with at most 20 ms ahead of handoff
 passed to the sink. Software scheduling does not establish calibrated DAC timing.
 Already submitted mixed output cannot be selectively removed after a pause.
-The supported code path needs a valid common clock: default `parvi_clock` remains
-unavailable in the new headless profile until step 7 migrates its discovery and
-Offset policy. It never fabricates a fresh clock from membership or local arrival.
+The supported code path needs a valid common clock: default `parvi_clock` now supplies [authenticated shared Time/Offset](SWARM_TIME.md)
+in the new headless profile. It never fabricates a fresh clock from membership or local arrival.
 
 The unchanged native libwebrtc/GStreamer Opus path bypasses Erlang PCM and still
 uses its earlier signaling path. This collection explicitly rejects that native

@@ -19,8 +19,9 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Steps 1–5 complete; step 6 implements the headless PCM collection/mixer proof;
-next: step 7 — Time and Playback Offset.** The
+**Steps 1–5 complete; step 6 provides the headless PCM collection/mixer proof;
+step 7 provides authenticated Time and Offset; next: step 8 — backend integration
+and verification.** The
 [boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
 authorization, ownership, local APIs and independent lifecycles. The opt-in
 `swarm_control` runtime now provides signed, bounded status messaging through the
@@ -159,6 +160,11 @@ formats and stored identities until deliberate compatibility migrations.
    overrides. **Exit:** devices share an authenticated timeline/Offset setting,
    recover after reconnect, and reject stale/unauthorized updates; separate
    software scheduling from physical-speaker alignment claims.
+   **Implemented:** [Time/Offset](SWARM_TIME.md), retaining existing timestamp
+   measurement, median and slew policy. Two-Desk authority/reconnect checks and
+   real WebRTC PCM with production capture stamping pass using a headless output
+   sink. Native output qualification and complete buffering/capture recovery
+   remain step-8 gates.
 
 8. **Backend end-to-end verification and migration.** Run two-device/one-Desk and
    multi-Desk tests: join, retained membership, revoked Passport, Director/job
@@ -172,15 +178,73 @@ formats and stored identities until deliberate compatibility migrations.
 
 9. **Update and verify the applications — macOS, then Windows, then iOS.**
    Integrate the new runtime and permission/state model into each app in that
-   order. Adapt UI commands, status, invitations, subscriptions and diagnostics;
-   start with forgotten old Swarms/subscriptions rather than restoring them.
-   Supporting platform code may change earlier when needed, but do not launch
-   product apps during backend development: installed versions can auto-restore
-   old connections/audio. Build/install/launch for this explicit app phase.
-   **Exit:** app/device checks establish join/rejoin, authorized jobs, independent
-   streams, pause/resume, clock/Offset behavior and real listening/output-timing
-   evidence, with actual platform limitations recorded. Software tests alone do
-   not qualify physical speaker alignment.
+   order, with the **same functionality, layout and information hierarchy on
+   every platform**. Start with forgotten old Swarms/subscriptions rather than
+   restoring them. Supporting platform code may change earlier when needed, but
+   do not launch product apps during backend development: installed versions can
+   auto-restore old connections/audio. Build/install/launch for this explicit phase.
+
+   **Swarm:** show the Swarm name and ID.
+
+   **Graph:** show Device Handlers and their children; the master Swarm clock and
+   the time it keeps; the Director with its jobs; and inspectors. Adapt the
+   necessary scoped state/inspection APIs as part of this integration; do not
+   expose arbitrary remote OTP inspection or execution to implement the graph.
+
+   **Audio:** use three symbol toggle switches, with text labels as tooltips:
+   speaker, microphone, and send audio to Swarm. Provide accessible text/help on
+   platforms without hover while retaining the same controls and layout.
+   Enabling **send audio to Swarm immediately starts broadcasting the default
+   output**. Enabling microphone immediately starts its capture/publication;
+   enabling speaker immediately starts receiving/playing eligible Swarm audio.
+   Speaker may be enabled by default. These toggles are both permission and
+   action: do not add separate Subscribe or Start/Stop Playback controls. Turning
+   a toggle off stops its corresponding active work. Request required OS access
+   at the point of action and report real failures/unavailable state; a permission
+   flag alone is not a successful capture/playback start. Runtime subscriptions,
+   Contracts and jobs remain internal bookkeeping behind the toggles. Place the
+   shared **Swarm Offset** control here.
+
+   **Device exclusions:** from either a device in the graph or its audio entry,
+   let the user choose “Don't connect with this device” and later undo it. In
+   general, accept/do authorized eligible jobs automatically according to the
+   enabled capabilities, while allowing specific devices to be excluded. Persist
+   exclusions locally per Swarm/device, prevent their automatic connections/jobs/
+   audio, and stop affected existing work without disturbing other devices.
+   Exclusion is distinct from authority revocation or deleting membership. If
+   excluding a required clock/authority removes availability, display that state
+   rather than silently bypassing the exclusion or inventing another authority.
+
+   **Chat:** retain its existing behavior and layout. Make Passport/membership
+   details reachable here, for example through a small system entry/details view;
+   **do not add a Passport tab**. Show membership identity/status/details rather
+   than private signing keys or invitation secrets.
+
+   **Exit:** all three apps expose this same layout and behavior, with immediate
+   audio actions, automatic eligible work, scoped exclusions, visible clock/jobs/
+   inspectors and reachable Passport details. App/device checks establish join/
+   rejoin, authorized jobs, independent streams, pause/resume, clock/Offset and
+   real listening/output-timing evidence. Record actual platform limitations;
+   software tests alone do not qualify physical speaker alignment.
+
+10. **Return to an abandoned Swarm.** Establish and implement the lifecycle when
+    every participating OTP runtime has stopped, then a former member returns.
+    A Swarm is a durable logical identity/pointer, independent of its currently
+    running processes; returning to an old Swarm should remain possible. Preserve
+    its identifier and remembered membership rather than silently creating a new
+    Swarm or fork. Distinguish remembering/opening that identity from obtaining
+    current permission to resume operations. Determine what retained metadata,
+    discovery and authority recovery are required when an ordinary member returns
+    before the former authority. Do not turn a stale Passport into authority or
+    reset old revocations merely because no process is online.
+    **Existing foundation:** step 5 persists authority registry, Swarm identity and
+    member Passports; the same authority seed/state reopens that Swarm after a
+    total shutdown. Members currently require that authority online for fresh
+    authorization. This does not yet solve ordinary-member-first recovery.
+    **Exit:** stop all runtimes; verify both authority-first and ordinary-member-first
+    return to the same old Swarm, with explicit dormant/recovering state where
+    needed, no identifier fork, and preserved permissions/revocations. Record
+    authority-loss/state-loss limitations and verify safe recovery behavior.
 
 ### Scope constraints and immediate milestone
 
@@ -226,7 +290,7 @@ formats and stored identities until deliberate compatibility migrations.
   Clock quality, software deadline execution and measured physical output timing
   remain separate evidence. No new numerical alignment guarantee is implied.
 
-### Outside the nine steps
+### Outside the ten steps
 
 The [future ideas list](IDEAS.md) keeps longer-term possibilities separate from
 this roadmap. Cinema/5.1, spatial rendering, DSP algorithms, acoustic calibration,
@@ -234,11 +298,12 @@ large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Resume at step 7: move clock discovery/sampling and revisioned Offset policy onto
-restricted Swarm control, then replace the test clock with an authenticated shared
-reference. The PCM collection/mixer proof is implemented; native Opus decoded-audio
-handoff/mixing and actual platform output remain open integration gates for
-complete backend/app acceptance. Preserve independent targets and subscriptions;
-do not launch product apps, restore old Swarms or replay uncertain jobs.
-See [streams](SWARM_STREAMS.md), [membership](SWARM_MEMBERSHIP.md),
-[jobs](SWARM_JOBS.md) and [control protocol](SWARM_CONTROL_PROTOCOL.md).
+Resume at step 8: integrate and verify the complete backend path, including native
+Opus decoded-audio handoff/mixing, sustained buffering over the committed Offset
+range, automatic publication/capture rebind after clock-instance changes, remaining
+old native logging/control dependencies and platform scheduling boundaries. Time
+and revisioned Offset now use restricted Swarm messages; preserve independent
+packet targets and subscriptions. Do not launch product apps or restore old
+Swarms. The revised common UI remains step 9; abandoned-Swarm recovery is step 10.
+See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),
+[membership](SWARM_MEMBERSHIP.md) and [jobs](SWARM_JOBS.md).

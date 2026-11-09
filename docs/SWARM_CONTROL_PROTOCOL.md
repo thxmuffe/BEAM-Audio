@@ -1,4 +1,4 @@
-# Swarm control protocol v1 — steps 2–6
+# Swarm control protocol v1 — steps 2–7
 
 Implemented 2026-11-08 under the [Swarm plan](PLAN.md) and
 [boundary contract](SWARM_CONTRACT.md). This implements authenticated status
@@ -64,6 +64,7 @@ with `parvi-swarm-control/v1:`. The body has these exact fields:
 | `capabilities.read` | Empty object. Authorized session/new sequence and a `capabilities_read` grant. |
 | `capabilities.reply` | Exact Handler instance/revision and test capability described in [DEVICE_HANDLER.md](DEVICE_HANDLER.md#capability-advertisement). Must match a pending capability query. |
 | `capabilities.error` | `reason`: `forbidden` or `unavailable`. Matching pending capability query. |
+| `time.message` | Exact timestamp/Offset schemas in the [Time guide](SWARM_TIME.md); separate time_read/offset_write grants and correlated authority replies. |
 | `stream.message` | Exact flat catalogue/subscription/SDP/ICE schemas in the [stream guide](SWARM_STREAMS.md); requests require separate stream grants, responses must match a local attempt. |
 | `job.offer` | Exact test capability/Contract/duration/lease fields; designated Director plus job_offer grant. Header request is the Job ID. Handler independently accepts/rejects. |
 | `job.cancel` | Empty object; designated Director, same grant and owned Job/session scope. |
@@ -95,8 +96,9 @@ Handshake expiry is 10 seconds; each authorized local session lasts at most
 with a 5-second response deadline. Local monotonic deadlines are checked on
 receive/request and on a 250 ms cleanup tick. Expiry/Desk loss drops sessions and
 completes waiting callers with an error. Duplicate/lower sequences and replies
-without a live correlation are rejected. No automatic renewal or simultaneous-open
-resolution is implemented; explicitly establish a new session after expiry/reset.
+without a live correlation are rejected. The clock renews its own authority link. A bounded parallel challenge permits
+a fresh proof to replace a surviving remote session after owner restart; a hello
+alone never tears it down. General simultaneous-open resolution is not implemented.
 
 Relay deliveries are dropped when the control owner's mailbox already has 64
 messages; outgoing traffic retains existing relay queue/frame bounds. The Desk

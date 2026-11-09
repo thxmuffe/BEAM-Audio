@@ -2,7 +2,7 @@
 -module(parvi_swarm_control_protocol).
 -export([new/2, connect/3, request_status/3, request_capabilities/3, reply_capabilities/5,
          receive_packet/4, expire/2, reset/1,
-         snapshot/1, seal/2,job_message/6,context/3,audio_message/5]).
+         snapshot/1, seal/2,job_message/6,context/3,audio_message/5,time_message/5]).
 -define(DOMAIN, <<"parvi-swarm-control/v1:">>).
 -define(MAX, 32768).
 -define(INT, 9007199254740991).
@@ -19,14 +19,14 @@ new({Public, Private}, #{swarm := Swarm, authority := Authority,director := Dire
     true = hex(Director,64) andalso (Director =:= Id orelse maps:is_key(Director,Peers)),
     maps:foreach(fun(Peer, Permissions) ->
         true = hex(Peer,64) andalso Peer =/= Id,
-        true = is_list(Permissions) andalso length(Permissions) =< 5,
+        true = is_list(Permissions) andalso length(Permissions) =< 7,
         true = lists:usort(Permissions) =:= Permissions,
-        true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer,stream_read,stream_subscribe]) end,Permissions)
+        true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer,stream_read,stream_subscribe,time_read,offset_write]) end,Permissions)
     end,Peers),
     %% Reject an accidentally mismatched local key before opening a Desk route.
     Probe = crypto:sign(eddsa,none,?DOMAIN,[Private,ed25519]),
     true = crypto:verify(eddsa,none,?DOMAIN,Probe,[Public,ed25519]),
-    #{id => Id, private => Private, policy => Policy, sessions => #{}}.
+    #{id => Id, private => Private, policy => Policy, sessions => #{},rekeys => #{}}.
 
 connect(Peer, Now, S) ->
     attempt(fun() ->
@@ -105,14 +105,40 @@ audio_message(Peer,Id,Payload,Now,S) ->
         {ok,Packet,Next}
     end,S).
 
+time_message(Peer,Id,Payload,Now,S) ->
+    attempt(fun() ->
+        true = hex(Id,32),ok = parvi_swarm_time_protocol:validate(Payload),
+        {Packet,Next} = outgoing(Peer,<<"time.message">>,Id,Payload,active(Peer,Now,S),S),
+        {ok,Packet,Next}
+    end,S).
+
+%% A fresh proof may replace a surviving remote session after a local owner restart.
+%% A replayed hello only prepares a challenge; it cannot tear down active work.
+dispatch(Peer,#{<<"op">> := <<"proof">>,<<"session">> := Id}=Body,Now,#{rekeys := Rekeys}=S)
+        when is_map_key(Peer,Rekeys) ->
+    #{id := Id}=Candidate = maps:get(Peer,Rekeys),
+    Sessions = maps:get(sessions,S),
+    Events = case maps:find(Peer,Sessions) of {ok,#{id := Old}} -> [{session_replaced,Old}];error -> [] end,
+    Temp = S#{rekeys := maps:remove(Peer,Rekeys),sessions := Sessions#{Peer => Candidate}},
+    {ok,Packets,More,Next} = dispatch(Peer,Body,Now,Temp),
+    {ok,Packets,Events++More,Next};
 dispatch(Peer, #{<<"op">> := <<"hello">>,<<"seq">> := 0,<<"session">> := Id,
                  <<"request">> := Id,<<"payload">> := Payload}, Now, S) ->
-    false = maps:is_key(Peer,maps:get(sessions,S)),
+    Sessions = maps:get(sessions,S),
+    case maps:find(Peer,Sessions) of
+        error -> ok;
+        {ok,#{stage := authorized,id := Old}} -> true = Id=/=Old
+    end,
     #{<<"a">> := A,<<"b">> := null} = Payload,
     Session = #{id => Id,a => A,b => fresh(32),stage => challenge,
                 deadline => Now+10000,sent => 0,received => 0},
     {Packet,Next} = outgoing(Peer,<<"challenge">>,Id,nonces(Session),Session,S),
-    {ok,[Packet],[],Next};
+    case maps:is_key(Peer,Sessions) of
+        false -> {ok,[Packet],[],Next#{rekeys => maps:remove(Peer,maps:get(rekeys,S,#{}))}};
+        true ->
+            Rekeys = maps:get(rekeys,S,#{}),
+            {ok,[Packet],[],Next#{sessions := Sessions,rekeys => Rekeys#{Peer => Session}}}
+    end;
 dispatch(Peer, #{<<"op">> := Op,<<"seq">> := 0,<<"session">> := Id,
                  <<"request">> := Id,<<"payload">> := Payload}, Now, S)
         when Op =:= <<"challenge">>; Op =:= <<"proof">>; Op =:= <<"ready">> ->
@@ -142,6 +168,16 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
     true = Sequence > Last,
     Received = Session#{received := Sequence},
     case Op of
+        <<"time.message">> ->
+            Grant = parvi_swarm_time_protocol:permission(maps:get(<<"kind">>,Payload)),
+            Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
+            case Grant=:=none orelse lists:member(Grant,Permissions) of
+                true -> {ok,[],[{time,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
+                false ->
+                    Error = #{<<"kind">> => <<"error">>,<<"operation">> => maps:get(<<"kind">>,Payload),<<"reason">> => <<"forbidden">>},
+                    {Packet,Next} = outgoing(Peer,<<"time.message">>,Request,Error,Received,S),
+                    {ok,[Packet],[],Next}
+            end;
         <<"stream.message">> ->
             Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
             case maps:get(<<"kind">>,Payload) of
@@ -206,8 +242,9 @@ expire(Now, #{sessions := Sessions} = S) ->
                 end
         end
     end,{#{},[]},Sessions),
-    {Events,S#{sessions := Kept}}.
-reset(S) -> S#{sessions := #{}}.
+    Rekeys = maps:filter(fun(_,R) -> maps:get(deadline,R)>Now end,maps:get(rekeys,S,#{})),
+    {Events,S#{sessions := Kept,rekeys => Rekeys}}.
+reset(S) -> S#{sessions := #{},rekeys => #{}}.
 snapshot(S) ->
     #{id => maps:get(id,S),sessions => maps:map(fun(_,V) ->
         maps:with([stage],V) end,maps:get(sessions,S))}.
@@ -265,6 +302,7 @@ payload(<<"capabilities.error">>,P) ->
     exact(P,[<<"reason">>]),
     Reason = maps:get(<<"reason">>,P),
     true = Reason =:= <<"forbidden">> orelse Reason =:= <<"unavailable">>;
+payload(<<"time.message">>,P) -> parvi_swarm_time_protocol:validate(P);
 payload(<<"stream.message">>,P) -> parvi_audio_stream_protocol:validate(P);
 payload(<<"job.offer">>,P) -> parvi_swarm_job:validate_offer(P);
 payload(<<"job.cancel">>,P) -> exact(P,[]);
