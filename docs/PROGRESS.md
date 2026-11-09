@@ -1,5 +1,34 @@
 # Progress
 
+## 2026-11-09 — CLI-first testing and shared OTP interface planned
+
+Reviewed the reorganized active/historical plans, current Inspector and audio /
+clock implementation, and the independent review of the older c84ad55 commit.
+Updated PLAN.md with three immediate increments: common OTP commands and one
+real headless Device; two-Device automation/inspection/readiness plus focused
+failure isolation and helper-secret fixes; saved Device configuration/restart and
+bounded OTP settings undo. Further UI work/Windows migration follows this path.
+
+Selected standard OTP argparse/escript and existing rebar3/relx packaging. The
+legacy Inspector remains unchanged; new scoped inspection must never silently
+use its Distributed Erlang boundary. Headless Devices use real OS audio/network/
+clock paths; synthetic fixtures remain explicit. Restart restores settings and
+identities into a fresh ephemeral Swarm, not saved membership or transport state.
+
+Confirmed by source inspection: Mixer output failure can cascade through the
+rest_for_one audio supervisor; native/Opus helpers inherit BA_IDENTITY_SEED.
+Those receive targeted fixes/checks in CLI step 2. Membership/route changes also
+still reset control sessions; the CLI must expose that disruption separately
+from ordinary renewal, with selective invalidation deferred to a scoped follow-up.
+Several older review claims
+are superseded by implemented Desk/Contract/renewal/audio/app changes; physical
+timing, clock availability and maximum-Offset limits remain unqualified. No clock
+redesign, cached permission extension or broad state-machine rewrite was accepted.
+
+This is documentation/planning only: no CLI implementation, compilation, app
+launch, live Swarm, hardware use or deployment was performed in this turn.
+
+
 ## 2026-11-09 — iOS implementation built for user-led acceptance
 
 Migrated the embedded iPhone host to the typed Swarm bridge and shared

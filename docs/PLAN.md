@@ -5,9 +5,7 @@
 This is the **next architecture roadmap** for BEAM Audio. It supersedes the older
 trusted-cross-device-OTP-cluster design as the *target architecture*. Reuse useful
 Mac/iPhone and Windows code without preserving old architecture solely for
-compatibility. Superseded plans and exploratory proposals are preserved in
-[old-ideas/](old-ideas/README.md), while current non-active topics are classified
-under [discarded-ideas/](discarded-ideas/README.md) and
+compatibility. Superseded plans and non-active exploratory proposals are classified under [discarded-ideas/](discarded-ideas/README.md) and
 [possibly-useful/](possibly-useful/README.md). Build in small independently
 verifiable increments; do not attempt a large-scale network optimization in
 this phase.
@@ -21,39 +19,185 @@ and validation limits. None of their older “next” instructions adds another
 implementation sequence. If an existing contract conflicts with this target,
 record and resolve it in step 1 before changing the affected runtime behavior.
 
-**Ephemeral Swarms (step 9) are implemented and verified in the headless core.
-Contacts/groups and Device Identity survive; gatherings and their runtime state
-do not. Former abandoned-Swarm recovery is superseded. Next is step 10:
-application acceptance (macOS → iOS → Windows); Mac and iOS implementations
-are built for user testing. The earlier 8d maximum-Offset
-continuity limitation remains open; this lifecycle work does not resolve it.** See
-[canonical component names](TERMINOLOGY.md) and [API/configuration migration](NAMING.md). The
-[boundary contract and code migration map](SWARM_CONTRACT.md) specifies identity,
-authorization, ownership, local APIs and independent lifecycles. The opt-in
-`swarm_control` runtime now provides signed, bounded status messaging through the
-existing Desk without Distributed Erlang. The [local Handler/test Worker
-lifecycle](DEVICE_HANDLER.md) and authenticated capability reads are implemented.
-The [Contract/job proof](SWARM_JOBS.md) now covers a designated Director's offer,
-local acceptance, completion/retry, cancellation/expiry and bounded failure cleanup.
-The [Passport/rejoin and multi-Desk proof](SWARM_MEMBERSHIP.md) now adds durable
-membership, current authority permissions and revocation. Local checks, the real
-two-runtime WSS job proof and the two-service loopback Desk proof pass. This is
-not arbitrary remote execution or app migration:
-existing app bundles still use the older trusted OTP control path.
-Mac-to-iPhone playback and retained subscription intent have user-reported
-working evidence. The old single receive slot is replaced on the headless path by [independent PCM
-subscriptions and mixing](SWARM_STREAMS.md). Native Opus decoded-audio handoff now
-feeds that same mixer through the authenticated stream boundary. Sustained PCM,
-full-range virtual buffering and clock/capture recovery checks pass; see the
-[repeatable backend checks and limits](../tests/control/README.md).
-Windows per-packet schedule execution and physical output alignment remain unverified/incomplete.
-Migration may temporarily break apps, connections and playback; the user accepts
-this. Do not add a parallel legacy stack or compatibility shims just to keep the
-system working between steps. Preserve stored identity and the per-packet timing
-contract; gain and Music settings are outside this architecture change.
-Old version-1 Swarm/membership/Desk/subscription records are intentionally ignored
-by new builds; identity keys remain separate and unchanged. No existing app was
-launched, rebuilt or installed to perform that reset.
+**Current priority: CLI-first Device testing and a shared OTP command interface.**
+Mac and iOS implementations compile; their physical audio/permission/background
+acceptance remains user-led. Windows migration follows the CLI milestone below.
+Ephemeral Swarms (step 9) are implemented: identities and contacts/groups survive,
+live gatherings do not. The earlier 8d maximum-Offset continuity issue remains
+open. Neither compilation nor same-host tests establish physical speaker alignment.
+
+The secure `swarm_control` runtime, real Device Handler audio automation, scoped
+inspection, PCM/Opus media and shared Time/Offset path exist. The legacy
+`ba_inspector` still uses trusted Distributed Erlang; it is preserved, but must
+not become the control backend of the new CLI. See [backend evidence and limits](../tests/control/README.md),
+[progress](PROGRESS.md), [component names](TERMINOLOGY.md) and
+[API/configuration migration](NAMING.md). Historical stages below record how we
+arrived here; their durable-Swarm/rejoin assumptions are superseded by step 9.
+Product guides now live in [OpenSound docs](../../OpenSound/docs/README.md).
+
+### Next three steps — CLI first (2026-11-09)
+
+These are the immediate implementation sequence, before further UI work. They
+refine the existing CLI follow-up in step 10; they do not restart steps 1–9 or
+require implementing the independent review's entire proposed redesign.
+
+1. **One OTP command/state interface and one real headless Device.**
+   Reuse the current Swarm bridge, Device Handler and platform adapters. Separate
+   app-specific startup from reusable Device configuration/commands; keep consent,
+   capability changes, exclusions, Swarm operations and readiness decisions in
+   OTP. CLI and apps are clients of the same allowlisted interface and state
+   model; UI drafts/navigation remain UI-owned. Do not create a second audio
+   coordinator or prematurely generalize every existing module.
+
+   Build `beam-audio` with standard OTP `argparse`/`escript` and existing
+   rebar3/relx packaging; no new CLI framework. Start on macOS. Each named Device
+   gets a separate **unnamed Erlang VM**, persistent Device Identity/configuration,
+   own state directory and protected local command endpoint. Use OTP supervision,
+   monitors and bounded calls/timeouts; no shared Swarm cookie, `erpc`, remote
+   shell/eval or arbitrary process/function access. Prefer existing local bridge
+   framing and OS-local sockets over a new HTTP service or central daemon.
+
+   A headless Device is a real runtime using the current OS's network, production
+   clock and native audio hardware, with no UI. Multiple such Devices may run on
+   one host. Native bindings handle OS permissions/keys/buffers only; OTP owns
+   behavior. Default all CLI audio capabilities off; `--enable speaker,mic,broadcast`
+   selects them explicitly. `mic` publishes microphone audio; `broadcast` publishes
+   system/default-output audio, so avoid ambiguous `publish` as a fourth mode.
+   Disabled capabilities must never open their hardware. Missing permissions or
+   adapters report failure. Keep synthetic clock/sink fixtures explicitly separate.
+   **Exit:** create/start/inspect/stop one named Device without a UI, with honest
+   readiness/errors and cleanup. Help/status alone starts no audio or Swarm.
+
+2. **Two-Device workflow, scoped inspection and deterministic waits.**
+   Expose the commands below through `beam-audio`; keep argument names consistent.
+   Reuse core commands and native packaging independent of product app sources.
+   Start Devices as independent background runtimes so commands return while
+   Devices remain alive. Track only CLI-managed processes with verified instance
+   identity; reject duplicate names/identities. Stop is graceful, kill is explicit
+   forced termination, and `--all` affects only this CLI's managed Devices.
+
+   ```sh
+   beam-audio new device --devicename test1 --createswarm --enable speaker
+   swarm=$(beam-audio get swarm --devicename test1)
+   invitation=$(beam-audio get invitation --devicename test1)
+   beam-audio new device --devicename test2 --joinswarm "$invitation" --enable broadcast
+   beam-audio wait device --devicename test1,test2 --until audio-flowing --timeout 120s
+   beam-audio inspect device --devicename test1
+   beam-audio inspect swarm --swarmid "$swarm"
+   beam-audio stop device --all
+   beam-audio start device --devicename test1,test2
+   ```
+
+   Syntax above is the **planned interface**, not existing commands. `get swarm`
+   returns the ID; joining requires an invitation, not that ID. Inspect Swarm
+   uses a selected locally running authorized participant's view; an ID is not a
+   credential or a globally queryable registry. Ambiguous/unavailable views must
+   be reported. Existing physical/remote Devices can be inspected only through
+   an authorized participant and supported scoped reports. Starting a process on
+   another machine requires an installed, explicitly authorized launcher; no
+   remote-execution/deployment framework is part of this first local-host scope.
+   Keep old Inspector commands working unchanged; if surfaced under `beam-audio`,
+   place them behind an explicit legacy subcommand. Modern inspect never falls
+   back to the old trusted profile. Future UI attachment can use the local
+   endpoint; no attach UI is required now.
+
+   Readiness is an OTP state predicate, not a sleep: command endpoint ready,
+   admission authorized, production clock ready, enabled capture running, and
+   eligible receiving/output accepting scheduled buffers. Creation cannot wait
+   for a peer that the next command has yet to start. Startup waits for its own
+   required state; explicit `wait ... audio-flowing` checks the named topology
+   and fresh counter progress over a bounded observation interval. A silent
+   Source may still be flowing; scheduled frames do not prove audible sound.
+   Timeout/permission/clock/unsupported-format failures return nonzero status
+   with the blocking stage and bounded diagnostics. Provide stable JSON output,
+   clean scalar `get` output and logs on stderr; redact keys and invitation values
+   from general inspection/logging. No fixed test clock in real-hardware mode.
+
+   **Exit:** speaker-only test1 plus broadcast-only test2 form a fresh Swarm and
+   automate Contracts/Subscriptions through existing OTP audio work. Scripted
+   waits replace guessed pauses. Run proportionate offline checks first; actual
+   audio/permissions/listening remain explicit user-led acceptance. Add targeted
+   output failure/worker restart, failed admission, no-Source and timeout cases.
+   Record join/route-change disruption separately from ordinary lease renewal.
+   Apply the two confirmed review corrections below within this increment.
+
+3. **OTP-owned saved configuration, restart and bounded settings undo.**
+   Persist named Device configuration and an explicit test-group recipe: identity
+   reference, capabilities, exclusions/settings as appropriate, creator and joiner
+   roles. Save declarative desired settings, never process IDs, sockets, packet
+   queues, clock mappings, expired grants or live transport snapshots. Starting
+   the saved Devices is an explicit action which reapplies saved audio intent
+   subject to OS permission and current authorization; merely inspecting a file
+   never enables capture. Restore the creator first, create a **fresh ephemeral
+   Swarm**, then issue fresh invitations to the selected joiners. If a different
+   still-live Swarm is targeted, require current admission; old credentials do
+   not resurrect it. Partial starts report per-Device results without claiming
+   the group is ready. Stop retains configuration; deletion is a separate action.
+
+   Implement settings snapshots and bounded undo history in OTP, shared by all
+   clients, with a documented initial supported-setting list. Start with local
+   capability intent/settings; validate and reapply through the same command
+   path. Undo is a new authorized command, not rollback of the world: shared
+   Offset requires current permission, and revoked membership or an ended Swarm
+   cannot be undone. Credentials are not settings. Do not clone a Device Identity
+   across concurrent runtimes. UI controls can adopt these operations later.
+   **Exit:** stop/start test1,test2 recreates the test arrangement with retained
+   identities and new Swarm/session IDs; offline checks prove snapshot validation,
+   settings undo, permission enforcement and no live-state resurrection.
+
+**Standard references:** OTP [argparse](https://www.erlang.org/doc/apps/stdlib/argparse.html)
+provides command trees/help/validation and fits
+[escript](https://www.erlang.org/doc/apps/stdlib/escript.html);
+[rebar3/relx releases](https://www.rebar3.org/docs/deployment/releases/) provide
+runtime packaging. Use their established mechanisms without enabling Distributed
+Erlang just to obtain release RPC/remote-console conveniences.
+
+### Independent review — triage against current code
+
+[Claude's review](possibly-useful/BEAM%20Audio%20%E2%80%94%20independent%20architecture%20review.md)
+examined an older commit and executed no tests. Its severity labels and suggested
+sequence are not automatically accepted. The following current-source findings
+inform the CLI milestone:
+
+- **Confirmed: output failure can take down unrelated audio.** `ba_audio_sup`
+  remains `rest_for_one` with Mixer/receiver before dynamic Sources/Media Sessions;
+  `ba_audio_mixer` exits on output-write failure. In step 2 isolate output/receive
+  failure from publication and unrelated sessions using ordinary supervisors and
+  explicit recovery/cleanup. Demonstrate retained unaffected process identities;
+  changing the supervisor strategy alone is not sufficient. Preserve revocation
+  fencing and independent packet targets; do not hide missed deadlines.
+- **Confirmed: helper processes inherit identity material.** Mac input/output and
+  Opus `open_port` calls do not scrub `BA_IDENTITY_SEED`. In step 2 remove signing
+  secrets from all child-helper environments and prove it with a synthetic helper;
+  native helpers have no signing role. Do not add a signer service/NIF for this.
+- **Confirmed: membership/route changes still reset control sessions.**
+  `ba_swarm_membership:admit/5` bumps policy revision for a new member/route;
+  `ba_swarm_control` resets sessions when its policy/routes change. This can
+  interrupt existing work even though ordinary authorization renewal preserves
+  sessions. CLI step 2 must reproduce/report the disruption. Selective invalidation
+  needs a scoped follow-up with revocation/replay tests; do not label renewal
+  fixes as solving membership churn, or weaken exact authorization checks casually.
+- **Still relevant: readiness and physical timing need evidence.** Production
+  clock acquisition/upstream failures can block readiness; control-mailbox delay,
+  device drift and physical alignment require measurement. Expose clock stage,
+  uncertainty, queue/drop/deadline/output counters and test failure behavior.
+  Preserve current clock math, authority expiry and capture/packet schedule. NTP
+  independence, holdover/offline permissions or a drift servo require separate
+  evidence and an explicit decision, not incidental CLI changes. The existing
+  8d maximum-Offset issue remains a tracked reproduction, not a CLI prerequisite
+  silently declared fixed. Same-host tests cannot qualify separate speakers.
+- **Outdated/mixed:** Desk failure isolation, idempotent Contract installation,
+  authorization renewal, audio capabilities/automatic connections, Mac output
+  and app migration have since been implemented to their documented limits.
+  Captain loss ending a Swarm is now intentional; durable policy gossip,
+  elections and abandoned-Swarm recovery conflict with step 9. Do not reinstate
+  them from this review. Likewise do not extend authorization from cached state.
+- **Deferred hypotheses:** per-peer/per-Subscription `gen_statem` conversion,
+  ETS/control transport redesign, one PeerConnection per peer, replacing codecs,
+  idle-timer optimization, broad Dialyzer/xref work and acoustic measurement rigs
+  are not blanket prerequisites. Prefer OTP patterns where an observed lifecycle
+  needs them; evaluate timing/CPU changes with evidence rather than a wholesale
+  rewrite. Keep existing native-mixing/RTP evaluation limits intact.
 
 ### Vocabulary and ownership
 
@@ -249,7 +393,9 @@ trusted-cluster code; it is not the current Swarm boundary.
    5. **End:** When the gathering ends, the Swarm disappears. Contacts and groups remain.
 
    **Architecture:** Swarms are temporary; contacts and groups belong to Devices.
-   No snapshots, elections, mutual friendship requirements or permanent Swarm membership.
+   No live-Swarm snapshots, elections, mutual friendship requirements or permanent
+   Swarm membership. Device settings snapshots in the CLI milestone do not restore
+   a gathering or its credentials.
    Use existing OTP components and keep the implementation minimal:
    - Device-local storage for contacts and groups (`ba_contacts`).
    - Ephemeral Swarm supervision tree lifecycle: initialized with a fresh random
@@ -267,9 +413,9 @@ trusted-cluster code; it is not the current Swarm boundary.
 
 10. **Update and verify the applications — macOS, then iOS, then Windows.**
    **In progress:** the macOS implementation is compiled for user-led acceptance.
-   [Current app behavior, native evaluation and limits](MACOS_APP.md). No app or
+   [Current app behavior, native evaluation and limits](../../OpenSound/docs/MACOS_APP.md). No app or
    hardware was launched by the agent. The iOS migration now also compiles for
-   user-led acceptance: [current iPhone behavior and limits](OpenSound/iOS/README.md).
+   user-led acceptance: [current iPhone behavior and limits](../../OpenSound/docs/iOS/README.md).
    It reuses the shared Swarm UI and Device Handler, with native mic/speaker and
    iOS 27 system-picker audio broadcast. Windows remains unmigrated. The CLI hardware test
    entry point below is planned, not implemented. Native mixing/RTP adoption and
@@ -313,16 +459,11 @@ trusted-cluster code; it is not the current Swarm boundary.
    versioned adoption decision; add no speculative compatibility stack. Finer
    timestamp resolution alone is not evidence of better physical synchronization.
 
-   **CLI hardware test entry point (approved follow-up):** add a command to the
-   existing CLI that starts an ordinary Device Handler with explicit `--mic`,
-   `--speaker` and `--broadcast` capability flags, using the same production OS
-   adapters, consent, Contracts, scoped Jobs and clock/packet scheduling as apps.
-   Support explicit new-Swarm creation or invitation joining, show real device /
-   permission / clock / job failures and stop resources on exit. Do not restore
-   old Swarms or start capture merely by opening the CLI; actual hardware use
-   requires the selected flags and OS permission. Keep it a thin local command
-   entry point, not a second runtime or media implementation. This is planned
-   work for quick user-driven checks, not a hardware test run in this session.
+   **CLI priority update (2026-11-09):** the three CLI-first steps above now
+   precede further UI work and Windows migration. They include real headless
+   hardware Devices, a common OTP command/state interface, deterministic waits,
+   scoped inspection and subsequently OTP-owned saved settings/restart/undo.
+   This supersedes the earlier small CLI follow-up paragraph.
 
    **macOS acceptance, then platform reuse:** complete and verify the common UI
    and real macOS capture/output below. Record native-mixing/RTP evaluation results
@@ -396,7 +537,7 @@ trusted-cluster code; it is not the current Swarm boundary.
 - Reuse existing WebRTC/Opus and GStreamer media engine boundaries and preserve
   per-packet playback timing. Working app behavior between steps is not required.
 - Follow-ups 8a–8c are complete; 8d maximum-Offset continuity qualification
-  remains open before app integration. Native mixing and RTP header-extension
+  remains open through CLI/app testing. Native mixing and RTP header-extension
   work are bounded evaluations during macOS audio integration; neither changes
   the accepted default or packet format without evidence and a recorded decision.
 - Paused Streams retain logical subscriptions; idle transports may remain open
@@ -439,20 +580,17 @@ trusted-cluster code; it is not the current Swarm boundary.
 
 ### Outside the ten steps
 
-The [future ideas list](IDEAS.md) keeps longer-term possibilities separate from
+The [future ideas list](possibly-useful/IDEAS.md) keeps longer-term possibilities separate from
 this roadmap. Cinema/5.1, spatial rendering, DSP algorithms, acoustic calibration,
 large-event scaling, new platforms, business tiers and new media backends do not
 add prerequisites or extra steps here. Revisit them explicitly after the current
 roadmap; preserve useful ideas without treating them as approved implementation.
 
-Next: **step 10 — user-led macOS app acceptance**, including
-the combined native-mixing/RTP timing evaluation. Finalize and verify the
-macOS audio boundary before updating iOS, then Windows. No product app is launched
-for the preparatory backend work. Preserve independent packet targets, stored
-Device Identity and the common UI requirements; start updated apps with forgotten
-old Swarms/subscriptions. Former abandoned-Swarm recovery is superseded by
-ephemeral Swarms. Step 9 is verified; the earlier 8d maximum-Offset issue remains
-open and must not be described as fixed. App/device
-listening and physical output timing remain unqualified.
+Next: **CLI step 1 — shared OTP interface and one real headless Device**, then
+CLI step 2 (two Devices/inspection/waits/focused failure fixes), then CLI step 3
+(saved configuration/restart/settings undo). Resume user-led Mac/iPhone acceptance
+and Windows migration afterward. No app or audio hardware is launched merely to
+update this plan. Keep the existing clock/per-packet target policy and ephemeral
+membership model; earlier 8d maximum-Offset and physical-output limits remain open.
 See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),
 [membership](SWARM_MEMBERSHIP.md) and [jobs](SWARM_JOBS.md).
