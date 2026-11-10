@@ -1,0 +1,9 @@
+{application, ba_device_web, [
+    {description, "BEAM Audio owner-local HTTP command service"},
+    {vsn, "0.1.0"},
+    {registered, [ba_device_web_sup]},
+    {mod, {ba_device_web_app, []}},
+    {applications, [kernel, stdlib, crypto, cowboy]},
+    {env, []},
+    {licenses, ["Apache-2.0"]}
+]}.

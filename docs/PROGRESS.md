@@ -1,5 +1,45 @@
 # Progress
 
+## 2026-11-10 — Core-owned Cowboy Device Web service
+
+Replaced OpenSound's Python HTTP/socket bridge with the optional BEAM Audio
+`ba_device_web` OTP application under `src/Services/DeviceWeb`. It uses the Desk's
+Cowboy/Ranch/patched Cowlib versions and an embedded supervised Ranch listener.
+No public Desk source, deployment or protocol was changed. Direct in-Device mode
+calls `ba_device_api`; standalone attachment reuses `ba_cli_device:call/2` instead
+of duplicating the local socket protocol. The standalone launcher does not create
+a Device or start audio. OpenSound retains frontend assets, preview fixtures,
+frontend tests and thin product launchers, including the Mac `.command` file.
+
+Moved backend test responsibility to core EUnit coverage of the HTTP boundary,
+preview isolation, socket framing/credential redaction and direct commands on an
+isolated idle Device. New service usage is documented in its own README and the
+product web README. Native app/CLI packaging does not yet automatically embed or
+start this application.
+
+Validation: Erlang compilation with warnings as errors and all seven core EUnit
+tests pass. Five frontend state tests pass using the bundled Node runtime (the
+system Homebrew Node currently fails to load its simdjson library; no installation
+was changed). Shell syntax and diff checks pass. A product-launcher smoke check
+from an unrelated working directory started the BEAM preview, fetched its session
+and all five frontend assets, then stopped it. Local socket tests required running
+outside the sandbox. Finder/browser interaction, Windows execution, live Swarm
+admission, hardware audio and native application packaging remain unverified.
+The user accepted the web-reference direction and authorized this backend move;
+further visual/performance and audio acceptance remain separate work.
+
+## 2026-11-10 — macOS web preview launcher
+
+Historical Python launcher implementation, superseded by the core-owned Cowboy
+service above; the same `.command` entry point now starts BEAM Audio.
+
+Added `Start Web UI.command` to the product checkout and a `--open` browser option
+to the local web host. The launcher serves sources in explicit preview mode,
+without a build, live Device attachment or audio. Usage is documented in the web
+README. Shell syntax, CLI help and all seven existing HTTP host tests pass (the
+host tests required localhost binding outside the sandbox). Finder double-click
+and browser opening have not been exercised; live audio remains untested here.
+
 ## 2026-11-10 — Compact web controls after design review
 
 Revised the product UI guidance to reference Fluent labelled-switch layout and

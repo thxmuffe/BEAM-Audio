@@ -7,6 +7,12 @@ signed protocol domains and the hosted service address remain unchanged.
 See [naming/migration](../../../docs/NAMING.md) and
 [canonical terminology](../../../docs/TERMINOLOGY.md).
 
+The separate [Device Web service](../DeviceWeb/README.md) uses the same Cowboy,
+Ranch and patched Cowlib versions for an owner-local HTTP command API. It serves
+frontend assets supplied by an app; the Desk remains public authentication and
+routing infrastructure. Neither service needs a Python bridge. There is no
+change to this Desk's endpoints or deployment.
+
 The remaining profile notes describe historical app integrations; step 9 has not
 updated those apps. A Phoenix/Cowboy host has supervised Erlang relay Workers. Each Device opens
 an outbound WebSocket connection and keeps it open. In the native profile the
@@ -14,7 +20,7 @@ desk carries peer introductions/signaling; authenticated OTP membership and chat
 use the direct encrypted WebRTC DataChannel. It is not a TURN/data relay for
 that profile. The legacy profile carries membership and chat through the desk.
 It does not join swarms or own their memberships or histories. The full browser
-client under `src/Apps/WebApp` remains deferred; `/` is only a small desk landing page.
+frontend lives in the sibling OpenSound checkout; `/` here is only a small Desk landing page.
 
 ## Run locally on Windows
 

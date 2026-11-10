@@ -28,11 +28,21 @@ direction: the OpenSound [design standards](../../OpenSound/docs/DESIGN_STANDARD
 and [component catalogue](../../OpenSound/docs/COMPONENT_CATALOG.md) adopt existing
 platform/accessibility guidance by reference, retaining only product decisions,
 commercial constraints and measurable responsiveness budgets. The responsive web
-reference is implemented with native HTML/JS and a loopback host attaching to the
-existing Device command socket. Explicit design preview supports Windows review
-without pretending to capture/play audio. User visual approval, real Device
-end-to-end checks and named slowest-device performance acceptance remain pending.
+reference is implemented with native HTML/JS. Its backend now belongs to BEAM
+Audio's optional `DeviceWeb` OTP application, using Cowboy like the Desk's HTTP
+stack. It calls the Device API directly when loaded inside the Device, or reuses
+the CLI client to attach to an existing Device socket. OpenSound supplies only
+frontend assets and launchers. Explicit design preview supports Windows review
+without pretending to capture/play audio. The user accepted the web-reference
+direction; live Device end-to-end checks and named slowest-device performance
+acceptance remain pending. HTTP-to-OTP checks on an isolated idle Device pass.
 The latest visual iteration uses compact grouped audio switches rather than cards.
+macOS design review can use the product checkout's `Start Web UI.command`
+double-click launcher; live Device attachment remains a separate step.
+The product launcher's HTTP preview/asset smoke check passes. Next: verify
+Finder/browser interaction, Windows startup and live
+Device/audio acceptance. Automatic embedding/packaging of the optional web
+application into native Device launches is not implemented.
 No Windows native app migration or paid framework is included. Core behavior and
 existing audio acceptance issues remain governed by this roadmap.
 Ephemeral Swarms (step 9) are implemented: identities and contacts/groups survive,

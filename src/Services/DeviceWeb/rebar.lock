@@ -1,0 +1,15 @@
+{"1.2.0",
+[{<<"cowboy">>,{pkg,<<"cowboy">>,<<"2.20.0">>},0},
+ {<<"cowlib">>,
+  {git,"https://github.com/ninenines/cowlib",
+       {ref,"4401b858f2229abb3ea115c60924f6c77e5f8aa3"}},
+  0},
+ {<<"ranch">>,{pkg,<<"ranch">>,<<"2.3.0">>},0}]}.
+[
+{pkg_hash,[
+ {<<"cowboy">>, <<"63F6E3AFA7E14201498142A10D00379F5E11761F69E69782807C713627F6BC73">>},
+ {<<"ranch">>, <<"7DE7B041A9A6A5091A3AA5898D66C0564BE671D87DB4F9D63B1B5EE775B097DF">>}]},
+{pkg_hash_ext,[
+ {<<"cowboy">>, <<"A0BE47464A2887F71C061CE90723DC17441C9B81BA9569CD9B596EB0367D1EDD">>},
+ {<<"ranch">>, <<"6168EC49409D982F7CFBD83DD083144F6CBE67CAA4036551D2F0A3AD67C9D023">>}]}
+].
