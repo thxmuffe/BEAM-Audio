@@ -21,6 +21,8 @@ loop(Id,Cap) ->
             loop(Id,Cap)
     end.
 command(#{<<"op">> := <<"start_runtime">>},_,_) -> ensure_started(),ba_app_session:snapshot();
+command(#{<<"op">> := <<"set_observer">>},_,_) ->
+    application:set_env(ba_core,swarm_observer,true),#{ok => true};
 command(#{<<"op">> := <<"start_app">>},_,_) ->
     application:load(ba_core),application:set_env(ba_core,restore_swarm_on_start,true),
     ensure_started(),ba_app_session:snapshot();
@@ -57,6 +59,12 @@ command(#{<<"op">> := <<"group_contacts">>,<<"name">> := Name,<<"ids">> := Ids},
 command(#{<<"op">> := <<"delete_group">>,<<"name">> := Name},_,_) ->
     ensure_started(),result(ba_contacts:delete_group(Name));
 command(#{<<"op">> := <<"invite">>},_,_) -> result(ba_swarm_membership:invite(3600));
+command(#{<<"op">> := <<"invite_expired">>},_,_) ->
+    %% A genuine old signed invitation, without altering the host clock.
+    {ok,Link}=ba_swarm_membership:invite(3600),
+    {_,Body}=ba_swarm_passport:parse_invitation(Link),
+    {_,Key}=ba_device_store:identity(),
+    result({ok,ba_swarm_passport:invitation(ba_swarm_passport:sign(Body#{<<"expires">> := 1},Key))});
 command(#{<<"op">> := <<"grant">>,<<"peer">> := Peer,<<"permissions">> := Ps},_,_) ->
     result(ba_swarm_membership:grant(Peer,Ps));
 command(#{<<"op">> := <<"revoke">>,<<"peer">> := Peer},_,_) -> result(ba_swarm_membership:revoke(Peer));

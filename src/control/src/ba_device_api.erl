@@ -11,6 +11,7 @@ request(Request) when is_map(Request) ->
     maps:merge(Reply,maps:with([<<"request_id">>],Request));
 request(_) -> request(#{}).
 printable(configuration_changed) -> <<"Settings changed in another client. Review the latest state and retry.">>;
+printable(invalid_swarm_config) -> <<"Invalid Swarm name, Desk address or invitation link.">>;
 printable(R) when is_binary(R) -> R;
 printable(R) when is_atom(R) -> atom_to_binary(R);
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
@@ -42,7 +43,7 @@ command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_swarm_c
 command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
     {Pub,_}=ba_device_store:identity(),
     case Device=:=binary:encode_hex(Pub) of true -> {ok,ba_device_handler:capabilities()};false -> ba_swarm_control:read_capabilities(Device) end;
-command(#{<<"method">> := <<"invitation">>}) -> ba_swarm_membership:invite(3600);
+command(#{<<"method">> := <<"invitation">>}) -> ba_swarm_membership:invite(null);
 command(#{<<"method">> := <<"snapshot">>}) -> null;
 command(#{<<"method">> := <<"list_contacts">>}) ->
     {ok, ba_contacts:list()};
@@ -66,7 +67,7 @@ command(#{<<"method">> := <<"create_swarm">>, <<"name">> := Name, <<"desks">> :=
 command(#{<<"method">> := <<"join_swarm">>, <<"invitation">> := Link}) ->
     ba_swarm:join(Link);
 command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
-    TTL = maps:get(<<"ttl">>, Req, 3600),
+    TTL = maps:get(<<"ttl">>, Req, null),
     Selection = case Sel of
         #{<<"group">> := G} -> {group, G};
         Ids when is_list(Ids) -> Ids

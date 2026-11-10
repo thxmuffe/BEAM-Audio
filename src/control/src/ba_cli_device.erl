@@ -23,7 +23,10 @@ boot() ->
         ok=application:load(ba_core),
         Consent=#{speaker => false,microphone => false,broadcast => false},
         ok=ba_app_session:configure(#{platform => mac,consent => Consent}),
-        case maps:get(<<"observer">>,C,false) of true -> application:set_env(ba_core,audio_automation,false);false -> ok end,
+        case maps:get(<<"observer">>,C,false) of
+            true -> application:set_env(ba_core,audio_automation,false),application:set_env(ba_core,swarm_observer,true);
+            false -> ok
+        end,
         {ok,_}=ba_runtime:start(swarm_control),
         case maps:find(<<"web">>,C) of
             {ok,#{<<"assets">> := Assets,<<"port">> := WebPort}} ->

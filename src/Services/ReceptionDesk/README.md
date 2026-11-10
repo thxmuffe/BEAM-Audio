@@ -11,7 +11,10 @@ The separate [Device Web service](../DeviceWeb/README.md) uses the same Cowboy,
 Ranch and patched Cowlib versions for an owner-local HTTP command API. It serves
 frontend assets supplied by an app; the Desk remains public authentication and
 routing infrastructure. Neither service needs a Python bridge. There is no
-change to this Desk's endpoints or deployment.
+change to the public service URL. The v3 reusable-invitation extension adds
+capability-scoped live mailbox lookup; it does not elect Captains, claim names,
+restore authority, store Swarms or prevent simultaneous starters. See
+[membership semantics](../../../docs/SWARM_MEMBERSHIP.md).
 
 The remaining profile notes describe historical app integrations; step 9 has not
 updated those apps. A Phoenix/Cowboy host has supervised Erlang relay Workers. Each Device opens

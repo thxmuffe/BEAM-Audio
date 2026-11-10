@@ -1,5 +1,35 @@
 # Progress
 
+## 2026-11-10 — Reusable invitations without expiry
+
+Implemented the user's revised invitation behavior in shared OTP code. Signature,
+schema, Swarm scope and current admission checks remain; numeric legacy expiry
+is ignored and new links use `expires: null`. Repeated Invite/contact delivery
+uses one link. An invitation first discovers live owners of its Desk mailbox; if
+empty, a Device becomes Captain of a fresh gathering under the same Swarm ID and
+name. It advertises the reused address and accepts the original signed bearer
+ticket without restoring its issuer's authority. Membership IDs, policy, grants,
+revocation state, jobs, subscriptions, clock and buffers start fresh. Device-local
+identity/settings/contacts are unchanged. Observer helpers wait for an actual
+Device rather than starting a gathering. No claim/election or split-brain
+prevention/convergence is implemented.
+
+Desk adds only authenticated, capability-scoped `lookup`/`found`, reporting up to
+16 live owners; several advertisements may coexist. Reauthentication clears old
+registrations before clients replay their desired mailboxes, avoiding a returning
+Captain discovering its stale advertisement. Lookup errors/offline Desk are not
+empty results. The product Join/Invite help explains reuse and no expiry.
+
+Validation: 23 focused Erlang unit checks and three Desk ExUnit checks pass.
+The new integration test checks a genuinely signed 1970-expiry ticket, live join,
+end/reuse by an unrelated Captain, unchanged Swarm ID/exact link, fresh membership,
+later joiners, current revocation, same-identity recreation and observer waiting.
+Existing two-Desk membership/failure/revocation and participant-reconnect smoke
+checks also pass. Tests use isolated identities and no hardware audio.
+Shared Render rollout/public verification are in progress; web/native acceptance
+and physical audio remain user-led. Earlier expiry and non-reusable-address notes
+below are superseded by this change, not authority restoration.
+
 ## 2026-11-10 — Live web Device and monitor in the launcher Terminal
 
 Changed the product `.command` launcher from preview-only to starting/reusing

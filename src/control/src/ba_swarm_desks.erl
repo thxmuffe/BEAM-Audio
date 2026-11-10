@@ -1,12 +1,14 @@
 %% A bounded set of independent Desk connections; no membership authority here.
 -module(ba_swarm_desks).
 -behaviour(gen_server).
--export([start_link/0,reset/0,configure/4,route/0,send/3,send_route/4,status/0,peer_online/1]).
+-export([start_link/0,reset/0,configure/4,route/0,advertise/1,lookup/2,send/3,send_route/4,status/0,peer_online/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 reset() -> gen_server:call(?MODULE,reset).
 configure(Swarm,URLs,Primary,Routes) -> gen_server:call(?MODULE,{configure,Swarm,URLs,Primary,Routes}).
 route() -> gen_server:call(?MODULE,route).
+advertise(Cap) -> gen_server:call(?MODULE,{advertise,Cap}).
+lookup(URL,Cap) -> gen_server:call(?MODULE,{lookup,URL,Cap},4500).
 send(To,Type,Packet) -> gen_server:call(?MODULE,{send,To,Type,Packet},3000).
 send_route(To,Route,Type,Packet) -> gen_server:call(?MODULE,{send_route,To,Route,Type,Packet},3000).
 status() -> gen_server:call(?MODULE,status).
@@ -20,11 +22,21 @@ init([]) ->
     erlang:send_after(1000,self(),repair),
     {ok,#{id => Id,mailbox => maps:get(mailbox,Saved),swarm => maps:get(swarm,Saved,undefined),
           primary => maps:get(primary,Saved,undefined),urls => maps:get(urls,Saved,[]),
-          routes => maps:get(routes,Saved,#{}),bound => #{},rejected => 0}}.
+          routes => maps:get(routes,Saved,#{}),aliases => [],bound => #{},rejected => 0}}.
 handle_call(reset,_,S) ->
     [ba_desk_connections_sup:stop(URL) || URL <- maps:keys(ba_desk_connections_sup:connections())],
     {reply,ok,S#{mailbox := fresh(),swarm := undefined,primary := undefined,
-        urls := [],routes := #{},bound := #{}}};
+        urls := [],routes := #{},aliases := [],bound := #{}}};
+handle_call({advertise,Cap},_,S) ->
+    true=ba_swarm_job:hex(Cap,32),
+    {reply,ok,repair(S#{aliases := lists:usort([Cap|maps:get(aliases,S)]),bound := #{}})};
+handle_call({lookup,URL,Cap},_,S) ->
+    Result=try
+        true=lists:member(URL,maps:get(urls,S)),true=ba_swarm_job:hex(Cap,32),
+        Pid=maps:get(URL,ba_desk_connections_sup:connections()),
+        gen_server:call(Pid,{lookup,maps:get(swarm,S),Cap},4000)
+    catch _:_ -> {error,desk_unavailable} end,
+    {reply,Result,S};
 handle_call(route,_,S) -> {reply,#{<<"desk">> => maps:get(primary,S),<<"mailbox">> => maps:get(mailbox,S)},S};
 handle_call({peer_online,Peer},_,S) ->
     Connections = ba_desk_connections_sup:connections(),
@@ -70,8 +82,9 @@ handle_call({send_route,To,Route,Type,Packet},_,S) ->
     {reply,Result,Next};
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(_,S) -> {noreply,S}.
-handle_info({relay,URL,{delivery,From,Cap,Payload}},#{mailbox := Cap,swarm := Swarm} = S) ->
-    case ba_app_session:excluded(From) of
+handle_info({relay,URL,{delivery,From,Cap,Payload}},#{swarm := Swarm} = S) ->
+    case ba_app_session:excluded(From) orelse
+         not (Cap=:=maps:get(mailbox,S) orelse lists:member(Cap,maps:get(aliases,S))) of
         true -> {noreply,ba_diagnostics:count(peer_excluded,S)};
         false -> delivery(URL,From,Payload,Swarm,S)
     end;
@@ -108,6 +121,7 @@ repair(#{urls := URLs}=S) ->
         end,
         case is_pid(P) andalso maps:get(URL,maps:get(bound,S),undefined)=/=P of
             true -> gen_server:cast(P,{open,maps:get(swarm,S),maps:get(mailbox,S)}),
+                    [gen_server:cast(P,{open,maps:get(swarm,S),Cap}) || Cap <- maps:get(aliases,S)],
                     gen_server:cast(P,{watch,maps:keys(maps:get(routes,S))});
             false -> ok
         end,{URL,P}

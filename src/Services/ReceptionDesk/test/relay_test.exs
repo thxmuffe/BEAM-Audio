@@ -37,4 +37,42 @@ defmodule ReceptionDesk.RelayTest do
     assert :ok = :ba_reception_sessions.command(owner, self(), %{"op" => "close", "mailbox" => cap})
     assert {:error, :unavailable} = :ba_reception_sessions.command(sender, self(), envelope)
   end
+
+  test "capability lookup reports live owners without electing one" do
+    cap = Base.encode16(:crypto.strong_rand_bytes(16))
+    swarm = Base.encode16(:crypto.strong_rand_bytes(16))
+    request = Base.encode16(:crypto.strong_rand_bytes(16))
+    client = Base.encode16(:crypto.strong_rand_bytes(32))
+    :ok = :ba_reception_sessions.attach(client, self())
+    lookup = %{"op" => "lookup", "mailbox" => cap, "swarm" => swarm, "request" => request}
+    assert :ok = :ba_reception_sessions.command(client, self(), lookup)
+    assert_receive {:relay, %{op: "found", request: ^request, owners: []}}
+    owners = for _ <- 1..2 do
+      id = Base.encode16(:crypto.strong_rand_bytes(32))
+      pid = spawn(fn -> receive do :stop -> :ok end end)
+      :ok = :ba_reception_sessions.attach(id, pid)
+      :ok = :ba_reception_sessions.command(id, pid, %{"op" => "open", "mailbox" => cap, "swarm" => swarm})
+      {id, pid}
+    end
+    try do
+      assert :ok = :ba_reception_sessions.command(client, self(), lookup)
+      assert_receive {:relay, %{op: "found", request: ^request, owners: found}}
+      assert Enum.sort(found) == Enum.sort(Enum.map(owners, &elem(&1, 0)))
+      # Reauthentication does not resurrect the identity's old advertisements.
+      {first, first_pid} = hd(owners)
+      :ok = :ba_reception_sessions.attach(first, first_pid)
+      assert :ok = :ba_reception_sessions.command(client, self(), lookup)
+      assert_receive {:relay, %{op: "found", request: ^request, owners: remaining}}
+      assert remaining == [elem(List.last(owners), 0)]
+      assert :ok = :ba_reception_sessions.command(client, self(), %{lookup | "mailbox" => String.duplicate("0", 32)})
+      assert_receive {:relay, %{op: "found", request: ^request, owners: []}}
+      for {id, pid} <- owners do
+        :ok = :ba_reception_sessions.command(id, pid, %{"op" => "close", "mailbox" => cap})
+      end
+      assert :ok = :ba_reception_sessions.command(client, self(), lookup)
+      assert_receive {:relay, %{op: "found", request: ^request, owners: []}}
+    after
+      for {_, pid} <- owners, do: send(pid, :stop)
+    end
+  end
 end

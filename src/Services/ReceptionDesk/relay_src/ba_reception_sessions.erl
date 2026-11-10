@@ -11,7 +11,9 @@ handle_call({attach, Id, Pid}, _, S) when map_size(S) < 4096; is_map_key(Id, S) 
     Old = maps:get(Id, S, #{boxes => #{}, watch => []}),
     case maps:get(pid, Old, undefined) of P when is_pid(P), P =/= Pid -> P ! replaced; _ -> ok end,
     monitor(process, Pid),
-    Next = S#{Id => Old#{pid => Pid, seen => now_ms()}},
+    %% Authenticated clients replay their current boxes/watch after ready.
+    %% A new runtime with the same identity must not inherit stale advertisements.
+    Next = S#{Id => Old#{pid => Pid, seen => now_ms(),boxes => #{},watch => []}},
     presence(Next), {reply, ok, Next};
 handle_call({attach, _, _}, _, S) -> {reply, {error, full}, S};
 handle_call({command, Id, Pid, Msg}, _, S) ->
@@ -31,6 +33,18 @@ handle_info(sweep, S) ->
     {noreply, maps:filter(fun(_, E) -> is_pid(maps:get(pid, E)) orelse now_ms() - maps:get(seen, E) < 300000 end, S)};
 handle_info(_, S) -> {noreply, S}.
 
+%% Capability-scoped discovery only: no Captain election, claim or durable room.
+%% More than one live owner may advertise the same address.
+route(_, #{pid := Pid}, #{<<"op">> := <<"lookup">>, <<"request">> := Request,
+                         <<"mailbox">> := Cap, <<"swarm">> := Swarm}, S) ->
+    case hex(Request,32) andalso hex(Cap,32) andalso hex(Swarm,32) of
+        true ->
+            Owners=lists:sublist(lists:sort([Id || {Id,#{pid := Owner,boxes := Boxes}} <- maps:to_list(S),
+                is_pid(Owner),is_process_alive(Owner),maps:get(Cap,Boxes,undefined)=:=Swarm]),16),
+            Pid ! {relay,#{op => <<"found">>,request => Request,owners => Owners}},
+            {ok,S};
+        false -> {{error,invalid_lookup},S}
+    end;
 route(Id, #{boxes := Boxes} = E, #{<<"op">> := <<"open">>, <<"mailbox">> := Cap, <<"swarm">> := Swarm}, S)
         when map_size(Boxes) < 64; is_map_key(Cap, Boxes) ->
     case hex(Cap, 32) andalso hex(Swarm, 32) of

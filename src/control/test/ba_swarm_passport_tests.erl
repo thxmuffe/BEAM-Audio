@@ -26,7 +26,7 @@ policy_separates_permission_test() ->
     ?assertEqual(#{B=>[]},maps:get(peers,ba_swarm_passport:runtime_policy(P,A))),
     ?assertException(error,_,ba_swarm_passport:permissions([<<"spawn">>])),
     ?assertException(error,_,ba_swarm_passport:permissions([<<"status_read">>,<<"status_read">>])).
-invitation_scope_and_expiry_test() ->
+invitation_scope_without_expiry_test() ->
     {A,_,Swarm,Key,_}=fixture(),URL = <<"ws://127.0.0.1:4000/relay/v1">>,
     I=#{<<"v">>=>1,<<"type">>=><<"invitation">>,<<"name">>=><<"Test gathering">>,<<"authority">>=>A,<<"swarm">>=>Swarm,
         <<"invite">>=>Swarm,<<"secret">>=>binary:copy(<<"A">>,64),
@@ -35,7 +35,9 @@ invitation_scope_and_expiry_test() ->
     Packet=ba_swarm_passport:sign(I,Key),Link=ba_swarm_passport:invitation(Packet),
     ?assertEqual({Packet,I},ba_swarm_passport:parse_invitation(Link)),
     Expired=ba_swarm_passport:invitation(ba_swarm_passport:sign(I#{<<"expires">>:=1},Key)),
-    ?assertException(error,_,ba_swarm_passport:parse_invitation(Expired)),
+    ?assertMatch({_,#{<<"expires">> := 1}},ba_swarm_passport:parse_invitation(Expired)),
+    Unlimited=ba_swarm_passport:invitation(ba_swarm_passport:sign(I#{<<"expires">>:=null},Key)),
+    ?assertMatch({_,#{<<"expires">> := null}},ba_swarm_passport:parse_invitation(Unlimited)),
     ?assertException(error,_,ba_swarm_passport:route(#{<<"desk">>=><<"ws://127.0.0.1:99/relay/v1">>,<<"mailbox">>=>Swarm},[URL])).
 stale_authority_response_test() ->
     {A,B,Swarm,Key,_}=fixture(),Req=binary:copy(<<"A">>,32),Nonce=binary:copy(<<"A">>,64),

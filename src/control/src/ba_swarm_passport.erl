@@ -55,8 +55,8 @@ parse_invitation(Link) when is_binary(Link),byte_size(Link) =< 32768 ->
     true = hex(maps:get(<<"swarm">>,Body),32),true = hex(maps:get(<<"invite">>,Body),32),
     true = hex(maps:get(<<"secret">>,Body),64),
     Name = maps:get(<<"name">>,Body),true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
-    positive(maps:get(<<"expires">>,Body)),
-    true = maps:get(<<"expires">>,Body) > erlang:system_time(second),
+    %% Legacy numeric expiry remains signed metadata, not a current restriction.
+    case maps:get(<<"expires">>,Body) of null -> ok;Expiry -> positive(Expiry) end,
     urls(maps:get(<<"desks">>,Body)),route(maps:get(<<"route">>,Body),maps:get(<<"desks">>,Body)),{Packet,Body}.
 urls(L) ->
     true = is_list(L) andalso length(L) > 0 andalso length(L) =< 4,

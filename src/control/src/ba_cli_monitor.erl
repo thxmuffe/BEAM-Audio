@@ -71,7 +71,7 @@ await_admission(Name,Until,LastState) ->
         false ->
             case State of
                 <<"idle">> -> fail(<<"The saved gathering is no longer active. Supply a valid invitation from the current Swarm (--invitation-file PATH).">>);
-                <<"revoked">> -> fail(<<"Admission was denied. Check invitation expiry or revocation and that the Captain is online.">>);
+                <<"revoked">> -> fail(<<"Admission was denied. Check revocation and that the Captain is online.">>);
                 <<"ended">> -> fail(<<"The saved Swarm ended. A new Swarm needs a valid invitation.">>);
                 _ -> ok
             end,

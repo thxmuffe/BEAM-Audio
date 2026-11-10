@@ -63,7 +63,7 @@ init(#{owner := Owner, delivery := Delivery} = Options) ->
            max_owner_queue => maps:get(max_owner_queue,Options,infinity),
            identity => Identity,tag => maps:get(tag,Options,undefined),
            url => URL, private => Private, conn => undefined, stream => undefined,
-           ready => false, boxes => #{}, watch => [], online => [], backoff => 500, error => null}}.
+           ready => false, boxes => #{}, lookups => #{}, watch => [], online => [], backoff => 500, error => null}}.
 handle_call(status, _, S) ->
     {reply, #{id => name(maps:get(identity,S)),url => case maps:get(url,S) of undefined -> null; U -> U end,
               connected => maps:get(ready, S), online => maps:get(online, S), watched => maps:get(watch, S), error => maps:get(error, S),diagnostics => ba_diagnostics:view(S)}, S};
@@ -71,7 +71,15 @@ handle_call({send, To, Cap, Payload}, _, #{ready := true} = S) ->
     Frame = #{op => <<"send">>, to => To, mailbox => Cap, payload => Payload,
               request => maps:get(<<"request">>, Payload, null)},
     {reply, ws(Frame, S), S};
-handle_call({send, _, _, _}, _, S) -> {reply, {error, disconnected}, S}.
+handle_call({send, _, _, _}, _, S) -> {reply, {error, disconnected}, S};
+handle_call({lookup,Swarm,Cap},From,#{ready := true,lookups := Pending}=S) when map_size(Pending)<16 ->
+    Request=binary:encode_hex(crypto:strong_rand_bytes(16)),
+    case ws(#{op => <<"lookup">>,request => Request,swarm => Swarm,mailbox => Cap},S) of
+        ok -> erlang:send_after(3000,self(),{lookup_timeout,Request}),
+              {noreply,S#{lookups := Pending#{Request => From}}};
+        Error -> {reply,Error,S}
+    end;
+handle_call({lookup,_,_},_,S) -> {reply,{error,disconnected},S}.
 handle_cast({open, Swarm, Cap}, #{boxes := Boxes} = S) ->
     Next = S#{boxes := Boxes#{Cap => Swarm}}, maybe_ws(#{op => <<"open">>, swarm => Swarm, mailbox => Cap}, Next), {noreply, Next};
 handle_cast({close, Cap}, #{boxes := Boxes} = S) ->
@@ -119,6 +127,7 @@ handle_info_event({handshake_timeout, Pid}, #{conn := Pid, ready := false} = S) 
 handle_info_event({gun_error, Pid, _, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
 handle_info_event({gun_error, Pid, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
 handle_info_event({gun_response, Pid, _, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(http_upgrade_rejected,S)};
+handle_info_event({lookup_timeout,Request},S) -> {noreply,lookup_reply(Request,{error,lookup_timeout},S)};
 handle_info_event(_, S) -> {noreply, S}.
 incoming(#{<<"op">> := <<"challenge">>, <<"v">> := 1, <<"nonce">> := Nonce}, S)
         when is_binary(Nonce), byte_size(Nonce) =:= 64 ->
@@ -149,14 +158,24 @@ incoming(#{<<"op">> := <<"delivery">>, <<"from">> := From, <<"mailbox">> := Cap,
     case Delivery of {error,overloaded} -> ba_diagnostics:count(desk_owner_overloaded,S);_ -> S end;
 incoming(#{<<"op">> := <<"presence">>, <<"online">> := Online}, S) when is_list(Online), length(Online) =< 256 ->
     notify({presence, Online}, S), S#{online := Online};
+incoming(#{<<"op">> := <<"found">>,<<"request">> := Request,<<"owners">> := Owners},S)
+        when is_list(Owners),length(Owners)=<16 ->
+    true=lists:all(fun(Id) -> ba_swarm_job:hex(Id,64) end,Owners),
+    lookup_reply(Request,{ok,Owners},S);
 incoming(#{<<"op">> := <<"error">>, <<"request">> := Request, <<"error">> := Error}, S) ->
-    notify({error, Request, Error}, S), S#{error := Error};
+    notify({error, Request, Error}, S), lookup_reply(Request,{error,Error},S#{error := Error});
 incoming(_, S) -> S.
+lookup_reply(Request,Reply,S) ->
+    case maps:take(Request,maps:get(lookups,S,#{})) of
+        {From,Rest} -> gen_server:reply(From,Reply),S#{lookups := Rest};
+        error -> S
+    end.
 retry(Reason,S) -> retry(ba_diagnostics:count(Reason,S)).
 retry(#{conn := Pid, backoff := Delay} = S) ->
+    maps:foreach(fun(_,From) -> gen_server:reply(From,{error,disconnected}) end,maps:get(lookups,S,#{})),
     case Pid of undefined -> ok; _ -> try gun:close(Pid) catch _:_ -> ok end end,
     erlang:send_after(Delay + rand:uniform(250), self(), connect), notify(disconnected, S),
-    S#{conn := undefined, stream := undefined, ready := false, online := [],
+    S#{conn := undefined, stream := undefined, ready := false, online := [],lookups := #{},
        error := <<"Connection failed. Check the desk URL and TLS trust.">>, backoff := min(10000, Delay * 2)}.
 maybe_ws(Msg, #{ready := true} = S) -> ws(Msg, S);
 maybe_ws(_, _) -> ok.

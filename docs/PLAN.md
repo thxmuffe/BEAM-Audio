@@ -1,5 +1,21 @@
 # Development plan
 
+## Reusable invitations — accepted 2026-11-10
+
+Invitations currently have no time expiry, including previously signed links.
+The same link/Swarm ID can start fresh gatherings: a Device joins a live Captain
+advertised at its capability-addressed Desk mailbox, or becomes Captain when the
+Desk confirms no live owner. Membership, permissions and runtime state start
+fresh; old authority is never restored. This refines step 9: live gathering state
+is still ephemeral, while the invitation address can be reused. Repeated Invite
+and contact/group sharing use the same link. Observer helpers never start an
+empty gathering. There is deliberately no simultaneous-Captain prevention or
+convergence mechanism. See [membership semantics](SWARM_MEMBERSHIP.md).
+
+Implementation and local integration checks pass. Shared Desk rollout and public
+verification are being completed for the user's web-app test. Native applications
+need rebuilding/restarting to use these updated invitation semantics.
+
 ## Accepted direction — secure Swarm architecture (2026-11-08)
 
 This is the **next architecture roadmap** for BEAM Audio. It supersedes the older

@@ -1,11 +1,14 @@
 # Ephemeral Swarms, Passports and multiple Desks — step 9
 
-Step 9 supersedes step 5's durable Swarm/rejoin model. Each gathering has a fresh
-random ID. Its creator is Captain, membership authority and Director for its
-lifetime. There is no election, dormant Swarm registry or snapshot restoration.
+Step 9 supersedes step 5's durable Swarm/rejoin model. Creating without an existing
+link assigns a random Swarm ID. A reusable invitation retains that ID and name
+across fresh gatherings. The first Device using the link while no Captain is
+advertised becomes the new Captain, membership authority and Director. There is
+no election, dormant Swarm registry or restoration of old authority/state.
 Device Identity, the local address book and participant reconnect intent survive.
 Membership still requires fresh authorization from the same live Captain; a dead
-Captain’s gathering cannot be restored.
+Captain's old authority/membership cannot be restored. Its reusable link can start
+a fresh gathering with new membership and permissions.
 
 ## Local APIs
 
@@ -41,8 +44,10 @@ ok = ba_swarm:leave().
 
 The Captain uses `ba_swarm:end_swarm/0`, or leaves to end the entire gathering.
 A member cannot end it for everybody. Leaving removes that admission; the same
-unexpired invitation can be used to return while the gathering is still alive. A new creation always
-gets a new ID, even with the same Captain, name and storage directory. There is
+invitation can be used to return. Invitations currently have no time expiry:
+legacy expiry timestamps are ignored; newly issued tickets use `expires: null`.
+A new creation without a link gets a new ID; joining through an old link retains
+its ID. There is
 one active Swarm per local runtime. `ba_bridge:request/1` exposes local JSON
 contact/group and lifecycle commands used by the Apple apps and CLI.
 
@@ -63,19 +68,49 @@ Time/Offset requires `time_read` / `offset_write`. Jobs require the designated
 Director, `job_offer`, recipient consent and Contract. Captain status never
 permits arbitrary remote process execution or access to microphones.
 
-Signed v3 invitations pin the Captain, gathering name/ID, permitted Desks and
-mailbox route. Each ticket expires within 24 hours and can be forwarded to admit several
-independently authenticated Devices. Contacts/groups select delivery recipients,
-not who is allowed to reuse the link. Revocation blocks the removed Device from
-all invitations that existed at removal without consuming those links for others;
-the Captain can explicitly re-invite it with a newly generated link.
+Signed v3 invitations identify a Swarm name/ID, issuing identity, permitted Desks
+and capability-addressed mailbox. The signature remains verified, including on
+old links, but expiry is disabled for now. Repeated Invite and contact/group
+delivery use the same shared link. Anyone possessing it can join the current
+gathering or start a fresh one when it is empty. Revocation blocks that Device
+within the current gathering; explicitly inviting a selected contact can clear
+its block without changing the shared link. Forwarding alone cannot clear it.
 Challenge/proof verifies fresh nonces, identity, request and credential hash.
 Passports and policy floors apply only to this live gathering. A participant
 saves them for fresh authorization after transport loss or app restart; they
-cannot revive the gathering after its Captain ends.
+cannot restore authority after its Captain ends.
 A departure also identifies the current membership, so replaying an old signed
 leave cannot evict a later admission. End messages must be signed by this Swarm's
 Captain. Credentials must be transferred privately and never logged.
+
+## Reusing a link
+
+The Device asks the invitation's Desk for live owners advertising its mailbox
+capability and Swarm ID. If an owner is found, the Device authenticates admission
+against that current Captain using the signed bearer ticket. If the Desk confirms
+an empty result, the Device creates fresh policy/membership under its own identity
+and advertises the old mailbox alongside its new local mailbox. The old signature
+identifies the invitation issuer; it does not restore that issuer's authority.
+Repeated Invite returns the exact reused link. Desk failure/unsupported lookup
+does not count as an empty result. Monitor observers wait for a Device to start
+the gathering; they do not become Captains.
+
+There is deliberately no atomic claim or simultaneous-Captain protection. Two
+arrivals can both observe an empty address and start; lookup can return both, and
+later arrivals currently use the first returned identity. There is no convergence
+or Captain handover mechanism. A fresh gathering resets permissions, Passports,
+revocations, jobs, clock, subscriptions and buffers, retaining only the address,
+name and each Device's own persistent settings/contacts.
+
+Build the updated runtime and Desk, then run:
+
+```sh
+python3 tests/control/reusable-invitation-smoke.py
+```
+
+This uses isolated local Devices and a real temporary Desk to check old signed
+timestamps, later joiners, fresh Captain/membership, exact link reuse, revocation,
+same-identity recreation and observer-only waiting. Physical audio is separate.
 
 ## Lifecycle and storage
 

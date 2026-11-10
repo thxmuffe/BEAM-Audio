@@ -52,6 +52,23 @@ addresses needed to communicate with their admitted peers.
 
 ## Swarm invitations and messages
 
+### Capability-scoped lookup for current v3 clients
+
+After authentication, a client may send `op=lookup` with `request` (32 hex),
+`swarm` (32 hex) and `mailbox` (32 hex). The service returns `op=found`, the same
+`request`, and `owners`: up to 16 currently connected identity IDs advertising
+that exact mailbox/Swarm pair. This is capability-scoped discovery, not a public
+directory, Captain election, atomic claim or membership grant. Several identities
+may advertise the same address. Disconnect/close removes an advertisement from
+lookup; clients replay current registrations after reauthentication, which clears
+old registrations for that identity. Unsupported/error/disconnected requests must
+not be interpreted as a successful empty result.
+
+Reusable signed v3 link and fresh-gathering semantics are specified in
+[SWARM_MEMBERSHIP.md](SWARM_MEMBERSHIP.md). Expiry is currently disabled there;
+older signed timestamps remain metadata. The v2 format below describes legacy
+clients and is not the current Device invitation parser.
+
 An internet invitation is:
 
 `parvi://swarm/v2?desk=ENCODED_WSS_URL&node=PUBLIC_KEY_ID&mailbox=CAP&swarm=ID&token=TOKEN`

@@ -1,4 +1,5 @@
-%% One voluntary, temporary gathering per local runtime; no resurrection/election.
+%% One voluntary, temporary gathering per runtime. Reusable links are addresses,
+%% never restored authority, membership, grants or live operation state.
 -module(ba_swarm).
 -behaviour(gen_server).
 -export([start_link/0,create/2,join/1,start/1,status/0,connection/0,disconnect/0,remember/3,leave/0,end_swarm/0,invite/2,ended/1]).
@@ -127,7 +128,7 @@ connection_view(#{remembered := Saved}=S) ->
         ended -> <<"This Device was Captain. Its previous Swarm ended when it stopped.">>;
         unavailable -> <<"Could not reconnect. The Captain is unavailable or the Swarm has ended.">>;
         revoked -> <<"Admission denied. This Device may have been removed from the Swarm.">>;
-        failed -> <<"Could not restore the saved connection. The invitation may have expired; join with a current invitation.">>;
+        failed -> <<"Could not restore the saved connection. Paste its invitation to join or start a fresh gathering.">>;
         idle -> <<"Previous Swarm remembered">>
     end,
     (maps:with([name,swarm],Saved))#{state => State,message => Message}.

@@ -19,7 +19,7 @@ init([]) ->
     S = boot(Config,Base),erlang:send_after(250,self(),tick),{ok,S}.
 boot(#{mode := create,desks := URLs} = Config,S) ->
     ok = ba_swarm_passport:urls(URLs),Id = maps:get(id,S),Primary = maps:get(desk,Config,hd(URLs)),
-    Default = #{<<"v">> => 1,<<"type">> => <<"policy">>,<<"swarm">> => fresh(16),
+    Default = #{<<"v">> => 1,<<"type">> => <<"policy">>,<<"swarm">> => maps:get(swarm,Config,fresh(16)),
         <<"authority">> => Id,<<"director">> => Id,<<"epoch">> => 1,<<"revision">> => 1,
         <<"members">> => #{Id => #{<<"membership">> => fresh(16),
             <<"permissions">> => application:get_env(ba_core,swarm_default_permissions,[<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>])}}},
@@ -33,7 +33,16 @@ boot(#{mode := create,desks := URLs} = Config,S) ->
     end,
     Next = S#{role => authority,name => maps:get(name,Config),policy => CurrentPolicy,invitations => maps:get(invitations,Saved),routes => Routes,
         urls => URLs,primary => Primary,swarm => Swarm,authority => Id,state := authorized,until := infinity},
-    checkpoint_authority(Next),publish(Next),Next;
+    Ready=case maps:find(reusable,Config) of
+        {ok,Link} ->
+            {_,I}=ba_swarm_passport:parse_invitation(Link),
+            ok=ba_swarm_desks:advertise(maps:get(<<"mailbox">>,maps:get(<<"route">>,I))),
+            Entry=#{hash => crypto:hash(sha256,maps:get(<<"secret">>,I)),
+                    issuer => maps:get(<<"authority">>,I),blocked => []},
+            Next#{reusable_link => Link,invitations := #{maps:get(<<"invite">>,I) => Entry}};
+        error -> Next
+    end,
+    checkpoint_authority(Ready),publish(Ready),Ready;
 boot(#{mode := join,invitation := Link} = Config,S) ->
     {Ticket,I} = ba_swarm_passport:parse_invitation(Link),
     Saved = ba_device_store:load(swarm_member,undefined),
@@ -42,8 +51,11 @@ boot(#{mode := join,invitation := Link} = Config,S) ->
             boot_saved(Config,Saved,S#{name => maps:get(<<"name">>,I)});
         undefined ->
             URLs = maps:get(<<"desks">>,I),Primary = maps:get(desk,Config,hd(URLs)),
-            client(Ticket,maps:get(<<"authority">>,I),maps:get(<<"swarm">>,I),URLs,Primary,
-                   maps:get(<<"route">>,I),#{},S#{name => maps:get(<<"name">>,I)})
+            Swarm=maps:get(<<"swarm">>,I),
+            ok=ba_swarm_desks:configure(Swarm,URLs,Primary,#{}),
+            S#{role => discovering,credential => Ticket,reusable_link => Link,invitation => I,
+               name => maps:get(<<"name">>,I),authority => maps:get(<<"authority">>,I),
+               swarm => Swarm,urls => URLs,primary => Primary,policy => undefined,routes => #{}}
     end;
 boot(#{mode := rejoin,name := Name,member := Saved}=Config,S) ->
     boot_saved(Config,Saved,S#{name => Name});
@@ -74,9 +86,11 @@ handle_call(current,_,#{state := authorized} = S) ->
         true -> {reply,{ok,view(S)},S};false -> {reply,{error,authorization_expired},S}
     end;
 handle_call(current,_,S) -> {reply,{error,maps:get(state,S)},S};
+handle_call({invite,_},_,#{role := authority,reusable_link := Link}=S) ->
+    {reply,{ok,Link},S};
 handle_call({invite,TTL},_,S) ->
     case invitations([undefined],TTL,S) of
-        {ok,[#{invitation := Link}],Next} -> {reply,{ok,Link},Next};
+        {ok,[#{invitation := Link}],Next} -> {reply,{ok,Link},Next#{reusable_link => Link}};
         {error,R} -> {reply,{error,R},S}
     end;
 handle_call({invite_devices,Ids,TTL},_,S) ->
@@ -121,6 +135,7 @@ handle_cast(_,S) -> {noreply,S}.
 handle_info(tick,S0) ->
     S1 = S0#{pending := maps:filter(fun(_,E) -> maps:get(deadline,E) > now_ms() end,maps:get(pending,S0))},
     S2 = case maps:get(role,S1) of
+        discovering -> discover(S1);
         authority -> S1;
         member -> client_tick(S1)
     end,
@@ -141,6 +156,27 @@ handle_info({desk_delivery,_,From,Packet},S) ->
     catch exit:{membership_storage_failed,_} = Reason -> exit(Reason);
           _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}} end;
 handle_info(_,S) -> {noreply,S}.
+
+discover(#{last_attempt := Last}=S) ->
+    case now_ms()-Last >= 1000 of
+        false -> S;
+        true ->
+            I=maps:get(invitation,S),R=maps:get(<<"route">>,I),
+            URL=maps:get(<<"desk">>,R),Cap=maps:get(<<"mailbox">>,R),
+            Next=S#{last_attempt := now_ms()},
+            case ba_swarm_desks:lookup(URL,Cap) of
+                {ok,[]} ->
+                    %% No claim/election: simultaneous arrivals may both start.
+                    case application:get_env(ba_core,swarm_observer,false) of
+                        true -> Next;
+                        false -> boot(#{mode => create,name => maps:get(name,S),desks => maps:get(urls,S),
+                                       desk => URL,swarm => maps:get(swarm,S),reusable => maps:get(reusable_link,S)},Next)
+                    end;
+                {ok,[Captain|_]} ->
+                    client(maps:get(credential,S),Captain,maps:get(swarm,S),maps:get(urls,S),URL,R,#{},Next);
+                {error,_} -> Next
+            end
+    end.
 
 client_tick(#{captain_deadline := Deadline}=S) ->
     case now_ms()>=Deadline of
@@ -245,8 +281,9 @@ incoming(_,_,_) -> error(unexpected_membership_message).
 
 credential(Peer,Packet,S) ->
     try
-        P = ba_swarm_passport:verify(Packet,maps:get(id,S)),Swarm = maps:get(swarm,S),Swarm = maps:get(<<"swarm">>,P),
-        case maps:get(<<"type">>,P) of
+        Envelope=ba_swarm_passport:decode(Packet),P0=ba_swarm_passport:decode(base64:decode(maps:get(<<"body">>,Envelope))),
+        Swarm = maps:get(swarm,S),Swarm = maps:get(<<"swarm">>,P0),
+        case maps:get(<<"type">>,P0) of
             <<"passport">> ->
                 Pass = ba_swarm_passport:passport(Packet,maps:get(id,S),Peer,Swarm),
                 #{<<"membership">> := Mid} = maps:get(Peer,maps:get(<<"members">>,maps:get(policy,S))),
@@ -255,7 +292,7 @@ credential(Peer,Packet,S) ->
             <<"invitation">> ->
                 {_,P} = ba_swarm_passport:parse_invitation(ba_swarm_passport:invitation(Packet)),
                 E = maps:get(maps:get(<<"invite">>,P),maps:get(invitations,S)),
-                true = maps:get(expires,E) > erlang:system_time(second),
+                true = maps:get(issuer,E,maps:get(id,S)) =:= maps:get(<<"authority">>,P),
                 false = lists:member(Peer,maps:get(blocked,E,[])),
                 true = crypto:hash_equals(maps:get(hash,E),crypto:hash(sha256,maps:get(<<"secret">>,P))),{ok,invitation}
         end
@@ -301,23 +338,30 @@ hex(B,N) -> ba_swarm_job:hex(B,N).
 now_ms() -> erlang:monotonic_time(millisecond).
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([id,swarm,role,state],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
-invitations(Ids,TTL,#{role := authority,invitations := Existing}=S)
-        when is_list(Ids),length(Ids)>0,length(Ids)=<15,is_integer(TTL),TTL>0,TTL=<86400 ->
-    Live = maps:filter(fun(_,E) -> maps:get(expires,E)>erlang:system_time(second) end,Existing),
+invitations(Ids,_TTL,#{role := authority,invitations := Existing}=S)
+        when is_list(Ids),length(Ids)>0,length(Ids)=<15 ->
+    Live = Existing,
     case map_size(Live)+length(Ids)=<32 andalso
          lists:all(fun(Id) -> Id=:=undefined orelse hex(Id,64) end,Ids) of
         false -> {error,invalid_invitation};
         true ->
-            {Links,Next} = lists:mapfoldl(fun(Device,Acc) ->
-                Id = fresh(16),Secret = fresh(32),Expiry = erlang:system_time(second)+TTL,
+            {Link,Next}=case maps:find(reusable_link,S) of
+              {ok,Shared} ->
+                %% Explicitly inviting a selected contact can undo its removal;
+                %% merely forwarding the same link does not clear that block.
+                Invites=maps:map(fun(_,E) -> E#{blocked => maps:get(blocked,E,[])--Ids} end,Existing),
+                {Shared,S#{invitations := Invites}};
+              error ->
+                Id = fresh(16),Secret = fresh(32),
                 I = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"name">> => maps:get(name,S),
                     <<"swarm">> => maps:get(swarm,S),<<"authority">> => maps:get(id,S),
-                    <<"invite">> => Id,<<"secret">> => Secret,<<"expires">> => Expiry,
+                    <<"invite">> => Id,<<"secret">> => Secret,<<"expires">> => null,
                     <<"desks">> => maps:get(urls,S),<<"route">> => maps:get(maps:get(id,S),maps:get(routes,S))},
-                Invites = maps:get(invitations,Acc),
-                Entry = #{hash => crypto:hash(sha256,Secret),expires => Expiry,blocked => []},
-                {#{device => Device,invitation => ba_swarm_passport:invitation(sign(I,S))},
-                    Acc#{invitations := Invites#{Id => Entry}}}
-            end,S#{invitations := Live},Ids),checkpoint_authority(Next),{ok,Links,Next}
+                Entry = #{hash => crypto:hash(sha256,Secret),issuer => maps:get(id,S),blocked => []},
+                Shared=ba_swarm_passport:invitation(sign(I,S)),
+                {Shared,S#{reusable_link => Shared,invitations := Live#{Id => Entry}}}
+            end,
+            checkpoint_authority(Next),
+            {ok,[#{device => Device,invitation => Link} || Device <- Ids],Next}
     end;
 invitations(_,_,_) -> {error,captain_or_valid_invitation_required}.
