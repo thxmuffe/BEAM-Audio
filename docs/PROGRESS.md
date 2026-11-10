@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-11-10 — Native packaging fix for the optional web service
+
+Xcode's combined build failed its iOS runtime import check because the CLI's
+web-URL metadata directly called `ba_device_web_sup:origin/0`, while native apps
+deliberately do not package the optional web application. Removed that hard
+module dependency: Device Web publishes its origin in its own application
+environment on startup and clears it on stop; core reads that optional metadata.
+The import checker remains strict and native bundles gain no web dependencies.
+
+Validation: iOS runtime preparation passes; all seven Device Web tests pass,
+including endpoint publication/cleanup assertions. The combined `OpenSound Both`
+Xcode scheme succeeds for generic iOS with signing disabled, including its macOS
+builder. Both packaged runtimes report 97 core modules, 675 imports and zero
+unresolved calls. No installation, launch, audio test, commit or deployment was
+performed for this fix. Details: product `builds/check-xcode-optional-web.log`.
+
 ## 2026-11-10 — Reusable invitations without expiry
 
 Implemented the user's revised invitation behavior in shared OTP code. Signature,

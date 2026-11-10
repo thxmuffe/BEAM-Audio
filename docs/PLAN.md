@@ -2,6 +2,11 @@
 
 ## Reusable invitations — accepted 2026-11-10
 
+Native build follow-through: removed the CLI's accidental hard import of the
+optional web service. iOS preparation and the combined macOS/iOS Xcode scheme now
+pass runtime-import validation; signed installation and device/audio acceptance
+remain user-led.
+
 Invitations currently have no time expiry, including previously signed links.
 The same link/Swarm ID can start fresh gatherings: a Device joins a live Captain
 advertised at its capability-addressed Desk mailbox, or becomes Captain when the

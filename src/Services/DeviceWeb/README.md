@@ -73,6 +73,9 @@ Create/Join and the Device Handler lifecycle stay in the existing OTP runtime.
 Stopping the Device stops the web service too. Native app bundles do not yet
 automatically package/start this optional application. Without `assets`, the
 service exposes the API without a frontend.
+The application publishes its origin as `ba_device_web` application metadata and
+clears it on stop. Core CLI metadata reads this optional value without importing
+web-service modules, so native releases remain independent of this application.
 
 ## Browser contract
 

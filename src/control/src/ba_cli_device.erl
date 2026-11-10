@@ -97,7 +97,12 @@ handle_call({request,#{<<"instance">> := I}=R},_,#{<<"instance">> := I}=S) ->
         <<"kill">> -> #{error => null};
         _ -> ba_device_api:request(maps:remove(<<"instance">>,R))
     end,
-    WebURL=case whereis(ba_device_web_sup) of undefined -> null;_ -> ba_device_web_sup:origin() end,
+    %% The optional service publishes its endpoint; native core releases must
+    %% not import modules from a web application they do not package.
+    WebURL=case whereis(ba_device_web_sup) of
+        undefined -> null;
+        _ -> application:get_env(ba_device_web,origin,null)
+    end,
     Meta=#{observer => maps:get(<<"observer">>,S,false),name => maps:get(<<"name">>,S),instance => I,os_pid => list_to_binary(os:getpid()),node => atom_to_binary(node()),startup_error => maps:get(startup_error,S),web_url => WebURL},
     {reply,Reply#{managed => Meta},S};
 handle_call(_,_,S) -> {reply,#{error => <<"Device instance mismatch.">>},S}.

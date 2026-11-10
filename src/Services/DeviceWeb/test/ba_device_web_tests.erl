@@ -163,10 +163,12 @@ direct_device(#{dir := Dir}=C) ->
 
 listener_lifecycle(C) ->
     URL=start(C,#{}),OldToken=token(URL),
+    ?assertEqual({ok,list_to_binary(URL)},application:get_env(ba_device_web,origin)),
     %% The listener is supervised beneath the optional application.
     [{_,Pid,supervisor,_}]=supervisor:which_children(ba_device_web_sup),
     Ref=erlang:monitor(process,Pid),
     ok=application:stop(ba_device_web),
+    ?assertEqual(undefined,application:get_env(ba_device_web,origin)),
     receive {'DOWN',Ref,process,Pid,_} -> ok after 1000 -> error(listener_survived_stop) end,
     ?assertMatch({error,_},httpc:request(get,{URL++"/api/session",[]},[{timeout,500}],[])),
     NewURL=start(C,#{}),
