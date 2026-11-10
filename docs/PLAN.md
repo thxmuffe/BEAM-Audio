@@ -21,18 +21,20 @@ record and resolve it in step 1 before changing the affected runtime behavior.
 
 **Current priority: CLI-first Device testing and a shared OTP command interface.**
 Mac and iOS implementations compile; their physical audio/permission/background
-acceptance remains user-led. Windows migration follows the CLI milestone below.
+acceptance remains user-led. Product UI priority is now the revised web reference;
+Windows implementation follows the user's approval of that experience.
 Before further product UI implementation, apply the user's 2026-11-10 design
 direction: the OpenSound [design standards](../../OpenSound/docs/DESIGN_STANDARDS.md)
 and [component catalogue](../../OpenSound/docs/COMPONENT_CATALOG.md) adopt existing
 platform/accessibility guidance by reference, retaining only product decisions,
-commercial constraints and measurable responsiveness budgets. A responsive web
-reference is recommended so design work can be reviewed on Windows; it is not a
-selected implementation framework. Preparation is documentation only; no app migration,
-framework replacement or paid package has been implemented. Next app work starts
-with one invitation-to-audio path and names the slowest supported reference
-devices before measuring acceptance. Core behavior and existing audio acceptance
-issues remain governed by this roadmap.
+commercial constraints and measurable responsiveness budgets. The responsive web
+reference is implemented with native HTML/JS and a loopback host attaching to the
+existing Device command socket. Explicit design preview supports Windows review
+without pretending to capture/play audio. User visual approval, real Device
+end-to-end checks and named slowest-device performance acceptance remain pending.
+The latest visual iteration uses compact grouped audio switches rather than cards.
+No Windows native app migration or paid framework is included. Core behavior and
+existing audio acceptance issues remain governed by this roadmap.
 Ephemeral Swarms (step 9) are implemented: identities and contacts/groups survive,
 live gatherings do not. The earlier 8d maximum-Offset continuity issue remains
 open. Neither compilation nor same-host tests establish physical speaker alignment.

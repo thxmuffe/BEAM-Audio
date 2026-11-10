@@ -1,5 +1,52 @@
 # Progress
 
+## 2026-11-10 — Compact web controls after design review
+
+Revised the product UI guidance to reference Fluent labelled-switch layout and
+APG switch semantics, with an explicit compact-row/toolbar choice for simple
+settings. Removed per-switch cards, always-visible descriptions and repeated Off
+labels. Meaningful waiting/error state remains visible; labels retain a 44-pixel
+hit area and stable accessible names as status changes.
+
+The web Audio view now puts the grouped local controls before Devices, uses an
+inline group on desktop and compact rows on narrow screens, and reduces title,
+navigation, empty-state and list spacing. Replaced the promotional empty-state
+content with Join/Create actions. Existing command/state handling is retained.
+Five existing Node state checks and JS syntax/build checks pass. Browser review
+confirmed compact desktop/narrow layouts and Space activation of the labelled
+Microphone switch. No backend, Windows app or audio policy was changed. Live audio,
+full accessibility/performance acceptance and user design approval remain pending.
+
+## 2026-11-10 — Revised OpenSound web reference for review
+
+Replaced the legacy node-directory web UI with responsive Audio/Devices, Chat and
+Contacts, standard forms/dialogs, contextual actions, invitations/QR, groups,
+audio configuration/history, Offset and scoped diagnostics. Uses native HTML/JS,
+local CSS/assets and the existing QR library; no npm dependency or purchase.
+Menus/navigation do not wait for backend commands. Existing drafts and unchanged
+list markup survive polling. Polling is bounded, non-overlapping and pauses while
+hidden; core networking, identity, permissions and audio policy remain unchanged.
+
+Replaced the Desk HTTP proxy with a loopback-only host attaching to an existing
+CLI Device's instance-checked JSON-line socket. Host/Origin/session-token checks,
+command allowlisting, bounded bodies/timeouts and instance metadata redaction
+protect this local boundary. An explicit labelled preview mode supplies isolated
+UI fixtures for Windows review; it never opens hardware or contacts live Swarms.
+The browser controls an attached Device rather than being a standalone audio
+participant. The CLI launcher/native audio remain macOS-oriented until their own
+platform work is accepted; the old Windows runtime is not represented as migrated.
+
+Validation: static build and JS syntax pass; five Node state/lifecycle/escaping
+checks and seven Python host/protocol/security tests pass. Protocol framing is
+tested with a socket double, not an actual running OTP Device. Browser QA checked
+startup, sample gathering, invitation/QR, Enter-to-submit contact and chat forms,
+audio toggle/Undo, desktop/tablet/narrow layouts and absence of console errors.
+Fixed Windows .mjs MIME handling and narrow-header overflow found during QA.
+Performance budgets, full accessibility acceptance and physical/live audio remain
+unverified. No core runtime source, Windows app, live Swarm, deployment or purchase
+was changed. Review instructions live in OpenSound/docs/WebApp/README.md. Windows
+UI work waits for user approval of the web experience.
+
 ## 2026-11-10 — Simplified UI guidance to external references
 
 Refactored the two OpenSound UI documents to reference Apple HIG, Windows/Fluent,
