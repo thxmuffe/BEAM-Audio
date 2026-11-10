@@ -1,5 +1,12 @@
 # Development plan
 
+## Compact primary web UI (2026-11-10)
+
+The product web navigation now uses a content-sized row at narrow widths;
+spare window height no longer stretches the header. Product design guidance
+records this rule for other app UIs to follow. Static assets are rebuilt and
+responsive browser checks pass; user testing can continue after a refresh.
+
 ## Current monitor/crash-report follow-through (2026-11-10)
 
 Unexpected monitor exits no longer shut down the product launcher's Device.

@@ -1,5 +1,17 @@
 # Progress
 
+## 2026-11-10 — Compact primary web navigation
+
+Fixed the product web grid's stretched navigation row and reduced header/main
+spacing. Navigation height follows its content, with wrapping and accessible
+control targets retained. Product design standards and component guidance now
+record the web UI as the primary reference and require content-sized headers.
+
+Rebuilt static web assets. Browser preview checks at 641×1012 and 641×600 showed
+the same 47px navigation height; 375×812 wraps to 88px. Those sizes and 1280×800
+had no horizontal overflow. This was a CSS/preview check, without live audio or
+native app changes.
+
 ## 2026-11-10 — Monitor failure isolation and best-effort crash notices
 
 The user reported the web backend disappearing when the native Mac joined. The
