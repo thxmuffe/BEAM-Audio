@@ -4,9 +4,17 @@
 run(A,Root) ->
     case maps:get(all,A,false) of true -> ok;false -> fail(<<"Use beamaudio monitor --all.">>) end,
     _=ba_cli:timeout(A),
-    io:put_chars(standard_error,"Connecting Swarm monitor (audio stays disabled)...\n"),
-    Name=choose(A,Root),
-    io:format(standard_error,"Monitoring through Device ~s. Audio disabled. Ctrl-C exits this view; Device stays connected.~n",[Name]),
+    Name=case maps:find(devicename,A) of
+        {ok,Selected} ->
+            _=ba_cli:request(Selected,#{<<"method">> => <<"snapshot">>}),
+            io:format(standard_error,"Monitoring local Device ~s and its current Swarm. Ctrl-C exits this view.~n",[Selected]),
+            Selected;
+        error ->
+            io:put_chars(standard_error,"Connecting Swarm monitor (audio stays disabled)...\n"),
+            Observer=choose(A,Root),
+            io:format(standard_error,"Monitoring through Device ~s. Audio disabled. Ctrl-C exits this view; Device stays connected.~n",[Observer]),
+            Observer
+    end,
     loop(Name,A,false,#{},#{},#{}).
 choose(A,Root) ->
     Path=invitation_path(A,Root),

@@ -1,5 +1,53 @@
 # Progress
 
+## 2026-11-10 — Live web Device and monitor in the launcher Terminal
+
+Changed the product `.command` launcher from preview-only to starting/reusing
+a real idle Device named OpenSound. CLI `new device --web-assets DIR --web-port`
+loads the optional web application in that same Device VM; `get web` reports its
+URL. The product launcher uses an OS-assigned free port, opens that URL and runs
+`beamaudio monitor --all --devicename OpenSound` in its existing Terminal.
+No extra monitor window, observer membership or Swarm is created. Ordinary
+Create/Join and Device Handler lifecycle remain in OTP; starting idle opens no
+audio hardware and retains saved consent. Explicit standalone preview remains.
+
+An explicit monitor Device name now observes that local Device directly, across
+idle/Create/Join/Leave; the default invitation/observer path is retained. Idle
+monitor reports include the local Device as idle without inventing audio status.
+Exit signals stop a Device created by the launcher; reused Devices are preserved.
+
+Validation: core compilation, ten focused CLI/monitor EUnit checks and seven HTTP
+service EUnit checks pass. A live smoke check with isolated temporary identity and
+state started the product launcher from another working directory, verified the
+Device HTTP session/snapshot and both canonical logo files, and observed the
+idle monitor. A second launch reused the Device and left it running on Ctrl-C;
+Ctrl-C on the owning launcher removed its running record and stopped HTTP.
+Browser opening was stubbed in that check. No Swarm or audio was started.
+Finder/browser interaction, live membership/audio and Windows execution remain
+acceptance work. Nothing was installed or deployed.
+
+## 2026-11-10 — Shared BEAM-Audio logo across OpenSound products
+
+Moved the user's new PNG/SVG from core `src/` into `src/Branding/`, preserving the
+supplied originals. Removed earlier logo originals from current product sources,
+including both wave SVGs and the inline web mark. OpenSound keeps its product name
+and uses the shared BEAM-Audio artwork with a credit where room allows. Updated
+web header/favicon/touch icon, SwiftUI sidebar branding, Windows window/launcher
+icon resources and credit, and core README artwork.
+
+Product web builders/launchers now assemble the core artwork with the frontend in
+`builds/WebApp`; native macOS icon generation reads the core PNG. Added a small
+Pillow resource generator for Windows/iOS and the shared native logo image.
+iOS app icons flatten transparency onto dark green; the source PNG and other
+platforms retain transparency. Native apps, signed bundles and historical build
+archives are not modified in place; rebuilding/installing them is still needed.
+Validation: shell/Python web packaging both pass and packaged PNG/SVG bytes match
+the core originals. Verified the native logo copy, opaque 1024-pixel iOS icon,
+six Windows ICO sizes and generated macOS ICNS/iconset. `iconutil` required
+execution outside the sandbox. Swift syntax parsing and Windows Erlang module
+compilation pass. The live launcher smoke fetched both new logos successfully.
+No native app build, browser visual review, installation or deployment is included.
+
 ## 2026-11-10 — Core-owned Cowboy Device Web service
 
 Replaced OpenSound's Python HTTP/socket bridge with the optional BEAM Audio

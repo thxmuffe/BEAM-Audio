@@ -8,6 +8,10 @@ command_parser_and_no_restore_command_test() ->
     Spec=ba_cli:spec("/tmp"),
     ?assertMatch({ok,#{enable := "speaker"},_,_},argparse:parse(["new","device","--devicename","one","--createswarm","--enable","speaker"],Spec,#{progname => "beam-audio"})),
     ?assertMatch({error,_},argparse:parse(["start","device","--devicename","one"],Spec,#{progname => "beam-audio"})),
+    ?assertMatch({ok,#{web_assets := "/tmp",web_port := 0},_,_},
+        argparse:parse(["new","device","--devicename","one","--web-assets","/tmp","--web-port","0"],Spec,#{progname => "beamaudio"})),
+    ?assertMatch({ok,#{devicename := "one",all := true},_,_},
+        argparse:parse(["monitor","--all","--devicename","one"],Spec,#{progname => "beamaudio"})),
     ?assertNot(ba_cli_store:valid_name("../other")),?assert(ba_cli_store:valid_name("test-1")).
 
 readiness_needs_real_work_and_fresh_progress_test() ->

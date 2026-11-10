@@ -29,7 +29,9 @@ spec(Root) ->
            #{name => joinswarm,long => "-joinswarm",type => string},
            #{name => enable,long => "-enable",type => string},
            #{name => desk,long => "-desk",type => string},
-           #{name => until,long => "-wait",type => {string,["endpoint","admitted","ready"]},default => "admitted"}])}},
+           #{name => until,long => "-wait",type => {string,["endpoint","admitted","ready"]},default => "admitted"},
+           #{name => web_assets,long => "-web-assets",type => string},
+           #{name => web_port,long => "-web-port",type => {integer,[{min,0},{max,65535}]},default => 8766}])}},
       "inspect" => #{commands => #{
           "device" => Device(fun(A) ->
               Command=case maps:find(deviceid,A) of
@@ -41,6 +43,13 @@ spec(Root) ->
           "swarm" => Device(fun inspect_swarm/1,[#{name => swarmid,long => "-swarmid",type => string,required => true}]),
           "legacy" => #{handler => fun(_) -> fail(2,<<"Use src/Tools/Inspector/run.sh; the legacy Inspector is unchanged and is not a scoped Swarm client.">>) end}}},
       "get" => #{commands => #{
+          "web" => Device(fun(A) ->
+              R=request(one_name(A),#{<<"method">> => <<"snapshot">>}),
+              case maps:get(<<"web_url">>,maps:get(<<"managed">>,R),null) of
+                  null -> fail(1,<<"This Device has no web service. Start it with --web-assets DIR.">>);
+                  URL -> scalar(URL,A)
+              end
+          end,[]),
           "swarm" => Device(fun(A) -> scalar(get_swarm(A),A) end,[]),
           "invitation" => Device(fun(A) -> R=request(one_name(A),#{<<"method">> => <<"invitation">>}),scalar(maps:get(<<"result">>,R),A) end,[])}},
       "history" => #{commands => #{"device" => Device(fun(A) -> emit(request(one_name(A),#{<<"method">> => <<"configuration">>})) end,[])}},
@@ -65,8 +74,17 @@ new_device(A,Root) ->
     Socket=filename:join("/tmp","ba-device-"++Instance++".sock"),
     Mode=case {Create,Join} of {true,_} -> <<"create">>;{_,undefined} -> <<"idle">>;_ -> <<"join">> end,
     Desk=maps:get(desk,A,"wss://parvi-reception-desk.onrender.com/relay/v1"),
-    C=#{instance => list_to_binary(Instance),name => list_to_binary(Name),socket => list_to_binary(Socket),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
+    C0=#{instance => list_to_binary(Instance),name => list_to_binary(Name),socket => list_to_binary(Socket),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
         observer => maps:get(observer,A,false),invitation => case Join of undefined -> null;_ -> list_to_binary(Join) end},
+    C=case maps:find(web_assets,A) of
+        error -> C0;
+        {ok,Assets} ->
+            case filelib:is_dir(Assets) andalso filelib:is_regular(filename:join([Root,
+                    "builds/intermediates/DeviceWeb/default/lib/ba_device_web/ebin/ba_device_web.app"])) of
+                true -> C0#{web => #{assets => list_to_binary(filename:absname(Assets)),port => maps:get(web_port,A,8766)}};
+                false -> fail(2,<<"Check --web-assets and build the service: bash src/Services/DeviceWeb/build.sh.">>)
+            end
+    end,
     Record=filename:join(D,"running.json"),
     case file:open(Record,[write,binary,exclusive]) of
         {ok,F} -> ok=file:change_mode(Record,8#600),ok=file:write(F,json:encode(maps:with([instance,name,socket],C))),file:close(F);
@@ -77,7 +95,11 @@ new_device(A,Root) ->
         ok=ba_cli_store:write(filename:join(D,"launch.json"),C),
         Erl=os:find_executable("erl"),
         Paths=filelib:wildcard(filename:join([Root,"builds/intermediates/control/default/lib","*","ebin"]))++
-              filelib:wildcard(filename:join([Root,"builds/CLI/runtime/native_lib","*","ebin"])),
+              filelib:wildcard(filename:join([Root,"builds/CLI/runtime/native_lib","*","ebin"]))++
+              case maps:is_key(web,C) of
+                  true -> filelib:wildcard(filename:join([Root,"builds/intermediates/DeviceWeb/default/lib","*","ebin"]));
+                  false -> []
+              end,
         Args=["+S","2:2","+SDcpu","1","+SDio","1","-detached","-noshell","-noinput","-start_epmd","false","-pa"]++Paths++
              ["-s","ba_cli_device","boot","-extra",D,Instance,Root],
         Port=open_port({spawn_executable,Erl},[binary,exit_status,{env,[{"BA_IDENTITY_SEED",false},{"ERL_CRASH_DUMP",filename:join(D,"erl_crash.dump")} ]},{args,Args}]),

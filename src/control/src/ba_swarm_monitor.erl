@@ -4,7 +4,7 @@
 -export([snapshot/1]).
 snapshot(#{metrics := Metrics,plain := Plain}) when is_boolean(Metrics),is_list(Plain),length(Plain)=<32 ->
     Local=ba_app_session:snapshot(),Swarm=maps:get(swarm,Local),Self=maps:get(device,Local),
-    Peers=maps:get(members,Swarm,[]),Parent=self(),Ref=make_ref(),
+    Peers=lists:usort([Self|maps:get(members,Swarm,[])]),Parent=self(),Ref=make_ref(),
     Workers=[{Peer,spawn_monitor(fun() -> Parent ! {Ref,Peer,read(Peer,Self,Metrics andalso not lists:member(Peer,Plain))} end)} || Peer <- Peers],
     Rows=collect(Workers,Ref,erlang:monotonic_time(millisecond)+6500,[]),
     #{swarm => Swarm,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(contacts,Local)) || Row <- Rows],
@@ -14,7 +14,15 @@ named(#{id := Id}=Row,#{contacts := Contacts}) ->
     case maps:get(<<"device_name">>,Caps,maps:get(Id,Contacts,<<>>)) of
         <<>> -> Row;Name -> Row#{name => Name}
     end.
-read(Self,Self,Metrics) -> #{id => Self,local => true,state => ok,capabilities => ba_device_handler:capabilities(Metrics)};
+read(Self,Self,Metrics) ->
+    case whereis(ba_device_handler) of
+        undefined ->
+            %% An idle Device has no Swarm audio Handler. Report that honestly,
+            %% so a local monitor can stay open across Create/Join/Leave.
+            #{id => Self,local => true,state => idle,
+              name => unicode:characters_to_binary(os:getenv("BA_DEVICE_NAME","This Device"))};
+        _ -> #{id => Self,local => true,state => ok,capabilities => ba_device_handler:capabilities(Metrics)}
+    end;
 read(Peer,_,Metrics) ->
     try
         %% A passive observer still needs an authenticated session to each peer.

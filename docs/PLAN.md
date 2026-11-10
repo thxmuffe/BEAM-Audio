@@ -37,12 +37,18 @@ without pretending to capture/play audio. The user accepted the web-reference
 direction; live Device end-to-end checks and named slowest-device performance
 acceptance remain pending. HTTP-to-OTP checks on an isolated idle Device pass.
 The latest visual iteration uses compact grouped audio switches rather than cards.
-macOS design review can use the product checkout's `Start Web UI.command`
-double-click launcher; live Device attachment remains a separate step.
-The product launcher's HTTP preview/asset smoke check passes. Next: verify
-Finder/browser interaction, Windows startup and live
-Device/audio acceptance. Automatic embedding/packaging of the optional web
-application into native Device launches is not implemented.
+The product checkout's `Start Web UI.command` now starts/reuses a real idle
+OpenSound Device, hosts the web service inside that VM, opens its browser UI and
+runs the named Device monitor in the same Terminal. It chooses a free local
+port; Create/Join/Leave remain runtime operations. Explicit `run.sh --preview`
+is still available for design review. Isolated live-launch, HTTP, idle-monitor,
+reuse and Ctrl-C cleanup checks pass. Next: Finder/browser interaction, Windows
+startup and live Swarm/audio acceptance. CLI `new device --web-assets` supports
+the optional web application; native app bundles do not yet package/start it.
+Shared logo artwork now lives in core `src/Branding/`. OpenSound keeps its name,
+uses that PNG/SVG across web/native branding and credits BEAM-Audio. Platform
+icon resources are regenerated; native apps need rebuilding/installing for the
+new bundled artwork. No native app build/deployment is part of this logo change.
 No Windows native app migration or paid framework is included. Core behavior and
 existing audio acceptance issues remain governed by this roadmap.
 Ephemeral Swarms (step 9) are implemented: identities and contacts/groups survive,

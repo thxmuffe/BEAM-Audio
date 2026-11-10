@@ -1,5 +1,7 @@
 # BEAM Audio
 
+<img src="src/Branding/beam-audio.svg" width="96" height="96" alt="BEAM-Audio logo">
+
 Open source Erlang/OTP audio runtime: Swarm messaging and admission, Swarm Clock
 and Presentation Target policy, replaceable Stream Handlers and Audio Engines,
 native platform adapters, headless tools and Desk. The OpenSound App consumes

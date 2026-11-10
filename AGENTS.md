@@ -94,3 +94,6 @@ tooling, tests and project documentation. Commercial UI/app sources live in the
 sibling OpenSound repository. Use docs/PLAN.md and docs/PROGRESS.md here for
 shared status. App packaging may consume this checkout through BEAM_AUDIO_ROOT;
 keep generated core artifacts under this repository's builds/.
+Canonical shared PNG/SVG logo artwork belongs in `src/Branding/`. OpenSound keeps
+its commercial product name while using the BEAM-Audio logo and, where space
+permits, “Powered by BEAM-Audio”; platform icon copies are derived from this art.

@@ -152,6 +152,8 @@ direct_device(#{dir := Dir}=C) ->
         ?assertEqual(true,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Changed)))),
         ?assertEqual(true,maps:get(microphone,ba_device_config:consent())),
         ?assertEqual(undefined,whereis(ba_device_handler)),
+        Monitor=ba_swarm_monitor:snapshot(#{metrics => false,plain => []}),
+        ?assertMatch([#{local := true,state := idle}],maps:get(devices,Monitor)),
         {200,_,Undone}=post(URL,#{method => undo}),
         ?assertEqual(false,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Undone))))
     after

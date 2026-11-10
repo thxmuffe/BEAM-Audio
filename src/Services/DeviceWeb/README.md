@@ -59,8 +59,20 @@ application:ensure_all_started(ba_device_web).
 Without a `record` option, requests call `ba_device_api:request/1` directly. Stop
 the optional endpoint with `application:stop(ba_device_web)`. Its listener and
 connections stop with it; it neither stops the Device nor changes audio consent.
-The native app/CLI launchers do not yet automatically load or start this optional
-application. Without `assets`, the service exposes the API without a frontend.
+The macOS CLI can load/start this optional application during Device startup:
+
+```sh
+bin/beamaudio new device --devicename OpenSound --web-assets /absolute/path/to/frontend
+bin/beamaudio get web --devicename OpenSound
+bin/beamaudio monitor --all --devicename OpenSound
+```
+
+Build the service first. `--web-port` selects its port (default 8766; 0 chooses a
+free port). `get web` returns the actual local URL. This starts an idle Device;
+Create/Join and the Device Handler lifecycle stay in the existing OTP runtime.
+Stopping the Device stops the web service too. Native app bundles do not yet
+automatically package/start this optional application. Without `assets`, the
+service exposes the API without a frontend.
 
 ## Browser contract
 

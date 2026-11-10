@@ -110,6 +110,18 @@ Modern `inspect device/swarm` never delegates to it.
 
 ## Live Swarm monitor
 
+To monitor an existing local Device directly, including while idle:
+
+```sh
+beamaudio monitor --all --devicename OpenSound
+```
+
+With an explicit Device name the monitor attaches to that Device's existing API,
+creates no observer or Swarm, and follows its current Create/Join/Leave state.
+Idle Devices appear as idle; absence of an audio Handler is not shown as playback.
+The monitor does not change that Device's audio consent. Without `--devicename`,
+the invitation/independent-observer workflow below remains available.
+
 ```sh
 beamaudio monitor --all
 ```
