@@ -12,6 +12,10 @@ explicitly accept an invitation with `ba_swarm:join/1`. `ba_contacts` is the
 durable address book; Swarm policy, Passports, routes and Subscription intent
 are memory-only for that gathering. Captain end/departure tears down its runtime;
 Captain loss ends members when fresh authorization expires. No election or restore.
+Reusable signed v3 invitations currently have no time expiry. Their Swarm ID/name
+can be reused to start a fresh gathering with a new Captain and fresh membership;
+the old authority/grants are not restored. Lookup is capability-scoped at the
+Desk, without simultaneous-Captain coordination. See the membership guide above.
 The local JSON bridge exposes lifecycle/address-book commands. UI integration
 is step 10, macOS → iOS → Windows; no product app was launched for this work.
 

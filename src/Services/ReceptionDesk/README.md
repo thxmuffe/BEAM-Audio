@@ -72,6 +72,9 @@ customizes DNS resolution only.
 
 `render.yaml` defines a **single** Docker web service, a generated
 `SECRET_KEY_BASE` and `/health` check. The Dockerfile builds a Phoenix release.
+The existing Render service now builds `thxmuffe/BEAM-Audio` on `main`, using
+`src/Services/ReceptionDesk/Dockerfile` and repository-root Docker context. Its
+service ID and public URL are retained; automatic deploys remain disabled.
 Deploy that Blueprint from this repository, then use
 `wss://YOUR-SERVICE.onrender.com/relay/v1` in every native app. Render terminates
 TLS at its ingress; the container listens on `0.0.0.0:$PORT`. Other hosting can

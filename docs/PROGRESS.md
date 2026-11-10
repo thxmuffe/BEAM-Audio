@@ -26,8 +26,13 @@ end/reuse by an unrelated Captain, unchanged Swarm ID/exact link, fresh membersh
 later joiners, current revocation, same-identity recreation and observer waiting.
 Existing two-Desk membership/failure/revocation and participant-reconnect smoke
 checks also pass. Tests use isolated identities and no hardware audio.
-Shared Render rollout/public verification are in progress; web/native acceptance
-and physical audio remain user-led. Earlier expiry and non-reusable-address notes
+Shared Render deployment `dep-dbpo28ajnfac73bsg0ug` is live on revision `f017376`.
+The existing service now builds BEAM-Audio/main using the current Dockerfile path;
+its URL/service ID and disabled auto-deploy setting are retained. The same full
+reuse smoke passes over public WSS with isolated test identities, including a
+genuine old-expiry ticket, fresh Captain/membership, later joiners, revocation,
+same-identity recreation and observer waiting. No user's invitation or hardware
+was used. Web/native acceptance and physical audio remain user-led. Earlier expiry and non-reusable-address notes
 below are superseded by this change, not authority restoration.
 
 ## 2026-11-10 — Live web Device and monitor in the launcher Terminal

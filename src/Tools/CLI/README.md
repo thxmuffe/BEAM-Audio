@@ -128,7 +128,8 @@ beamaudio monitor --all
 
 The default invitation file is `builds/CLI/private/monitor-invitation.txt`, private
 mode 0600 under an ignored mode-0700 directory. Invitations are forwardable: the same valid link can admit multiple Devices
-and the monitor into the live Swarm until expiry. Using it does not consume it. You can instead supply `--invitation-file PATH`. Do not commit invitation
+and the monitor into the live Swarm. Time expiry is currently disabled, including
+for old signed links. Using a link does not consume it. You can instead supply `--invitation-file PATH`. Do not commit invitation
 files. The monitor verifies the ticket and uses an independent named
 `ba-monitor-SWARM_ID` identity. It never creates a Swarm as a fallback.
 
@@ -168,12 +169,14 @@ requires [Apple's entitlement](https://developer.apple.com/documentation/uikit/u
 The table refreshes each second (`--interval 500` chooses milliseconds); use
 `--json` for JSON frames or `--once` for a single frame. Ctrl-C exits the view;
 the background observer remains connected and renews authorization normally.
-Rerunning uses that member. If its invitation has expired or is unavailable, a
+Rerunning uses that member. If its invitation file is unavailable, a
 single still-authorized observer can be reused without another invitation;
 `--devicename` selects one when necessary. A cold restart rejoins using the saved
 ticket and stable identity only while the ticket and gathering remain valid.
-Expired/revoked credentials or an ended Swarm require fresh admission, not
-restoration of cached permissions. `stop device --devicename ba-monitor-SWARM_ID`
+Revoked credentials or an ended gathering require fresh admission, not
+restoration of cached permissions. A Device can start a fresh gathering from the
+same reusable link; the observer itself waits for a Device to do so.
+`stop device --devicename ba-monitor-SWARM_ID`
 leaves the gathering; `stop device --all` includes managed observers.
 
 Updated diagnostic replies also include `audio_diagnostics`: a bounded flat map

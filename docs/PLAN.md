@@ -12,9 +12,10 @@ and contact/group sharing use the same link. Observer helpers never start an
 empty gathering. There is deliberately no simultaneous-Captain prevention or
 convergence mechanism. See [membership semantics](SWARM_MEMBERSHIP.md).
 
-Implementation and local integration checks pass. Shared Desk rollout and public
-verification are being completed for the user's web-app test. Native applications
-need rebuilding/restarting to use these updated invitation semantics.
+Implementation, local integration and public Desk reuse checks pass. Render is
+live on core revision `f017376`; its source now points to BEAM-Audio/main with the
+current Dockerfile path. Restart the web Device to load the compiled local code.
+Native applications need rebuilding/restarting for these invitation semantics.
 
 ## Accepted direction — secure Swarm architecture (2026-11-08)
 
