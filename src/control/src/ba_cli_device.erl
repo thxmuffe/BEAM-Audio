@@ -50,7 +50,7 @@ boot() ->
     catch Class:Reason:Stack ->
         %% Do not print launch arguments, credentials or private key material.
         Trace=[{M,F,A,proplists:get_value(line,Info)} || {M,F,A,Info} <- Stack,is_integer(A)],
-        file:write_file(Log,io_lib:format("CLI startup failed: ~p ~p ~p~n",[Class,safe_reason(Reason),Trace]),[append]),
+        logger:error("CLI startup failed: ~p ~p ~p",[Class,safe_reason(Reason),Trace]),
         ba_cli_store:remove(filename:join(Dir,"running.json")),init:stop(1)
     end.
 safe_reason({badmatch,{error,R}}) when is_atom(R) -> {badmatch,R};

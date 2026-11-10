@@ -110,6 +110,12 @@ Modern `inspect device/swarm` never delegates to it.
 
 ## Live Swarm monitor
 
+Unexpected exceptions caught by the foreground CLI now go to OTP Logger on
+stderr, with an exception tag and source locations. They are separate from the
+background Device's `runtime.log`; private exception terms/arguments are omitted.
+The OpenSound launcher keeps its Device alive if the monitor fails unexpectedly.
+Restart the launcher to reconnect the display, or stop the named Device explicitly.
+
 To monitor an existing local Device directly, including while idle:
 
 ```sh

@@ -1,6 +1,7 @@
 %% Disposable integration harness, never packaged as a runtime command endpoint.
 -module(ba_swarm_control_probe).
--export([main/0]).
+-export([main/0,crash_child/0]).
+crash_child() -> {ok,spawn_link(fun() -> receive crash -> exit({badmatch,<<"PRIVATE_EXCEPTION">>}) end end)}.
 
 main() ->
     logger:set_primary_config(level,critical),
@@ -21,6 +22,12 @@ loop(Id,Cap) ->
             loop(Id,Cap)
     end.
 command(#{<<"op">> := <<"start_runtime">>},_,_) -> ensure_started(),ba_app_session:snapshot();
+command(#{<<"op">> := <<"chat_history">>},_,_) -> ba_swarm_chat:history();
+command(#{<<"op">> := <<"crash_test_worker">>},_,_) ->
+    logger:set_primary_config(level,error),logger:set_handler_config(default,level,critical),
+    {ok,Child}=supervisor:start_child(ba_device_sup,
+        #{id => ba_crash_test_child,start => {?MODULE,crash_child,[]},restart => temporary}),
+    Child ! crash,#{ok => true};
 command(#{<<"op">> := <<"set_observer">>},_,_) ->
     application:set_env(ba_core,swarm_observer,true),#{ok => true};
 command(#{<<"op">> := <<"start_app">>},_,_) ->

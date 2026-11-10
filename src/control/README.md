@@ -1,5 +1,13 @@
 # BEAM Audio control runtime
 
+Supervised BEAM Audio process failures can emit a short `System: … stopped (…)`
+notice to the current Swarm chat. A Logger handler sends a bounded asynchronous
+notification to the existing chat worker; publication is one best-effort attempt
+and never blocks the failing process or supervisor. Detailed reports stay in OTP
+Logger. Ordinary shutdowns, unavailable chat/membership and whole-VM crashes do
+not guarantee a notice. No exception arguments, credentials or full state enter
+chat. Check with `python3 tests/control/crash-chat-smoke.py` from the core root.
+
 The macOS app now uses the secure Swarm profile and a local Device Handler audio
 Worker. Its JSON boundary exposes consent/action toggles, scoped inspection, chat
 and exclusions. [Mac app behavior, build and user-led checks](../../docs/MACOS_APP.md).

@@ -1,5 +1,18 @@
 # Development plan
 
+## Current monitor/crash-report follow-through (2026-11-10)
+
+Unexpected monitor exits no longer shut down the product launcher's Device.
+Caught CLI failures use OTP Logger with sanitized source locations. Best-effort
+supervised-process crash summaries can reach the current Swarm chat through an
+asynchronous Logger notification to the existing chat worker; failure/restart
+never waits for chat delivery. Local unit/integration and launcher failure checks
+pass. The original real-app monitor exception is still unreproduced; obtain the
+new Logger report if it recurs. The user confirms native Mac restart/rejoin works.
+Continue user-led simultaneous web/native audio testing without assuming that
+sharing one physical Mac requires a single Handler. No surround/DSP implementation
+or automatic monitor join/leave chat announcements are included.
+
 ## Reusable invitations — accepted 2026-11-10
 
 Native build follow-through: removed the CLI's accidental hard import of the

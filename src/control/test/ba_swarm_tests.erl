@@ -1,5 +1,7 @@
 -module(ba_swarm_tests).
 -include_lib("eunit/include/eunit.hrl").
+-export([crash_child/0]).
+crash_child() -> {ok,spawn_link(fun() -> receive crash -> exit({badmatch,<<"PRIVATE_EXCEPTION">>}) end end)}.
 
 swarm_test_() ->
     {setup,
@@ -22,7 +24,31 @@ swarm_test_() ->
          file:del_dir_r(Dir)
      end,
      [fun idle_and_lifecycle/0,
-      fun bridge_json_protocol/0]}.
+      fun bridge_json_protocol/0,
+      fun crash_notice_does_not_block_supervision/0]}.
+
+crash_notice_does_not_block_supervision() ->
+    ok=ba_swarm:create(<<"Crash notice test">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),
+    Chat=whereis(ba_swarm_chat),
+    {ok,Child}=supervisor:start_child(ba_device_sup,
+        #{id => ba_crash_test_child,start => {?MODULE,crash_child,[]},restart => temporary}),
+    ok=sys:suspend(Chat),
+    try
+        Ref=monitor(process,Child),Child ! crash,
+        receive {'DOWN',Ref,process,Child,_} -> ok after 500 -> error(failure_blocked) end,
+        %% The supervisor must finish processing the child exit while chat is
+        %% deliberately suspended. Publication cannot be on its restart path.
+        _=gen_server:call(ba_device_sup,which_children,500)
+    after sys:resume(Chat) end,
+    await_notice(100),
+    ok=ba_swarm:end_swarm(),
+    ?assertMatch({error,_},logger:get_handler_config(ba_swarm_chat)).
+await_notice(0) -> error(no_chat_notice);
+await_notice(N) ->
+    case ba_swarm_chat:history() of
+        [#{text := <<"System: ba_swarm_tests stopped (badmatch).">>}] -> ok;
+        _ -> receive after 10 -> ok end,await_notice(N-1)
+    end.
 
 idle_and_lifecycle() ->
     ?assertEqual(#{state => idle}, ba_swarm:status()),

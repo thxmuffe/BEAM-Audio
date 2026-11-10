@@ -11,7 +11,15 @@ main(Args,Root) ->
     end
     catch
         throw:{cli_error,Code,Detail} -> io:put_chars(standard_error,[json:encode(Detail),$\n]),halt(Code);
-        _:_ -> io:put_chars(standard_error,"CLI failed; inspect the named Device's runtime.log.\n"),halt(1)
+        Class:Reason:Stack ->
+            %% Presentation failures belong to this CLI, not the Device's log.
+            %% Report locations only: exception terms/arguments may carry secrets.
+            Tag=case Reason of ReasonAtom when is_atom(ReasonAtom) -> ReasonAtom;T when is_tuple(T),tuple_size(T)>0,is_atom(element(1,T)) -> element(1,T);_ -> unknown end,
+            Trace=[#{module => M,function => F,line => proplists:get_value(line,Info,0)} || {M,F,_,Info} <- Stack],
+            logger:remove_handler(default),
+            logger:add_handler(default,logger_std_h,#{config => #{type => standard_error,sync_mode_qlen => 0}}),
+            logger:error(#{event => cli_failed,class => Class,reason => Tag,locations => Trace}),
+            logger_std_h:filesync(default),halt(1)
     end.
 spec(Root) ->
     Common=[#{name => devicename,long => "-devicename",type => string},

@@ -1,5 +1,46 @@
 # Progress
 
+## 2026-11-10 — Monitor failure isolation and best-effort crash notices
+
+The user reported the web backend disappearing when the native Mac joined. The
+Terminal showed an unexpected monitor exception followed by the launcher's
+cleanup stopping its Device; its runtime log had no crash report. Removed that
+failure coupling: an unexpected monitor exit now leaves the Device/web endpoint
+running. Deliberate Terminal interrupts still stop an owned Device; reused Devices
+remain running. The original monitor exception is not yet reproduced. Two
+isolated Devices, including a Unicode Mac-style name and a pseudo-terminal,
+continued monitoring successfully without hardware audio.
+
+Caught unexpected CLI exceptions now go through OTP Logger on stderr with an
+exception tag and source locations, excluding arguments, response bodies and
+credentials. Device boot failure reporting also uses its existing Logger handler.
+The old generic message incorrectly directed monitor failures to the Device log.
+
+Added a small Logger handler for supervised BEAM Audio child failures while a
+Swarm chat worker is available. Its callback sends only a component/reason summary
+as a bounded asynchronous local message; it never calls membership, chat transport
+or waits for publication on the failure/restart path. The existing chat worker
+makes one attempt using its ordinary authenticated send path. Normal shutdowns
+are ignored. Full reports remain in the existing Logger destination. No durable
+queue, retry, membership restoration or new protocol is introduced. If chat,
+membership, transport or the whole VM is lost, delivery can be lost as well.
+Foreground monitors do not join chat or announce display start/stop.
+
+Validation: 16 focused unit checks pass, including private-data exclusion,
+bounded queueing, and a supervised child exit while chat is deliberately suspended
+(the supervisor remains responsive). A local two-Device integration receives the
+crash summary in the peer's chat and keeps the sender authorized, without leaking
+exception data. Forced monitor termination leaves its Device/HTTP endpoint alive;
+owned/reused launcher Ctrl-C behavior remains correct. A synthetic caught CLI
+failure reaches OTP Logger stderr with locations and without credential/response
+data. Shell/diff checks pass. No commit, deployment or native build for this change;
+restart the web launcher or rebuild/restart native apps to load the updated core.
+
+User acceptance: the user reports native macOS restart/rejoin now works in a real
+app run. Hardware-sharing audio behavior and the original monitor exception remain
+separate acceptance/diagnostic work; no audio-device exclusivity is inferred from
+the launcher shutdown.
+
 ## 2026-11-10 — Native packaging fix for the optional web service
 
 Xcode's combined build failed its iOS runtime import check because the CLI's
