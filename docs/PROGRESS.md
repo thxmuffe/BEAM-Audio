@@ -1,5 +1,41 @@
 # Progress
 
+## 2026-11-10 — Simplified UI guidance to external references
+
+Refactored the two OpenSound UI documents to reference Apple HIG, Windows/Fluent,
+WCAG/WCAG2ICT and WAI patterns directly. Retained product-specific behavior,
+performance budgets and commercial constraints; removed repeated standard control
+rules. Added a responsive web reference recommendation for Windows-based design
+review, keeping native audio/performance validation separate. No implementation
+framework is selected. Local links, table structure and whitespace checks pass;
+application code and runtime behavior are unchanged.
+
+## 2026-11-10 — OpenSound UI standards and component catalogue
+
+Established product design standards and a component catalogue in the sibling
+OpenSound repository, linked from its AGENTS.md and docs index. Defined three
+layout templates, reusable native interaction patterns, platform mappings,
+progressive disclosure, editing/submission/focus rules and an accessibility
+baseline. The product UI remains separate from the Apache-2.0 core.
+
+Added acceptance budgets: p95 100 ms for feedback/local menus, p95 200 ms for
+local navigation, and a two-second interactive local shell at cold launch.
+The protocol includes first-open measurements, named slowest supported hardware,
+release builds, idle/memory checks and testing during audio playback. These are
+new requirements, not performance results. Reference hardware and runtime UI
+acceptance remain future implementation work.
+
+Default additional UI-kit cost is zero; documented the user's EUR 50-100 paid
+exception and separate package/asset redistribution checks. Recorded existing
+fs/DHARMA and iOS GStreamer licence-review follow-ups without changing licences,
+dependencies or distribution terms. Windows wx remains current; WinUI is only a
+candidate if demonstrated gaps justify migration.
+
+Validation: reviewed repository boundaries and upstream design/licence guidance;
+checked documentation diffs, whitespace and local links. No application code,
+runtime behavior, audio settings, dependency, purchase, build or deployment was
+changed. No performance or hardware test was run for this documentation task.
+
 ## 2026-11-09 — cached signed playback diagnostics for glitch investigation
 
 The user reports recurring interrupted/Morse-like playback; a later monitor
