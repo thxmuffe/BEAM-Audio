@@ -1,3 +1,7 @@
+## Repository workflow — main branch only
+
+**Never create a separate branch or pull request unless the user explicitly requests one.** Make requested repository edits directly on `main` as ordinary commits. Do not create a branch for safety, documentation reviews or intermediate work; preserve concurrent edits and report conflicts instead.
+
 ## UI vocabulary boundary — 2026-11-11
 
 Food analogies belong to core/backend terminology only. In the UI use **Session**,
