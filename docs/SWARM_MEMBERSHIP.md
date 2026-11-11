@@ -1,4 +1,4 @@
-# Ephemeral Swarms, Passports and multiple Receptions — step 9
+# Ephemeral Buffees, Passports and multiple Receptions — step 9
 
 ## Compact self-contained invitation links — v4, 2026-11-11
 
@@ -31,7 +31,8 @@ granted operations. No automatic two-minute dissolution is applied. New admissio
 still requires the Captain; a device with no live accepted policy gains no rights
 from a saved invitation or address-book entry alone.
 
-Only the Captain may explicitly **End Swarm**. A member may Leave; app closure or
+Only the Captain may explicitly **Destroy a Session** (the signed End operation).
+A member may Leave; app closure or
 transport loss is not End, including on the Captain. An explicit Captain Leave
 also disconnects locally without ending everybody else. A signed End received by
 members tears down their gathering. A disconnected peer that misses End cannot
@@ -45,7 +46,7 @@ current saved admission, request nonce and deadline, rotates the Captain route,
 then makes members obtain the current policy through the ordinary grant path.
 Old history alone never starts authority. Explicit End clears recovery intent.
 
-A reusable invitation retains its Swarm ID/name. After End, the first Device
+A reusable invitation retains its Buffee reference/name. After End, the first Device
 reusing the link while no Captain is advertised starts a **fresh** gathering with
 new membership and permissions. No election or simultaneous-Captain protection is
 added. A partitioned frozen gathering may coexist with another gathering started
@@ -74,7 +75,7 @@ ok = ba_swarm:create(<<"Evening session">>, [DeskA,DeskB]).
     ba_swarm:invite({group,<<"Session">>},3600).
 ```
 
-Saved Devices are keyed by Device ID, not people. Authenticated Swarm membership
+Saved Devices are keyed by Device ID, not people. Authenticated Buffee participation
 collects other Devices automatically; capability replies fill in Handler names.
 Repeated observations update the same record and preserve a manually chosen
 label. Each Swarm is also collected as one local Device group, keyed internally
