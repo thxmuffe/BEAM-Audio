@@ -1,7 +1,7 @@
 %% Local CLI process records and persistent identity, never saved Swarm state.
 -module(ba_cli_store).
 -include_lib("kernel/include/file.hrl").
--export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,remove/1,names/0,valid_name/1]).
+-export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,remove/1,names/0,valid_name/1,reserve/3]).
 home() -> case os:getenv("BA_CLI_HOME") of false -> filename:join(filename:basedir(user_data,"beam-audio"),"devices");P -> filename:absname(P) end.
 valid_name(N) -> re:run(N,"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$",[{capture,none}])=:=match.
 dir(N) -> case valid_name(N) of true -> filename:join(home(),N);false -> error(invalid_device_name) end.
@@ -25,7 +25,25 @@ read(N) ->
         {error,R} -> {error,R}
     end.
 write(Path,Map) ->
-    {ok,F}=file:open(Path,[write,binary,exclusive]),ok=file:change_mode(Path,8#600),
-    try file:write(F,json:encode(Map)) after file:close(F) end.
+    case file:open(Path,[write,binary,exclusive]) of
+        {ok,F} -> ok=file:change_mode(Path,8#600),
+            try file:write(F,json:encode(Map)) after file:close(F) end;
+        Error -> Error
+    end.
 remove(Path) -> case file:delete(Path) of ok -> ok;{error,enoent} -> ok;E -> E end.
 names() -> case file:list_dir(home()) of {ok,Ns} -> lists:sort([N || N <- Ns,valid_name(N),filelib:is_file(filename:join(dir(N),"running.json"))]);_ -> [] end.
+
+%% Atomic local runtime allocation. An existing (even stale) record is never
+%% overwritten; explicit names retain their original single-runtime semantics.
+reserve(Base,Next,Record) -> reserve(Base,Next,Record,1).
+reserve(_,_,_,N) when N>100 -> {error,no_free_instance};
+reserve(Base,Next,Record,N) ->
+    Name=case N of 1 -> Base;_ -> lists:sublist(Base,40)++"-"++integer_to_list(N) end,
+    D=dir(Name),ok=private_dir(home()),ok=private_dir(D),
+    Path=filename:join(D,"running.json"),
+    case write(Path,Record#{name => list_to_binary(Name)}) of
+        ok -> {ok,Name,D};
+        {error,eexist} when Next -> reserve(Base,Next,Record,N+1);
+        {error,eexist} -> {error,already_running};
+        Error -> Error
+    end.

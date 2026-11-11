@@ -1,5 +1,36 @@
 # Development plan
 
+## iOS capture availability clarification (2026-11-11)
+
+The current iOS system-audio binding uses ScreenCaptureKit and requires iOS 27.
+Speaker playback and microphone capture do not have that gate. The native host
+now reports unavailable bindings to the shared UI; on older iOS, System audio
+shows the limitation before activation, while Speaker remains usable. No older-OS
+cross-app broadcast backend has been implemented or silently substituted.
+
+## Responsive startup, named hosts and desktop instances (2026-11-11)
+
+Local web tabs now render directly without a document navigation; native BEAM
+startup follows completion of the bundled UI document. Joining is not a local
+navigation prerequisite. Cold-start tests with no Device response pass. During
+the reported physical iPhone stall, a debugger sample found the UI thread in its
+normal event loop; after resuming, the user reports responsiveness and can no
+longer reproduce the problem. Its precise original cause remains unconfirmed.
+
+Connection messages identify the hosting Device by its last known Handler label,
+or a short Device ID until a name is available. This is display metadata only.
+Desktop native instances use distinct persistent identity/state slots. Mac Cmd+N
+opens another independent Device; Xcode Run no longer terminates existing Mac
+instances. The web shortcut atomically allocates another managed Device name and
+ephemeral web port. Windows native identity leasing is implemented in source;
+Windows execution/build verification remains outstanding on a Windows machine.
+iOS retains its single native identity; no Android implementation is introduced.
+
+Mac and unsigned iOS verification builds pass. Next: quit older pre-slot Mac
+builds before starting concurrent updated instances, test Cmd+N and repeated web
+shortcut launches with the real audio devices. Physical audio, rejoin semantics
+and latency remain the previously deferred work.
+
 ## Shared Apple/web frontend and UI responsiveness (2026-11-11)
 
 macOS and iOS now bundle the product web frontend directly in system WKWebView,

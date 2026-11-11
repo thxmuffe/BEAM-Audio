@@ -59,12 +59,23 @@ handle_call(disconnect,_,S) ->
     end,
     {reply,ok,stop(S)};
 handle_call(_,_,S) -> {reply,{error,no_active_swarm},S}.
+handle_cast({peer_name,Peer,Name},#{remembered := Saved}=S) when is_map(Saved),is_binary(Name) ->
+    case captain_id(Saved)=:=Peer andalso maps:get(captain_name,Saved,undefined)=/=Name of
+        true -> Next=Saved#{captain_name => Name},ok=ba_device_store:save(swarm_connection,Next),
+            {noreply,S#{remembered := Next}};
+        false -> {noreply,S}
+    end;
 handle_cast({ended,Membership},#{membership := Membership}=S) -> {noreply,stop(S)};
 handle_cast({remember,Membership,Name,Member},#{membership := Membership}=S) ->
     Saved=#{name => Name,swarm => maps:get(swarm,Member),
         config => #{mode => rejoin,name => Name,member => Member}},
-    ok=ba_device_store:save(swarm_connection,Saved),
-    {noreply,S#{remembered := Saved}};
+    Previous=maps:get(remembered,S,undefined),
+    Named=case is_map(Previous) andalso captain_id(Previous)=:=captain_id(Saved) of
+        true -> maps:merge(maps:with([captain_name],Previous),Saved);
+        false -> Saved
+    end,
+    ok=ba_device_store:save(swarm_connection,Named),
+    {noreply,S#{remembered := Named}};
 handle_cast(_,S) -> {noreply,S}.
 handle_info(cleanup,S) ->
     %% A lifecycle-owner crash ends its old gathering rather than restoring it.
@@ -122,16 +133,24 @@ connection_view(#{remembered := Saved}=S) ->
         end;
         idle -> maps:get(connection_state,S)
     end,
+    Captain=captain_id(Saved),
+    Label=maps:get(captain_name,Saved,captain_fallback(Captain)),
     Message=case State of
         joined -> <<"Connected">>;
-        rejoining -> <<"Rejoining Swarm — waiting for Desk and Captain…"/utf8>>;
-        ended -> <<"This Device was Captain. Its previous Swarm ended when it stopped.">>;
-        unavailable -> <<"Could not reconnect. The Captain is unavailable or the Swarm has ended.">>;
+        rejoining -> <<"Rejoining Swarm — waiting for Desk and ",Label/binary,"…"/utf8>>;
+        ended -> <<"This Device hosted the previous Swarm. That gathering ended when it stopped.">>;
+        unavailable -> <<"Could not reconnect to ",Label/binary,". That Device is unavailable or the Swarm has ended.">>;
         revoked -> <<"Admission denied. This Device may have been removed from the Swarm.">>;
         failed -> <<"Could not restore the saved connection. Paste its invitation to join or start a fresh gathering.">>;
         idle -> <<"Previous Swarm remembered">>
     end,
-    (maps:with([name,swarm],Saved))#{state => State,message => Message}.
+    (maps:with([name,swarm],Saved))#{state => State,message => Message,captain => Captain,captain_name => Label}.
+captain_id(#{config := #{member := #{authority := Id}}}) -> Id;
+captain_id(#{config := #{invitation := Link}}) ->
+    try {_,I}=ba_swarm_passport:parse_invitation(Link),maps:get(<<"authority">>,I) catch _:_ -> <<>> end;
+captain_id(_) -> <<>>.
+captain_fallback(<<>>) -> <<"the hosting Device">>;
+captain_fallback(Id) -> <<"Device ",(binary:part(Id,0,min(12,byte_size(Id))))/binary>>.
 membership_status() ->
     try ba_swarm_membership:status() catch exit:_ -> #{state => ending} end.
 valid(#{mode := create,name := Name,desks := Desks}) ->

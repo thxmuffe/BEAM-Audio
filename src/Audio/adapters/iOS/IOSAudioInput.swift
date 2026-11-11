@@ -89,7 +89,7 @@ final class IOSAudioInput {
                     }
                     ready.wait()
                     stopBroadcast = try result!.get()
-                } else { throw CaptureFailure("System audio broadcast requires iOS 27 or later.") }
+                } else { throw CaptureFailure("Sharing other apps’ audio is not supported by this build on iOS 26 or earlier. Speaker playback and microphone sharing remain available.") }
             } else { throw CaptureFailure("Unknown capture kind.") }
             var metadata = Data([1]); IOSCaptureWire.append(UInt32(rate), to: &metadata); IOSCaptureWire.append(UInt16(channels), to: &metadata)
             try IOSCaptureWire.write(fd, metadata)
@@ -154,7 +154,7 @@ final class IOSBroadcastAuthorization: NSObject {
             let picker = IOSSystemAudioCapture(); implementation = picker
             do { try await picker.prepare() }
             catch { await picker.stop(); implementation = nil; throw error }
-        } else { throw CaptureFailure("System audio broadcast requires iOS 27 or later.") }
+        } else { throw CaptureFailure("Sharing other apps’ audio is not supported by this build on iOS 26 or earlier. Speaker playback and microphone sharing remain available.") }
     }
     @available(iOS 27.0, *)
     func start(_ buffers: IOSCaptureBuffers) async throws -> () -> Void {

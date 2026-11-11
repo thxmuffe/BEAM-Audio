@@ -293,3 +293,12 @@ that fixture never starts capture or creates a Swarm. It checks persistence and
 undo/redo across real VM restarts. Seven configuration unit tests cover history
 bounds, no-ops, branching, stale revision/retry, internal setter ownership and save
 failure; no hardware use is implied.
+
+### Independent desktop instances
+
+`beamaudio new device --devicename OpenSound --next-instance --web-assets DIR --web-port 0`
+atomically reserves the first unoccupied managed name: OpenSound, OpenSound-2,
+and so on. Each name has its own identity/state and receives a separate web port.
+Without --next-instance, exact-name behavior is unchanged. Occupied/stale records
+are never overwritten; inspect/stop stale instances explicitly. This hardware CLI
+remains macOS-only. The product shortcut uses this mode for each new launch.

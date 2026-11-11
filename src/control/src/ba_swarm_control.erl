@@ -247,7 +247,7 @@ event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
 event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->
     Names=maps:get(peer_names,S),
     Next=case maps:find(<<"device_name">>,Value) of
-        {ok,Name} -> S#{peer_names := Names#{Peer => Name}};
+        {ok,Name} -> gen_server:cast(ba_swarm,{peer_name,Peer,Name}),S#{peer_names := Names#{Peer => Name}};
         error -> S#{peer_names := maps:remove(Peer,Names)}
     end,
     reply(Peer,{ok,Value},Next);

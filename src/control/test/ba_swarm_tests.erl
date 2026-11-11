@@ -25,7 +25,23 @@ swarm_test_() ->
      end,
      [fun idle_and_lifecycle/0,
       fun bridge_json_protocol/0,
+      fun captain_name_in_connection/0,
       fun crash_notice_does_not_block_supervision/0]}.
+
+captain_name_in_connection() ->
+    Original=sys:get_state(ba_swarm),Id=binary:copy(<<"A">>,64),
+    Saved=#{name => <<"Test">>,config => #{member => #{authority => Id}}},
+    sys:replace_state(ba_swarm,fun(S) -> S#{remembered := Saved,connection_state := unavailable} end),
+    try
+        Unknown=ba_swarm:connection(),
+        ?assertNotEqual(nomatch,binary:match(maps:get(message,Unknown),<<"Device AAAAAAAAAAAA">>)),
+        Name = <<"MacBook Air | A1B2C3D4">>,
+        gen_server:cast(ba_swarm,{peer_name,Id,Name}),
+        Known=ba_swarm:connection(),
+        ?assertEqual(Name,maps:get(captain_name,Known)),
+        ?assertNotEqual(nomatch,binary:match(maps:get(message,Known),Name)),
+        ?assertEqual(Name,maps:get(captain_name,ba_device_store:load(swarm_connection,#{})))
+    after sys:replace_state(ba_swarm,fun(_) -> Original end) end.
 
 crash_notice_does_not_block_supervision() ->
     ok=ba_swarm:create(<<"Crash notice test">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),

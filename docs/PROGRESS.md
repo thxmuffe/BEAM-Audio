@@ -1,5 +1,76 @@
 # Progress
 
+## 2026-11-11 — iOS 26 system-capture availability
+
+Investigated the reported “requires iOS 27” error. Both occurrences are in the
+system-audio capture binding, not Speaker playback. The adapter uses Apple's
+ScreenCaptureKit picker/stream APIs introduced on iOS 27; changing the version
+guard alone would be incorrect. Current SDK headers and Apple's iOS capture
+sample confirm that availability. This does not establish a playback failure.
+
+The native runtime now reports unavailable platform bindings to the shared UI.
+On iOS 26 and earlier, System audio shows its limitation and cannot be enabled;
+Speaker playback and Microphone remain usable. The native bridge also rejects an
+unsupported enable request explicitly; disabling an existing setting remains
+possible. Error text now distinguishes this build's other-app capture limitation
+from receiving/playing Swarm audio. No ReplayKit replacement, app-only capture
+substitution, OS minimum increase or audio-policy change was introduced.
+
+Validation: 11 Swift tests pass, including actual WebKit controls verifying that
+unsupported System audio is disabled while Speaker remains enabled. Ten frontend
+tests pass; generic unsigned iOS build succeeds. The new build was not installed
+or hardware-tested on the phone. Exact source switch was asked of the user;
+this finding is based on the two existing error-message paths in source.
+
+## 2026-11-11 — Startup independence and concurrent desktop Devices
+
+The user reported that all iPhone controls stopped responding while rejoining.
+Added an actual WebKit cold-start test whose runtime sends no snapshots at all;
+tabs, Settings and document completion work without a Device reply. The test also
+passed before the latest change, so it is not a reproduction of the phone stall.
+Read the connected iPhone's current process and Xcode logs, briefly paused through
+its existing debugger, captured thread stacks, and resumed it. The main UI thread
+was waiting normally in CFRunLoop, not blocked on a BEAM call at that sample.
+The user subsequently reports that the phone responds and the issue no longer
+reproduces. No definitive cause of that intermittent physical stall is claimed.
+
+Made UI independence explicit: tab activation updates local history/rendering
+without a WebKit document navigation, bootstrap no longer uses a top-level await,
+and native runtime startup occurs after the bundled document finishes loading.
+These changes apply to shared UI; backend waits do not govern tab/settings logic.
+
+Host connection messages use a cached authenticated Device/Handler label (or a
+short Device ID when unknown) instead of an unexplained Captain reference. The
+label is retained across participant restarts/credential updates, without restoring
+old authority or changing rejoin semantics. Group invitation errors name the host.
+
+Desktop instances now have separate identities and state. Mac windows/processes
+lease OS file locks for persistent slots; slot 1 retains the established Keychain
+identity/directory, later slots use separate Keychain accounts/directories. Cmd+N
+owns a fresh session/BEAM runtime; Xcode Run creates an additional app process.
+A lease is retained through child-process termination. Quit pre-upgrade app builds
+before testing concurrency, since those older binaries do not acquire slot locks.
+Windows native source similarly leases per-user/session named mutexes via its
+identity helper for the parent lifetime and uses separate credential/state slots.
+Windows legacy-profile runtime identity leasing is not a Swarm/UI migration.
+
+The macOS web shortcut always creates its own Device. New CLI --next-instance
+allocation uses exclusive process-record creation to select OpenSound,
+OpenSound-2, etc., skipping occupied/stale records without overwriting them;
+each uses port 0 and only its own runtime is stopped by its launcher. CLI users
+without the flag retain exact-name semantics. Windows web launcher defaults to
+port 0; explicit mode/Device-record requirements and Windows CLI limits remain.
+
+Validation: 11 shared Swift tests and 9 frontend tests pass; 6 focused Erlang tests
+cover atomic concurrent CLI allocation, stored host labels and lifecycle behavior.
+A two-process Apple lease check confirms independent slots and automatic release,
+without accessing Keychain identities. Two actual disposable idle web Devices
+have distinct identities/ports; stopping one leaves the other serving. No Swarm
+or audio hardware was used by that check. Windows host Erlang compiles, but no
+Windows C compiler/runtime is available here, so Windows helper execution remains
+unverified. Updated macOS and unsigned generic iOS builds pass. No new phone
+installation, active Swarm migration, physical audio test, commit or Render deploy.
+
 ## 2026-11-11 — Apple apps reuse the web frontend
 
 The product's macOS/iOS entry points now host the exact bundled web assets in

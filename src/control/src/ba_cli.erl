@@ -33,7 +33,8 @@ spec(Root) ->
           #{name => interval,long => "-interval",type => {integer,[{min,500},{max,10000}]},default => 1000}],
           handler => fun(A) -> ba_cli_monitor:run(A,Root) end},
       "new" => #{commands => #{"device" => Device(fun(A) -> emit(new_device(A,Root)) end,
-          [#{name => createswarm,long => "-createswarm",action => {store,true},default => false},
+          [#{name => next_instance,long => "-next-instance",action => {store,true},default => false},
+           #{name => createswarm,long => "-createswarm",action => {store,true},default => false},
            #{name => joinswarm,long => "-joinswarm",type => string},
            #{name => enable,long => "-enable",type => string},
            #{name => desk,long => "-desk",type => string},
@@ -71,20 +72,19 @@ spec(Root) ->
       "kill" => #{commands => #{"device" => Device(fun(A) -> stop(A,<<"kill">>) end,[#{name => all,long => "-all",action => {store,true},default => false}])}}
     }}.
 new_device(A,Root) ->
-    Name=one_name(A),Enabled=capabilities(maps:get(enable,A,"")),Timeout=timeout(A),
+    BaseName=one_name(A),Enabled=capabilities(maps:get(enable,A,"")),Timeout=timeout(A),
     Create=maps:get(createswarm,A),Join=maps:get(joinswarm,A,undefined),
     case Create andalso Join=/=undefined of true -> fail(2,<<"Choose createswarm or joinswarm, not both.">>);false -> ok end,
     case os:type() of {unix,darwin} -> ok;_ -> fail(2,<<"Real hardware CLI currently supports macOS only.">>) end,
     Helpers=[{<<"speaker">>,"ba_device_audio"},{<<"microphone">>,"ba_audio_input"},{<<"broadcast">>,"ba_audio_input"}],
     [case filelib:is_regular(filename:join([Root,"builds/CLI",H])) of true -> ok;false -> fail(2,<<"Missing native binding; run bash src/Tools/CLI/build.sh.">>) end || {K,H} <- Helpers,lists:member(K,Enabled)],
-    D=ba_cli_store:dir(Name),ok=ba_cli_store:private_dir(ba_cli_store:home()),ok=ba_cli_store:private_dir(D),
     Instance=binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(16))),
     Socket=filename:join("/tmp","ba-device-"++Instance++".sock"),
     Mode=case {Create,Join} of {true,_} -> <<"create">>;{_,undefined} -> <<"idle">>;_ -> <<"join">> end,
     Desk=maps:get(desk,A,"wss://parvi-reception-desk.onrender.com/relay/v1"),
-    C0=#{instance => list_to_binary(Instance),name => list_to_binary(Name),socket => list_to_binary(Socket),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
+    C0=#{instance => list_to_binary(Instance),name => list_to_binary(BaseName),socket => list_to_binary(Socket),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
         observer => maps:get(observer,A,false),invitation => case Join of undefined -> null;_ -> list_to_binary(Join) end},
-    C=case maps:find(web_assets,A) of
+    Candidate=case maps:find(web_assets,A) of
         error -> C0;
         {ok,Assets} ->
             case filelib:is_dir(Assets) andalso filelib:is_regular(filename:join([Root,
@@ -93,12 +93,12 @@ new_device(A,Root) ->
                 false -> fail(2,<<"Check --web-assets and build the service: bash src/Services/DeviceWeb/build.sh.">>)
             end
     end,
-    Record=filename:join(D,"running.json"),
-    case file:open(Record,[write,binary,exclusive]) of
-        {ok,F} -> ok=file:change_mode(Record,8#600),ok=file:write(F,json:encode(maps:with([instance,name,socket],C))),file:close(F);
-        {error,eexist} -> fail(1,#{error => <<"Device is already running, starting, or has a stale process record. Inspect/stop it before retrying.">>,device => Name});
+    {Name,D}=case ba_cli_store:reserve(BaseName,maps:get(next_instance,A,false),maps:with([instance,name,socket],Candidate)) of
+        {ok,N,Directory} -> {N,Directory};
+        {error,already_running} -> fail(1,#{error => <<"Device is already running, starting, or has a stale process record. Inspect/stop it before retrying.">>,device => BaseName});
         {error,R} -> fail(1,R)
     end,
+    C=Candidate#{name := list_to_binary(Name)},Record=filename:join(D,"running.json"),
     try
         ok=ba_cli_store:write(filename:join(D,"launch.json"),C),
         Erl=os:find_executable("erl"),
