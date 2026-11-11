@@ -110,10 +110,6 @@ job_message(Peer,Op,Id,Payload,Now,S) ->
     attempt(fun() ->
         true = hex(Id,32),
         true = lists:member(Op,[<<"job.offer">>,<<"job.cancel">>,<<"job.report">>]),
-        case Op of
-            <<"job.report">> -> ok;
-            _ -> true = maps:get(id,S) =:= maps:get(director,maps:get(policy,S))
-        end,
         payload(Op,Payload),
         {Packet,Next} = outgoing(Peer,Op,Id,Payload,active(Peer,Now,S),S),
         {ok,Packet,Next}
@@ -220,7 +216,6 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
             {ok,[],[{audio,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
         _ when Op =:= <<"job.offer">>; Op =:= <<"job.cancel">> ->
             Policy = maps:get(policy,S),
-            true = Peer =:= maps:get(director,Policy),
             true = lists:member(job_offer,maps:get(Peer,maps:get(peers,Policy))),
             {ok,[],[{job,Op,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
         <<"job.report">> ->

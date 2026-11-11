@@ -62,8 +62,8 @@ capability_permissions_and_reply_test() ->
     ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"unavailable">>}}],_},
         p(receive_packet,[B,Unavailable,8,A1])).
 
-director_and_job_grant_test() ->
-    {A,B,KA,KB,SA,SB,_,_,_,_} = handshake(),
+jobs_use_grants_not_a_director_role_test() ->
+    {A,B,KA,_,SA,SB,_,_,_,_} = handshake(),
     Id = binary:copy(<<"C">>,32), Offer = job_offer(),
     {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
     ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
@@ -71,10 +71,12 @@ director_and_job_grant_test() ->
     GrantedB = SB#{policy := PolicyB#{peers := #{A => [job_offer,status_read]}}},
     ?assertMatch({ok,[],[{job,<<"job.offer">>,Id,Offer,#{peer := A,director := A}}],_},
         p(receive_packet,[A,Packet,6,GrantedB])),
-    ?assertMatch({error,_,SB},p(job_message,[A,<<"job.offer">>,Id,Offer,5,SB])),
+    {ok,MemberPacket,_} = p(job_message,[A,<<"job.offer">>,Id,Offer,5,SB]),
+    ?assertMatch({error,_,SA},p(receive_packet,[B,MemberPacket,6,SA])),
     PolicyA = maps:get(policy,SA),
     GrantedA = SA#{policy := PolicyA#{peers := #{B => [job_offer,status_read]}}},
-    Impostor = resign(Packet,KB,fun(M) -> M#{<<"from">> := B,<<"to">> := A} end),
+    ?assertMatch({ok,[],[{job,<<"job.offer">>,Id,Offer,#{peer := B}}],_},p(receive_packet,[B,MemberPacket,6,GrantedA])),
+    Impostor = resign(MemberPacket,KA,fun(M) -> M end),
     ?assertMatch({error,_,GrantedA},p(receive_packet,[B,Impostor,6,GrantedA])),
     BadDirector = resign(Packet,KA,fun(M) -> M#{<<"director">> := B} end),
     ?assertMatch({error,_,GrantedB},p(receive_packet,[A,BadDirector,6,GrantedB])).

@@ -107,7 +107,7 @@ handle_call({request,#{<<"instance">> := I}=R},_,#{<<"instance">> := I}=S) ->
     {reply,Reply#{managed => Meta},S};
 handle_call(_,_,S) -> {reply,#{error => <<"Device instance mismatch.">>},S}.
 handle_cast(stop,S) ->
-    ba_swarm:leave(),init:stop(),{stop,normal,S};
+    ba_swarm:disconnect(),init:stop(),{stop,normal,S};
 handle_cast(kill,S) ->
     %% Only this process can be killed, after an instance-checked local command.
     spawn(fun() -> os:cmd("/bin/kill -KILL "++os:getpid()) end),{stop,normal,S};

@@ -1,14 +1,39 @@
 # Ephemeral Swarms, Passports and multiple Desks — step 9
 
-Step 9 supersedes step 5's durable Swarm/rejoin model. Creating without an existing
-link assigns a random Swarm ID. A reusable invitation retains that ID and name
-across fresh gatherings. The first Device using the link while no Captain is
-advertised becomes the new Captain, membership authority and Director. There is
-no election, dormant Swarm registry or restoration of old authority/state.
-Device Identity, the local address book and participant reconnect intent survive.
-Membership still requires fresh authorization from the same live Captain; a dead
-Captain's old authority/membership cannot be restored. Its reusable link can start
-a fresh gathering with new membership and permissions.
+## Current lifetime model — 2026-11-11
+
+A Captain manages admission and permission changes. Its disappearance does not end
+an already admitted gathering: live members keep the last signed policy and show
+`authority frozen`. They can authenticate/renew peer sessions and perform already
+granted operations. No automatic two-minute dissolution is applied. New admission
+still requires the Captain; a device with no live accepted policy gains no rights
+from a saved invitation or address-book entry alone.
+
+Only the Captain may explicitly **End Swarm**. A member may Leave; app closure or
+transport loss is not End, including on the Captain. An explicit Captain Leave
+also disconnects locally without ending everybody else. A signed End received by
+members tears down their gathering. A disconnected peer that misses End cannot
+learn that fact automatically; there is no durable Desk tombstone or consensus.
+
+A restarted Captain may recover the same gathering only after a fresh signed
+challenge response from a surviving admitted Device. Its private saved recovery
+record preserves the latest policy, invitations/revocation blocks and routes, but
+is inert without that response. Recovery checks the responder's Device identity,
+current saved admission, request nonce and deadline, rotates the Captain route,
+then makes members obtain the current policy through the ordinary grant path.
+Old history alone never starts authority. Explicit End clears recovery intent.
+
+A reusable invitation retains its Swarm ID/name. After End, the first Device
+reusing the link while no Captain is advertised starts a **fresh** gathering with
+new membership and permissions. No election or simultaneous-Captain protection is
+added. A partitioned frozen gathering may coexist with another gathering started
+from the same link; no convergence mechanism is claimed.
+
+This supersedes older descriptions below/in historical roadmap sections where
+Captain shutdown or authority-proof expiry ended the whole gathering. Clock
+freshness is separate: the time service is currently still pinned to the Captain
+as clock provider. Permission continuity does not yet prove uninterrupted audio
+when that provider disappears; decoupling clock ownership is follow-through work.
 
 ## Local APIs
 
@@ -20,15 +45,19 @@ when one was saved; see the reopening section below.
 
 ```erlang
 {ok,_} = ba_runtime:start(swarm_control).
-ok = ba_contacts:put(DeviceId, <<"Alice">>).
+ok = ba_contacts:put(DeviceId, <<"MacBook Air">>).
 ok = ba_contacts:group(<<"Session">>, [DeviceId]).
 ok = ba_swarm:create(<<"Evening session">>, [DeskA,DeskB]).
 {ok,[#{device := DeviceId,invitation := Link}]} =
     ba_swarm:invite({group,<<"Session">>},3600).
 ```
 
-Contacts are Device IDs with local labels. Groups are local selections of saved
-contacts; no approval, reciprocal friendship or synchronization is involved.
+Saved Devices are keyed by Device ID, not people. Authenticated Swarm membership
+collects other Devices automatically; capability replies fill in Handler names.
+Repeated observations update the same record and preserve a manually chosen
+label. Each Swarm is also collected as one local Device group, keyed internally
+by Swarm ID. Reusing a link adds known participants to that existing group without
+duplicates. No approval, reciprocal friendship or synchronization is involved.
 `ba_contacts:list/0`, `delete/1`, `delete_group/1` and `resolve/1` provide management.
 `ba_swarm:invite([DeviceId],TTL)` selects individual contacts. It returns signed,
 forwardable invitation URIs for private transfer or QR rendering. Automatic
@@ -42,7 +71,7 @@ ba_swarm:status().  % Join is asynchronous; wait for state => authorized.
 ok = ba_swarm:leave().
 ```
 
-The Captain uses `ba_swarm:end_swarm/0`, or leaves to end the entire gathering.
+The Captain uses `ba_swarm:end_swarm/0` to end the entire gathering.
 A member cannot end it for everybody. Leaving removes that admission; the same
 invitation can be used to return. Invitations currently have no time expiry:
 legacy expiry timestamps are ignored; newly issued tickets use `expires: null`.
@@ -64,8 +93,9 @@ ok = ba_swarm_membership:revoke(DeviceId).
 
 Lists of permissions are sorted and unique. Audio needs `stream_read` /
 `stream_subscribe`, local per-source Contracts and explicit playback intent.
-Time/Offset requires `time_read` / `offset_write`. Jobs require the designated
-Director, `job_offer`, recipient consent and Contract. Captain status never
+Time/Offset requires `time_read` / `offset_write`. Any admitted coordinator can
+offer jobs with `job_offer`, recipient consent and an explicitly matching local
+Contract. Director is a programmed coordinator, not a source of extra rights. Captain status never
 permits arbitrary remote process execution or access to microphones.
 
 Signed v3 invitations identify a Swarm name/ID, issuing identity, permitted Desks
@@ -125,17 +155,17 @@ The branch owns `ba_swarm_state` ETS. Policy, invitation claims, Passport,
 mailboxes/routes, Offset and Subscription intent use that volatile storage.
 Ending the branch deletes it and terminates Workers, Sources, Media Sessions,
 Mixers and clock processes. Desk connections close and their mailbox rotates.
-Old on-disk Swarm records are ignored; they cannot restore membership. Only
-`contacts.term` is written by this new model; it uses the existing private atomic
-file writes. Device keys remain in platform secure storage. Subscription intent
+Old on-disk Swarm records are ignored; they cannot restore membership. `contacts.term` and `swarm_connection.term` use private atomic file writes.
+The latter holds reconnect intent and a Captain's conditional recovery snapshot;
+no saved authority activates without a fresh response from a surviving member. Device keys remain in platform secure storage. Subscription intent
 can survive a receiver restart within a gathering, but not its end or VM restart.
 
-Captain end is sent to known members before local teardown. If that message is
-lost, members end when existing fresh authority proof expires (at most 60 seconds
-from its request); an initial unanswered join expires after 30 seconds. A brief
-Desk disconnection does not itself end the gathering or elect a Captain.
-Revocation still fences active work immediately on verified policy evidence;
-without delivery, the existing authorization bound applies. Already submitted
+Captain End is sent to known members before local teardown. Captain loss alone
+freezes authority indefinitely for already admitted live runtimes. Initial joiners
+and restarted participants still need current authorization. Verified policy
+changes/revocations invalidate the old control view; frozen mode does not ignore
+known newer policy. Missing delivery cannot make a partition learn a new policy.
+Already submitted
 native output cannot be selectively retracted.
 
 ## Desks, bounds and verification
@@ -149,13 +179,16 @@ WS is loopback-only. Signed messages are not end-to-end encrypted against the De
 
 Bounds remain 16 members, 16 pending challenges, 32 live invitation records,
 32 KiB signed packets and bounded queues/JSON. Expired invitations are pruned
-when new invitations are created. The address book allows 256 contacts and 64
-groups, with at most 15 invitees per selection and 128-byte labels.
+when new invitations are created. The greedy address book has no fixed contact/group count cap. Contact labels
+accept up to 256 UTF-8 bytes; group labels remain 128 bytes. Existing invitation
+selection is still limited to 15 Devices. Automatically accumulated groups may
+outgrow that selection limit; batched invitations are not implemented here.
 
 See [repeatable headless checks](../tests/control/README.md). The Ephemeral Swarm
 proof covers saved-group invitations, real two-source WebRTC PCM, local consent,
 leave/rejoin, Captain end, full process/ETS/connection cleanup, cold restart,
-retained contacts and Captain crash followed by actual authorization expiry.
+retained Devices/groups, explicit End, frozen permissions after Captain loss,
+and conditional Captain recovery with revocation blocks retained.
 No product apps, audio hardware, physical speaker timing or Internet resilience
 are qualified by that proof. Earlier 8d maximum-Offset deadline misses remain a
 separate documented limitation; this lifecycle change does not claim to fix them.
@@ -170,14 +203,13 @@ workers, buffers or media sessions. Startup immediately attempts fresh Captain
 authorization. Once admitted, rejoining uses the Passport rather than depending
 on the original invitation's expiry. Revocation remains authoritative.
 
-Closing a participant app disconnects transport without issuing voluntary Leave.
-Explicit Leave clears reconnect intent. A Captain stopping still ends its
-gathering: reopening explains that result and does not recreate it or elect a
-replacement. Failure to reach the Captain during the existing 30-second initial
-window produces an unavailable status; a stopped/ended gathering is not revived.
+Closing an app disconnects transport without issuing End. A participant's
+explicit Leave clears its reconnect intent. Captain app restart tries conditional
+recovery using the saved record and a fresh response from a surviving member.
+No survivor means no recovered authority; the reusable invitation may still start
+a fresh gathering after leaving that waiting recovery attempt.
 
-The shared snapshot's `connection` object exposes `state`, `name`, optional
-`swarm`, and a human-readable `message`; credentials are never exposed there.
-Both Apple apps show startup/rejoining progress and the result in the header.
-This requires rebuilt apps and one join with the new version to record intent;
-older versions that discarded connections cannot supply missing history.
+The shared snapshot exposes `authority_state` and `captain_present` separately
+from `state: authorized`, with human-readable host/Handler labels in `connection`.
+Frozen permission grants do not imply a fresh clock or successful audio output.
+Both Apple apps and the web frontend display this shared state.

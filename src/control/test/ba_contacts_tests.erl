@@ -23,7 +23,8 @@ contacts_test_() ->
      end,
      [fun crud_and_validation/0,
       fun groups_and_resolve/0,
-      fun contact_deletion_cleans_groups/0]}.
+      fun contact_deletion_cleans_groups/0,
+      fun automatic_collection_is_idempotent/0]}.
 
 crud_and_validation() ->
     Id1 = binary:copy(<<"1">>, 64),
@@ -58,3 +59,19 @@ contact_deletion_cleans_groups() ->
     ?assertEqual([Id2], maps:get(<<"Friends">>, Groups)),
     ?assertEqual(ok, ba_contacts:delete_group(<<"Friends">>)),
     ?assertNot(maps:is_key(<<"Friends">>, maps:get(groups, ba_contacts:list()))).
+
+automatic_collection_is_idempotent() ->
+    A=binary:copy(<<"A">>,64),B=binary:copy(<<"B">>,64),Swarm=binary:copy(<<"1">>,32),
+    ba_contacts:observe(Swarm,<<"10SWARNING">>,[A,A,B]),
+    ba_contacts:observe_name(A,<<"MacBook Air | AABBCCDD">>),
+    ba_contacts:observe(Swarm,<<"10SWARNING">>,[A,B]),
+    #{contacts := Contacts,groups := Groups}=ba_contacts:list(),
+    ?assertEqual(<<"MacBook Air | AABBCCDD">>,maps:get(A,Contacts)),
+    ?assertEqual([A,B],maps:get(<<"10SWARNING">>,Groups)),
+    ?assertEqual(ok,ba_contacts:put(A,<<"My Mac">>)),
+    ba_contacts:observe_name(A,<<"MacBook Air | NEW00001">>),
+    ba_contacts:observe(Swarm,<<"Renamed gathering">>,[A]),
+    #{contacts := Named,groups := Updated}=ba_contacts:list(),
+    ?assertEqual(<<"My Mac">>,maps:get(A,Named)),
+    ?assertEqual([A,B],maps:get(<<"10SWARNING">>,Updated)),
+    ?assertNot(maps:is_key(<<"Renamed gathering">>,Updated)).

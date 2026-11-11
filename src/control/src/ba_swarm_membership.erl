@@ -1,4 +1,5 @@
-%% Live Captain/Passport owner. Desks introduce; fresh authority proof grants operations.
+%% Captain grants policy; admitted live members retain its last signed grants
+%% while authority is unavailable. Initial admission still needs fresh proof.
 -module(ba_swarm_membership).
 -behaviour(gen_server).
 -export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1]).
@@ -43,6 +44,14 @@ boot(#{mode := create,desks := URLs} = Config,S) ->
         error -> Next
     end,
     checkpoint_authority(Ready),publish(Ready),Ready;
+boot(#{mode := recover_authority,snapshot := Snapshot},#{id := Id}=S) ->
+    P=maps:get(policy,Snapshot),ok=ba_swarm_passport:policy(P),Id=maps:get(<<"authority">>,P),
+    URLs=maps:get(urls,Snapshot),Primary=maps:get(primary,Snapshot),Swarm=maps:get(<<"swarm">>,P),
+    Routes=maps:remove(Id,maps:get(routes,Snapshot)),
+    ok=ba_swarm_desks:configure(Swarm,URLs,Primary,Routes),
+    S#{role => recovering,recovery => Snapshot,recovery_requests => #{},
+       name => maps:get(name,Snapshot),authority => Id,swarm => Swarm,
+       urls => URLs,primary => Primary,policy => undefined,routes => Routes};
 boot(#{mode := join,invitation := Link} = Config,S) ->
     {Ticket,I} = ba_swarm_passport:parse_invitation(Link),
     Saved = ba_device_store:load(swarm_member,undefined),
@@ -76,15 +85,13 @@ client(Credential,Authority,Swarm,URLs,Primary,AuthorityRoute,Floor,S) ->
 handle_call(status,_,S) ->
     P = maps:get(policy,S),
     {reply,#{id => maps:get(id,S),swarm => maps:get(swarm,S),role => maps:get(role,S),name => maps:get(name,S),captain => maps:get(authority,S),
-        state => maps:get(state,S),epoch => value(<<"epoch">>,P),revision => value(<<"revision">>,P),
+        state => maps:get(state,S),authority_state => authority_state(S),captain_present => captain_present(S),epoch => value(<<"epoch">>,P),revision => value(<<"revision">>,P),
         members => case P of undefined -> [];_ -> maps:keys(maps:get(<<"members">>,P)) end,
         membership => case P of undefined -> null;_ ->
             maps:get(<<"membership">>,maps:get(maps:get(id,S),maps:get(<<"members">>,P)),null) end,
         rejected => maps:get(rejected,S)},S};
 handle_call(current,_,#{state := authorized} = S) ->
-    case maps:get(until,S) > now_ms() of
-        true -> {reply,{ok,view(S)},S};false -> {reply,{error,authorization_expired},S}
-    end;
+    {reply,{ok,view(S)},S};
 handle_call(current,_,S) -> {reply,{error,maps:get(state,S)},S};
 handle_call({invite,_},_,#{role := authority,reusable_link := Link}=S) ->
     {reply,{ok,Link},S};
@@ -100,7 +107,12 @@ handle_call({invite_devices,Ids,TTL},_,S) ->
     end;
 handle_call(depart,_,#{role := authority,routes := Routes}=S) ->
     maps:foreach(fun(Peer,R) ->
-        case Peer=:=maps:get(id,S) of true -> ok;false -> send(Peer,R,<<"ended">>,fresh(16),#{},S) end
+        case Peer=:=maps:get(id,S) of
+            true -> ok;
+            false ->
+                M=maps:get(Peer,maps:get(<<"members">>,maps:get(policy,S))),
+                send(Peer,R,<<"ended">>,fresh(16),#{<<"membership">> => maps:get(<<"membership">>,M)},S)
+        end
     end,Routes),{reply,ok,S};
 handle_call(depart,_,#{role := member}=S) ->
     %% Bind departure to this admission: replaying an old signed leave must not
@@ -121,11 +133,11 @@ handle_call({grant,Device,Permissions},_,#{role := authority,policy := P} = S) -
     catch exit:{membership_storage_failed,_} = Reason -> exit(Reason);
           _:_ -> {reply,{error,invalid_grant},S} end;
 handle_call({revoke,Device},_,#{role := authority,policy := P,routes := Routes,invitations := Invites} = S) ->
-    case Device =/= maps:get(<<"authority">>,P) andalso Device =/= maps:get(<<"director">>,P)
-         andalso maps:is_key(Device,maps:get(<<"members">>,P)) of
+    case Device =/= maps:get(<<"authority">>,P) andalso maps:is_key(Device,maps:get(<<"members">>,P)) of
         false -> {reply,{error,invalid_revocation},S};
         true ->
-            NewP = bump(P#{<<"members">> := maps:remove(Device,maps:get(<<"members">>,P))},true),
+            Director=case maps:get(<<"director">>,P) of Device -> maps:get(<<"authority">>,P);Existing -> Existing end,
+            NewP = bump(P#{<<"director">> := Director,<<"members">> := maps:remove(Device,maps:get(<<"members">>,P))},true),
             Next = S#{policy := NewP,routes := maps:remove(Device,Routes),
                 invitations := maps:map(fun(_,E) -> E#{blocked => lists:usort([Device|maps:get(blocked,E,[])])} end,Invites)},
             checkpoint_authority(Next),changed(Next,Routes),{reply,ok,Next}
@@ -137,6 +149,7 @@ handle_info(tick,S0) ->
     S2 = case maps:get(role,S1) of
         discovering -> discover(S1);
         authority -> S1;
+        recovering -> recovery_tick(S1);
         member -> client_tick(S1)
     end,
     erlang:send_after(250,self(),tick),{noreply,S2};
@@ -156,6 +169,34 @@ handle_info({desk_delivery,_,From,Packet},S) ->
     catch exit:{membership_storage_failed,_} = Reason -> exit(Reason);
           _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}} end;
 handle_info(_,S) -> {noreply,S}.
+
+recovery_tick(#{last_attempt := Last}=S) ->
+    case now_ms()-Last>=5000 of
+        false -> S;
+        true ->
+            Pending=maps:get(recovery_requests,S),Now=now_ms(),
+            Requests=maps:map(fun(Peer,Route) ->
+                case maps:find(Peer,Pending) of
+                    {ok,#{deadline := Deadline}=Existing} when Deadline>Now -> Existing;
+                    _ ->
+                        Req=fresh(16),Nonce=fresh(32),
+                        send(Peer,Route,<<"recover.hello">>,Req,#{<<"nonce">> => Nonce,<<"route">> => ba_swarm_desks:route()},S),
+                        #{request => Req,nonce => Nonce,deadline => Now+10000}
+                end
+            end,maps:get(routes,S)),
+            S#{recovery_requests := Requests,last_attempt := now_ms()}
+    end.
+recover_authority(#{recovery := Snapshot}=S) ->
+    %% A saved record is inert until a fresh, signed response from a currently
+    %% admitted peer matches the saved admission. No response means no Captain.
+    ok=save(swarm_authority,maps:with([policy,invitations,routes],Snapshot)),
+    Seed=maps:merge(maps:without([recovery,recovery_requests],S),maps:with([reusable_link],Snapshot)),
+    Next=boot(#{mode => create,name => maps:get(name,Snapshot),desks => maps:get(urls,Snapshot),desk => maps:get(primary,Snapshot)},Seed),
+    case maps:find(reusable_link,Snapshot) of
+        {ok,Link} -> {_,I}=ba_swarm_passport:parse_invitation(Link),ok=ba_swarm_desks:advertise(maps:get(<<"mailbox">>,maps:get(<<"route">>,I)));
+        error -> ok
+    end,
+    changed(Next,maps:get(routes,Next)),Next.
 
 discover(#{last_attempt := Last}=S) ->
     case now_ms()-Last >= 1000 of
@@ -178,15 +219,9 @@ discover(#{last_attempt := Last}=S) ->
             end
     end.
 
-client_tick(#{captain_deadline := Deadline}=S) ->
-    case now_ms()>=Deadline of
-        true -> invalidate(),ba_swarm:ended(self()),S#{state := ended,until := 0};
-        false -> client_refresh(S)
-    end.
+client_tick(S) -> client_refresh(S).
 client_refresh(S) ->
-    Now = now_ms(),Request = maps:get(request,S),
-    Next = case maps:get(state,S) =:= authorized andalso Now >= maps:get(until,S) of
-        true -> invalidate(),S#{state := waiting};false -> S end,
+    Now = now_ms(),Request = maps:get(request,S),Next=S,
     Due = maps:get(state,Next) =/= revoked andalso Now-maps:get(last_attempt,Next) >= 5000 andalso
         (Request =:= undefined orelse Now >= maps:get(deadline,Request)),
     Refresh = maps:get(state,Next) =/= authorized orelse Now >= maps:get(until,Next)-30000,
@@ -198,6 +233,18 @@ client_refresh(S) ->
                 #{<<"nonce">> => Nonce,<<"credential">> => maps:get(credential,Next),<<"route">> => R},Next),
             Next#{request := #{id => Req,nonce => Nonce,deadline => Now+10000},last_attempt := Now}
     end.
+incoming(Authority,#{<<"type">> := <<"recover.hello">>,<<"request">> := Req,<<"payload">> := Data},
+         #{role := member,state := authorized,authority := Authority,policy := P}=S) ->
+    ba_swarm_passport:exact(Data,[<<"nonce">>,<<"route">>]),Nonce=maps:get(<<"nonce">>,Data),true=hex(Nonce,64),
+    Route=maps:get(<<"route">>,Data),ok=ba_swarm_passport:route(Route,maps:get(urls,S)),
+    Membership=maps:get(<<"membership">>,maps:get(maps:get(id,S),maps:get(<<"members">>,P))),
+    send(Authority,Route,<<"recover.proof">>,Req,#{<<"nonce">> => Nonce,<<"membership">> => Membership},S),S;
+incoming(Peer,#{<<"type">> := <<"recover.proof">>,<<"request">> := Req,<<"payload">> := Data},
+         #{role := recovering,recovery := #{policy := P},recovery_requests := Requests}=S) ->
+    #{request := Req,nonce := Nonce,deadline := Deadline}=maps:get(Peer,Requests),true=now_ms()<Deadline,
+    ba_swarm_passport:exact(Data,[<<"nonce">>,<<"membership">>]),Nonce=maps:get(<<"nonce">>,Data),
+    Membership=maps:get(<<"membership">>,maps:get(Peer,maps:get(<<"members">>,P))),
+    Membership=maps:get(<<"membership">>,Data),recover_authority(S);
 incoming(Peer,#{<<"type">> := <<"hello">>,<<"request">> := Req,<<"payload">> := Payload},
          #{role := authority,pending := Pending} = S) when map_size(Pending) < 16 ->
     ba_swarm_passport:exact(Payload,[<<"nonce">>,<<"credential">>,<<"route">>]),
@@ -258,17 +305,24 @@ incoming(Authority,#{<<"type">> := <<"denied">>,<<"request">> := Req,<<"payload"
     Nonce = maps:get(<<"nonce">>,D),<<"revoked">> = maps:get(<<"reason">>,D),
     invalidate(),S#{state := revoked,until := 0,request := undefined};
 incoming(Authority,#{<<"type">> := <<"changed">>,<<"payload">> := D},#{role := member,authority := Authority} = S) ->
-    ba_swarm_passport:exact(D,[<<"epoch">>,<<"revision">>]),
+    ba_swarm_passport:exact(D,[<<"epoch">>,<<"revision">>]++[K || K <- [<<"authority_route">>],maps:is_key(K,D)]),
+    Routed=case maps:find(<<"authority_route">>,D) of
+        {ok,Route} -> ok=ba_swarm_passport:route(Route,maps:get(urls,S)),S#{authority_route := Route};
+        error -> S
+    end,
     [begin N = maps:get(K,D),true = is_integer(N) andalso N > 0 andalso N =< 9007199254740991 end
         || K <- [<<"epoch">>,<<"revision">>]],
     Floor = maps:get(floor,S),
     case maps:get(<<"epoch">>,D) > maps:get(epoch,Floor,0) orelse maps:get(<<"revision">>,D) > maps:get(revision,Floor,0) of
-        true -> invalidate(),S#{state := waiting,until := 0,request := undefined,last_attempt := now_ms()-5000};
+        true -> invalidate(),Routed#{state := waiting,until := 0,request := undefined,last_attempt := now_ms()-5000};
         false -> S
     end;
 incoming(Authority,#{<<"type">> := <<"ended">>,<<"payload">> := P},
          #{role := member,authority := Authority}=S) ->
-    ba_swarm_passport:exact(P,[]),invalidate(),ba_swarm:ended(self()),S#{state := ended,until := 0};
+    ba_swarm_passport:exact(P,[<<"membership">>]),
+    Membership=maps:get(<<"membership">>,maps:get(maps:get(id,S),maps:get(<<"members">>,maps:get(policy,S)))),
+    Membership=maps:get(<<"membership">>,P),
+    invalidate(),ba_swarm:ended(self()),S#{state := ended,until := 0};
 incoming(Peer,#{<<"type">> := <<"leave">>,<<"payload">> := Payload},
          #{role := authority,policy := P,routes := Routes}=S) ->
     ba_swarm_passport:exact(Payload,[<<"membership">>]),true = Peer=/=maps:get(id,S),
@@ -313,17 +367,25 @@ changed(S,Routes) ->
     P = maps:get(policy,S),
     maps:foreach(fun(Peer,R) ->
         case Peer =:= maps:get(id,S) of true -> ok;false ->
-            send(Peer,R,<<"changed">>,fresh(16),maps:with([<<"epoch">>,<<"revision">>],P),S)
+            send(Peer,R,<<"changed">>,fresh(16),(maps:with([<<"epoch">>,<<"revision">>],P))#{<<"authority_route">> => maps:get(maps:get(id,S),maps:get(routes,S))},S)
         end
     end,Routes),publish(S).
-checkpoint_authority(S) -> save(swarm_authority,maps:with([policy,invitations,routes],S)).
+checkpoint_authority(S) ->
+    ok=save(swarm_authority,maps:with([policy,invitations,routes],S)),
+    Snapshot=maps:with([policy,invitations,routes,name,urls,primary,reusable_link],S),
+    Saved=#{name => maps:get(name,S),swarm => maps:get(swarm,S),
+            config => #{mode => recover_authority,snapshot => Snapshot}},
+    ok=save(swarm_connection,Saved),ba_swarm:remember_authority(self(),Saved),ok.
 save(Name,Data) ->
     try ba_device_store:save(Name,Data)
     catch _:_ -> exit({membership_storage_failed,Name}) end.
 view(S) -> #{local_permissions => maps:get(<<"permissions">>,maps:get(maps:get(id,S),maps:get(<<"members">>,maps:get(policy,S)))),
               policy => ba_swarm_passport:runtime_policy(maps:get(policy,S),maps:get(id,S)),
-              routes => maps:remove(maps:get(id,S),maps:get(routes,S)),until => maps:get(until,S)}.
-publish(S) -> notify({membership_authorized,view(S)}).
+              routes => maps:remove(maps:get(id,S),maps:get(routes,S)),until => infinity}.
+publish(S) ->
+    P=maps:get(policy,S),
+    ba_contacts:observe(maps:get(swarm,S),maps:get(name,S),maps:keys(maps:remove(maps:get(id,S),maps:get(<<"members">>,P)))),
+    notify({membership_authorized,view(S)}).
 invalidate() -> notify(membership_invalidated).
 notify(Event) -> case whereis(ba_swarm_control) of undefined -> ok;Pid -> Pid ! Event end.
 send(To,R,Type,Request,Payload,S) ->
@@ -331,6 +393,14 @@ send(To,R,Type,Request,Payload,S) ->
              <<"swarm">> => maps:get(swarm,S),<<"request">> => Request,<<"payload">> => Payload},
     ba_swarm_desks:send_route(To,R,<<"membership">>,sign(Body,S)).
 sign(B,S) -> ba_swarm_passport:sign(B,maps:get(private,S)).
+captain_present(#{role := authority}) -> true;
+captain_present(#{role := member,until := Until,policy := P,authority := Authority}) ->
+    P=/=undefined andalso Until>now_ms() andalso
+        (try ba_swarm_desks:peer_online(Authority) catch exit:_ -> false end);
+captain_present(_) -> false.
+authority_state(#{role := authority}) -> available;
+authority_state(#{state := authorized}=S) -> case captain_present(S) of true -> available;false -> frozen end;
+authority_state(_) -> waiting.
 value(_,undefined) -> null;
 value(K,P) -> maps:get(K,P).
 fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).

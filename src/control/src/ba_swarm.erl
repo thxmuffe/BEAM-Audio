@@ -1,8 +1,8 @@
 %% One voluntary, temporary gathering per runtime. Reusable links are addresses,
-%% never restored authority, membership, grants or live operation state.
+%% recovering authority requires a fresh response from a surviving member.
 -module(ba_swarm).
 -behaviour(gen_server).
--export([start_link/0,create/2,join/1,start/1,status/0,connection/0,disconnect/0,remember/3,leave/0,end_swarm/0,invite/2,ended/1]).
+-export([start_link/0,create/2,join/1,start/1,status/0,connection/0,disconnect/0,remember/3,remember_authority/2,leave/0,end_swarm/0,invite/2,ended/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 create(Name,Desks) -> start(#{mode => create,name => Name,desks => Desks}).
@@ -11,6 +11,7 @@ start(Config) -> gen_server:call(?MODULE,{start,Config},15000).
 status() -> gen_server:call(?MODULE,status).
 connection() -> gen_server:call(?MODULE,connection).
 disconnect() -> gen_server:call(?MODULE,disconnect,15000).
+remember_authority(Pid,Saved) -> gen_server:cast(?MODULE,{remember_authority,Pid,Saved}).
 remember(Pid,Name,Member) -> gen_server:cast(?MODULE,{remember,Pid,Name,Member}).
 leave() -> gen_server:call(?MODULE,leave,15000).
 end_swarm() -> gen_server:call(?MODULE,end_swarm,15000).
@@ -47,18 +48,20 @@ handle_call(end_swarm,_,#{state := active}=S) ->
         #{role := authority} -> ba_swarm_membership:depart(),{reply,ok,forget(stop(S))};
         _ -> {reply,{error,captain_only},S}
     end;
-handle_call(leave,_,S) ->
-    case maps:get(state,S) of active -> ba_swarm_membership:depart();idle -> ok end,
-    {reply,ok,forget(stop(S))};
-handle_call(disconnect,_,S) ->
-    %% Closing a participant app is transport loss, not voluntary membership removal.
-    case maps:get(state,S) of
-        active -> case ba_swarm_membership:status() of
-            #{role := authority} -> ba_swarm_membership:depart();_ -> ok end;
-        idle -> ok
+handle_call(leave,_,#{state := active}=S) ->
+    case ba_swarm_membership:status() of
+        #{role := authority} -> ok;
+        _ -> ba_swarm_membership:depart()
     end,
+    {reply,ok,forget(stop(S))};
+handle_call(leave,_,S) -> {reply,ok,forget(stop(S))};
+handle_call(disconnect,_,S) ->
+    %% App/transport closure is not an End Swarm command, including the Captain.
     {reply,ok,stop(S)};
 handle_call(_,_,S) -> {reply,{error,no_active_swarm},S}.
+handle_cast({remember_authority,Membership,Saved},#{membership := Membership}=S) ->
+    %% The membership owner persisted this before publishing its policy.
+    {noreply,S#{remembered := Saved}};
 handle_cast({peer_name,Peer,Name},#{remembered := Saved}=S) when is_map(Saved),is_binary(Name) ->
     case captain_id(Saved)=:=Peer andalso maps:get(captain_name,Saved,undefined)=/=Name of
         true -> Next=Saved#{captain_name => Name},ok=ba_device_store:save(swarm_connection,Next),
@@ -125,8 +128,10 @@ connection_view(#{remembered := undefined}) -> #{state => idle};
 connection_view(#{remembered := Saved}=S) ->
     State=case maps:get(state,S) of
         active -> case membership_status() of
+            #{role := recovering} -> recovering_authority;
             #{state := ended} -> unavailable;
             #{state := ending} -> unavailable;
+            #{state := authorized,authority_state := frozen} -> authority_frozen;
             #{state := authorized} -> joined;
             #{state := revoked} -> revoked;
             _ -> rejoining
@@ -137,6 +142,8 @@ connection_view(#{remembered := Saved}=S) ->
     Label=maps:get(captain_name,Saved,captain_fallback(Captain)),
     Message=case State of
         joined -> <<"Connected">>;
+        recovering_authority -> <<"Waiting for a surviving Device to restore permission management…"/utf8>>;
+        authority_frozen -> <<Label/binary," unavailable — authority frozen. Existing permissions remain active."/utf8>>;
         rejoining -> <<"Rejoining Swarm — waiting for Desk and ",Label/binary,"…"/utf8>>;
         ended -> <<"This Device hosted the previous Swarm. That gathering ended when it stopped.">>;
         unavailable -> <<"Could not reconnect to ",Label/binary,". That Device is unavailable or the Swarm has ended.">>;
@@ -153,6 +160,12 @@ captain_fallback(<<>>) -> <<"the hosting Device">>;
 captain_fallback(Id) -> <<"Device ",(binary:part(Id,0,min(12,byte_size(Id))))/binary>>.
 membership_status() ->
     try ba_swarm_membership:status() catch exit:_ -> #{state => ending} end.
+valid(#{mode := recover_authority,snapshot := #{policy := Policy,urls := URLs,name := Name}}) ->
+    try
+        ok=ba_swarm_passport:policy(Policy),ok=ba_swarm_passport:urls(URLs),
+        {Public,_}=ba_device_store:identity(),true=binary:encode_hex(Public)=:=maps:get(<<"authority">>,Policy),
+        true=is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,true
+    catch _:_ -> false end;
 valid(#{mode := create,name := Name,desks := Desks}) ->
     try true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
         true = is_list(unicode:characters_to_list(Name)),ok = ba_swarm_passport:urls(Desks),true

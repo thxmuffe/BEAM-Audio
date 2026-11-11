@@ -1,5 +1,83 @@
 # Development plan
 
+## Accepted Captain/authority model — 2026-11-11
+
+This decision supersedes older roadmap wording that Captain disappearance or a
+Captain-proof lease expiring must end an ephemeral gathering.
+
+- Already admitted live Devices keep their last signed permissions indefinitely
+  when the Captain is unavailable; show its Device/Handler name and “authority
+  frozen.” Initial admission and permission changes still require the Captain.
+- Only the Captain can explicitly End Swarm. Other Devices may Leave; app closure
+  is transport loss, not End. A Captain can also disconnect without ending peers.
+- On app restart, a Captain may recover the surviving gathering only after a
+  fresh signed response from a still-running admitted Device. A private recovery
+  snapshot alone cannot revive an abandoned gathering. End clears that intent.
+- Reusing an invitation after End starts a new gathering: the first arrival is
+  Captain with fresh membership/permissions. No split-gathering prevention added.
+- Director/coordinator code has no special authority. Normal grants, local
+  Contracts, consent and leases apply to its preprogrammed jobs.
+- Saved Devices are collected automatically by Device ID; Swarms become groups
+  deduplicated by Swarm ID. Manually assigned names are preserved.
+
+Implemented/verified membership continuity does not yet decouple the Swarm clock:
+that service is still pinned to the Captain. Separate clock ownership/failover
+without loosening freshness or per-packet timing is the next architecture step
+before claiming uninterrupted audio during Captain loss. The exact mechanism is
+not selected in this increment. Participant cold-restart admission still uses
+fresh Captain authorization; live frozen members retain the in-memory policy.
+
+## Near-future UI and invitation work — requested 2026-11-11
+
+Prioritize these before the next audio/playback test round so onboarding, chat
+and local responsiveness do not consume the testing session. These are planned,
+not implemented by recording this list.
+
+1. **Establish concise UI behavior standards and fix chat submission.** Desktop
+   Enter sends; Shift+Enter inserts a newline; Command+Enter and Control+Enter
+   send where those modifiers are available. Respect IME composition. A coarse
+   pointer/emulated mobile viewport must not disable a real keyboard's submit
+   behavior. Verify the actual web/macOS/iOS input paths. Remove repetitive,
+   implementation-focused footer text; retain actionable connection/authority
+   state and put technical details behind diagnostics. Update the product UI
+   standards first and use them as acceptance criteria for the shared frontend.
+2. **Use beamaudio: invitation links.** Plan generation/parsing migration from
+   parvi: to beamaudio:, retaining already shared reusable parvi: links as inputs.
+   Changing the URI scheme must not change Device identity, signed ticket rules
+   or permissions. Register the scheme with platform OSes so a protocol-capable
+   app such as OpenSound can handle it. iOS/macOS registration and Windows
+   installer registration belong to app packaging; Android handling is future
+   platform work, not a currently implemented app.
+3. **Unify Open/Share-to-join.** An OS-opened invitation or an iOS Share-to-OpenSound
+   action uses the same asynchronous BEAM join command. Sharing a supported link
+   to OpenSound means join that Swarm. Already joined means no action. Plan the
+   iOS Share extension and app handoff; never block local UI on target admission.
+4. **Default-on Auto-join checkbox in Chat.** When an invitation is posted in chat,
+   each Device with this local option enabled automatically follows it into the
+   target Swarm. Turning it off disables that behavior for that Device. This is
+   intended to make moving together out of stale gatherings easy. Use the same
+   join path as Open/Share, avoid repeated processing/loops, and make progress
+   visible without blocking controls. The current runtime has one active Swarm;
+   implement this as a move/jump unless multi-Swarm membership is explicitly
+   selected later. Moving a Captain must not silently issue End Swarm.
+5. **Fix iOS QR proportions.** Preserve a square QR image at all dialog widths,
+   orientations and text sizes; verify real iPhone presentation and scanning.
+
+Acceptance: new/join/rejoin and repeated-link no-op cases; unavailable/delayed
+Desk; keyboard/IME with touch emulation and real phone keyboards; Share-to-join;
+Auto-join on/off, repeated links and Captain jumps; square/scannable QR codes.
+All local navigation, menus and editing remain available while BEAM/network work
+is pending. The goal is friction-free testing without weakening admission or
+pretending that successful UI actions prove audio playback.
+
+## Deferred iOS system-audio alternatives
+
+For later: evaluate an iOS 26-compatible system-audio broadcasting path, including
+ReplayKit with a Broadcast Upload Extension. Preserve sharing other apps' audio;
+do not silently substitute app-only capture. Keep native code to OS capture and
+buffer transfer, with Swarm/transport/timing policy in BEAM. Current iOS 27
+ScreenCaptureKit binding remains unchanged pending that investigation.
+
 ## iOS capture availability clarification (2026-11-11)
 
 The current iOS system-audio binding uses ScreenCaptureKit and requires iOS 27.

@@ -1,21 +1,18 @@
 # Contracts and Jobs — step 4
 
-Implemented 2026-11-09 for one explicitly designated Director and the predefined
+Implemented for ordinary granted coordinators (updated 2026-11-11) and the predefined
 non-audio test Worker. This extends the [control protocol](SWARM_CONTROL_PROTOCOL.md)
 and [local Handler](DEVICE_HANDLER.md) under the [active roadmap](PLAN.md).
 It is not a generic remote execution API, audio assignment system or scheduler.
 
 ## Roles and permission
 
-The local Swarm policy now requires `director => DirectorDeviceId`, independently
-of `authority`. Both are pinned public Device IDs; both may be the same Device
-in the initial setup. Both peers must agree on the Director, included in the
-signed message body. There is no timeout-based takeover or automatic failover.
-
-The recipient must grant the Director `job_offer` in its local peer permissions.
-Grants are sorted unique subsets of `[capabilities_read,job_offer,status_read]`.
-Only the designated Director may send job.offer/job.cancel. A grant alone does
-not allow an arbitrary peer to claim that role or activate a resource.
+A Director is ordinary programmed coordination on an admitted Device. It gains
+no ambient permissions from that role. Any admitted Device may offer/cancel jobs
+where `job_offer` is granted, and the receiving Device still requires its local
+matching Contract, consent and capacity. The wire policy retains its legacy
+`director` field for message-scope compatibility; it is not a job privilege gate.
+No arbitrary remote process, module or function invocation is introduced.
 
 The receiver separately installs a narrow local Contract and opts in:
 
@@ -31,7 +28,8 @@ provisioned to the two proof runtimes; automatic Contract discovery/negotiation
 is not implemented. [Step-5 membership](SWARM_MEMBERSHIP.md) now supplies current authority policy and
 revocation checks; a Passport still never supplies local Contract/consent.
 
-The Handler checks the verified sender, Director, Contract ID/revision, local
+The Handler checks the verified sender against the local Contract's coordinator,
+Contract ID/revision, local
 consent, capacity and session lifetime before acceptance. Evaluation and acceptance
 are one serialized local operation for this simple task, not a second reservation
 framework. The Handler alone builds the known test-Worker child specification.

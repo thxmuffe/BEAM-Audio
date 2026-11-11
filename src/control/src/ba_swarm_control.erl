@@ -97,7 +97,6 @@ handle_call({offer_job,Peer,Offer},_,#{jobs := Jobs} = S) when map_size(Jobs) < 
         ok = ba_swarm_job:validate_offer(Offer),
         Protocol = maps:get(protocol,S), Now = now_ms(),
         Context = ba_swarm_control_protocol:context(Peer,Now,Protocol),
-        true = maps:get(id,Protocol) =:= maps:get(director,Context),
         Id = binary:encode_hex(crypto:strong_rand_bytes(16)),
         J = #{peer => Peer,session => maps:get(session,Context),offer => Offer,state => <<"offered">>,
               session_deadline => maps:get(deadline,Context),
@@ -247,7 +246,7 @@ event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
 event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->
     Names=maps:get(peer_names,S),
     Next=case maps:find(<<"device_name">>,Value) of
-        {ok,Name} -> gen_server:cast(ba_swarm,{peer_name,Peer,Name}),S#{peer_names := Names#{Peer => Name}};
+        {ok,Name} -> ba_contacts:observe_name(Peer,Name),gen_server:cast(ba_swarm,{peer_name,Peer,Name}),S#{peer_names := Names#{Peer => Name}};
         error -> S#{peer_names := maps:remove(Peer,Names)}
     end,
     reply(Peer,{ok,Value},Next);

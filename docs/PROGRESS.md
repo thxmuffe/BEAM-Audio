@@ -1,5 +1,61 @@
 # Progress
 
+## 2026-11-11 — Frozen authority, conditional Captain recovery, saved Devices
+
+Implemented the clarified model: no two-minute dissolution. Already admitted
+live runtimes retain the last signed policy when Captain proof/presence is lost;
+peer authentication/session renewal and granted jobs continue. Status reports
+`authority_state: frozen` and the host/Handler name. A never-admitted or restarted
+participant still needs fresh Captain authorization; frozen mode is not a grant
+from history. Known newer signed policy/revocation still invalidates the old view.
+
+Only explicit Captain End sends the end signal. Member Leave, Captain disconnect/
+local Leave, CLI stop and native bridge closure no longer end everybody else.
+End is bound to each recipient's admission ID, so the same link can start fresh
+membership without an earlier admission's End applying to it. Delivery to
+partitioned peers remains best effort; no durable Desk tombstone is introduced.
+
+A Captain now stores a private conditional recovery record atomically before
+publishing policy changes. It contains the current policy, invitations/revocation
+blocks and routes, not a running process/clock. On restart the record is inert
+until a surviving admitted peer signs a fresh request-bound nonce response that
+matches its saved admission. Recovery rotates the Captain mailbox, advances the
+policy revision and reauthorizes peers through the ordinary grant flow. No live
+peer means no recovered Captain. Explicit End clears recovery intent. This is
+the user's explicit refinement of the earlier no-authority-restoration model;
+an abandoned record alone still cannot restore authority.
+
+Director/coordinator work no longer gets a special policy-role privilege. An
+admitted peer can offer a predefined job with `job_offer`, but matching receiver
+Contract, local consent, capacity, sender identity, session and job leases still
+apply. The legacy `director` wire field remains for scope compatibility; no remote
+module/function execution or generic scheduler is added.
+
+Authenticated membership automatically collects other Device IDs and one group
+per Swarm ID. Capability names update automatically chosen labels; manual aliases
+are preserved. Repeated observations and reused Swarm links merge without duplicate
+IDs/groups. Groups retain previously seen participants. Device/group count caps
+were removed for the requested greedy collection; existing invite selections
+still support at most 15 Devices. Contact labels allow the existing 256-byte
+Handler labels. Product wording now says Saved Devices/Devices rather than people.
+
+Validation: 69 relevant core tests and 11 shared Swift/WebKit tests pass. The
+local integration check uses actual independent BEAM processes and a Desk to
+verify frozen-grant peer sessions/jobs, Captain process restart with survivors,
+revocation retained across another recovery, explicit End, first-link reuse with
+fresh membership, no-peer history refusing recovery, and Device/group deduplication.
+Updated macOS and generic unsigned iOS builds also pass; no phone installation
+or Render deployment was performed. No user Swarm or audio hardware is used.
+The clock remains pinned to the Captain;
+this change does not claim uninterrupted physical playback after clock-provider
+loss. Clock ownership/failover is recorded as the next architecture step.
+
+The requested Enter/Command+Enter, reduced footer prose/UI standards, beamaudio:
+URI migration and OS registration, Share-to-join, default-on Chat Auto-join and
+square QR work are recorded near the top of PLAN and in the product UI standards.
+They are planned, not implemented here. iOS 26 system-audio alternatives are also
+recorded for later investigation. No commit or Render deployment was made.
+
 ## 2026-11-11 — iOS 26 system-capture availability
 
 Investigated the reported “requires iOS 27” error. Both occurrences are in the

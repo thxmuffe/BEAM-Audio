@@ -19,7 +19,7 @@ capture_meter_age_and_stage_are_explicit_test() ->
     Stale=maps:get(meter,ba_audio_input:status(S#{last_capture_ms := Now-1000})),
     ?assert(maps:get(<<"meter_age_ms">>,Stale)>=1000).
 
-normal_capability_shape_stays_unchanged_test() ->
+normal_capabilities_include_label_but_not_metrics_test() ->
     OldName=os:getenv("BA_DEVICE_NAME"),os:putenv("BA_DEVICE_NAME","Test Device"),
     Old=application:get_env(ba_core,audio_automation),application:set_env(ba_core,audio_automation,true),
     try
@@ -28,12 +28,12 @@ normal_capability_shape_stays_unchanged_test() ->
             audio => #{broadcast => #{state => running,blocks => 5,frames => 100,
                 meter => #{<<"peak_db">> => -3.0,<<"rms_db">> => -6.0,<<"meter_age_ms">> => 1,<<"meter_stage">> => <<"capture">>}}}},
         {reply,Normal,_}=ba_device_handler:handle_call(capabilities,undefined,S),
-        ?assertNot(maps:is_key(<<"device_name">>,Normal)),
+        ?assertEqual(<<"Test Device | AAAAAAAA">>,maps:get(<<"device_name">>,Normal)),
         ?assertNot(maps:is_key(<<"audio_diagnostics">>,Normal)),
         Entry=maps:get(<<"broadcast">>,maps:get(<<"audio">>,Normal)),
         ?assertEqual([<<"available">>,<<"consent">>,<<"state">>],lists:sort(maps:keys(Entry))),
         {reply,Metrics,_}=ba_device_handler:handle_call(capability_metrics,undefined,S),
-        ?assertEqual(<<"Test Device">>,maps:get(<<"device_name">>,Metrics)),
+        ?assertEqual(maps:get(<<"device_name">>,Normal),maps:get(<<"device_name">>,Metrics)),
         ?assertEqual(#{<<"mixer.dropped">> => 3},maps:get(<<"audio_diagnostics">>,Metrics)),
         M=maps:get(<<"broadcast">>,maps:get(<<"audio">>,Metrics)),
         ?assertEqual(-3.0,maps:get(<<"peak_db">>,M)),?assertEqual(100,maps:get(<<"frames">>,M))

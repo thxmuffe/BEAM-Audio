@@ -231,7 +231,7 @@ evaluate_job(Context,Id,Offer,#{jobs := Jobs} = S) ->
                     {reply,{ok,Report},S#{jobs := Jobs#{Id => J}}}
             end
     end.
-job_permission(#{peer := Peer,director := Peer,deadline := Deadline},Offer,S) ->
+job_permission(#{peer := Peer,deadline := Deadline},Offer,S) ->
     try
         ok = ba_swarm_job:validate_offer(Offer),
         true = erlang:monotonic_time(millisecond) < Deadline,

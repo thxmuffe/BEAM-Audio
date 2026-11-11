@@ -69,6 +69,6 @@ serve(Socket) ->
         {error, _} ->
             %% Do not call init:stop: the VM shares the native app process.
             gen_tcp:close(Socket),
-            ba_swarm:leave(),
+            ba_swarm:disconnect(),
             ok
     end.

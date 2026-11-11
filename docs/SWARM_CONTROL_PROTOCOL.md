@@ -20,7 +20,7 @@ are required. Product app integration remains step 9.
 
 Current runtime policy pins Swarm, authority, Director, epoch/revision and per-sender
 operation grants. Membership alone grants no operations. `job_offer` additionally
-requires the designated Director and recipient's local Contract/consent.
+requires the job_offer grant and recipient's matching local Contract/consent.
 The [Handler guide](DEVICE_HANDLER.md) describes that local lifecycle.
 
 Call `ba_swarm_control:connect(PeerId)` on one endpoint, then wait until both
@@ -71,8 +71,8 @@ with `parvi-swarm-control/v1:`. The body has these exact fields:
 | `capabilities.error` | `reason`: `forbidden` or `unavailable`. Matching pending capability query. |
 | `time.message` | Exact timestamp/Offset schemas in the [Time guide](SWARM_TIME.md); separate time_read/offset_write grants and correlated authority replies. |
 | `stream.message` | Exact flat catalogue/subscription/SDP/ICE schemas in the [stream guide](SWARM_STREAMS.md); requests require separate stream grants, responses must match a local attempt. |
-| `job.offer` | Exact test capability/Contract/duration/lease fields; designated Director plus job_offer grant. Header request is the Job ID. Handler independently accepts/rejects. |
-| `job.cancel` | Empty object; designated Director, same grant and owned Job/session scope. |
+| `job.offer` | Exact test capability/Contract/duration/lease fields; job_offer grant and matching local coordinator Contract. Header request is the Job ID. Handler independently accepts/rejects. |
+| `job.cancel` | Empty object; verified coordinator, same grant and owned Job/session scope. |
 | `job.report` | Exact attempt/state/reason object. Adapter checks the Director record's assignee, session, Job ID, attempt and result fence. |
 
 Initial handshake messages use sequence 0 and `request == session`; application

@@ -1,5 +1,13 @@
 # Swarm Clock and Playback Offset — step 7
 
+**2026-11-11 follow-through:** membership permissions now remain frozen/usable
+when the Captain is unavailable, but this time service is still Captain-pinned.
+Its sample/session freshness rules are unchanged. Separating time-source ownership
+and failover from authority is pending; do not infer uninterrupted audio or reuse
+stale clock mappings from frozen permissions. The authority/reconnect wording
+below describes the current clock implementation, not a permission-expiry rule.
+
+
 The `swarm_control` profile now starts a local `ba_swarm_clock` under its existing
 clock supervisor, after control and before on-demand audio. It uses the Swarm
 authority as the initial pinned reference and Offset writer. Devices never elect

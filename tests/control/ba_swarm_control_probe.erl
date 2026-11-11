@@ -28,6 +28,10 @@ command(#{<<"op">> := <<"crash_test_worker">>},_,_) ->
     {ok,Child}=supervisor:start_child(ba_device_sup,
         #{id => ba_crash_test_child,start => {?MODULE,crash_child,[]},restart => temporary}),
     Child ! crash,#{ok => true};
+command(#{<<"op">> := <<"expire_authority_presence">>},_,_) ->
+    Now=erlang:monotonic_time(millisecond),
+    sys:replace_state(ba_swarm_membership,fun(S) -> S#{until := Now-1,captain_deadline := Now-1} end),
+    whereis(ba_swarm_membership) ! tick,#{ok => true};
 command(#{<<"op">> := <<"set_observer">>},_,_) ->
     application:set_env(ba_core,swarm_observer,true),#{ok => true};
 command(#{<<"op">> := <<"start_app">>},_,_) ->

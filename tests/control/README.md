@@ -174,3 +174,19 @@ are not production clock/audio timing evidence. `ba_cli_tests` adds readiness,
 child-environment secret removal and supervised native-output failure checks.
 See [CLI usage/limitations](../../src/Tools/CLI/README.md) for real user-led audio
 commands and the explicitly deferred saved-configuration/undo work.
+
+## Frozen authority and Device collection (2026-11-11)
+
+```sh
+python3 tests/control/frozen-authority-smoke.py
+```
+
+Uses a local Desk and disposable Devices to verify Captain app closure freezes
+existing grants; peers reauthenticate and run a consent/Contract-scoped job without
+a Director privilege; Captain process restart recovers only with a live admitted
+peer; revocation blocks survive recovery; explicit End tears down the gathering;
+the first reuse of the same link starts fresh membership; history without live
+members cannot recover authority; automatic saved Devices/groups deduplicate.
+Presence deadlines are expired inside this non-packaged harness to exercise the
+boundary without waiting a minute. No audio hardware or physical clock continuity
+is tested. The time service remains pinned to the Captain in this increment.
