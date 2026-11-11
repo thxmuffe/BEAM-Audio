@@ -2,7 +2,19 @@
 
 <img src="src/Branding/beam-audio.svg" width="96" height="96" alt="BEAM-Audio logo">
 
-Open source Erlang/OTP audio runtime: Swarm messaging and admission, Swarm Clock
+Open source Erlang/OTP audio runtime: Joining an Audio Buffee and enjoying the menu.
+
+Creating sessions to share on-time live playback with guranteed deluvery time sync.
+
+Communication between devixes in the session and joining forces to for a larger computational cluster for DSP and automatic system calibeation using the microphones and speakers present at the time.
+
+Commersial product using BEAM-Audio is OpenSound expected to release first version soon.
+
+Joining and sharing resources is as easy as group messaging apps, leabing and coming back to live sessions as well as recalling past fun configurations of trusted and untrusted devices.
+
+works in any IP network regardlesa of firewalls
+
+Encrypted Buffee admission, Buffee Clock
 and Presentation Target policy, replaceable Stream Handlers and Audio Engines,
 native platform adapters, headless tools and Reception. The OpenSound App consumes
 this checkout; the core builds without product UI sources.
