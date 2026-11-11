@@ -1,26 +1,28 @@
 # BEAM Audio control runtime
 
 Supervised BEAM Audio process failures can emit a short `System: … stopped (…)`
-notice to the current Swarm chat. A Logger handler sends a bounded asynchronous
+notice to the current Session chat. A Logger handler sends a bounded asynchronous
 notification to the existing chat worker; publication is one best-effort attempt
 and never blocks the failing process or supervisor. Detailed reports stay in OTP
 Logger. Ordinary shutdowns, unavailable chat/membership and whole-VM crashes do
 not guarantee a notice. No exception arguments, credentials or full state enter
 chat. Check with `python3 tests/control/crash-chat-smoke.py` from the core root.
 
-The macOS app now uses the secure Swarm profile and a local Device Handler audio
+The macOS app now uses the secure Buffee profile and a local Device Handler audio
 Worker. Its JSON boundary exposes consent/action toggles, scoped inspection, chat
 and exclusions. [Mac app behavior, build and user-led checks](../../docs/MACOS_APP.md).
 The Mac build is prepared; hardware/app acceptance is pending, and iOS/Windows
 runtime/UI migration remains later.
 
-Step 9 adds [Ephemeral Swarms and local contacts/groups](../../docs/SWARM_MEMBERSHIP.md).
+Step 9 adds [ephemeral Buffees and local contacts/groups](../../docs/SWARM_MEMBERSHIP.md).
 Start `ba_runtime:start(swarm_control)` idle, then call `ba_swarm:create/2` or
 explicitly accept an invitation with `ba_swarm:join/1`. `ba_contacts` is the
-durable address book; Swarm policy, Passports, routes and Subscription intent
-are memory-only for that gathering. Captain end/departure tears down its runtime;
-Captain loss ends members when fresh authorization expires. No election or restore.
-Reusable signed v3 invitations currently have no time expiry. Their Swarm ID/name
+durable address book; Buffee policy, Passports, routes and Subscription intent
+are memory-only for that gathering. An explicit Captain End requests termination of the gathering; ordinary
+Captain disconnection does not end it. Already admitted Devices retain their
+last signed policy in a frozen-authority state, but new admissions require the
+Captain. No automatic election or authority takeover.
+Reusable signed invitations currently have no time expiry. Their Buffee reference/name
 can be reused to start a fresh gathering with a new Captain and fresh membership;
 the old authority/grants are not restored. Lookup is capability-scoped at the
 Reception, without simultaneous-Captain coordination. See the membership guide above.
