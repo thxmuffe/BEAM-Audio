@@ -71,6 +71,11 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 ### Architecture and Repository Boundaries
 
 - Keep cluster networking, negotiation, trust and runtime control in the BEAM layer. Approved audio backends may execute media transport under Erlang control. UI layers submit commands and display state; keep ordinary text editing, selection, copy and paste simple and available.
+- Keep Reception a small, stable authentication, introduction and opaque-message
+  routing service. It must not interpret ownership, roles, invitations, audio
+  policy or application payloads. Its authentication domain and versioned wire
+  fields are fixed transport contracts; ordinary client features and terminology
+  changes must not require a Reception update.
 - Display errors in native selectable text controls with built-in selection,
   Select All and Copy. Do not render error messages solely as static labels or
   implement custom clipboard/context-menu handling for them.

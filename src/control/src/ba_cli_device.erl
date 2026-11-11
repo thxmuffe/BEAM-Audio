@@ -4,6 +4,8 @@
 -behaviour(gen_server).
 -export([boot/0,start_link/1,call/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
+-define(MAX_REQUEST,262144).
+-define(MAX_REPLY,2000000).
 boot() ->
     [Dir,Instance,Root]=init:get_plain_arguments(),
     Log=filename:join(Dir,"runtime.log"),
@@ -59,7 +61,8 @@ safe_reason(_) -> startup_failed.
 start_link(C) -> gen_server:start_link({local,?MODULE},?MODULE,C,[]).
 init(#{<<"socket">> := Path}=C) ->
     process_flag(trap_exit,true),
-    {ok,L}=gen_tcp:listen(0,[local,binary,{ifaddr,{local,Path}},{packet,line},{packet_size,262144},{active,false},{send_timeout,2000},{send_timeout_close,true}]),
+    {ok,L}=gen_tcp:listen(0,[local,binary,{ifaddr,{local,Path}},{packet,line},
+        {packet_size,?MAX_REQUEST},{buffer,?MAX_REQUEST},{active,false},{send_timeout,2000},{send_timeout_close,true}]),
     ok=file:change_mode(Path,8#600),Parent=self(),
     A=spawn_link(fun() -> accept(L,Parent) end),
     {ok,C#{listener => L,acceptor => A,startup_error => null}}.
@@ -117,11 +120,18 @@ terminate(_,S) ->
     ba_cli_store:remove(filename:join(maps:get(dir,S),"running.json")),ok.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([<<"name">>,startup_error],S);(log,_) -> [];(_,_) -> redacted end,Status).
 call(Record,Request) ->
-    case gen_tcp:connect({local,maps:get(<<"socket">>,Record)},0,[local,binary,{packet,line},{packet_size,2000000},{active,false}],1000) of
+    %% Line mode can split lines at the receive-buffer boundary. Match the
+    %% buffer to the existing reply bound so a large snapshot is one JSON line.
+    case gen_tcp:connect({local,maps:get(<<"socket">>,Record)},0,[local,binary,{packet,line},
+            {packet_size,?MAX_REPLY},{buffer,?MAX_REPLY},{active,false}],1000) of
         {ok,S} ->
             try
                 ok=gen_tcp:send(S,[json:encode(Request#{<<"instance">> => maps:get(<<"instance">>,Record)}),$\n]),
-                case gen_tcp:recv(S,0,20000) of {ok,B} -> {ok,json:decode(B)};E -> E end
+                case gen_tcp:recv(S,0,20000) of
+                    {ok,B} -> try json:decode(B) of Reply -> {ok,Reply}
+                              catch error:_ -> {error,invalid_response} end;
+                    E -> E
+                end
             after gen_tcp:close(S) end;
         E -> E
     end.

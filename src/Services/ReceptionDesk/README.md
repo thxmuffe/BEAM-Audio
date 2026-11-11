@@ -1,15 +1,28 @@
 # BEAM Audio Reception
 
-Product labels now use **Buffee**, **Reception** and **Response time**. Existing
-API fields, commands, module names and hosted URLs retain their established
-spellings. Guest/Chef permissions and Manager succession remain separate work.
-
 A **Reception** provides authentication, introduction and message routing for Devices.
 The current Phoenix/WebSocket service uses `ba_reception_sessions`; core Reception
 configuration is `BA_DESK_BIND` / `BA_DESK_PORT` (or conventional `PORT`). Existing
-signed protocol domains and the hosted service address remain unchanged.
+hosted service addresses remain unchanged. The explicit namespace migration
+changed the authentication domain and mailbox scope field; deploy matching
+Reception/client versions once for that migration.
 See [naming/migration](../../../docs/NAMING.md) and
 [canonical terminology](../../../docs/TERMINOLOGY.md).
+
+## Stable transport boundary
+
+Keep Reception as small and stable as possible. It authenticates a Device's
+Ed25519 connection, maintains live capability-addressed mailboxes, introduces
+live endpoints and forwards bounded opaque envelopes. A mailbox's `buffee` field
+is an opaque scope ID. Reception does not interpret Buffee membership, Owner,
+Chef/Guest roles, invitation credentials, clock policy, audio formats or the
+signed contents of client messages. These remain in the clients' BEAM runtimes.
+
+The `/relay/v1` authentication domain `beamaudio-desk/v1:` and its wire field
+names are fixed transport contracts, independent of product vocabulary. Ordinary
+client feature, role or audio changes must work without deploying Reception.
+Only an actual transport-contract or service-operational change needs a service
+update; do not add aliases, a membership database or application logic here.
 
 The separate [Device Web service](../DeviceWeb/README.md) uses the same Cowboy,
 Ranch and patched Cowlib versions for an owner-local HTTP command API. It serves
@@ -84,14 +97,14 @@ Deploy that Blueprint from this repository, then use
 TLS at its ingress; the container listens on `0.0.0.0:$PORT`. Other hosting can
 use an equivalent HTTPS reverse proxy with WebSocket upgrades enabled.
 
-The test Reception was deployed on 2026-10-28 in Frankfurt on Render's free plan:
+The shared Reception runs in Frankfurt on Render's free plan:
 https://buffee-reception.onrender.com. Enter
 `wss://buffee-reception.onrender.com/relay/v1` in each native app.
-The service ID is `srv-dbgvjfui0phs73ablggg`; automatic deploys are disabled.
+The service ID is `srv-dbq59cmgekts73anho5g`; automatic deploys are disabled.
 Deploy a committed/pushed revision with the authorized Render CLI:
 
 ```powershell
-render deploys create srv-dbgvjfui0phs73ablggg --wait
+render deploys create srv-dbq59cmgekts73anho5g --wait
 ```
 
 Free instances can sleep after 15 minutes without inbound HTTP/WebSocket traffic;

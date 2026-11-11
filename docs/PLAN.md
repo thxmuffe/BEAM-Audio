@@ -12,10 +12,14 @@ ownership, remove a Device or explicitly destroy the Buffee. No additional
 offline-owner ceremony, public ownership registry or quorum is planned.
 
 The active-source namespace migration and shared-runtime role enforcement are
-implemented. See [validation and limits](PROGRESS.md). Matching clients and
-Reception must be rebuilt/deployed together with fresh invitations: signed
-domains, protocol names and platform identifiers changed. Source edits and
-local checks have not updated the hosted service or installed applications.
+implemented. See [validation and limits](PROGRESS.md). The user rebuilt/deployed
+the Apple apps through Xcode. Reception now runs matching core revision
+`d32bc35`; the Mac, iPhone and Web Device appear in the live monitor. Its earlier
+authentication mismatch is resolved. The monitor's large-JSON framing fix is
+compiled for the CLI; reconnecting that view does not restart the Device.
+Use current invitations after the namespace migration. Keep Reception's transport
+contract fixed: future ownership/audio/client changes must not require service
+updates. Physical playback and speaker timing remain user-led acceptance work.
 
 Next, connect the Windows standalone Web Device to its native capture/output
 Worker under Erlang control. It currently starts the real control runtime but

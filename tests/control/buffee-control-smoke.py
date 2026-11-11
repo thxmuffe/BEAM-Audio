@@ -112,9 +112,12 @@ def main():
         assert a.request("connect", peer=b.identity["id"]) == {"ok": True}
         for local, remote in ((a, b), (b, a)):
             peer = remote.identity["id"]
-            wait(local, lambda s: s["sessions"].get(peer, {}).get("stage") == "authorized")
-            assert local.request("read", peer=peer) == {
-                "ok": True, "value": {"protocol": 1, "session": "authorized"}}
+            # Authentication starts an asynchronous capability/name read. Wait
+            # for that read before issuing another request on the same session.
+            wait(local, lambda s: s["sessions"].get(peer, {}).get("stage") == "authorized"
+                 and peer in s["peer_names"])
+            status = local.request("read", peer=peer)
+            assert status == {"ok": True, "value": {"protocol": 1, "session": "authorized"}}, status
             caps = local.request("capabilities", peer=peer)
             assert caps["ok"] and caps["value"]["test"] == {
                 "supported": True, "available": False, "requires_consent": True,
@@ -129,7 +132,7 @@ def main():
             s = runtime.request("snapshot")
             assert s["node"] == "nonode@nohost" and s["nodes"] == []
             assert not s["legacy_started"] and s["workers"] == 0
-            assert s["children"] == sorted(["ba_contacts", "ba_desk_connections_sup", "ba_buffee", "ba_buffee_desks", "ba_buffee_runtime_sup"])
+            assert s["children"] == sorted(["ba_contacts", "ba_device_config", "ba_desk_connections_sup", "ba_buffee", "ba_buffee_desks", "ba_buffee_runtime_sup"])
         manager, receiver = a, b
         contract = secrets.token_hex(16).upper()
         assert receiver.request("enable_test")["ok"]

@@ -1,5 +1,40 @@
 # Progress
 
+## 2026-11-11 — Apple admission unblocked; monitor framing repaired
+
+The user rebuilt/deployed the Apple apps through Xcode. The Mac displayed its
+invitation's Session name but remained Rejoining, chat returned
+`no_authorized_membership`, and the Web Owner could see only itself. Its local
+snapshot showed Reception disconnected with repeated handshake timeouts.
+
+Reception still ran `f017376`, using the older authentication domain and mailbox
+scope field. The matching core commits were local but unpushed. Pushed existing
+committed `main` through `d32bc3550135d0ea411a7e5bd80f3326dc115f94`, then deployed
+that exact revision to the existing `srv-dbq59cmgekts73anho5g` service. Deployment
+`dep-dbqdm9rrjlhs73807s60` is live at the same public URL. The Owner's Reception
+connection recovered, the user observed Devices appearing, and the live monitor
+now includes the Mac, iPhone and Web Device. No additional app build/installation
+by the agent was needed for this failure. Chat delivery and physical audio are
+not established by admission alone.
+
+The terminal then exited with JSON `unexpected_end`. Only the monitor failed;
+the independent Device and web UI remained running. [OTP line-mode sockets](https://www.erlang.org/doc/apps/kernel/inet.html) can
+split lines at the receive-buffer boundary. Set explicit request/reply buffers
+to their existing bounded packet sizes and convert JSON decode failures into
+`{error,invalid_response}`. Two local-socket regressions cover a fragmented
+150 KB JSON reply and malformed JSON; all 189 core EUnit tests pass. Component
+compilation passes, and the corrected CLI reads the live three-Device monitor
+frame without restarting the Device. Reopen the monitor to load the client fix.
+The live two-Device WSS control smoke check also passes admission, authenticated
+status/capabilities, local Contract/consent enforcement and Worker lifecycle/loss
+cleanup. Its fixture now waits for asynchronous name discovery before another
+peer request and includes the existing Device settings supervisor child.
+
+Reception remains authentication, live mailbox discovery and opaque-message
+routing only. Its fixed authentication domain and versioned fields are transport
+contracts; roles, ownership, invitations and audio policy stay in client BEAM
+runtimes. This boundary is recorded in AGENTS.md and the component README.
+
 ## 2026-11-11 — Buffee names, trusted Owners and persistent return
 
 Migrated active project-owned paths, modules, APIs, protocol fields and documents
