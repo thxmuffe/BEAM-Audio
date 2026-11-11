@@ -6,7 +6,7 @@
                   ba_audio_sup,ba_audio_receiver,ba_audio_mixer,ba_swarm_desks,ba_swarm_membership,ba_swarm_control,ba_device_sup,ba_device_handler,ba_device_worker_sup]},
     {mod, {ba_app, []}},
     {applications, [kernel, stdlib, inets, crypto, gun]},
-    {env, [{default_reception_desk_url, <<"wss://parvi-reception-desk.onrender.com/relay/v1">>},
+    {env, [{default_reception_desk_url, <<"wss://buffee-reception.onrender.com/relay/v1">>},
            {direct_stun_urls, [<<"stun:stun.l.google.com:19302">>]}]},
     {licenses, ["Apache-2.0"]}
 ]}.

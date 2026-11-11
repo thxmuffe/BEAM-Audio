@@ -85,7 +85,7 @@ def job_state(runtime, identity, state):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", default="wss://parvi-reception-desk.onrender.com/relay/v1")
+    parser.add_argument("--url", default="wss://buffee-reception.onrender.com/relay/v1")
     args = parser.parse_args()
     # Uses the same real Desk as the apps; does not start a separate service or GUI.
     paths = list((ROOT / "builds/intermediates/control/default/lib").glob("*/ebin"))

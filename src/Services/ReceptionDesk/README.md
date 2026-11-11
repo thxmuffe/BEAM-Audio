@@ -85,8 +85,8 @@ TLS at its ingress; the container listens on `0.0.0.0:$PORT`. Other hosting can
 use an equivalent HTTPS reverse proxy with WebSocket upgrades enabled.
 
 The test Reception was deployed on 2026-10-28 in Frankfurt on Render's free plan:
-https://parvi-reception-desk.onrender.com. Enter
-`wss://parvi-reception-desk.onrender.com/relay/v1` in each native app.
+https://buffee-reception.onrender.com. Enter
+`wss://buffee-reception.onrender.com/relay/v1` in each native app.
 The service ID is `srv-dbgvjfui0phs73ablggg`; automatic deploys are disabled.
 Deploy a committed/pushed revision with the authorized Render CLI:
 
@@ -147,7 +147,7 @@ mix test
 cd ../..
 python tests/ReceptionDesk/relay-smoke.py --idle
 python tests/ReceptionDesk/tls-smoke.py
-python tests/ReceptionDesk/public-smoke.py wss://parvi-reception-desk.onrender.com/relay/v1
+python tests/ReceptionDesk/public-smoke.py wss://buffee-reception.onrender.com/relay/v1
 python tests/Windows/relay-ui-smoke.py
 ```
 

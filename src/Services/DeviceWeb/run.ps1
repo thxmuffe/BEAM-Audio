@@ -16,6 +16,7 @@ foreach ($project in @('src/control', 'src/Services/DeviceWeb')) {
         if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $project" }
     } finally { Pop-Location }
 }
+if ($args -contains '--build-only') { exit 0 }
 $paths = @()
 foreach ($project in @('control', 'DeviceWeb')) {
     $paths += Get-ChildItem "$root/builds/intermediates/$project/default/lib/*/ebin" -Directory | ForEach-Object { $_.FullName }

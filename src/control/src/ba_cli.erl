@@ -81,7 +81,7 @@ new_device(A,Root) ->
     Instance=binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(16))),
     Socket=filename:join("/tmp","ba-device-"++Instance++".sock"),
     Mode=case {Create,Join} of {true,_} -> <<"create">>;{_,undefined} -> <<"idle">>;_ -> <<"join">> end,
-    Desk=maps:get(desk,A,"wss://parvi-reception-desk.onrender.com/relay/v1"),
+    Desk=maps:get(desk,A,"wss://buffee-reception.onrender.com/relay/v1"),
     C0=#{instance => list_to_binary(Instance),name => list_to_binary(BaseName),socket => list_to_binary(Socket),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
         observer => maps:get(observer,A,false),invitation => case Join of undefined -> null;_ -> list_to_binary(Join) end},
     Candidate=case maps:find(web_assets,A) of

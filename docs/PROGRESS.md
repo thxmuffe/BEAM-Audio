@@ -1,5 +1,65 @@
 # Progress
 
+## 2026-11-11 — Web-first builds and Windows compatibility boundary
+
+OpenSound `build.ps1` defaults to `-Target Web`, compiling the current control and
+DeviceWeb applications plus web assets without native transport/audio packaging.
+`--build-only` avoids starting a Device/browser during that build. Windows wx
+packaging remains explicit via `-Target Windows` or its component builder.
+The wx builder now uses handlers/pcm, ba_stream_handler and the product-owned
+THIRD_PARTY file; the optional model-test path/calls match the renamed modules.
+
+Legacy means the older trusted Distributed Erlang cluster/control APIs, not
+wxErlang itself or all native code. Native Windows still needs those APIs until
+its model/commands migrate to ba_device_api; changing its runtime flag alone
+would break startup and snapshots. Web startup explicitly selects swarm_control
+and does not use that fallback. Do not delete compatibility modules or claim
+Windows migration finished merely because packaging succeeds. Prioritize the
+webapp/common backend; native Apple work is opt-in, not a gate for web iteration.
+
+Both the default web build and the native wx component builder pass on Windows.
+The latter produced OpenSound.exe with the explicit native_cluster profile,
+including launcher, WASAPI input and identity helpers. It was not launched or
+audio-tested; software compilation does not qualify physical audio.
+
+## 2026-11-11 — Reception replacement completed
+
+User explicitly authorized deleting and replacing the old service. New free
+Render service `srv-dbq59cmgekts73anho5g` is live at
+`https://buffee-reception.onrender.com`; its WebSocket endpoint is
+`wss://buffee-reception.onrender.com/relay/v1`. Deployed the old service's known
+working revision `f017376ddea41db7e616ce73233ccbda84e89a0e`, without publishing
+uncommitted local changes. Clone omitted the Dockerfile path and production
+secret; configured the correct root-context Dockerfile and a fresh secret, plus
+public bind/port. No secret values were printed or saved in project sources.
+
+Health returned HTTP 200. Two disposable Ed25519 identities authenticated over
+WSS; capability-addressed lookup and authenticated routing passed. Only then
+was old service `srv-dbgvjfui0phs73ablggg` deleted. A subsequent CLI service list
+shows only the new free service. App/core/CLI defaults, web fallback, smoke-test
+default and render.yaml use the new hostname; web assets rebuilt, all 10 existing
+frontend tests pass, modified CLI module compiles with warnings as errors.
+
+Restart/rebuild clients to pick up the new default. Existing invitation links
+embed the removed hostname and will no longer connect; create/share fresh Session
+invitations. No aliases or invitation records are stored in Reception. Existing
+local QR fix is included in rebuilt web assets; physical scanning is unqualified.
+
+## 2026-11-11 — Web QR proportions; Reception hostname blocked
+
+Web QR images now retain automatic proportional height when constrained to the
+dialog width; the flex container centers rather than stretches them. Increased
+the generated white margin from three to four QR modules. Static assets rebuild,
+JS syntax and diff checks pass; actual screen/scanning acceptance remains pending.
+
+The existing Render service was renamed but retains parvi-reception-desk as its
+public slug. CLI update exposes no slug option. Proposed replacement is a free
+clone named buffee-reception, retaining the old service for signed invitations.
+Automatic approval review rejected creation because a second persistent public
+service/deployment requires explicit approval and may affect routing/costs. No
+replacement was created and no application defaults were pointed at a nonexistent
+hostname. Ask for explicit approval before creating the replacement service.
+
 ## Compact self-contained invitation links — v4, 2026-11-11
 
 New/shared invitations use `beamaudio://session/v4?ticket=...`. The ticket is
