@@ -1,4 +1,4 @@
-%% Historical trusted-app/Distributed Erlang path; not the secure Swarm API.
+%% Historical trusted-app/Distributed Erlang path; not the secure Buffee API.
 %% Named runtime commands over ordinary admitted OTP connections. No UI dependency.
 -module(ba_node_api).
 -export([request/1, members/0, invitation/1]).
@@ -11,7 +11,7 @@ request(#{<<"op">> := <<"nodes">>}) -> {ok,#{nodes => members()}};
 request(#{<<"op">> := <<"inspect">>, <<"node">> := Node}) ->
     remote(Node,ba_node_diagnostics,snapshot,[],1000);
 request(#{<<"op">> := <<"clock">>, <<"node">> := Node}) ->
-    case remote(Node,ba_swarm_clock,status,[],1000) of
+    case remote(Node,ba_buffee_clock,status,[],1000) of
         {ok,Clock} -> {ok,maps:with([state,role,master,timeline,master_instance,coverage,revision,
                                    remaining_correction_ns,interval_ms,age_ns,requests_served,offset_ns,
                                    slew_ppm,round_trip_ns,measurement_uncertainty_ns,

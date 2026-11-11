@@ -1,7 +1,7 @@
 # BEAM Audio CLI — macOS
 
 `beamaudio` (also available as `beam-audio`) manages real, headless Devices: independent unnamed Erlang VMs using
-production Swarm control, clocks, OS audio and Device Handler automation. No
+production Buffee control, clocks, OS audio and Device Handler automation. No
 OpenSound UI is required. This first version runs/manages processes locally on
 macOS; it does not deploy or launch processes on remote machines.
 
@@ -26,13 +26,13 @@ building. Standalone release distribution and Windows launch support are later.
 ## Two Devices, no UI
 
 ```sh
-beamaudio new device --devicename test1 --createswarm --enable speaker
-swarm=$(beamaudio get swarm --devicename test1)
+beamaudio new device --devicename test1 --createbuffee --enable speaker
+buffee=$(beamaudio get buffee --devicename test1)
 invitation=$(beamaudio get invitation --devicename test1)
-beamaudio new device --devicename test2 --joinswarm "$invitation" --enable broadcast
+beamaudio new device --devicename test2 --joinbuffee "$invitation" --enable broadcast
 beamaudio wait device --devicename test1,test2 --until audio-flowing --timeout 120s
 beamaudio inspect device --devicename test1
-beamaudio inspect swarm --swarmid "$swarm"
+beamaudio inspect buffee --buffeeid "$buffee"
 beamaudio stop device --all
 ```
 
@@ -42,10 +42,10 @@ and plays eligible remote Sources; `mic` captures/publishes the microphone;
 capabilities are enabled on a new identity. For an existing identity, omitting
 `--enable` restores its saved capability settings; explicit `--enable` replaces
 those settings as one history edit. An idle Device opens no hardware until work
-in a Swarm is eligible. You can
-start an idle Device by omitting both Swarm flags. Use `--desk ws://127.0.0.1:PORT/relay/v1`
+in a Buffee is eligible. You can
+start an idle Device by omitting both Buffee flags. Use `--desk ws://127.0.0.1:PORT/relay/v1`
 when deliberately using a local Reception; otherwise the existing shared Reception is used.
-A Swarm ID identifies a gathering; its invitation is the admission credential.
+A Buffee ID identifies a gathering; its invitation is the admission credential.
 
 Mic permission is requested by the native binding when capture actually starts,
 with a usage description embedded in the CLI helper. System capture also needs
@@ -95,8 +95,8 @@ remote participant's scoped capabilities through a local Device:
 beamaudio inspect device --devicename test1 --deviceid PUBLIC_DEVICE_ID
 ```
 
-Swarm inspection returns available authorized local views, not a global lookup;
-use `--devicename` to select one. A Swarm ID alone grants no access. There is no
+Buffee inspection returns available authorized local views, not a global lookup;
+use `--devicename` to select one. A Buffee ID alone grants no access. There is no
 remote shell/eval, arbitrary OTP RPC or Distributed Erlang control channel.
 
 The old Inspector is unchanged and explicitly available under:
@@ -106,9 +106,9 @@ beamaudio inspect legacy --help
 ```
 
 It still needs its own Inspector build and uses the historical trusted profile.
-Modern `inspect device/swarm` never delegates to it.
+Modern `inspect device/buffee` never delegates to it.
 
-## Live Swarm monitor
+## Live Buffee monitor
 
 Unexpected exceptions caught by the foreground CLI now go to OTP Logger on
 stderr, with an exception tag and source locations. They are separate from the
@@ -123,7 +123,7 @@ beamaudio monitor --all --devicename OpenSound
 ```
 
 With an explicit Device name the monitor attaches to that Device's existing API,
-creates no observer or Swarm, and follows its current Create/Join/Leave state.
+creates no observer or Buffee, and follows its current Create/Join/Leave state.
 Idle Devices appear as idle; absence of an audio Handler is not shown as playback.
 The monitor does not change that Device's audio consent. Without `--devicename`,
 the invitation/independent-observer workflow below remains available.
@@ -134,10 +134,10 @@ beamaudio monitor --all
 
 The default invitation file is `builds/CLI/private/monitor-invitation.txt`, private
 mode 0600 under an ignored mode-0700 directory. Invitations are forwardable: the same valid link can admit multiple Devices
-and the monitor into the live Swarm. Time expiry is currently disabled, including
+and the monitor into the live Buffee. Time expiry is currently disabled, including
 for old signed links. Using a link does not consume it. You can instead supply `--invitation-file PATH`. Do not commit invitation
 files. The monitor verifies the ticket and uses an independent named
-`ba-monitor-SWARM_ID` identity. It never creates a Swarm as a fallback.
+`ba-monitor-BUFFEE_ID` identity. It never creates a Buffee as a fallback.
 
 This is an ordinary admitted, audio-disabled Device using the existing Reception,
 signed control sessions and `capabilities_read` permission. It subscribes to no
@@ -147,9 +147,9 @@ Adding the observer is a real membership change and may reset existing control
 sessions under the currently documented membership-churn behavior.
 
 Startup prints a connecting message immediately, then admission progress or an
-explicit failure. If the saved Captain is offline, keep it online; if that Swarm
+explicit failure. If the saved Owner is offline, keep it online; if that Buffee
 ended or was replaced, supply a valid invitation for the current gathering.
-A saved invitation cannot discover or resurrect a different Swarm.
+A saved invitation cannot discover or resurrect a different Buffee.
 
 The table groups channels under one Device name with a separator after each
 Device. Running channels are green, disabled ones grey, and failures red; disabled
@@ -157,7 +157,7 @@ channels omit unused meter columns. Colours are used only in a terminal and can
 be disabled with `NO_COLOR=1`; JSON and redirected output remain uncoloured.
 
 Updated apps pass the OS Device name to OTP; named CLI Devices advertise their
-configured name and the observer advertises “Swarm monitor”. The name travels
+configured name and the observer advertises “Buffee monitor”. The name travels
 only in the existing signed opt-in diagnostic reply. Plain capability replies
 remain unchanged. Contact labels are used when a peer has no advertised name,
 otherwise an ID appears once as a fallback. A short ID is appended only when
@@ -165,7 +165,7 @@ Device names collide. Names are retained across temporary read failures.
 
 Name reporting requires rebuilt apps and a restarted observer runtime, not just
 restarting the foreground display. Stop only the observer with
-`beamaudio stop device --devicename ba-monitor-SWARM_ID`, then rerun
+`beamaudio stop device --devicename ba-monitor-BUFFEE_ID`, then rerun
 `beamaudio monitor --all`; keep audio Devices running. Older builds still work
 with ID fallback. The first plain diagnostic frame may precede name reporting;
 continuous mode requests extended diagnostics on following frames. On iOS 16+
@@ -182,7 +182,7 @@ ticket and stable identity only while the ticket and gathering remain valid.
 Revoked credentials or an ended gathering require fresh admission, not
 restoration of cached permissions. A Device can start a fresh gathering from the
 same reusable link; the observer itself waits for a Device to do so.
-`stop device --devicename ba-monitor-SWARM_ID`
+`stop device --devicename ba-monitor-BUFFEE_ID`
 leaves the gathering; `stop device --all` includes managed observers.
 
 Updated diagnostic replies also include `audio_diagnostics`: a bounded flat map
@@ -228,8 +228,8 @@ also verify the recorded instance. Do not copy an identity into simultaneous VMs
 
 `stop device --devicename test1,test2` leaves/ends gatherings and waits for local
 teardown; `kill device ...` explicitly terminates the verified runtime process.
-`--all` affects only this CLI's managed names. Stopping Captain ends its Swarm.
-Names/identity and Device audio settings/history remain. Live Swarm state is
+`--all` affects only this CLI's managed names. Stopping Owner ends its Buffee.
+Names/identity and Device audio settings/history remain. Live Buffee state is
 not saved. Run `new device` again under that name without `--enable` to resume
 settings in a new idle runtime; provide fresh creation/join flags when needed.
 `start device` and saved group-startup recipes are not implemented.
@@ -253,8 +253,8 @@ small revision/consent/history summary; `history` includes entries.
 There is no Git/database/event broker. Save failure reports an error and does not
 apply new settings. Hardware failure is separate observed state; desired intent
 and its undo history remain available. Shared Offset, contacts, ephemeral
-exclusions and Swarm membership are not in Device audio history. Saved intent
-cannot revive a Swarm, bypass OS permissions or restore packet/clock state.
+exclusions and Buffee membership are not in Device audio history. Saved intent
+cannot revive a Buffee, bypass OS permissions or restore packet/clock state.
 
 An externally killed VM may leave `running.json`/`launch.json` and its socket.
 Duplicate/stale records are rejected rather than risking two VMs sharing an
@@ -274,7 +274,7 @@ physical alignment remain open.
 
 ```sh
 python3 tests/control/cli-smoke.py
-python3 tests/control/cli-swarm-smoke.py
+python3 tests/control/cli-buffee-smoke.py
 python3 tests/control/cli-config-smoke.py
 ```
 
@@ -289,7 +289,7 @@ CLI/native helpers compile. Real mic/speaker/broadcast, OS permissions, sustaine
 media, interruptions and scheduling/listening remain user acceptance checks.
 
 The configuration smoke starts only an idle Device: toggling saved mic intent in
-that fixture never starts capture or creates a Swarm. It checks persistence and
+that fixture never starts capture or creates a Buffee. It checks persistence and
 undo/redo across real VM restarts. Seven configuration unit tests cover history
 bounds, no-ops, branching, stale revision/retry, internal setter ownership and save
 failure; no hardware use is implied.

@@ -1,4 +1,4 @@
-%% Console projection of ordinary Swarm-member observations. No PCM or audio I/O.
+%% Console projection of ordinary Buffee-member observations. No PCM or audio I/O.
 -module(ba_cli_monitor).
 -export([run/2,run_local/1,render/1,render/2,invitation_path/2]).
 %% Embedded launchers use the same monitor loop without a second Device/socket.
@@ -15,10 +15,10 @@ run(A,Root) ->
     Name=case maps:find(devicename,A) of
         {ok,Selected} ->
             _=ba_cli:request(Selected,#{<<"method">> => <<"snapshot">>}),
-            io:format(standard_error,"Monitoring local Device ~s and its current Swarm. Ctrl-C exits this view.~n",[Selected]),
+            io:format(standard_error,"Monitoring local Device ~s and its current Buffee. Ctrl-C exits this view.~n",[Selected]),
             Selected;
         error ->
-            io:put_chars(standard_error,"Connecting Swarm monitor (audio stays disabled)...\n"),
+            io:put_chars(standard_error,"Connecting Buffee monitor (audio stays disabled)...\n"),
             Observer=choose(A,Root),
             io:format(standard_error,"Monitoring through Device ~s. Audio disabled. Ctrl-C exits this view; Device stays connected.~n",[Observer]),
             Observer
@@ -27,19 +27,19 @@ run(A,Root) ->
 choose(A,Root) ->
     Path=invitation_path(A,Root),
     Parsed=case file:read_file(Path) of
-        {ok,B} -> Link=string:trim(B),try {_,I}=ba_swarm_passport:parse_invitation(Link),{Link,I} catch _:_ -> invalid end;
+        {ok,B} -> Link=string:trim(B),try {_,I}=ba_buffee_passport:parse_invitation(Link),{Link,I} catch _:_ -> invalid end;
         _ -> invalid
     end,
     case Parsed of
         {Invitation,Body} ->
-            Id=maps:get(<<"swarm">>,Body),Name="ba-monitor-"++binary_to_list(Id),
+            Id=maps:get(<<"buffee">>,Body),Name="ba-monitor-"++binary_to_list(Id),
             ensure(Name,Invitation,Id,A,Root),Name;
         invalid ->
             Candidates=case maps:find(devicename,A) of {ok,Selected} -> [Selected];error -> [Candidate || Candidate <- ba_cli_store:names(),lists:prefix("ba-monitor-",Candidate)] end,
             Live=[N || N <- Candidates,live_observer(N)],
             case Live of
                 [N] -> io:put_chars(standard_error,"Using existing authorized observer; no new invitation is required.\n"),N;
-                [] -> fail(<<"No active observer or valid saved invitation. Supply a fresh --invitation-file. No Swarm was created.">>);
+                [] -> fail(<<"No active observer or valid saved invitation. Supply a fresh --invitation-file. No Buffee was created.">>);
                 _ -> fail(<<"Several observers are active. Select one with --devicename or a valid --invitation-file.">>)
             end
     end.
@@ -47,25 +47,25 @@ live_observer(Name) ->
     try
         R=ba_cli:request(Name,#{<<"method">> => <<"snapshot">>}),
         maps:get(<<"observer">>,maps:get(<<"managed">>,R),false) andalso
-        maps:get(<<"state">>,maps:get(<<"swarm">>,R))=:=<<"authorized">>
+        maps:get(<<"state">>,maps:get(<<"buffee">>,R))=:=<<"authorized">>
     catch _:_ -> false end.
 
 invitation_path(A,Root) -> maps:get(invitation_file,A,filename:join([Root,"builds/CLI/private/monitor-invitation.txt"])).
 ensure(Name,Link,Id,A,Root) ->
     case ba_cli_store:read(Name) of
         {error,not_running} ->
-            ba_cli:new_device(#{devicename => Name,enable => "",createswarm => false,joinswarm => binary_to_list(Link),
+            ba_cli:new_device(#{devicename => Name,enable => "",createbuffee => false,joinbuffee => binary_to_list(Link),
                 observer => true,until => "admitted",timeout => maps:get(timeout,A,"120s")},Root),ok;
         {ok,_} ->
             R=ba_cli:request(Name,#{<<"method">> => <<"snapshot">>}),
             case maps:get(<<"observer">>,maps:get(<<"managed">>,R),false) of true -> ok;false -> fail(<<"Reserved monitor name is owned by a non-observer Device.">>) end,
-            Swarm=maps:get(<<"swarm">>,R),
-            case {maps:get(<<"state">>,Swarm),maps:get(<<"swarm">>,Swarm,null)} of
-                {<<"idle">>,_} -> ba_cli:request(Name,#{<<"method">> => <<"join_swarm">>,<<"invitation">> => Link});
+            Buffee=maps:get(<<"buffee">>,R),
+            case {maps:get(<<"state">>,Buffee),maps:get(<<"buffee">>,Buffee,null)} of
+                {<<"idle">>,_} -> ba_cli:request(Name,#{<<"method">> => <<"join_buffee">>,<<"invitation">> => Link});
                 {<<"authorized">>,Id} -> ok;
                 {_,Id} ->
-                    ba_cli:request(Name,#{<<"method">> => <<"leave_swarm">>}),
-                    ba_cli:request(Name,#{<<"method">> => <<"join_swarm">>,<<"invitation">> => Link});
+                    ba_cli:request(Name,#{<<"method">> => <<"leave_buffee">>}),
+                    ba_cli:request(Name,#{<<"method">> => <<"join_buffee">>,<<"invitation">> => Link});
                 _ -> fail(<<"Monitor belongs to another live gathering. Stop it before changing invitations.">>)
             end,
             await_admission(Name,erlang:monotonic_time(millisecond)+ba_cli:timeout(A),undefined);
@@ -78,9 +78,9 @@ await_admission(Name,Until,LastState) ->
         true -> ok;
         false ->
             case State of
-                <<"idle">> -> fail(<<"The saved gathering is no longer active. Supply a valid invitation from the current Swarm (--invitation-file PATH).">>);
-                <<"revoked">> -> fail(<<"Admission was denied. Check revocation and that the Captain is online.">>);
-                <<"ended">> -> fail(<<"The saved Swarm ended. A new Swarm needs a valid invitation.">>);
+                <<"idle">> -> fail(<<"The saved gathering is no longer active. Supply a valid invitation from the current Buffee (--invitation-file PATH).">>);
+                <<"revoked">> -> fail(<<"Admission was denied. Check revocation and that the Owner is online.">>);
+                <<"ended">> -> fail(<<"The saved Buffee ended. A new Buffee needs a valid invitation.">>);
                 _ -> ok
             end,
             case State=:=LastState of
@@ -88,7 +88,7 @@ await_admission(Name,Until,LastState) ->
                 false -> io:format(standard_error,"Waiting for admission (~ts); checking the saved invitation's gathering...~n",[safe(State)])
             end,
             case erlang:monotonic_time(millisecond)>=Until of
-                true -> fail(<<"Timed out joining the saved Swarm. Keep its Captain online or supply a fresh invitation from the current Swarm.">>);
+                true -> fail(<<"Timed out joining the saved Buffee. Keep its Owner online or supply a fresh invitation from the current Buffee.">>);
                 false -> receive after 250 -> ok end,await_admission(Name,Until,State)
             end
     end.
@@ -127,8 +127,8 @@ loop(Name,A,Metrics,Plain,Instances,Names) ->
     end.
 render(Data) -> render(Data,false).
 render(Data,Color) ->
-    Swarm=maps:get(<<"swarm">>,Data),Rows=maps:get(<<"devices">>,Data),
-    Header=io_lib:format("Buffee: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Swarm,<<>>)),safe(maps:get(<<"swarm">>,Swarm,<<>>)),safe(maps:get(<<"state">>,Data))]),
+    Buffee=maps:get(<<"buffee">>,Data),Rows=maps:get(<<"devices">>,Data),
+    Header=io_lib:format("Buffee: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Buffee,<<>>)),safe(maps:get(<<"buffee">>,Buffee,<<>>)),safe(maps:get(<<"state">>,Data))]),
     Names=[device_name(R) || R <- Rows],
     [Header,"  CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
      [row_lines(R,Color,length([N || N <- Names,N=:=device_name(R)])>1) || R <- Rows],

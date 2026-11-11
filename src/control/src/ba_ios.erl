@@ -16,8 +16,8 @@ main() ->
     end,
     CA = filename:join(code:root_dir(), "cacerts.pem"),
     case filelib:is_file(CA) of true -> application:set_env(ba_core, relay_cacertfile, CA); false -> ok end,
-    %% The embedded app is always an unnamed, scoped Swarm Device.
-    {ok,swarm_control} = application:get_env(ba_core,runtime_profile),
+    %% The embedded app is always an unnamed, scoped Buffee Device.
+    {ok,buffee_control} = application:get_env(ba_core,runtime_profile),
     {ok, _} = application:ensure_all_started(crypto),
     resolve_ice_servers(),
     {ok, _} = application:ensure_all_started(ba_core),
@@ -69,6 +69,6 @@ serve(Socket) ->
         {error, _} ->
             %% Do not call init:stop: the VM shares the native app process.
             gen_tcp:close(Socket),
-            ba_swarm:disconnect(),
+            ba_buffee:disconnect(),
             ok
     end.

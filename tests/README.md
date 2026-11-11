@@ -1,13 +1,13 @@
 # Integration checks
 
-`python3 tests/control/swarm-control-smoke.py` checks the step-2–4 secure Swarm
+`python3 tests/control/buffee-control-smoke.py` checks the step-2–4 secure Buffee
 profile using two disposable non-distributed command-line runtimes and the
 existing public Reception. It never launches a product app or loads saved
-Swarm/subscription state. It verifies authenticated capability reads and local
+Buffee/subscription state. It verifies authenticated capability reads and local
 consent visibility and the bounded test-job Contract/acceptance/result lifecycle,
 while arbitrary remote Worker start stays forbidden. It also checks expiry,
-Worker failure and lease-bounded cleanup after Director loss. See
-[the protocol guide](../docs/SWARM_CONTROL_PROTOCOL.md)
+Worker failure and lease-bounded cleanup after Manager loss. See
+[the protocol guide](../docs/BUFFEE_CONTROL_PROTOCOL.md)
 for compilation and checks. Network access is required.
 
 Existing checks spanning runtime processes, apps or services live here. These
@@ -18,7 +18,7 @@ Reception; run the relevant check deliberately after building its components.
 | --- | --- |
 | `control/` | Two local BEAM nodes through `smoke.escript` |
 | `Windows/` | Packaged runtime, UI reload and relay checks; Erlang probe helpers |
-| `macOS/` | Packaged runtime, swarms and public-relay checks |
+| `macOS/` | Packaged runtime, buffees and public-relay checks |
 | `ReceptionDesk/` | Directory, relay, TLS, release and public-service checks |
 | `transport/` | WebRTC carrier, OTP distribution and trust checks |
 

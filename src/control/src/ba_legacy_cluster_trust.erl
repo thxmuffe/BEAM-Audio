@@ -1,4 +1,4 @@
-%% Historical trusted-app/Distributed Erlang path; not the secure Swarm API.
+%% Historical trusted-app/Distributed Erlang path; not the secure Buffee API.
 %% Native trust boundary. Durable membership is separate from live grants.
 -module(ba_legacy_cluster_trust).
 -behaviour(gen_server).
@@ -314,7 +314,7 @@ checkpoint(#{policy := Public, owner := Owner} = S) ->
     end,
     ets:insert(?MODULE, {policy, Public}),
     ba_events:notify(policy),
-    case whereis(ba_swarm_clock) of undefined -> ok; Clock -> Clock ! membership_changed end,
+    case whereis(ba_buffee_clock) of undefined -> ok; Clock -> Clock ! membership_changed end,
     Owner ! {trust, policy_changed}, S.
 
 restore_policy(Id) ->

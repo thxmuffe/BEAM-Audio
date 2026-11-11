@@ -30,8 +30,8 @@ int main(int argc, char **argv) {
         }
         if (!lease) return 1;
     }
-    if (slot == 1) wcscpy_s(target, 256, L"org.opensound.parvi.native-identity/device-v1");
-    else swprintf_s(target, 256, L"org.opensound.parvi.native-identity/device-v1-%u", slot);
+    if (slot == 1) wcscpy_s(target, 256, L"org.opensound.beamaudio.native-identity/device-v1");
+    else swprintf_s(target, 256, L"org.opensound.beamaudio.native-identity/device-v1-%u", slot);
     if (CredReadW(target, CRED_TYPE_GENERIC, 0, &saved)) {
         if (saved->CredentialBlobSize != sizeof(seed)) { CredFree(saved); return 1; }
         memcpy(seed, saved->CredentialBlob, sizeof(seed));

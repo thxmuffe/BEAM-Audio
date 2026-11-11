@@ -29,14 +29,14 @@ capture(Position, Codec, S) ->
         #{anchor_host_ns := Anchor, anchor_position := AnchorPosition, clock_offset_ns := Offset}
                 when Continuous ->
             Mono = Anchor + Offset + (Position-AnchorPosition)*1000000000 div 48000,
-            case ba_swarm_clock:from_monotonic(Mono) of
+            case ba_buffee_clock:from_monotonic(Mono) of
                 {ok, Time} -> Time;
                 _ -> null
             end;
         _ -> null
     end,
     Codec#{sample_position => Position, sample_rate => 48000,
-           estimated_capture_time_ns => Capture, clock => ba_swarm_clock:id(),
+           estimated_capture_time_ns => Capture, clock => ba_buffee_clock:id(),
            continuous => Continuous, capture_segment => maps:get(segment,S,0),
            segment_start_position => Start,
            capture_host_residual_ns => maps:get(capture_host_residual_ns,S,0),
@@ -71,7 +71,7 @@ output_report(Stats,Clock) ->
            <<"outputRenderStatus">> := 0}, #{offset_ns := Offset}}
                 when is_integer(Host), is_integer(Observed), is_integer(Now),
                      Now >= Observed, Now-Observed < 2000000000 ->
-            case ba_swarm_clock:from_monotonic(Host+Offset) of
+            case ba_buffee_clock:from_monotonic(Host+Offset) of
                 {ok,Time} -> Base#{<<"output_timing_status">> => <<"callback_mapped_uncompensated">>,
                                   <<"output_render_time_ns">> => Time,
                                   <<"output_render_age_ms">> => (Now-Observed)/1000000};
@@ -100,7 +100,7 @@ track_report(Timeline, Stats, Clock) ->
                 true ->
                     AfterBoundary = maps:get(sample_position,Timeline,0)+Delta >=
                         maps:get(segment_start_position,Timeline,0),
-                    case {AfterBoundary,ba_swarm_clock:from_monotonic(TrackHost + Offset)} of
+                    case {AfterBoundary,ba_buffee_clock:from_monotonic(TrackHost + Offset)} of
                         {true,{ok, Delivery}} ->
                             SampleCapture = Capture + Delta * 1000000000 div 48000,
                             Base#{<<"capture_timing_status">> => <<"available">>,

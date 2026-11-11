@@ -1,4 +1,4 @@
-%% Capability-addressed relay. No swarms or chat histories live here.
+%% Capability-addressed relay. No buffees or chat histories live here.
 -module(ba_reception_sessions).
 -behaviour(gen_server).
 -export([start_link/0, attach/2, command/3]).
@@ -33,22 +33,22 @@ handle_info(sweep, S) ->
     {noreply, maps:filter(fun(_, E) -> is_pid(maps:get(pid, E)) orelse now_ms() - maps:get(seen, E) < 300000 end, S)};
 handle_info(_, S) -> {noreply, S}.
 
-%% Capability-scoped discovery only: no Captain election, claim or durable room.
+%% Capability-scoped discovery only: no Owner election, claim or durable room.
 %% More than one live owner may advertise the same address.
 route(_, #{pid := Pid}, #{<<"op">> := <<"lookup">>, <<"request">> := Request,
-                         <<"mailbox">> := Cap, <<"swarm">> := Swarm}, S) ->
-    case hex(Request,32) andalso hex(Cap,32) andalso hex(Swarm,32) of
+                         <<"mailbox">> := Cap, <<"buffee">> := Buffee}, S) ->
+    case hex(Request,32) andalso hex(Cap,32) andalso hex(Buffee,32) of
         true ->
             Owners=lists:sublist(lists:sort([Id || {Id,#{pid := Owner,boxes := Boxes}} <- maps:to_list(S),
-                is_pid(Owner),is_process_alive(Owner),maps:get(Cap,Boxes,undefined)=:=Swarm]),16),
+                is_pid(Owner),is_process_alive(Owner),maps:get(Cap,Boxes,undefined)=:=Buffee]),16),
             Pid ! {relay,#{op => <<"found">>,request => Request,owners => Owners}},
             {ok,S};
         false -> {{error,invalid_lookup},S}
     end;
-route(Id, #{boxes := Boxes} = E, #{<<"op">> := <<"open">>, <<"mailbox">> := Cap, <<"swarm">> := Swarm}, S)
+route(Id, #{boxes := Boxes} = E, #{<<"op">> := <<"open">>, <<"mailbox">> := Cap, <<"buffee">> := Buffee}, S)
         when map_size(Boxes) < 64; is_map_key(Cap, Boxes) ->
-    case hex(Cap, 32) andalso hex(Swarm, 32) of
-        true -> {ok, S#{Id := E#{boxes := Boxes#{Cap => Swarm}}}};
+    case hex(Cap, 32) andalso hex(Buffee, 32) of
+        true -> {ok, S#{Id := E#{boxes := Boxes#{Cap => Buffee}}}};
         false -> {{error, invalid_mailbox}, S}
     end;
 route(Id, #{boxes := Boxes} = E, #{<<"op">> := <<"close">>, <<"mailbox">> := Cap}, S) ->
@@ -59,11 +59,11 @@ route(Id, E, #{<<"op">> := <<"watch">>, <<"nodes">> := Nodes}, S) when is_list(N
         false -> {{error, invalid_nodes}, S}
     end;
 route(From, _, #{<<"op">> := <<"send">>, <<"to">> := To, <<"mailbox">> := Cap,
-                <<"payload">> := #{<<"swarm">> := Swarm} = Payload} = Msg, S) ->
+                <<"payload">> := #{<<"buffee">> := Buffee} = Payload} = Msg, S) ->
     case maps:find(To, S) of
         {ok, #{pid := Pid, boxes := Boxes}} when is_pid(Pid) ->
             case maps:find(Cap, Boxes) of
-                {ok, Swarm} ->
+                {ok, Buffee} ->
                     case process_info(Pid, message_queue_len) of
                         {message_queue_len, N} when N < 256 ->
                             Pid ! {relay, #{op => <<"delivery">>, from => From, mailbox => Cap, payload => Payload}}, {ok, S};

@@ -14,7 +14,7 @@ HERE=Path(__file__).resolve().parent
 def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path)
     m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
-control=load('control',HERE/'swarm-control-smoke.py')
+control=load('control',HERE/'buffee-control-smoke.py')
 relay=load('relay',HERE.parent/'ReceptionDesk/relay-smoke.py')
 relay.ERL=Path(shutil.which('erl'))
 
@@ -28,8 +28,8 @@ def wait_audio(r,predicate):
     raise AssertionError('Audio did not converge: '+str(s))
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--swarm-time",action="store_true")
-    parser.add_argument('--ephemeral',action='store_true',help='Contacts/group invitations, live PCM, leave/end, cold restart and Captain-loss teardown')
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--buffee-time",action="store_true")
+    parser.add_argument('--ephemeral',action='store_true',help='Contacts/group invitations, live PCM, leave/end, cold restart and Owner-loss teardown')
     parser.add_argument('--opus',action='store_true',help='Exercise the configured GStreamer decoder, no hardware')
     parser.add_argument('--sustained',action='store_true',help='Continuous PCM capture at the default 1000ms Offset, then reference restart/rebind')
     parser.add_argument('--renewal',action='store_true',help='Continuous two-source lease renewal proof; returns before lifecycle checks')
@@ -43,12 +43,12 @@ def main():
     paths+=list((root/'builds/intermediates/BeamTransport/dev/lib').glob('*/ebin'))
     paths+=list((root/'builds/intermediates/tools/elixir/lib').glob('*/ebin'))
     assert any(p.parent.name=='ex_webrtc' for p in paths),'Compile the existing BeamTransport first'
-    out=root/'builds/intermediates/swarm-control-check';out.mkdir(parents=True,exist_ok=True)
+    out=root/'builds/intermediates/buffee-control-check';out.mkdir(parents=True,exist_ok=True)
     fixture=out/'opus-fixture.bin'
     if args.opus:
         subprocess.run([os.environ['BA_GSTREAMER_PYTHON'],str(HERE/'opus-fixture.py'),str(fixture)],check=True)
     subprocess.run([shutil.which('erlc'),'-Werror','-o',str(out),
-        str(HERE/'ba_swarm_control_probe.erl'),str(HERE/'ba_audio_stream_probe.erl')],check=True)
+        str(HERE/'ba_buffee_control_probe.erl'),str(HERE/'ba_audio_stream_probe.erl')],check=True)
     runtimes=[];desk=None
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
     try:
@@ -64,7 +64,7 @@ def main():
         a,b,c=[control.Runtime([out,*paths],executable=executable,extra_env=extra_env) for _ in range(3)]
         runtimes.extend([a,b,c])
         for r in runtimes:assert r.request('renewal_prepare',lease_ms=args.lease_ms)['ok']
-        if args.swarm_time:
+        if args.buffee_time:
             for r in runtimes:assert r.request('clock_prepare',interval_ms=250,samples=3)['ok']
         assert a.request('create',desks=[url])['ok']
         control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
@@ -73,14 +73,14 @@ def main():
             for r,name in ((b,'Receiver'),(c,'Second publisher')):
                 assert a.request('put_contact',id=r.identity['id'],name=name)['ok']
             assert a.request('group_contacts',name='Session',ids=[b.identity['id'],c.identity['id']])['ok']
-            links=a.request('invite_swarm',selection={'group':'Session'})['value']
+            links=a.request('invite_buffee',selection={'group':'Session'})['value']
             invitations={entry['device']:entry['invitation'] for entry in links}
         for r in (b,c):
             invitation=invitations[r.identity['id']] if args.ephemeral else a.request('invite')['value']
             assert r.request('join',invitation=invitation,desk=url)['ok']
             control.wait(r,lambda s:s['membership']['state']=='authorized')
         permissions=['status_read','stream_read','stream_subscribe']
-        if args.swarm_time:
+        if args.buffee_time:
             permissions=['offset_write',*permissions,'time_read']
             assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
         assert a.request('grant',peer=b.identity['id'],permissions=permissions)['ok']
@@ -92,7 +92,7 @@ def main():
                 assert b.request('connect',peer=r.identity['id'])['ok']
             control.wait(b,lambda s:s['sessions'].get(r.identity['id'],{}).get('stage')=='authorized')
             control.wait(r,lambda s:s['sessions'].get(b.identity['id'],{}).get('stage')=='authorized')
-        if args.swarm_time:
+        if args.buffee_time:
             for r in runtimes:
                 deadline=time.monotonic()+20
                 while time.monotonic()<deadline:
@@ -107,7 +107,7 @@ def main():
                     if r.request('clock_snapshot')['offset_policy']['offset_ms']==250:break
                     time.sleep(.05)
                 else:raise AssertionError('Offset did not reach publisher')
-        for r in runtimes:assert r.request('swarm_audio_prepare' if args.swarm_time else 'audio_prepare')['ok']
+        for r in runtimes:assert r.request('buffee_audio_prepare' if args.buffee_time else 'audio_prepare')['ok']
         def publish(r,key,format,channels):
             return r.request('publish_opus',source=key,fixture=str(fixture)) if args.opus else r.request('publish',source=key,format=format,channels=channels)
         assert publish(a,'music','pcm16_le',1)['ok']
@@ -127,7 +127,7 @@ def main():
         for i in subscriptions:assert b.request('audio_play',id=i,playing=True)['ok']
         if args.renewal:
             assert not args.opus,'PCM is used for exact continuous frame/mix accounting'
-            if args.swarm_time:
+            if args.buffee_time:
                 assert b.request('offset_set',offset_ms=args.offset_ms)['ok']
                 for r in runtimes:
                     end=time.monotonic()+10
@@ -139,7 +139,7 @@ def main():
             start=time.monotonic()
             for n in range(args.seconds*50):
                 for r,key,value in ((a,'music',.25),(c,'microphone',.5)):
-                    if args.swarm_time:
+                    if args.buffee_time:
                         reply=r.request('capture_source',source=key,capture_ns=target-args.offset_ms*1_000_000+n*20_000_000,value=value,frames=960)
                         assert reply['send_errors']==0,reply
                     else:
@@ -153,7 +153,7 @@ def main():
                         assert b.request('audio_contract',direction='receive',peer=r.identity['id'],source=key,contract=contract)['ok']
                 time.sleep(max(0,start+(n+1)*.02-time.monotonic()))
             if args.deny_renewal:
-                assert not args.swarm_time,'Keep the independent test clock fresh to isolate authorization expiry'
+                assert not args.buffee_time,'Keep the independent test clock fresh to isolate authorization expiry'
                 for r in runtimes:assert r.request('block_handshakes')['ok']
                 time.sleep(args.lease_ms/1000+.5)
                 stopped=b.request('audio_snapshot')
@@ -208,7 +208,7 @@ def main():
                 assert abs(blocks[0]['target_ns']-target)<22000,blocks[0]
                 return blocks
             for r,key,value in ((a,'music',.25),(c,'microphone',.5)):
-                if args.swarm_time:
+                if args.buffee_time:
                     reply=r.request('capture_source',source=key,capture_ns=target-250_000_000,value=value,frames=960)
                     if first:assert reply.get('blocks')==1 and reply['send_errors']==0,reply
                 else:
@@ -227,22 +227,22 @@ def main():
                 end=time.monotonic()+timeout
                 while time.monotonic()<end:
                     state=r.request('lifecycle')
-                    if state['swarm']=={'state':'idle'}:
+                    if state['buffee']=={'state':'idle'}:
                         assert state['live']==[] and not state['transient_state'] and state['connections']==0,state
                         return
                     time.sleep(.1)
-                raise AssertionError(('Swarm did not terminate',state))
-            swarm=a.request('swarm_status')['swarm']
+                raise AssertionError(('Buffee did not terminate',state))
+            buffee=a.request('buffee_status')['buffee']
             address_book=a.request('list_contacts')
-            assert b.request('end_swarm')=={'error':'captain_only'}
-            assert b.request('leave_swarm')['ok'];idle(b)
+            assert b.request('end_buffee')=={'error':'owner_only'}
+            assert b.request('leave_buffee')['ok'];idle(b)
             control.wait(a,lambda s:b.identity['id'] not in s['membership']['members'])
-            assert a.request('swarm_status')['swarm']==swarm
+            assert a.request('buffee_status')['buffee']==buffee
             # A new invitation allows an explicit return to the still-live gathering.
-            link=a.request('invite_swarm',selection=[b.identity['id']])['value'][0]['invitation']
-            assert b.request('join_swarm',invitation=link)['ok']
+            link=a.request('invite_buffee',selection=[b.identity['id']])['value'][0]['invitation']
+            assert b.request('join_buffee',invitation=link)['ok']
             control.wait(b,lambda s:s['membership']['state']=='authorized')
-            assert a.request('end_swarm')['ok']
+            assert a.request('end_buffee')['ok']
             for r in runtimes:idle(r)
             assert a.request('list_contacts')==address_book
             for r in runtimes:
@@ -254,25 +254,25 @@ def main():
             runtimes.append(a);idle(a)
             assert a.identity['id']==identity and a.request('list_contacts')==address_book
             assert a.request('create',desks=[url])['ok']
-            assert a.request('swarm_status')['swarm']!=swarm
+            assert a.request('buffee_status')['buffee']!=buffee
             control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
             # A ticket from the ended gathering never restores its old identity.
-            assert b.request('join_swarm',invitation=link)['ok']
-            assert b.request('swarm_status')['swarm']==swarm
+            assert b.request('join_buffee',invitation=link)['ok']
+            assert b.request('buffee_status')['buffee']==buffee
             time.sleep(.5)
-            assert b.request('swarm_status')['state']!='authorized'
-            assert b.request('leave_swarm')['ok'];idle(b)
-            link=a.request('invite_swarm',selection=[b.identity['id']])['value'][0]['invitation']
-            assert b.request('join_swarm',invitation=link)['ok']
+            assert b.request('buffee_status')['state']!='authorized'
+            assert b.request('leave_buffee')['ok'];idle(b)
+            link=a.request('invite_buffee',selection=[b.identity['id']])['value'][0]['invitation']
+            assert b.request('join_buffee',invitation=link)['ok']
             control.wait(b,lambda s:s['membership']['state']=='authorized')
-            # Loss of the Captain is terminal: no election or restored snapshot.
-            assert a.request('crash_swarm')['ok'];idle(a)
+            # Loss of the Owner is terminal: no election or restored snapshot.
+            assert a.request('crash_buffee')['ok'];idle(a)
             idle(b,70)
             assert a.request('list_contacts')==address_book
-            print('PASS: saved group invitations, voluntary join/leave and return, real two-source PCM, Captain end and crash/lease expiry, full process/ETS/Desk teardown, new Swarm ID and contacts surviving cold restart; no apps or hardware')
+            print('PASS: saved group invitations, voluntary join/leave and return, real two-source PCM, Owner end and crash/lease expiry, full process/ETS/Desk teardown, new Buffee ID and contacts surviving cold restart; no apps or hardware')
             return
         if args.sustained:
-            assert args.swarm_time and not args.opus
+            assert args.buffee_time and not args.opus
             assert b.request('offset_set',offset_ms=1000)['ok']
             for r in runtimes:
                 end=time.monotonic()+10
@@ -342,7 +342,7 @@ def main():
         assert b.request('audio_clear_contract',direction='receive',peer=c.identity['id'],source='microphone')['ok']
         wait_audio(b,lambda s:s['subscriptions'][y]['state']=='waiting_for_source')
         assert all(r.request('snapshot')['nodes']==[] for r in runtimes)
-        print(('PASS: authenticated shared Swarm clock and Offset; ' if args.swarm_time else 'PASS: test clock; ')+('real WebRTC Opus decoded by GStreamer' if args.opus else 'real WebRTC PCM')+' from two publishers mixed at their packet targets; independent receiver/source pause and resume; disappearance and new-incarnation restore; scoped unsubscribe and Contract revocation; no OTP distribution, product apps or hardware output')
+        print(('PASS: authenticated shared Buffee clock and Offset; ' if args.buffee_time else 'PASS: test clock; ')+('real WebRTC Opus decoded by GStreamer' if args.opus else 'real WebRTC PCM')+' from two publishers mixed at their packet targets; independent receiver/source pause and resume; disappearance and new-incarnation restore; scoped unsubscribe and Contract revocation; no OTP distribution, product apps or hardware output')
     finally:
         for r in runtimes:r.close()
         if desk is not None:desk.terminate();desk.wait(timeout=5)

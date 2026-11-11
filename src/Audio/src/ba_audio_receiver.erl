@@ -30,7 +30,7 @@ call(Request) ->
 init([]) ->
     Items = ba_subscription:load(),
     erlang:send_after(250,self(),tick),
-    Control = whereis(ba_swarm_control),true = is_pid(Control),monitor(process,Control),
+    Control = whereis(ba_buffee_control),true = is_pid(Control),monitor(process,Control),
     {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
           providers => #{},catalogs => #{},contracts => #{},control => Control,
           suspended => false,resume_after => undefined,rejected => 0,poll_at => now_ms()}}.
@@ -48,15 +48,20 @@ handle_call(snapshot,_,S) ->
 handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pid)=:=node(),map_size(Sources)<16 ->
     try
         Offer = gen_server:call(Pid,describe,100),Key = maps:get(source_key,Offer),
+        {Pub,_}=ba_device_store:identity(),
+        case publication_allowed(binary:encode_hex(Pub),Key) of
+            true -> ok;false -> throw(chef_required)
+        end,
         false = maps:is_key(Key,Sources),
         _ = ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer),
         Ref = monitor(process,Pid),Entry = #{pid => Pid,monitor => Ref,offer => Offer},
         {reply,ok,S#{sources := Sources#{Key => Entry}}}
-    catch _:_ -> {reply,{error,invalid_or_duplicate_publication},S} end;
+    catch throw:chef_required -> {reply,{error,chef_required},S};
+          _:_ -> {reply,{error,invalid_or_duplicate_publication},S} end;
 handle_call({contract,Direction,Peer,Key,Id,Revision},_,#{contracts := Contracts} = S) ->
     try
         true = Direction=:=publish orelse Direction=:=receive_audio,
-        true = ba_swarm_job:hex(Peer,64),true = ba_swarm_job:hex(Id,32),
+        true = ba_buffee_job:hex(Peer,64),true = ba_buffee_job:hex(Id,32),
         true = is_binary(Key) andalso byte_size(Key)>0 andalso byte_size(Key)=<128,
         true = is_integer(Revision) andalso Revision>0 andalso Revision=<9007199254740991,
         ContractKey = {Direction,Peer,Key},
@@ -78,8 +83,8 @@ handle_call(refresh,_,S) -> {reply,ok,refresh_all(S)};
 handle_call({subscribe,Peer,Key,channel},_,#{subscriptions := Items,offers := Offers} = S) when map_size(Items)<16 ->
     Existing = lists:any(fun(R) -> I = maps:get(intent,R),maps:get(device,I)=:=Peer andalso maps:get(source_key,I)=:=Key end,maps:values(Items)),
     case {Existing,maps:find({Peer,Key},Offers),context(Peer)} of
-        {false,{ok,O},{ok,#{swarm := Swarm}}} ->
-            I = ba_subscription:new(Swarm,Peer,O,channel),Id = maps:get(id,I),
+        {false,{ok,O},{ok,#{buffee := Buffee}}} ->
+            I = ba_subscription:new(Buffee,Peer,O,channel),Id = maps:get(id,I),
             Next = persist(S#{subscriptions := Items#{Id => waiting(I)}}),
             {reply,{ok,Id},restore_one(Id,false,Next)};
         {true,_,_} -> {reply,{error,already_subscribed},S};
@@ -142,11 +147,11 @@ handle_info({audio_output_failed,Mixer,Reason},S) ->
             {noreply,ba_diagnostics:count(Reason,S#{subscriptions := Items})};
         false -> {noreply,S}
     end;
-handle_info({swarm_audio,Context,Id,P},S) ->
+handle_info({buffee_audio,Context,Id,P},S) ->
     try
-        #{peer := Peer,session := Session,swarm := Swarm,deadline := Deadline} = Context,
+        #{peer := Peer,session := Session,buffee := Buffee,deadline := Deadline} = Context,
         true = now_ms()<Deadline,
-        {ok,#{session := Session,swarm := Swarm}} = context(Peer),
+        {ok,#{session := Session,buffee := Buffee}} = context(Peer),
         incoming(Context,Id,P,S)
     of Next -> {noreply,Next}
     catch _:_ -> {noreply,reject(S)} end;
@@ -255,6 +260,7 @@ incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.offer"
     #{id := Id,session := Session,deadline := Deadline,offers := Offers} = C = maps:get(Peer,Cs),
     true = now_ms()<Deadline,true = map_size(Offers)<16,
     Key = maps:get(<<"source">>,P),false = maps:is_key(Key,Offers),
+    true=publication_allowed(Peer,Key),
     D = ba_audio_stream_protocol:descriptor(P),
     O = #{name => maps:get(<<"name">>,P),source_key => Key,incarnation => maps:get(<<"incarnation">>,P),
           paused => maps:get(<<"paused">>,P),profiles => #{channel => D}},
@@ -339,8 +345,8 @@ restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := 
     Ready = Session=:=undefined andalso State=/=opening andalso now_ms()>=Retry andalso
         (not Automatic orelse clock_ready(S)),
     case {Ready,maps:find({Peer,Key},Offers),maps:find({receive_audio,Peer,Key},Contracts),context(Peer)} of
-        {true,{ok,#{incarnation := Inc,profiles := #{channel := D}}},{ok,Contract},{ok,#{swarm := Swarm} = Context}}
-            when Swarm=:=map_get(swarm,I) ->
+        {true,{ok,#{incarnation := Inc,profiles := #{channel := D}}},{ok,Contract},{ok,#{buffee := Buffee} = Context}}
+            when Buffee=:=map_get(buffee,I) ->
             case maps:get(encoding,D,pcm)=:=opus andalso not ba_audio_opus:available() of
                 true -> put_sub(Id,R#{state := waiting_for_backend,error => opus_decoder_unavailable,retry_at := now_ms()+1000},S);
                 false ->
@@ -356,7 +362,7 @@ restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := 
             end
     end.
 clock_ready(S) ->
-    Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
+    Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
     try ba_subscription:clock_ready(Module:status(),maps:get(resume_after,S)) catch _:_ -> false end.
 start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
     case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
@@ -381,12 +387,12 @@ catalog(Peer,#{catalogs := Cs} = S) ->
         _ -> {{error,no_session_or_pending},S}
     end.
 refresh_all(S) ->
-    case ba_swarm_membership:current() of
+    case ba_buffee_membership:current() of
         {ok,#{policy := #{peers := Peers}}} -> maps:fold(fun(Peer,_,Acc) -> {_,Next}=catalog(Peer,Acc),Next end,S,Peers);
         _ -> S
     end.
-context(Peer) -> try ba_swarm_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
-send(Peer,Id,P) -> ba_swarm_control:audio_message(Peer,Id,P).
+context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
+send(Peer,Id,P) -> ba_buffee_control:audio_message(Peer,Id,P).
 wire(#{context := #{peer := Peer,session := Session,deadline := Deadline}},Id,P) ->
     Now = now_ms(),
     case context(Peer) of
@@ -394,7 +400,7 @@ wire(#{context := #{peer := Peer,session := Session,deadline := Deadline}},Id,P)
         _ -> {error,session_lost}
     end.
 binding(R) -> #{<<"source">> => maps:get(source,R),<<"incarnation">> => maps:get(incarnation,R),<<"attempt">> => maps:get(attempt,R)}.
-matches(#{peer := Peer,session := Session,swarm := Swarm},P,#{context := #{peer := Peer,session := Session,swarm := Swarm,deadline := Deadline}} = R) ->
+matches(#{peer := Peer,session := Session,buffee := Buffee},P,#{context := #{peer := Peer,session := Session,buffee := Buffee,deadline := Deadline}} = R) ->
     true = now_ms()<Deadline,true = maps:with([<<"source">>,<<"incarnation">>,<<"attempt">>],P)=:=binding(R),ok.
 bound_transport(Context,Id,P,S) ->
     #{peer := Peer,session := Session} = Context,
@@ -460,7 +466,7 @@ terminate(_,S) ->
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([suspended,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
 resync_clock() ->
-    Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
+    Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
     try Module:resync() catch _:_ -> unavailable end.
 
 renew_media(Id,Peer,Session,Until,#{context := #{peer := Peer,session := Session,deadline := Old}=C,session := P}=R)
@@ -480,3 +486,18 @@ renew_media(_,_,_,_,R) -> R.
 transport_status(#{session := P}) when is_pid(P) ->
     try gen_server:call(P,status,100) catch exit:_ -> #{error => unavailable} end;
 transport_status(_) -> #{}.
+
+publication_allowed(Peer,Key) ->
+    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+        buffee_control -> buffee_publication_allowed(Peer,Key);
+        _ -> true
+    end.
+buffee_publication_allowed(Peer,Key) ->
+    case ba_buffee_membership:current() of
+        {ok,#{device_roles := Roles}} ->
+            case maps:find(Peer,Roles) of
+                {ok,Rs} -> ba_buffee_roles:may_publish(Rs,Key);
+                error -> false
+            end;
+        _ -> false
+    end.

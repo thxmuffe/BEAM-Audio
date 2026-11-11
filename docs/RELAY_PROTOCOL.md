@@ -1,7 +1,7 @@
 # Reception protocol v1
 
 The Reception relays messages over persistent outbound WebSockets. Native actors own
-swarm memberships and chats; the service owns only authenticated socket routes,
+buffee memberships and chats; the service owns only authenticated socket routes,
 scoped mailbox registrations and connection observations. This protocol carries
 chat/control traffic, not audio, Distributed Erlang, ETF terms or arbitrary RPC.
 
@@ -19,7 +19,7 @@ runtime identity, not a user account or permanent hardware ID.
 
 The server sends `{"op":"challenge","v":1,"nonce":"64_HEX_CHARACTERS"}`.
 The client replies with `op=hello`, `v=1`, `id` and `signature`. The signature is
-Ed25519 over the exact UTF-8 bytes `parvi-desk/v1:` followed by the nonce's
+Ed25519 over the exact UTF-8 bytes `beamaudio-desk/v1:` followed by the nonce's
 64-character uppercase hexadecimal representation. `signature` is 128 uppercase
 hex characters. The server verifies possession of the private key, binds that
 connection to the node ID, then sends `op=ready`, `v=1`, `id`.
@@ -32,55 +32,55 @@ not override that identity. Incoming IDs remain binaries and never become atoms.
 ## Mailboxes and routing
 
 After ready, a node registers its own mailbox using
-`{"op":"open","swarm":"32_HEX","mailbox":"32_HEX"}`. The mailbox is a
-fresh 128-bit random capability, scoped to its owner and swarm ID. Mailboxes are
+`{"op":"open","buffee":"32_HEX","mailbox":"32_HEX"}`. The mailbox is a
+fresh 128-bit random capability, scoped to its owner and buffee ID. Mailboxes are
 addressed by **both owner node ID and capability**, so another identity cannot
 claim an existing recipient's address after a service restart. `op=close` with
 `mailbox` removes the authenticated owner's registration.
 
 To send, use `op=send`, `to` (recipient node ID), `mailbox`, `payload` and optional
-`request`. `payload.swarm` must match the recipient mailbox's registered scope.
+`request`. `payload.buffee` must match the recipient mailbox's registered scope.
 The recipient must currently be connected. A successful route delivers
 `op=delivery`, `from` (authenticated sender), `mailbox`, `payload`. Unknown,
 closed, wrong-scope and offline destinations return `op=error` with a bounded
 reason; there is no offline message queue and no global directory.
 
-Possessing a mailbox capability authorizes delivery to that mailbox, not swarm
+Possessing a mailbox capability authorizes delivery to that mailbox, not buffee
 admission or arbitrary member actions. The receiving node validates the payload
 and admission token against its own current state. Members receive the mailbox
 addresses needed to communicate with their admitted peers.
 
-## Swarm invitations and messages
+## Buffee invitations and messages
 
 ### Capability-scoped lookup for current v3 clients
 
 After authentication, a client may send `op=lookup` with `request` (32 hex),
-`swarm` (32 hex) and `mailbox` (32 hex). The service returns `op=found`, the same
+`buffee` (32 hex) and `mailbox` (32 hex). The service returns `op=found`, the same
 `request`, and `owners`: up to 16 currently connected identity IDs advertising
-that exact mailbox/Swarm pair. This is capability-scoped discovery, not a public
-directory, Captain election, atomic claim or membership grant. Several identities
+that exact mailbox/Buffee pair. This is capability-scoped discovery, not a public
+directory, Owner election, atomic claim or membership grant. Several identities
 may advertise the same address. Disconnect/close removes an advertisement from
 lookup; clients replay current registrations after reauthentication, which clears
 old registrations for that identity. Unsupported/error/disconnected requests must
 not be interpreted as a successful empty result.
 
 Reusable signed v3 link and fresh-gathering semantics are specified in
-[SWARM_MEMBERSHIP.md](SWARM_MEMBERSHIP.md). Expiry is currently disabled there;
+[BUFFEE_MEMBERSHIP.md](BUFFEE_MEMBERSHIP.md). Expiry is currently disabled there;
 older signed timestamps remain metadata. The v2 format below describes legacy
 clients and is not the current Device invitation parser.
 
 An internet invitation is:
 
-`parvi://swarm/v2?desk=ENCODED_WSS_URL&node=PUBLIC_KEY_ID&mailbox=CAP&swarm=ID&token=TOKEN`
+`beamaudio://buffee/v2?desk=ENCODED_WSS_URL&node=PUBLIC_KEY_ID&mailbox=CAP&buffee=ID&token=TOKEN`
 
-`swarm`, `mailbox` and `token` are 32 uppercase hex characters. The token is the
+`buffee`, `mailbox` and `token` are 32 uppercase hex characters. The token is the
 inviter's current local admission credential; it is separate from mailbox
 delivery permission. All query values are URI-encoded. Duplicates, extra fields,
 userinfo, fragments, insecure public Reception URLs and malformed IDs are rejected.
 Erlang cookies never appear in v2 invitations. Existing v1 invitations remain
 the separate same-computer development transport.
 
-Every payload carries `swarm` and a fixed `type`:
+Every payload carries `buffee` and a fixed `type`:
 
 | Type | Required fields and action |
 | --- | --- |
@@ -98,7 +98,7 @@ Chat messages contain `id`, `sender`, `text`, `time` (Unix milliseconds). There
 is no exchange of executable terms or dynamic module/function names.
 
 The asynchronous admission path lets different nodes process each other's
-requests without blocking their swarm workers. Leaving/removal closes the local
+requests without blocking their buffee workers. Leaving/removal closes the local
 mailbox. Revoked invitation tokens rotate on remaining active issuers. These are
 session semantics, not a claim of complete partition/concurrency reconciliation.
 
@@ -108,7 +108,7 @@ session semantics, not a claim of complete partition/concurrency reconciliation.
 `online` node IDs. Connected means the node has an authenticated socket to this
 Reception; it does not prove that all its application workers are healthy. A missing
 connection is not proof of VM death. Relay mode does not invent direct peer edges
-in the graph; it shows swarm members and their observed relay connection status.
+in the graph; it shows buffee members and their observed relay connection status.
 
 The server sends ping every 15 seconds; its inactivity timeout is 45 seconds.
 Clients answer ping and reconnect after socket/process loss or failed initial
@@ -129,9 +129,9 @@ timeout. Existing partition/revocation arbitration remains prototype work.
 
 ## Bounds and trust
 
-The initial limits are 4,096 retained sessions, 64 mailboxes per identity, 64 swarm
-sessions per native actor, 64 members per relayed swarm, 256 watched identities,
-16 pending admissions, 200 retained chat messages per swarm, 4,096 UTF-8 bytes per
+The initial limits are 4,096 retained sessions, 64 mailboxes per identity, 64 buffee
+sessions per native actor, 64 members per relayed buffee, 256 watched identities,
+16 pending admissions, 200 retained chat messages per buffee, 4,096 UTF-8 bytes per
 chat and 128 KiB per WebSocket text frame. A connection accepts at most 512 frames
 and 8 MiB per second. A slow recipient's application queue is limited to 256
 messages before further delivery is rejected. Disconnected routing records expire

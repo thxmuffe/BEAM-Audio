@@ -1,4 +1,4 @@
-"""A supervised child crash reaches a peer's existing authenticated Swarm chat."""
+"""A supervised child crash reaches a peer's existing authenticated Buffee chat."""
 import importlib.util
 import shutil
 import socket
@@ -16,7 +16,7 @@ def load(name,path):
     return module
 
 
-control=load('control',HERE/'swarm-control-smoke.py')
+control=load('control',HERE/'buffee-control-smoke.py')
 relay=load('relay',HERE.parent/'ReceptionDesk/relay-smoke.py')
 relay.ERL=Path(shutil.which('erl'))
 
@@ -27,7 +27,7 @@ def main():
         port=sock.getsockname()[1]
     output=control.ROOT/'builds/intermediates/crash-chat-check'
     output.mkdir(parents=True,exist_ok=True)
-    subprocess.run(['erlc','-Werror','-o',str(output),str(HERE/'ba_swarm_control_probe.erl')],check=True)
+    subprocess.run(['erlc','-Werror','-o',str(output),str(HERE/'ba_buffee_control_probe.erl')],check=True)
     paths=[output,*list((control.ROOT/'builds/intermediates/control/default/lib').glob('*/ebin'))]
     desk=relay.start_desk(port)
     runtimes=[]
@@ -47,7 +47,7 @@ def main():
         while True:
             history=b.request('chat_history')
             if history:
-                assert history[-1]['text']=='System: ba_swarm_control_probe stopped (badmatch).'
+                assert history[-1]['text']=='System: ba_buffee_control_probe stopped (badmatch).'
                 assert 'PRIVATE_EXCEPTION' not in str(history)
                 break
             assert time.monotonic()<deadline,'Crash notice was not delivered'

@@ -66,7 +66,7 @@ try {
     & $erl -noshell -pa @paths -eval 'case ba_inspector:check() of ok -> halt(0); {error,R} -> io:format(standard_error,"Inspector transport unavailable: ~p~n",[R]), halt(1) end.'
     if ($LASTEXITCODE) { throw 'Windows native transport check failed; no cluster connection was attempted.' }
     if ($Check) { return }
-    if (!$StateDirectory) { $StateDirectory = Join-Path $env:LOCALAPPDATA 'org.opensound.parvi\inspector' }
+    if (!$StateDirectory) { $StateDirectory = Join-Path $env:LOCALAPPDATA 'org.opensound.beamaudio\inspector' }
     New-Item -ItemType Directory -Force $StateDirectory | Out-Null
     $StateDirectory = (Resolve-Path -LiteralPath $StateDirectory).Path
     $identityPath = Join-Path $StateDirectory 'identity.dpapi'

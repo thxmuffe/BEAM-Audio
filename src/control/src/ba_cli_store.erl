@@ -1,4 +1,4 @@
-%% Local CLI process records and persistent identity, never saved Swarm state.
+%% Local CLI process records and persistent identity, never saved Buffee state.
 -module(ba_cli_store).
 -include_lib("kernel/include/file.hrl").
 -export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,remove/1,names/0,valid_name/1,reserve/3]).

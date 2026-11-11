@@ -13,3 +13,6 @@ The [independent architecture review](BEAM%20Audio%20%E2%80%94%20independent%20a
 is an older, unexecuted source review. Current-code triage and the selected
 follow-ups live in [PLAN.md](../PLAN.md#independent-review--triage-against-current-code);
 its proposed sequence is not a second active plan.
+
+- [Audio networking and adapters](audio-networking-adapters.md): deferred NMOS,
+  RAVENNAKIT, Dante, Roc and hub/distribution research from 2026-11-11.

@@ -27,7 +27,7 @@ Swift WebRTC engine or network-event command interface.
 
 Direct links are preferred. The existing Reception introduces admitted
 nodes and provides relay fallback when direct links are unavailable. SDP and
-ICE candidates travel through authenticated, swarm-scoped mailbox messages.
+ICE candidates travel through authenticated, buffee-scoped mailbox messages.
 The remote DTLS certificate fingerprint comes from that authenticated signalling.
 The Reception remains a trusted introducer, as it is in the existing relay design.
 
@@ -36,7 +36,7 @@ The Reception remains a trusted introducer, as it is in the existing relay desig
 On 2026-10-28, `tests/transport/smoke.py` passed using two independent BEAM VMs and the
 third-party WebRTC library. After admission and direct-channel establishment,
 the test killed its disposable local Reception. Bidirectional chat,
-independent swarm histories and leaving one of two shared swarms continued over
+independent buffee histories and leaving one of two shared buffees continued over
 the direct channel. It then restarted the Reception and admitted a relay-only peer,
 verifying interoperability without forcing that peer to implement WebRTC.
 The public Render service was not stopped or changed.

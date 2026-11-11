@@ -12,7 +12,7 @@ def load(name, path):
     spec.loader.exec_module(module)
     return module
 
-control = load('control', HERE / 'swarm-control-smoke.py')
+control = load('control', HERE / 'buffee-control-smoke.py')
 relay = load('relay', HERE.parent / 'ReceptionDesk/relay-smoke.py')
 
 def main():
@@ -21,7 +21,7 @@ def main():
         port = sock.getsockname()[1]
     output = control.ROOT / 'builds/intermediates/device-label-check'
     output.mkdir(parents=True, exist_ok=True)
-    subprocess.run(['erlc', '-Werror', '-o', str(output), str(HERE / 'ba_swarm_control_probe.erl')], check=True)
+    subprocess.run(['erlc', '-Werror', '-o', str(output), str(HERE / 'ba_buffee_control_probe.erl')], check=True)
     paths = [output, *list((control.ROOT / 'builds/intermediates/control/default/lib').glob('*/ebin'))]
     desk = relay.start_desk(port)
     runtimes = []

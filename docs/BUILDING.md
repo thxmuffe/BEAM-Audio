@@ -32,8 +32,8 @@ From either repository on Windows:
 In BEAM-Audio these prepare/compile the core runtime, transport and audio
 libraries needed for the chosen targets; they do not build commercial UIs,
 Inspector or independently deployed services. In OpenSound they then build the
-products: `builds/macOS/Parvi.app`, `builds/iOS/Debug-iphoneos/Parvi.app` or
-`builds/Windows/Parvi/Parvi.exe`. Existing component builders may recheck core
+products: `builds/macOS/OpenSound.app`, `builds/iOS/Debug-iphoneos/OpenSound.app` or
+`builds/Windows/OpenSound/OpenSound.exe`. Existing component builders may recheck core
 inputs; native tools reuse their normal build caches. These are incremental
 builds from the current local checkouts, not Git pulls, clean builds or release
 publication. First runs may download large pinned dependencies. Mac requires
@@ -86,8 +86,8 @@ bash src/Apps/macOS/build.sh
 bash src/Apps/iOS/build.sh device native
 ```
 
-Mac output: `OpenSound/builds/macOS/Parvi.app`. iPhone unsigned verification
-output: `OpenSound/builds/iOS/Debug-iphoneos/Parvi.app`. Sign/install/run with
+Mac output: `OpenSound/builds/macOS/OpenSound.app`. iPhone unsigned verification
+output: `OpenSound/builds/iOS/Debug-iphoneos/OpenSound.app`. Sign/install/run with
 `OpenSound/src/Apps/BEAM Audio.xcworkspace` in Xcode; select **BEAM Audio Both** to build the
 Mac companion too. Runtime preparation may take time after an empty cache.
 Unsigned compilation does not install the app or prove playback.
@@ -107,7 +107,7 @@ Then from OpenSound:
 
 ```powershell
 .\src\Apps\Windows\build.ps1 -Transport Native
-.\builds\Windows\Parvi\Parvi.exe
+.\builds\Windows\OpenSound\OpenSound.exe
 ```
 
 Windows requires its own OTP, native NIF and GStreamer artifacts; Mac/iOS binaries
@@ -126,7 +126,7 @@ are introduced by the split. No service deployment is needed for local repairs.
 
 ## Manual baseline check for this handoff
 
-1. Launch the rebuilt `OpenSound/builds/macOS/Parvi.app`.
+1. Launch the rebuilt `OpenSound/builds/macOS/OpenSound.app`.
 2. Open `OpenSound/src/Apps/BEAM Audio.xcworkspace`, select the iPhone or **BEAM Audio Both**
    scheme and your physical iPhone, then Run to sign/install the current sources.
 3. On Windows, pull both repositories and run the Windows preparation/packaging

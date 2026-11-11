@@ -16,25 +16,27 @@ handle_info(tick,S) -> erlang:send_after(250,self(),tick),{noreply,reconcile(S)}
 handle_info({'DOWN',_,process,_,_},S) -> {stop,normal,S};
 handle_info(_,S) -> {noreply,S}.
 reconcile(S) ->
-    Desired=ba_app_session:consent(),
+    Requested=ba_app_session:consent(),
+    Roles=maps:get(roles,ba_buffee_membership:status(),[]),
+    Desired=Requested#{broadcast := maps:get(broadcast,Requested) andalso lists:member(chef,Roles)},
     Consent=case application:get_env(ba_core,audio_suspended,false) of
         true -> maps:map(fun(_,_) -> false end,Desired);false -> Desired
     end,Adapter=application:get_env(ba_core,audio_capture_adapter,ba_mac_audio),
     [Adapter:stop(K) || K <- [microphone,broadcast],not maps:get(K,Consent),maps:get(state,Adapter:status(K))=/=stopped],
-    case ba_swarm_membership:current() of
-        {ok,#{policy := #{swarm := Swarm,peers := Peers},routes := _}} ->
+    case ba_buffee_membership:current() of
+        {ok,#{policy := #{buffee := Buffee,peers := Peers},routes := _}} ->
             ok=ba_audio_sup:ensure_started(),
             Connected=connect_peers(maps:keys(Peers),S),
             Captured=lists:foldl(fun(K,Acc) -> capture(K,maps:get(K,Consent),Adapter,Acc) end,Connected,[microphone,broadcast]),
             View=ba_audio_receiver:snapshot(),
             {Pub,_}=ba_device_store:identity(),Self=binary:encode_hex(Pub),
             Local=[ba_audio:describe(P) || P <- ba_audio:sources()],
-            Publish=[{publish,P,maps:get(source_key,O),ba_app_session:contract(Swarm,Self,#{receiver => P,source => maps:get(source_key,O)})}
+            Publish=[{publish,P,maps:get(source_key,O),ba_app_session:contract(Buffee,Self,#{receiver => P,source => maps:get(source_key,O)})}
                 || P <- maps:keys(Peers),not ba_app_session:excluded(P),O <- Local],
             Offers=[O || O <- maps:get(offers,View),not ba_app_session:excluded(maps:get(device,O))],
             Receive=case maps:get(speaker,Consent) of
                 true -> [{receive_audio,maps:get(device,O),maps:get(source_key,O),
-                    ba_app_session:contract(Swarm,maps:get(device,O),#{receiver => Self,source => maps:get(source_key,O)})} || O <- Offers];
+                    ba_app_session:contract(Buffee,maps:get(device,O),#{receiver => Self,source => maps:get(source_key,O)})} || O <- Offers];
                 false -> []
             end,
             Wanted=lists:sublist(Publish++Receive,32),
@@ -66,12 +68,16 @@ reconcile(S) ->
                         [] -> #{state => case Playing of true -> running;false -> ready end}
                     end
             end,
-            Audio=(maps:get(audio,Captured,#{}))#{speaker => Speaker#{meter => maps:get(receive_meter,NextView,#{})}},
-            Diagnostics=ba_audio_diagnostics:snapshot(NextView,ba_swarm_clock:status()),
+            Audio0=(maps:get(audio,Captured,#{}))#{speaker => Speaker#{meter => maps:get(receive_meter,NextView,#{})}},
+            Audio=case maps:get(broadcast,Requested) andalso not lists:member(chef,Roles) of
+                true -> Audio0#{broadcast => #{state => waiting_for_role,error => <<"An Owner must authorize this Device as a Chef.">>}};
+                false -> Audio0
+            end,
+            Diagnostics=ba_audio_diagnostics:snapshot(NextView,ba_buffee_clock:status()),
             maps:get(owner,S) ! {audio_state,self(),Audio,Diagnostics},Captured#{contracts := Wanted};
         _ ->
             Audio=maps:map(fun(_,B) -> #{state => case B of true -> waiting_for_membership;false -> disabled end} end,Consent),
-            maps:get(owner,S) ! {audio_state,self(),Audio,ba_audio_diagnostics:snapshot(#{},ba_swarm_clock:status())},S
+            maps:get(owner,S) ! {audio_state,self(),Audio,ba_audio_diagnostics:snapshot(#{},ba_buffee_clock:status())},S
     end.
 capture(K,false,_,S) -> S#{audio => (maps:get(audio,S,#{}))#{K => #{state => disabled}}};
 capture(K,true,Adapter,S) ->
@@ -91,7 +97,7 @@ connect_peers(Peers,S) ->
     Due=lists:foldl(fun(P,Acc) ->
         case Self<P andalso not ba_app_session:excluded(P) andalso Now>=maps:get(P,Acc,Now) of
             true ->
-                case ba_swarm_control:audio_context(P) of {ok,_} -> ok;_ -> ba_swarm_control:connect(P) end,
+                case ba_buffee_control:audio_context(P) of {ok,_} -> ok;_ -> ba_buffee_control:connect(P) end,
                 Acc#{P => Now+2000};
             false -> Acc
         end

@@ -1,11 +1,11 @@
 # Audio Engine interface
 
 Current component names follow [TERMINOLOGY.md](TERMINOLOGY.md). Step 8's secure
-PCM/Opus path is documented in [SWARM_STREAMS.md](SWARM_STREAMS.md): the Media
+PCM/Opus path is documented in [BUFFEE_STREAMS.md](BUFFEE_STREAMS.md): the Media
 Session decodes through the local GStreamer binding, then the Erlang Mixer
 executes per-packet Presentation Targets. The native platform-engine bindings
 and experiments described below still require step-9 app qualification. Their
-historical transport/session APIs do not override the new Swarm boundary.
+historical transport/session APIs do not override the new Buffee boundary.
 
 Implemented 2026-11-03 as step 2 of the simultaneous-playback plan. The
 2026-11-04 contract correction replaces anchor-derived playback timing with

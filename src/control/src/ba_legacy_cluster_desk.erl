@@ -1,4 +1,4 @@
-%% Historical trusted-app/Distributed Erlang path; not the secure Swarm API.
+%% Historical trusted-app/Distributed Erlang path; not the secure Buffee API.
 %% Desk introductions only. OTP traffic stays on the WebRTC carrier.
 %% Start after net_kernel; supervised by the Mac native runtime profile.
 -module(ba_legacy_cluster_desk).
@@ -221,7 +221,7 @@ channel(Id, Peer, Cap, Role, #{sessions := Sessions} = S) ->
         {error, Reason} -> gen_server:stop(Ctrl), {error, Reason}
     end.
 
-incoming(From, #{<<"type">> := <<"otp_signal">>, <<"swarm">> := Cluster,
+incoming(From, #{<<"type">> := <<"otp_signal">>, <<"buffee">> := Cluster,
                  <<"connection">> := Id, <<"reply">> := Cap, <<"signal">> := Signal},
          #{cluster := Cluster, sessions := Sessions} = S) ->
     case maps:find(Id, Sessions) of
@@ -241,14 +241,14 @@ route(Ctrl, Sessions) -> [R || R = #{ctrl := P} <- maps:values(Sessions), P =:= 
 
 send(Peer, Cap, Id, Signal, S) ->
     ba_relay:send(Peer, Cap, #{<<"type">> => <<"otp_signal">>,
-        <<"swarm">> => maps:get(cluster, S), <<"connection">> => Id,
+        <<"buffee">> => maps:get(cluster, S), <<"connection">> => Id,
         <<"request">> => Id, <<"reply">> => maps:get(mailbox, S), <<"signal">> => Signal}).
 
 parse_link(Link) ->
     try
         #{scheme := Scheme, host := <<"cluster">>, path := <<"/v2">>, query := Query} =
             uri_string:parse(string:trim(Link)),
-        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
+        true = Scheme =:= <<"beamaudio">>,
         #{<<"desk">> := URL, <<"node">> := Peer, <<"mailbox">> := Cap,
           <<"invitation">> := Invitation} = maps:from_list(uri_string:dissect_query(Query)),
         true = ba_relay:valid_url(URL), URL = ba_relay:url(),

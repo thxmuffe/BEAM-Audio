@@ -81,7 +81,7 @@ defmodule ReceptionDesk.Socket do
     true = is_binary(id) and byte_size(id) == 64
     public = Base.decode16!(id, case: :upper)
     sig = Base.decode16!(signature, case: :upper)
-    true = :crypto.verify(:eddsa, :none, "parvi-desk/v1:" <> state.nonce, sig, [public, :ed25519])
+    true = :crypto.verify(:eddsa, :none, "beamaudio-desk/v1:" <> state.nonce, sig, [public, :ed25519])
     :ok = :ba_reception_sessions.attach(id, self())
     push(%{op: "ready", v: 1, id: id}, %{state | id: id, nonce: nil})
   end

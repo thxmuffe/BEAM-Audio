@@ -22,7 +22,7 @@ init({Owner, Initiator, Ice}) ->
 handle_info(start, #{initiator := true} = S) ->
     Next = new_connection(S#{session := binary:encode_hex(crypto:strong_rand_bytes(16))}),
     #{pc := PC, session := Session} = Next,
-    {ok, #{ref := Ref}} = ?PC:create_data_channel(PC, <<"parvi-v1">>),
+    {ok, #{ref := Ref}} = ?PC:create_data_channel(PC, <<"beamaudio-v1">>),
     {ok, Offer} = ?PC:create_offer(PC),
     ok = ?PC:set_local_description(PC, Offer),
     notify(Next, {signal, description(Session, Offer)}),
@@ -98,7 +98,7 @@ rtc_event({ice_candidate, #{candidate := Candidate, sdp_mid := Mid, sdp_m_line_i
     notify(S, {signal, #{<<"session">> => Session, <<"kind">> => <<"candidate">>,
         <<"candidate">> => Candidate, <<"mid">> => default(Mid, <<"0">>), <<"index">> => default(Index, 0)}}),
     S;
-rtc_event({data_channel, #{label := <<"parvi-v1">>, ref := Ref}}, S) -> S#{channel := Ref};
+rtc_event({data_channel, #{label := <<"beamaudio-v1">>, ref := Ref}}, S) -> S#{channel := Ref};
 rtc_event({data_channel_state_change, Ref, Status}, #{channel := Ref} = S) ->
     Ready = Status =:= open,
     notify(S, {ready, Ready}),

@@ -1,5 +1,5 @@
-%% Historical trusted-app/Distributed Erlang path; not the secure Swarm API.
-%% Mac JSON boundary for one native trust domain. No swarm routing or liveness worker.
+%% Historical trusted-app/Distributed Erlang path; not the secure Buffee API.
+%% Mac JSON boundary for one native trust domain. No buffee routing or liveness worker.
 -module(ba_native_bridge).
 -export([request/1]).
 
@@ -54,23 +54,23 @@ command(#{<<"method">> := <<"set_audio_presentation_delay">>, <<"delay_ms">> := 
     try binary_to_integer(Value) of
         Delay -> ba_legacy_cluster_trust:set_audio_sync_delay(Delay)
     catch error:badarg -> {error, <<"Response time must be 5-30000 ms.">>} end;
-command(#{<<"method">> := <<"create_swarm">>}) ->
+command(#{<<"method">> := <<"create_buffee">>}) ->
     case ba_legacy_cluster_desk:create() of
-        {ok, #{<<"cluster">> := Id}} -> {ok, #{swarm_id => Id}};
+        {ok, #{<<"cluster">> := Id}} -> {ok, #{buffee_id => Id}};
         Error -> Error
     end;
-command(#{<<"method">> := <<"join_swarm">>, <<"invitation">> := Link}) ->
+command(#{<<"method">> := <<"join_buffee">>, <<"invitation">> := Link}) ->
     case ba_legacy_cluster_desk:join(Link) of
         ok -> {ok, #{notice => <<"Invitation submitted; waiting for native admission and connection.">>}};
         Error -> Error
     end;
-command(#{<<"method">> := <<"send_swarm">>, <<"swarm_id">> := Id, <<"text">> := Text}) ->
+command(#{<<"method">> := <<"send_buffee">>, <<"buffee_id">> := Id, <<"text">> := Text}) ->
     case ba_legacy_cluster_trust:policy() of
         #{<<"cluster">> := Id} ->
             case ba_runtime:send(Text) of {ok, _} -> ok; Error -> Error end;
         _ -> {error, not_a_member}
     end;
-command(#{<<"method">> := <<"remove_both">>, <<"swarm_id">> := Id, <<"target">> := Target}) ->
+command(#{<<"method">> := <<"remove_both">>, <<"buffee_id">> := Id, <<"target">> := Target}) ->
     case ba_legacy_cluster_trust:policy() of
         #{<<"cluster">> := Id, <<"members">> := Members} ->
             case [Key || {Key, #{<<"node">> := Name}} <- maps:to_list(Members), Name =:= Target] of
@@ -84,7 +84,7 @@ command(#{<<"method">> := <<"remove_both">>, <<"swarm_id">> := Id, <<"target">> 
             end;
         _ -> {error, not_a_member}
     end;
-command(#{<<"method">> := <<"leave_swarm">>}) ->
+command(#{<<"method">> := <<"leave_buffee">>}) ->
     %% Local forget: other members retain their membership records.
     ba_legacy_cluster_desk:forget();
 command(#{<<"method">> := <<"configure_desk">>}) ->
@@ -108,7 +108,7 @@ snapshot() ->
         _ -> [atom_to_binary(node())]
     end,
     Online = [atom_to_binary(N) || N <- ChatNodes],
-    Swarms = case Policy of
+    Buffees = case Policy of
         #{<<"cluster">> := Id} ->
             Invitation = case ba_legacy_cluster_desk:invitation() of {ok, Link} -> Link; _ -> null end,
             [#{id => Id, name => <<"Native cluster">>, invitation => Invitation,
@@ -131,14 +131,14 @@ snapshot() ->
                                    true -> <<"running">>; false -> <<"offline">> end,
                                detail => <<"cluster_membership">>} || N <- Known],
                    edges => [[atom_to_binary(node()), atom_to_binary(N)] || N <- nodes()]},
-      swarms => Swarms,
+      buffees => Buffees,
       runtime_info => iolist_to_binary(io_lib:format("OTP ~s / ERTS ~s / native WebRTC / clock ~s (~s), master ~s / ~p",
           [erlang:system_info(otp_release), erlang:system_info(version),
            maps:get(state,Clock), maps:get(role,Clock), maps:get(master,Clock), Event])),
       peers => [atom_to_binary(N) || N <- ChatNodes, N =/= node()], messages => Messages}.
 
 clock_snapshot() ->
-    D = ba_swarm_clock:status(),
+    D = ba_buffee_clock:status(),
     #{state => atom_to_binary(maps:get(state,D)), role => atom_to_binary(maps:get(role,D,waiting)),
       master => atom_to_binary(maps:get(master,D,undefined)),
       coverage => atom_to_binary(maps:get(coverage,D,unknown)),

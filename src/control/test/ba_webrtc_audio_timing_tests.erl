@@ -4,11 +4,11 @@
 %% Deterministic UTC mapping through the real clock API, without starting a
 %% cluster, contacting a time provider, or changing the machine clock.
 with_clock(Fun) ->
-    Table = ets:new(ba_swarm_clock,[named_table,set]),
+    Table = ets:new(ba_buffee_clock,[named_table,set]),
     ets:insert(Table,{clock,#{role => master,timeline => <<"native-timing-test">>,confirmed => true,
         authorization_until => infinity,last_sync => erlang:monotonic_time(nanosecond),
         filter_ready => true,sample_interval_ms => 5000,
-        mapping => ba_swarm_clock_mapping:new(0,2000000000)}}),
+        mapping => ba_buffee_clock_mapping:new(0,2000000000)}}),
     try Fun() after ets:delete(Table) end.
 
 observation(Input, Frames, Output, Host, Dropped) ->

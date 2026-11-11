@@ -3,9 +3,9 @@
 
 bounded_raw_delivery_test() ->
     Frame = iolist_to_binary(json:encode(#{op => <<"delivery">>,from => <<"peer">>,
-        mailbox => <<"cap">>,payload => #{swarm => <<"swarm">>}})),
+        mailbox => <<"cap">>,payload => #{buffee => <<"buffee">>}})),
     S = #{owner => self(),delivery => raw,max_owner_queue => 0,
-          conn => self(),stream => stream,boxes => #{<<"cap">> => <<"swarm">>}},
+          conn => self(),stream => stream,boxes => #{<<"cap">> => <<"buffee">>}},
     ?assertMatch({noreply,#{diagnostics := #{last_error := desk_owner_overloaded}}},ba_relay:handle_info({gun_ws,self(),stream,{text,Frame}},S)),
     receive {relay,{delivery,_,_,_}} -> error(unbounded_delivery) after 0 -> ok end,
     Allowed = S#{max_owner_queue := 64},
@@ -32,9 +32,9 @@ desk_url_validation_test() ->
 relay_invitation_validation_test() ->
     Id = binary:copy(<<"A">>, 32), Key = binary:copy(<<"B">>, 64),
     Q = uri_string:compose_query([{<<"desk">>, <<"wss://desk.example/relay/v1">>},
-        {<<"node">>, Key}, {<<"mailbox">>, Id}, {<<"swarm">>, Id}, {<<"token">>, Id}]),
-    Link = <<"parvi://swarm/v2?", Q/binary>>,
-    ?assertMatch({ok, #{node := Key, mailbox := Id, swarm := Id}}, ba_invitation:parse(Link)),
+        {<<"node">>, Key}, {<<"mailbox">>, Id}, {<<"buffee">>, Id}, {<<"token">>, Id}]),
+    Link = <<"beamaudio://buffee/v2?", Q/binary>>,
+    ?assertMatch({ok, #{node := Key, mailbox := Id, buffee := Id}}, ba_invitation:parse(Link)),
     ?assertEqual({error, invalid_invitation}, ba_invitation:parse(<<Link/binary, "&token=duplicate">>)),
     ?assertEqual({error, invalid_invitation}, ba_invitation:parse(<<Link/binary, "#fragment">>)).
 
@@ -43,10 +43,10 @@ wire_schema_test() ->
     M = #{id => Id, node => Node, mailbox => Id, via => none},
     Shared = #{id => Id, name => <<"Example">>, members => #{Node => M}, removed => [], revoked => []},
     Event = {membership, Id, Shared},
-    Wire = json:decode(iolist_to_binary(json:encode(ba_swarm_wire:encode(Id, Event)))),
-    ?assertEqual({ok, Id, Event}, ba_swarm_wire:decode(Wire)),
-    ?assertEqual({error, invalid_message}, ba_swarm_wire:decode(Wire#{<<"sender">> := <<"invalid">>})),
-    ?assertEqual({error, invalid_message}, ba_swarm_wire:decode(#{<<"swarm">> => Id, <<"type">> => <<"execute">>, <<"code">> => <<"halt().">>})),
-    Bad = #{<<"swarm">> => Id, <<"type">> => <<"chat">>, <<"sender">> => Id,
+    Wire = json:decode(iolist_to_binary(json:encode(ba_buffee_wire:encode(Id, Event)))),
+    ?assertEqual({ok, Id, Event}, ba_buffee_wire:decode(Wire)),
+    ?assertEqual({error, invalid_message}, ba_buffee_wire:decode(Wire#{<<"sender">> := <<"invalid">>})),
+    ?assertEqual({error, invalid_message}, ba_buffee_wire:decode(#{<<"buffee">> => Id, <<"type">> => <<"execute">>, <<"code">> => <<"halt().">>})),
+    Bad = #{<<"buffee">> => Id, <<"type">> => <<"chat">>, <<"sender">> => Id,
             <<"message">> => #{<<"id">> => Id, <<"sender">> => Node, <<"text">> => <<255>>, <<"time">> => 1}},
-    ?assertEqual({error, invalid_message}, ba_swarm_wire:decode(Bad)).
+    ?assertEqual({error, invalid_message}, ba_buffee_wire:decode(Bad)).

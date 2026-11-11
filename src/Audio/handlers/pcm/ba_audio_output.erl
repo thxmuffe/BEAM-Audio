@@ -15,7 +15,7 @@ init({Owner, D, Adapter}) ->
            scheduled => 0, dropped => 0, last_end => undefined, last_summary => undefined}}.
 handle_call(_, _, S) -> {reply, {error, unsupported_request}, S}.
 handle_info(open, #{adapter := A, descriptor := D} = S) ->
-    case maps:get(clock, D) =:= ba_swarm_clock:id() of
+    case maps:get(clock, D) =:= ba_buffee_clock:id() of
         false -> {stop, unsupported_clock, S};
         true ->
             case A:open(D) of
@@ -34,7 +34,7 @@ handle_cast({packet, #{playback_time := Time, frame_count := Frames}, PCM},
             #{device := Device, adapter := A, descriptor := D, last_end := Last} = S)
         when Device =/= undefined ->
     Rate = maps:get(sample_rate, D),
-    case ba_swarm_clock:to_monotonic(Time) of
+    case ba_buffee_clock:to_monotonic(Time) of
         {ok, Mono} ->
             Render = Mono - maps:get(latency_ns, Device),
             Now = erlang:monotonic_time(nanosecond),

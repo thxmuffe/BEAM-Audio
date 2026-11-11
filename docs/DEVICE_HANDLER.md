@@ -1,15 +1,15 @@
 # Local Device Handler and Workers — step 3
 
 Implemented scope: a supervised local Handler, capability discovery and one
-installed non-audio test Worker. The [Swarm plan](PLAN.md) and
-[boundary contract](SWARM_CONTRACT.md) remain authoritative. Director job offers,
+installed non-audio test Worker. The [Buffee plan](PLAN.md) and
+[boundary contract](BUFFEE_CONTRACT.md) remain authoritative. Manager job offers,
 Contract evaluation/acceptance and leases are now implemented for that test
-capability in [step 4](SWARM_JOBS.md). No hardware capture,
+capability in [step 4](BUFFEE_JOBS.md). No hardware capture,
 playback, DSP, app UI or arbitrary Worker module loading is implemented here.
 
 ## Supervision and ownership
 
-The `swarm_control` runtime now starts this local hierarchy:
+The `buffee_control` runtime now starts this local hierarchy:
 
 ```text
 ba_sup                         one_for_one
@@ -17,7 +17,7 @@ ba_sup                         one_for_one
     ba_device_handler          permanent
     ba_device_worker_sup       one_for_one
       test Workers                temporary, created only on local acceptance
-  ba_swarm_control             permanent; existing linked Desk relay
+  ba_buffee_control             permanent; existing linked Desk relay
 ```
 
 The Handler owns local consent, capacity, Worker records and attempts. It builds
@@ -37,7 +37,7 @@ a separate sibling, and subsequent capability queries see the current Handler.
 
 ## Local API
 
-After starting the configured headless Swarm runtime, these calls are available:
+After starting the configured headless Buffee runtime, these calls are available:
 
 ```erlang
 ba_device_handler:capabilities().
@@ -86,19 +86,19 @@ Handler restart; revisions identify changes within one instance. Audio inputs,
 outputs and DSP are not advertised as supported by this test capability.
 
 An authenticated peer may call
-`ba_swarm_control:read_capabilities(PeerId)` only when the receiving Device's
+`ba_buffee_control:read_capabilities(PeerId)` only when the receiving Device's
 local policy grants that peer `capabilities_read`. Configure grants as sorted,
 unique subsets of `[capabilities_read,job_offer,status_read]`. Status permission alone does
 not grant capability access, and neither permission grants execution.
 
-The [control protocol](SWARM_CONTROL_PROTOCOL.md) adds exact-shape
+The [control protocol](BUFFEE_CONTROL_PROTOCOL.md) adds exact-shape
 `capabilities.read`, `capabilities.reply` and `capabilities.error` operations.
 Replies carry the snapshot above; errors are `forbidden` or `unavailable`.
 The adapter queries the Handler only after verified/authorized dispatch, with a
 100 ms local read timeout. Reply operation and request ID must match the pending
 query. Status/capability reads share the existing one-pending-request-per-peer
 bound, session expiry and replay checks. There is no capability polling service
-or arbitrary remote Worker creation. The [job guide](SWARM_JOBS.md) describes the
+or arbitrary remote Worker creation. The [job guide](BUFFEE_JOBS.md) describes the
 separate execution permission/Contract, asynchronous evaluation and failure cleanup.
 
 ## Checks and limits
@@ -106,20 +106,20 @@ separate execution permission/Contract, asynchronous evaluation and failure clea
 From `src/control`:
 
 ```sh
-rebar3 eunit --module=ba_device_handler_tests,ba_swarm_control_protocol_tests,ba_relay_tests,ba_native_tests
+rebar3 eunit --module=ba_device_handler_tests,ba_buffee_control_protocol_tests,ba_relay_tests,ba_native_tests
 rebar3 compile
 ```
 
-From the core root: `python3 tests/control/swarm-control-smoke.py` explicitly
+From the core root: `python3 tests/control/buffee-control-smoke.py` explicitly
 starts two disposable headless runtimes through the existing public Reception. It
 checks capability reads/local consent changes and rejects forbidden commands,
 forgery and replay without creating Workers remotely. It launches no product app
-and uses no saved app identities, Swarms or subscriptions.
+and uses no saved app identities, Buffees or subscriptions.
 
 The focused lifecycle tests cover completion, capacity, cancellation, consent
 withdrawal, Worker/Handler/worker-supervisor crashes, fresh attempts, stale events
 and bounded history. These establish the test lifecycle only; they do not prove
-native audio resource recovery, Director jobs, OS permissions or physical timing.
+native audio resource recovery, Manager jobs, OS permissions or physical timing.
 App/device integration remains step 9: macOS, Windows, then iOS.
 
 OTP references: [supervision strategies](https://www.erlang.org/doc/system/sup_princ.html)

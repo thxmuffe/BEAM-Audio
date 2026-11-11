@@ -65,7 +65,7 @@ try:
     for _ in range(100):
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{web_port}/", timeout=2) as response:
-                assert b"Parvi WebApp" in response.read()
+                assert b"OpenSound WebApp" in response.read()
             break
         except urllib.error.URLError:
             time.sleep(0.05)

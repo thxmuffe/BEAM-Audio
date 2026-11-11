@@ -31,11 +31,11 @@ missing_opus_backend_keeps_intent_without_starting_transport_test() ->
     end.
 fixture(Fun) ->
     I = ba_subscription_tests:intent(<<"music">>),Id = maps:get(id,I),Peer = maps:get(device,I),
-    Context = #{peer => Peer,session => binary:copy(<<"D">>,32),swarm => maps:get(swarm,I),deadline => erlang:monotonic_time(millisecond)+10000},
+    Context = #{peer => Peer,session => binary:copy(<<"D">>,32),buffee => maps:get(buffee,I),deadline => erlang:monotonic_time(millisecond)+10000},
     Parent = self(),Control = spawn(fun Loop() -> receive
         {'$gen_call',From,{audio_context,_}} -> gen_server:reply(From,{ok,Context}),Loop();
         {'$gen_call',From,{audio_message,_,Request,P}} -> Parent ! {attempt,Request,P},gen_server:reply(From,ok),Loop()
-    end end),true = register(ba_swarm_control,Control),
+    end end),true = register(ba_buffee_control,Control),
     Old = application:get_env(ba_core,audio_clock_adapter),application:set_env(ba_core,audio_clock_adapter,?MODULE),
     R = #{intent => I,state => waiting_for_source,session => undefined,retry_at => erlang:monotonic_time(millisecond)-1,packets => 0},
     D = #{sample_rate => 48000,sample_format => float32_le,channel_count => 2,clock => <<"test">>},
@@ -43,7 +43,7 @@ fixture(Fun) ->
         contracts => #{{receive_audio,Peer,<<"music">>} => #{id => binary:copy(<<"C">>,32),revision => 1}},
         suspended => false,resume_after => 100,catalogs => #{},poll_at => erlang:monotonic_time(millisecond)+10000},
     try Fun(S,Id) after
-        exit(Control,kill),unregister_if_present(ba_swarm_control),
+        exit(Control,kill),unregister_if_present(ba_buffee_control),
         case Old of undefined -> application:unset_env(ba_core,audio_clock_adapter);{ok,V} -> application:set_env(ba_core,audio_clock_adapter,V) end
     end.
 unregister_if_present(Name) -> case whereis(Name) of undefined -> ok;_ -> unregister(Name) end.

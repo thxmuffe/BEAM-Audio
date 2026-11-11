@@ -9,9 +9,9 @@ native_foundation_test_() ->
       fun scope_restart/0]}.
 
 standard_workers() ->
-    ?assertEqual([ba_chat, ba_pg, ba_swarm_clock_sup], lists:sort([Id || {Id, _, _, _} <- supervisor:which_children(ba_sup)])),
+    ?assertEqual([ba_buffee_clock_sup, ba_chat, ba_pg], lists:sort([Id || {Id, _, _, _} <- supervisor:which_children(ba_sup)])),
     [?assertEqual(undefined, whereis(Name)) || Name <-
-        [ba_swarms, ba_relay, ba_direct, ba_discovery, ba_network]],
+        [ba_buffees, ba_relay, ba_direct, ba_discovery, ba_network]],
     ?assertEqual([node()], maps:get(chat_nodes, ba_runtime:status())),
     ?assertMatch({error, {already_started, ba_core}}, ba_runtime:start(native_cluster)).
 

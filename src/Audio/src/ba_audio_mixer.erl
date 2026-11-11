@@ -20,7 +20,7 @@ push(Id,D,H,PCM) ->
     end.
 status() -> gen_server:call(?MODULE,status).
 clock() ->
-    Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
+    Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
     try {ok,Module:id(),Module:now()} catch _:_ -> {error,clock_unavailable} end.
 init([]) ->
     process_flag(trap_exit,true),
@@ -101,7 +101,7 @@ open(#{device := undefined,mix := Mix} = S) ->
 open(S) -> {ok,S}.
 render(S) -> render_live(expire_inputs(S)).
 render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
-    Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
+    Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
     case {ba_audio_mix:next_time(Mix),clock()} of
         {Time,{ok,Clock,{ok,_}}} when is_integer(Time),Clock=:=map_get(clock,Mix) ->
             case Module:to_monotonic(Time) of

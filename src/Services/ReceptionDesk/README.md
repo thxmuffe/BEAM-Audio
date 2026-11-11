@@ -16,9 +16,9 @@ Ranch and patched Cowlib versions for an owner-local HTTP command API. It serves
 frontend assets supplied by an app; the Reception remains public authentication and
 routing infrastructure. Neither service needs a Python bridge. There is no
 change to the public service URL. The v3 reusable-invitation extension adds
-capability-scoped live mailbox lookup; it does not elect Captains, claim names,
-restore authority, store Swarms or prevent simultaneous starters. See
-[membership semantics](../../../docs/SWARM_MEMBERSHIP.md).
+capability-scoped live mailbox lookup; it does not elect Owners, claim names,
+restore authority, store Buffees or prevent simultaneous starters. See
+[membership semantics](../../../docs/BUFFEE_MEMBERSHIP.md).
 
 The remaining profile notes describe historical app integrations; step 9 has not
 updated those apps. A Phoenix/Cowboy host has supervised Erlang relay Workers. Each Device opens
@@ -26,7 +26,7 @@ an outbound WebSocket connection and keeps it open. In the native profile the
 Reception carries peer introductions/signaling; authenticated OTP membership and chat
 use the direct encrypted WebRTC DataChannel. It is not a TURN/data relay for
 that profile. The legacy profile carries membership and chat through the Reception.
-It does not join swarms or own their memberships or histories. The full browser
+It does not join buffees or own their memberships or histories. The full browser
 frontend lives in the sibling OpenSound checkout; `/` here is only a small Reception landing page.
 
 ## Run locally on Windows
@@ -54,10 +54,10 @@ Rebuilt native apps automatically connect to the public BEAM Audio Reception con
 `src/control/src/ba_core.app.src` (`default_reception_desk_url`). No URL entry is needed.
 In the legacy UI, enter another **Reception URL** and select **Use Reception (new
 session)** to switch Receptions, which replaces transient memberships. Native UI
-switching is currently disabled; supply a startup override instead. Select a swarm in one app, copy its
-invitation and paste it into **Add a swarm** in another. Only one admission is
+switching is currently disabled; supply a startup override instead. Select a buffee in one app, copy its
+invitation and paste it into **Add a buffee** in another. Only one admission is
 needed. New and existing memberships stay independent. Changing UI selection
-never joins or leaves a swarm.
+never joins or leaves a buffee.
 
 Set `BA_RECEPTION_DESK_URL` to override the bundled default before startup.
 Set it to an empty string for local-only development; an unset variable uses the
@@ -120,8 +120,8 @@ cross the relay. WSS encrypts each client-to-Reception connection; messages are 
 end-to-end encrypted from other Reception operators.
 
 Connections authenticate ephemeral Ed25519 identities with fresh challenges.
-A recipient owns per-swarm capability-addressed mailboxes. The Reception stamps the
-sender identity and checks the destination mailbox scope. Native swarm workers
+A recipient owns per-buffee capability-addressed mailboxes. The Reception stamps the
+sender identity and checks the destination mailbox scope. Native buffee workers
 validate invitations and incoming member messages. No chat is stored server-side.
 
 On socket loss clients reconnect with bounded exponential backoff, reopen their
@@ -153,7 +153,7 @@ python tests/Windows/relay-ui-smoke.py
 
 The relay integration test runs a temporary Phoenix Reception with three separate
 BEAM VMs **without node names or Distributed Erlang**. It checks overlapping
-swarms, isolated chat, peer invitations, mutual removal/revocation and a Reception
+buffees, isolated chat, peer invitations, mutual removal/revocation and a Reception
 restart. `--idle` verifies ping/pong beyond the inactivity timeout. The TLS test
 uses a private temporary certificate; it checks WSS chat and rejects wrong
 hostnames and untrusted certificates. It never installs a trust anchor.

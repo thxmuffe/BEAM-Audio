@@ -58,7 +58,7 @@ def stage():
     lock = ROOT / 'src/control/transport/mix.lock'
     original_project = ROOT / 'src/control/transport'
     # A project/application rename can leave mix.lock unchanged. Include the
-    # manifest so a cached parvi_transport cannot masquerade as ba_transport.
+    # manifest so a cached ba_transport cannot masquerade as ba_transport.
     digest = hashlib.sha256(lock.read_bytes() + b'\0' +
                             (original_project / 'mix.exs').read_bytes()).hexdigest()
     marker = WORK / 'beam.stamp'

@@ -10,7 +10,7 @@ contacts_test_() ->
          Dir=filename:join("/tmp","ba_ephemeral_unit_"++integer_to_list(erlang:unique_integer([positive]))),
          os:putenv("BA_STATE_DIR",Dir),
          os:putenv("BA_IDENTITY_SEED","0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
-         application:set_env(ba_core,runtime_profile,swarm_control),
+         application:set_env(ba_core,runtime_profile,buffee_control),
          {ok,Pid}=ba_contacts:start_link(),unlink(Pid),
          {Pid,Saved,Profile,Dir}
      end,
@@ -61,16 +61,16 @@ contact_deletion_cleans_groups() ->
     ?assertNot(maps:is_key(<<"Friends">>, maps:get(groups, ba_contacts:list()))).
 
 automatic_collection_is_idempotent() ->
-    A=binary:copy(<<"A">>,64),B=binary:copy(<<"B">>,64),Swarm=binary:copy(<<"1">>,32),
-    ba_contacts:observe(Swarm,<<"10SWARNING">>,[A,A,B]),
+    A=binary:copy(<<"A">>,64),B=binary:copy(<<"B">>,64),Buffee=binary:copy(<<"1">>,32),
+    ba_contacts:observe(Buffee,<<"10SWARNING">>,[A,A,B]),
     ba_contacts:observe_name(A,<<"MacBook Air | AABBCCDD">>),
-    ba_contacts:observe(Swarm,<<"10SWARNING">>,[A,B]),
+    ba_contacts:observe(Buffee,<<"10SWARNING">>,[A,B]),
     #{contacts := Contacts,groups := Groups}=ba_contacts:list(),
     ?assertEqual(<<"MacBook Air | AABBCCDD">>,maps:get(A,Contacts)),
     ?assertEqual([A,B],maps:get(<<"10SWARNING">>,Groups)),
     ?assertEqual(ok,ba_contacts:put(A,<<"My Mac">>)),
     ba_contacts:observe_name(A,<<"MacBook Air | NEW00001">>),
-    ba_contacts:observe(Swarm,<<"Renamed gathering">>,[A]),
+    ba_contacts:observe(Buffee,<<"Renamed gathering">>,[A]),
     #{contacts := Named,groups := Updated}=ba_contacts:list(),
     ?assertEqual(<<"My Mac">>,maps:get(A,Named)),
     ?assertEqual([A,B],maps:get(<<"10SWARNING">>,Updated)),

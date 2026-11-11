@@ -13,9 +13,9 @@ snapshot() ->
     end.
 relay_snapshot() ->
     #{id := Id, online := Online, watched := Watched} = ba_relay:status(),
-    Swarms = ba_swarms:snapshot(),
+    Buffees = ba_buffees:snapshot(),
     Direct = ba_direct:peers(),
-    Members = lists:usort([Id | lists:append([maps:get(members, W) || W <- Swarms])]),
+    Members = lists:usort([Id | lists:append([maps:get(members, W) || W <- Buffees])]),
     %% This snapshot is produced by the local runtime. Desk reachability is a
     %% separate transport observation, not evidence that this node stopped.
     #{nodes => [#{id => N, state => case N =:= Id orelse lists:member(N, Direct) orelse lists:member(N, Online) of
@@ -82,7 +82,7 @@ probe(Node, #{pending := Pending} = S) ->
         false ->
             Parent = self(), Ref = make_ref(),
             spawn(fun() ->
-                Status = try gen_server:call({ba_swarms, Node}, health, 1500) of
+                Status = try gen_server:call({ba_buffees, Node}, health, 1500) of
                     #{node := Node} -> {running, responsive};
                     _ -> {unresponsive, unexpected_reply}
                 catch exit:{timeout, _} -> {unresponsive, timeout};

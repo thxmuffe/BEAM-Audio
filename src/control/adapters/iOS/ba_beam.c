@@ -78,7 +78,7 @@ void ba_beam_start(const char *root, const char *data_directory, uint16_t port) 
         "-sbwt", "none", "-MIscs", "128", "--", "-root", root,
         "-bindir", bindir, "-progname", "erl", "--", "-noshell", "-noinput",
         "-start_epmd", "false", "-boot", boot, "-pa", beams,
-        "-ba_core", "runtime_profile", "swarm_control",
+        "-ba_core", "runtime_profile", "buffee_control",
         "-s", "ba_ios", "main", NULL};
     int count = 0;
     while (values[count]) count++;

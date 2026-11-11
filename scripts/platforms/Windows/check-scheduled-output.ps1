@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $core = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 if (!$OpenSoundRoot) { $OpenSoundRoot = Join-Path (Split-Path $core -Parent) 'OpenSound' }
-$product = Join-Path $OpenSoundRoot 'builds\Windows\Parvi'
+$product = Join-Path $OpenSoundRoot 'builds\Windows\OpenSound'
 if (!$AudioRuntime) {
     $AudioRuntime = Join-Path $product 'audio-runtime'
     if (!(Test-Path -LiteralPath (Join-Path $AudioRuntime 'python.exe'))) {

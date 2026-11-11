@@ -70,8 +70,8 @@ read_chunk(Req,State,Acc,Deadline,Remaining) ->
 
 allowed(#{<<"method">> := Method}=Command) ->
     not maps:is_key(<<"instance">>,Command) andalso lists:member(Method,
-        [<<"snapshot">>,<<"create_swarm">>,<<"join_swarm">>,<<"leave_swarm">>,
-         <<"end_swarm">>,<<"capability">>,<<"undo">>,<<"redo">>,<<"send">>,
+        [<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
+         <<"end_buffee">>,<<"capability">>,<<"undo">>,<<"redo">>,<<"send">>,
          <<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
          <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>]);
 allowed(_) -> false.

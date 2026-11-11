@@ -54,10 +54,10 @@ def main():
             nodes.extend([a, b])
             initial = r.wait(a, lambda s: s['relay']['connected'])
             r.wait(b, lambda s: s['relay']['connected'])
-            swarm = initial['swarms'][0]
-            assert b.request('join_swarm', invitation=swarm['invitation'])['error'] is None
-            assert a.request('send_swarm', swarm_id=swarm['id'], text='TLS relay')['error'] is None
-            r.wait(b, lambda s: any(m['text'] == 'TLS relay' for m in r.swarm(s, swarm['id'])['messages']))
+            buffee = initial['buffees'][0]
+            assert b.request('join_buffee', invitation=buffee['invitation'])['error'] is None
+            assert a.request('send_buffee', buffee_id=buffee['id'], text='TLS relay')['error'] is None
+            r.wait(b, lambda s: any(m['text'] == 'TLS relay' for m in r.buffee(s, buffee['id'])['messages']))
             bad_host = r.Node(f'wss://127.0.0.1:{tls_port}/relay/v1', {'BA_RELAY_CA_FILE': str(ca)})
             nodes.append(bad_host)
             r.wait(bad_host, lambda s: not s['relay']['connected'] and s['relay']['error'] is not None)

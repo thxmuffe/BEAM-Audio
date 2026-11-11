@@ -6,10 +6,10 @@
 start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 ensure_started() ->
-    case whereis(ba_swarm_control) of
-        undefined -> {error, swarm_control_not_started};
+    case whereis(ba_buffee_control) of
+        undefined -> {error, buffee_control_not_started};
         _ ->
-            case supervisor:start_child(ba_swarm_runtime_sup,
+            case supervisor:start_child(ba_buffee_runtime_sup,
                     #{id => ?MODULE, start => {?MODULE, start_link, []},
                       type => supervisor, shutdown => infinity}) of
                 {ok, _} -> ok;

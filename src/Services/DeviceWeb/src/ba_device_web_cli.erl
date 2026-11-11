@@ -12,15 +12,20 @@ main() ->
         case maps:get(local_device,Options,false) of
             true ->
                 {ok,_}=application:ensure_all_started(crypto),
-                %% This standalone launch owns a fresh Device, separate from installed apps.
-                Temp=case os:getenv("TEMP") of false -> ".";T -> T end,
-                Dir=filename:join(Temp,"beamaudio-web-"++binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(8)))),
-                ok=filelib:ensure_dir(filename:join(Dir,"state")),
-                os:putenv("BA_STATE_DIR",Dir),
-                os:putenv("BA_IDENTITY_SEED",binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(32)))),
+                %% Launchers may supply the Device's persistent platform identity.
+                case {os:getenv("BA_STATE_DIR"),os:getenv("BA_IDENTITY_SEED")} of
+                    {D,K} when is_list(D),is_list(K) -> ok;
+                    _ ->
+                        Temp=case os:getenv("TEMP") of false -> ".";T -> T end,
+                        Dir=filename:join(Temp,"beamaudio-web-"++binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(8)))),
+                        ok=filelib:ensure_dir(filename:join(Dir,"state")),os:putenv("BA_STATE_DIR",Dir),
+                        os:putenv("BA_IDENTITY_SEED",binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(32))))
+                end,
                 application:load(ba_core),
+                application:set_env(ba_core,restore_buffee_on_start,true),
+                application:set_env(ba_core,buffee_default_permissions,ba_app_session:permissions()),
                 application:set_env(ba_core,audio_consent,#{speaker => false,microphone => false,broadcast => false}),
-                {ok,_}=ba_runtime:start(swarm_control);
+                {ok,_}=ba_runtime:start(buffee_control);
             false -> ok
         end,
         application:set_env(ba_device_web,options,Options),

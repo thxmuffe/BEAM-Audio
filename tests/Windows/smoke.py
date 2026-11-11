@@ -14,7 +14,7 @@ import urllib.parse
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[1]
 APP_REPO = Path(os.environ.get('OPENSOUND_ROOT', REPO.parent / 'OpenSound'))
-BUILD = APP_REPO / 'builds/Windows/Parvi'
+BUILD = APP_REPO / 'builds/Windows/OpenSound'
 ERL = BUILD / 'runtime/bin/erl.exe'
 EBIN = BUILD / 'ebin'
 BROKER = REPO / 'builds/Services/ReceptionDesk/lib/ba_desk/ebin'
@@ -95,7 +95,7 @@ def main():
         assert a.name in b.request('discover', url=url)['known_nodes']
         assert b.name in a.request('discover', url=url)['known_nodes']
         assert a.request('connect', node='ba_windows_1@192.168.1.5', cookie='test')['error']
-        connection = 'parvi://connect/v1?' + urllib.parse.urlencode({'node': b.name, 'cookie': b.cookie})
+        connection = 'beamaudio://connect/v1?' + urllib.parse.urlencode({'node': b.name, 'cookie': b.cookie})
         assert a.request('connect', connection_string='invalid')['error']
         assert a.request('connect', connection_string=connection)['error'] is None
         await_snapshot(a, lambda r: b.name in r['peers'])

@@ -12,7 +12,7 @@ parse(Input) when is_binary(Input), byte_size(Input) =< 2048 ->
     try
         #{scheme := Scheme, host := <<"connect">>, path := <<"/v1">>,
           query := Query} = URI = uri_string:parse(string:trim(Input)),
-        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
+        true = Scheme =:= <<"beamaudio">>,
         4 = map_size(URI),
         [{<<"cookie">>, Cookie}, {<<"node">>, Node}] =
             lists:sort(uri_string:dissect_query(Query)),

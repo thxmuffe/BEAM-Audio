@@ -9,15 +9,15 @@ connection_string_roundtrip_test() ->
     ?assertEqual(ba_legacy_connection:parse(String), ba_legacy_connection:parse(<<" \n", String/binary, "\r\n">>)).
 
 invalid_connection_strings_test() ->
-    Prefix = <<"parvi://connect/v1?">>,
+    Prefix = <<"beamaudio://connect/v1?">>,
     Bad = [<<>>, <<"not a connection string">>,
         <<"https://connect/v1?node=a&cookie=b">>,
-        <<"parvi://connect/v2?node=a&cookie=b">>,
+        <<"beamaudio://connect/v2?node=a&cookie=b">>,
         <<Prefix/binary, "node=a">>, <<Prefix/binary, "node=a&cookie=">>,
         <<Prefix/binary, "node=a&cookie=b&cookie=c">>,
         <<Prefix/binary, "node=a&cookie=b&extra=c">>,
         <<Prefix/binary, "node=a&cookie=b#fragment">>,
-        <<"parvi://user@connect/v1?node=a&cookie=b">>,
+        <<"beamaudio://user@connect/v1?node=a&cookie=b">>,
         <<Prefix/binary, "node=a&cookie=%00">>,
         <<Prefix/binary, "node=a&cookie=%FF">>,
         <<Prefix/binary, "node=a&cookie=", (binary:copy(<<"x">>, 129))/binary>>,

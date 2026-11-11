@@ -32,7 +32,7 @@ def main():
             env = {**os.environ, 'ERL_EPMD_ADDRESS': '127.0.0.1', 'BA_RECEPTION_DESK_URL': '',
                    'BA_TEST_PEER': peer.name, 'BA_TEST_PEER_COOKIE': peer.cookie,
                    'BA_TEST_OTHER': other.name,
-                   'BA_TEST_UI_SOURCE': str(APP_REPO / 'src/Apps/Windows/src/parvi_windows.erl')}
+                   'BA_TEST_UI_SOURCE': str(APP_REPO / 'src/Apps/Windows/src/os_windows.erl')}
             result = subprocess.run([str(ERL), '-noshell', '-noinput',
                             '-name', f'ba_windows_{os.getpid()}9@127.0.0.1',
                             '-setcookie', gui_cookie,

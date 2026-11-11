@@ -8,7 +8,7 @@
 
 session_module() -> ba_media_session.
 info() ->
-    #{id => <<"pcm_webrtc">>, wire_profile => <<"parvi_pcm_v1">>,
+    #{id => <<"pcm_webrtc">>, wire_profile => <<"ba_pcm_v1">>,
       transport => <<"webrtc_datachannel">>, native_payload_bypass => false,
       ordered_delivery => false, retransmission => false,
       reorder_buffer => false, sample_clock_correction => false,

@@ -1,4 +1,4 @@
-%% Historical trusted-app/Distributed Erlang path; not the secure Swarm API.
+%% Historical trusted-app/Distributed Erlang path; not the secure Buffee API.
 %% A movable, cluster-local OTP admission actor. No public service or shared cookie.
 %% Existing trusted nodes can all issue invitations; this actor serializes policy.
 -module(ba_legacy_cluster_authority).

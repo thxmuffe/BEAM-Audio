@@ -3,7 +3,7 @@ import CryptoKit
 import Security
 import Darwin
 
-/// Platform storage only. Erlang owns Swarm membership and reconnection.
+/// Platform storage only. Erlang owns Buffee membership and reconnection.
 public struct NativeIdentity: Sendable {
     public let seedHex: String
     public let publicKeyHex: String
@@ -18,7 +18,7 @@ public struct NativeIdentity: Sendable {
     public static func loadDesktop() throws -> DesktopDeviceIdentity {
         let root = try FileManager.default.url(for: .applicationSupportDirectory,
             in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("org.opensound.parvi", isDirectory: true)
+            .appendingPathComponent("org.opensound.beamaudio", isDirectory: true)
         let lease = try DesktopInstanceLease.acquire(root: root)
         let suffix = lease.slot == 1 ? "" : "-\(lease.slot)"
         let identity = try load(account: "device-v1\(suffix)", directory: "cluster\(suffix)")
@@ -32,7 +32,7 @@ public struct NativeIdentity: Sendable {
     private static func load(account: String, directory subdirectory: String) throws -> NativeIdentity {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "org.opensound.parvi.native-identity",
+            kSecAttrService as String: "org.opensound.beamaudio.native-identity",
             kSecAttrAccount as String: account
         ]
         var item: CFTypeRef?
@@ -56,7 +56,7 @@ public struct NativeIdentity: Sendable {
         let key = try Curve25519.Signing.PrivateKey(rawRepresentation: seed)
         let directory = try FileManager.default.url(for: .applicationSupportDirectory,
             in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("org.opensound.parvi/\(subdirectory)", isDirectory: true)
+            .appendingPathComponent("org.opensound.beamaudio/\(subdirectory)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700])
         return NativeIdentity(seedHex: hex(seed), publicKeyHex: hex(key.publicKey.rawRepresentation),

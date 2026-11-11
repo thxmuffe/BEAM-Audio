@@ -35,4 +35,4 @@ target(#{target_output_time_ns := Time,sample_position := Anchor,sample_rate := 
 %% Return a local monotonic deadline; native output must still execute it.
 output_deadline(Target,CalibratedDelay)
         when is_integer(Target), is_integer(CalibratedDelay), CalibratedDelay >= 0 ->
-    ba_swarm_clock:to_monotonic(Target-CalibratedDelay).
+    ba_buffee_clock:to_monotonic(Target-CalibratedDelay).

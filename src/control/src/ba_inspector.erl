@@ -1,4 +1,4 @@
-%% Historical trusted-app/Distributed Erlang path; not the secure Swarm API.
+%% Historical trusted-app/Distributed Erlang path; not the secure Buffee API.
 %% Persistent native-cluster member with JSON-lines stdin/stdout, logs on stderr.
 -module(ba_inspector).
 -export([boot/0, check/0, main/0, request/1]).

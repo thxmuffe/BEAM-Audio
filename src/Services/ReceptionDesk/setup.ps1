@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 if (!$OtpRoot) { $OtpRoot = Join-Path $repoRoot 'builds\intermediates\Windows\otp' }
 if (!(Test-Path -LiteralPath $OtpRoot)) {
-    $bundled = Join-Path $repoRoot 'builds\Windows\Parvi\runtime'
+    $bundled = Join-Path $repoRoot 'builds\Windows\OpenSound\runtime'
     if (Test-Path -LiteralPath "$bundled\bin\erl.exe") { $OtpRoot = $bundled }
 }
 $OtpRoot = (Resolve-Path -LiteralPath $OtpRoot).Path

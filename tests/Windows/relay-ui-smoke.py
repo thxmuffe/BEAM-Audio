@@ -21,7 +21,7 @@ def main():
     build = (ROOT / 'builds/intermediates/Windows').resolve()
     try:
         state = r.wait(peer, lambda s: s['relay']['connected'])
-        swarm = state['swarms'][0]
+        buffee = state['buffees'][0]
         with tempfile.TemporaryDirectory(dir=build) as temp:
             assert Path(temp).resolve().is_relative_to(build)
             subprocess.run([str(r.ERL.with_name('erlc.exe')), '-Werror', '-o', temp,
@@ -29,8 +29,8 @@ def main():
             subprocess.run([str(r.ERL), '-noshell', '-noinput', '-pa', str(r.APP / 'ebin'), temp,
                 '-s', 'ba_relay_ui_smoke', 'main'], check=True, timeout=30,
                 env={**os.environ, 'BA_RECEPTION_DESK_URL': f'ws://127.0.0.1:{port}/relay/v1',
-                     'BA_TEST_INVITATION': swarm['invitation']})
-            r.wait(peer, lambda s: any(m['text'] == 'native relay send' for m in r.swarm(s, swarm['id'])['messages']))
+                     'BA_TEST_INVITATION': buffee['invitation']})
+            r.wait(peer, lambda s: any(m['text'] == 'native relay send' for m in r.buffee(s, buffee['id'])['messages']))
     finally:
         peer.close()
         desk.terminate()

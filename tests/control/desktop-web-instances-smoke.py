@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory() as directory:
         cli('stop', 'device', '--devicename', names[0], '--timeout', '10s')
         with urllib.request.urlopen(urls[1], timeout=3) as response:
             assert response.status == 200
-        print('PASS: two actual web Devices have distinct identities and ports; stopping one leaves the other serving; no Swarm or audio hardware.')
+        print('PASS: two actual web Devices have distinct identities and ports; stopping one leaves the other serving; no Buffee or audio hardware.')
     finally:
         subprocess.run([str(root/'bin/beamaudio'), 'stop', 'device', '--all', '--timeout', '10s'],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

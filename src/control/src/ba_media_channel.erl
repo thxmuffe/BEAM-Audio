@@ -2,7 +2,7 @@
 -module(ba_media_channel).
 -export([request/3, event/2, down/2]).
 -define(PC, 'Elixir.ExWebRTC.PeerConnection').
--define(PREFIX, "parvi-audio/v1/").
+-define(PREFIX, "beamaudio-audio/v1/").
 
 request({Action, Token, PeerNode}, {Owner, _}, S)
         when (Action =:= expect orelse Action =:= open),

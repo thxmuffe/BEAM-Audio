@@ -2,12 +2,12 @@
 
 > **Current naming/lifecycle:** [TERMINOLOGY.md](TERMINOLOGY.md) defines Source,
 > Stream, Subscription and Media Session. The implemented secure collection is
-> [SWARM_STREAMS.md](SWARM_STREAMS.md): transport closure retains Subscription
+> [BUFFEE_STREAMS.md](BUFFEE_STREAMS.md): transport closure retains Subscription
 > intent, and only a new Media Session/Stream incarnation needs a new descriptor.
 > The trusted-OTP subscription lifecycle below is historical, not the current API.
 
 > **Scope update — 2026-11-08:** This draft includes the original trusted-OTP
-> lifecycle design. Follow [PLAN.md](PLAN.md) for the secure Swarm migration.
+> lifecycle design. Follow [PLAN.md](PLAN.md) for the secure Buffee migration.
 > Every packet independently carries its authoritative target as specified in
 > [AUDIO_ENGINE_INTERFACE.md](AUDIO_ENGINE_INTERFACE.md); older media-position
 > mappings here cannot replace a missing packet target. Rich spatial formats
@@ -152,7 +152,7 @@ A clock name is identification, not clock synchronization. `playback_time` means
 the desired first-frame speaker emission time in that named domain, carried
 unchanged. The separate [application clock service](../src/control/README.md#independent-application-clock)
 now supplies a UTC/POSIX-to-local-monotonic mapping when the descriptor names
-`parvi-utc-posix-ns/v1`. Other clock-domain translations, output latency
+`beamaudio-utc-posix-ns/v1`. Other clock-domain translations, output latency
 compensation and actual scheduling remain unimplemented. Mock publishers must say `mock => true`
 and identify their mock clock/frame; receiving these bytes is not playback.
 
@@ -198,7 +198,7 @@ arrive. This is not a jitter buffer.
 The receiver registers a random 16-byte subscription token with its existing
 local authorized PeerConnection owner before requesting provider readiness over
 native OTP control. The provider opens a DataChannel labelled
-`parvi-audio/v1/<uppercase hex token>`, `ordered => false`, `max_retransmits => 0`.
+`beamaudio-audio/v1/<uppercase hex token>`, `ordered => false`, `max_retransmits => 0`.
 ex_webrtc/SCTP supplies channel negotiation and framing; no custom UDP handshake,
 ACK/retry layer or new ICE connection is added. The token names the delivery
 context, not a globally identified sound object. Unexpected incoming media

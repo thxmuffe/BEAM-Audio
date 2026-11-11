@@ -48,7 +48,7 @@ preview does not establish Windows live Device support.
 ### Run inside the Device's BEAM instance
 
 Add this application's compiled `*/ebin` directories (including dependencies) to
-the Device's code path. After starting the `swarm_control` runtime:
+the Device's code path. After starting the `buffee_control` runtime:
 
 ```erlang
 application:set_env(ba_device_web, options,
@@ -112,5 +112,21 @@ EUnit exercises HTTP/session/asset boundaries, malformed and oversized requests
 temporary socket, credential redaction, direct commands against an isolated
 idle OTP Device, and listener shutdown/token renewal. Fixtures do not require
 OpenSound or contact a Reception. Tests need permission to bind local TCP/Unix sockets.
-Physical audio, live Swarm admission, Windows execution and browser acceptance
+Physical audio, live Buffee admission, Windows execution and browser acceptance
 remain separate checks.
+
+## Persistent Windows Web Devices
+
+With `--local-device`, the Windows launcher reserves a per-user Device slot and
+keeps its identity under `%LOCALAPPDATA%\BEAM-Audio\Web\device-N`. The seed is
+protected with Windows DPAPI for the current user. Closing the runtime releases
+the slot; the next launch reuses its identity and saved Owner return record.
+Concurrent launches use different slots. `BA_IDENTITY_SEED` and `BA_STATE_DIR` can
+supply an explicit existing Device instead. Earlier ephemeral Web launches have
+no stable identity to recover. Source compilation does not validate Windows DPAPI
+or native audio: those platform checks still require Windows.
+
+The standalone Web launcher starts the real shared control runtime. It currently
+does not configure a Windows audio Worker or package native capture/output. Its
+audio consent switches therefore do not establish streaming or playback. Windows
+audio integration is the next concrete work item, separate from web control.

@@ -8,7 +8,7 @@ to_monotonic(Time) -> {ok,Time-erlang:time_offset(nanosecond)}.
 from_monotonic(Time) -> {ok,Time+erlang:time_offset(nanosecond)}.
 open(_) -> {ok,#{latency_ns => 0,observer => whereis(ba_audio_test_sink)}}.
 write(#{observer := Observer},Time,Frames,PCM) ->
-    Clock = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
+    Clock = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
     {ok,Target} = Clock:from_monotonic(Time),{ok,Written} = Clock:now(),
     case process_info(Observer,message_queue_len) of
         {message_queue_len,N} when N<128 ->
@@ -37,7 +37,7 @@ output_barrier() ->
     sys:replace_state(ba_audio_mixer,fun(S) -> Observer ! {barrier,Ref,Caller},S end),
     receive {Ref,ok} -> ok after 5000 -> error(output_probe_timeout) end.
 close(_) -> ok.
-command(#{<<"op">> := <<"swarm_audio_prepare">>}) ->
+command(#{<<"op">> := <<"buffee_audio_prepare">>}) ->
     _ = ets:new(ba_audio_test_output,[named_table,public,ordered_set]),
     _ = ets:new(ba_audio_test_stats,[named_table,public]),
     start_observer(),
@@ -90,7 +90,7 @@ command(#{<<"op">> := <<"unpublish">>,<<"source">> := Key}) -> result(ba_audio:u
 command(#{<<"op">> := <<"pause_source">>,<<"source">> := Key,<<"paused">> := B}) -> result(ba_audio:pause(get({source,Key}),B));
 command(#{<<"op">> := <<"capture_source">>,<<"source">> := Key,<<"capture_ns">> := Capture,<<"value">> := Value,<<"frames">> := Frames}) ->
     D = get({descriptor,Key}),PCM = pcm(Key,Value,Frames),
-    {ok,Mono} = ba_swarm_clock:to_monotonic(Capture),
+    {ok,Mono} = ba_buffee_clock:to_monotonic(Capture),
     Input = (ba_audio_input:new())#{descriptor => D,source => get({source,Key}),handler => ba_stream_handler_pcm},
     Next = ba_audio_input:captured(PCM,Mono,Input),
     put({descriptor,Key},maps:get(descriptor,Next)),
@@ -126,7 +126,7 @@ await_receiver(Old,N) ->
         _ -> receive after 10 -> await_receiver(Old,N-1) end
     end.
 
-clock_id() -> Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),Module:id().
+clock_id() -> Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),Module:id().
 
 pcm(Key,Value,Frames) ->
     D = get({descriptor,Key}),Sample = case maps:get(sample_format,D) of

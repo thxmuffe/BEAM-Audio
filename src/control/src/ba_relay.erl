@@ -3,8 +3,8 @@
 -behaviour(gen_server).
 -export([start_link/0, start_link/1, id/0, enabled/0, url/0, valid_url/1, open/2, close/1, send/3, watch/1, status/0, reconnect/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
-start_link() -> start_link(#{owner => ba_swarms, delivery => swarm}).
-%% A native connector can receive mailbox envelopes without the swarm decoder.
+start_link() -> start_link(#{owner => ba_buffees, delivery => buffee}).
+%% A native connector can receive mailbox envelopes without the buffee decoder.
 start_link(Options) ->
     case maps:get(register,Options,true) of
         true -> gen_server:start_link({local,?MODULE},?MODULE,Options,[]);
@@ -13,7 +13,7 @@ start_link(Options) ->
 id() -> persistent_term:get({?MODULE, id}, node()).
 enabled() -> is_binary(id()).
 url() -> persistent_term:get({?MODULE, url}, undefined).
-open(Swarm, Cap) -> gen_server:cast(?MODULE, {open, Swarm, Cap}).
+open(Buffee, Cap) -> gen_server:cast(?MODULE, {open, Buffee, Cap}).
 close(Cap) -> gen_server:cast(?MODULE, {close, Cap}).
 watch(Nodes) -> gen_server:cast(?MODULE, {watch, Nodes}).
 send(To, Cap, Payload) -> gen_server:call(?MODULE, {send, To, Cap, Payload}, 2000).
@@ -50,7 +50,7 @@ init(#{owner := Owner, delivery := Delivery} = Options) ->
                     {ok,Keys} -> Keys;
                     error -> ba_device_store:identity()
                 end;
-                swarm -> crypto:generate_key(eddsa, ed25519)
+                buffee -> crypto:generate_key(eddsa, ed25519)
             end,
             {binary:encode_hex(Pub), Priv}
     end,
@@ -72,16 +72,16 @@ handle_call({send, To, Cap, Payload}, _, #{ready := true} = S) ->
               request => maps:get(<<"request">>, Payload, null)},
     {reply, ws(Frame, S), S};
 handle_call({send, _, _, _}, _, S) -> {reply, {error, disconnected}, S};
-handle_call({lookup,Swarm,Cap},From,#{ready := true,lookups := Pending}=S) when map_size(Pending)<16 ->
+handle_call({lookup,Buffee,Cap},From,#{ready := true,lookups := Pending}=S) when map_size(Pending)<16 ->
     Request=binary:encode_hex(crypto:strong_rand_bytes(16)),
-    case ws(#{op => <<"lookup">>,request => Request,swarm => Swarm,mailbox => Cap},S) of
+    case ws(#{op => <<"lookup">>,request => Request,buffee => Buffee,mailbox => Cap},S) of
         ok -> erlang:send_after(3000,self(),{lookup_timeout,Request}),
               {noreply,S#{lookups := Pending#{Request => From}}};
         Error -> {reply,Error,S}
     end;
 handle_call({lookup,_,_},_,S) -> {reply,{error,disconnected},S}.
-handle_cast({open, Swarm, Cap}, #{boxes := Boxes} = S) ->
-    Next = S#{boxes := Boxes#{Cap => Swarm}}, maybe_ws(#{op => <<"open">>, swarm => Swarm, mailbox => Cap}, Next), {noreply, Next};
+handle_cast({open, Buffee, Cap}, #{boxes := Boxes} = S) ->
+    Next = S#{boxes := Boxes#{Cap => Buffee}}, maybe_ws(#{op => <<"open">>, buffee => Buffee, mailbox => Cap}, Next), {noreply, Next};
 handle_cast({close, Cap}, #{boxes := Boxes} = S) ->
     maybe_ws(#{op => <<"close">>, mailbox => Cap}, S), {noreply, S#{boxes := maps:remove(Cap, Boxes)}};
 handle_cast({watch, Nodes}, S) ->
@@ -131,25 +131,25 @@ handle_info_event({lookup_timeout,Request},S) -> {noreply,lookup_reply(Request,{
 handle_info_event(_, S) -> {noreply, S}.
 incoming(#{<<"op">> := <<"challenge">>, <<"v">> := 1, <<"nonce">> := Nonce}, S)
         when is_binary(Nonce), byte_size(Nonce) =:= 64 ->
-    Sig = crypto:sign(eddsa, none, <<"parvi-desk/v1:", Nonce/binary>>, [maps:get(private, S), ed25519]),
+    Sig = crypto:sign(eddsa, none, <<"beamaudio-desk/v1:", Nonce/binary>>, [maps:get(private, S), ed25519]),
     ok = ws(#{op => <<"hello">>,v => 1,id => maps:get(identity,S),signature => binary:encode_hex(Sig)},S),S;
 incoming(#{<<"op">> := <<"ready">>, <<"v">> := 1, <<"id">> := Id}, S) ->
     Id = maps:get(identity,S), Next = S#{ready := true, backoff := 500, error := null},
-    [ws(#{op => <<"open">>, swarm => Swarm, mailbox => Cap}, Next) || {Cap, Swarm} <- maps:to_list(maps:get(boxes, S))],
+    [ws(#{op => <<"open">>, buffee => Buffee, mailbox => Cap}, Next) || {Cap, Buffee} <- maps:to_list(maps:get(boxes, S))],
     ws(#{op => <<"watch">>, nodes => maps:get(watch, S)}, Next),
     notify(connected, Next), Next;
 incoming(#{<<"op">> := <<"delivery">>, <<"from">> := From, <<"mailbox">> := Cap, <<"payload">> := Payload}, #{boxes := Boxes} = S) ->
     Delivery = case maps:find(Cap, Boxes) of
-        {ok, Swarm} ->
+        {ok, Buffee} ->
             case maps:get(delivery, S) of
                 raw ->
                     case Payload of
-                        #{<<"swarm">> := Swarm} -> notify({delivery, From, Cap, Payload}, S);
+                        #{<<"buffee">> := Buffee} -> notify({delivery, From, Cap, Payload}, S);
                         _ -> ok
                     end;
-                swarm ->
-                    case ba_swarm_wire:decode(Payload) of
-                        {ok, Swarm, Event} -> notify({delivery, From, Event}, S);
+                buffee ->
+                    case ba_buffee_wire:decode(Payload) of
+                        {ok, Buffee, Event} -> notify({delivery, From, Event}, S);
                         _ -> ok
                     end
             end;
@@ -160,7 +160,7 @@ incoming(#{<<"op">> := <<"presence">>, <<"online">> := Online}, S) when is_list(
     notify({presence, Online}, S), S#{online := Online};
 incoming(#{<<"op">> := <<"found">>,<<"request">> := Request,<<"owners">> := Owners},S)
         when is_list(Owners),length(Owners)=<16 ->
-    true=lists:all(fun(Id) -> ba_swarm_job:hex(Id,64) end,Owners),
+    true=lists:all(fun(Id) -> ba_buffee_job:hex(Id,64) end,Owners),
     lookup_reply(Request,{ok,Owners},S);
 incoming(#{<<"op">> := <<"error">>, <<"request">> := Request, <<"error">> := Error}, S) ->
     notify({error, Request, Error}, S), lookup_reply(Request,{error,Error},S#{error := Error});

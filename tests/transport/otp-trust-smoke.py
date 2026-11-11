@@ -64,7 +64,7 @@ def node(label):
 
 def invitation(p, ttl=259200):
     link = p.request('invite', ttl=ttl)['ok']
-    assert link.startswith('parvi://cluster/v1?') and 'cookie' not in link
+    assert link.startswith('beamaudio://cluster/v1?') and 'cookie' not in link
     return link
 
 
@@ -244,7 +244,7 @@ try:
     carrier.wait(lambda: membership(b) == {b.booted['id']})
     carrier.wait(lambda: not b.request('status')['connected'])
     assert b.request('status')['policy']['authority'] == b.booted['node']
-    assert invitation(b).startswith('parvi://cluster/v1?')
+    assert invitation(b).startswith('beamaudio://cluster/v1?')
     chat_group([b])
     chat(b, [b], 'Singleton survivor', excluded=[a, c, d])
     print('PASS: removing the admission actor\'s host moves authority to a surviving VM; invitations still work', flush=True)

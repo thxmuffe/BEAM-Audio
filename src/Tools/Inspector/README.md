@@ -1,7 +1,7 @@
 # Historical trusted-cluster inspector
 
 This tool uses the old trusted Distributed Erlang boundary. It is not the scoped
-Swarm inspector planned for the OpenSound App in step 9. Its core modules now use
+Buffee inspector planned for the OpenSound App in step 9. Its core modules now use
 `ba_*`; see [naming/migration](../../../docs/NAMING.md).
 
 A headless, admitted cluster member. Commands are JSON lines on stdin; replies
@@ -45,7 +45,7 @@ omit `-JoinFile` on later runs. `-OtpRoot` defaults to `BA_OTP_ROOT`, or the
 private runtime from Windows setup. `-NativeLibRoot` defaults to
 `BA_WINDOWS_NATIVE_LIB`, or `builds/intermediates/Windows/transport/beam/dev/lib`. The inspector
 stores its own encrypted seed and membership under
-`%LOCALAPPDATA%\org.opensound.parvi\inspector`; `-StateDirectory` chooses another
+`%LOCALAPPDATA%\org.opensound.beamaudio\inspector`; `-StateDirectory` chooses another
 identity/state directory. Windows user DPAPI protects `identity.dpapi`; it is
 separate from any app identity and is not a portable identity backup. Run only
 one inspector per identity. Missing/incompatible native libraries fail before

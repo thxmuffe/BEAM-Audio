@@ -1,76 +1,41 @@
-# Core names and migration
+# Names and namespace migration
 
-The user approved the [Buffee product vocabulary](TERMINOLOGY.md) on 2026-11-11.
-Reception is now the display/documentation name
-for the introduction/routing service. Existing identifiers such as
-`ba_swarm_desks`, `BA_DESK_PORT`, `ReceptionDesk` and hosted URLs stay unchanged.
-The migration history below does not authorize a new code/protocol migration.
+The 2026-11-11 migration applies the Buffee terminology to project-owned sources,
+file/directory names, test fixtures, APIs, protocol fields and current documents.
+Historical proposals and implementation records remain historical documentation.
+Generated builds, downloaded dependencies and Git history are not project sources
+and are not rewritten by a source migration.
 
-Core-owned Erlang modules, registered processes, test modules and native exported
-functions use `ba_` (BEAM Audio). The OTP application is `ba_core`, the public
-runtime facade is `ba_runtime`, and the transport dependency application is
-`ba_transport`. Configuration uses `BA_*`. Do not add old-name forwarding modules
-or a second set of environment-variable aliases.
+## Current names
 
-Most module/file names change mechanically from `parvi_*` to `ba_*`. These names
-also clarify the component responsibility:
+- Core modules/processes/native exports: `ba_`; application: `ba_core`;
+  facade: `ba_runtime`; configuration: `BA_*`.
+- Shared runtime profile: `buffee_control`.
+- Logical runtime: `ba_buffee`; memberships: `ba_buffee_membership`;
+  local compatibility collection: `ba_buffees`.
+- Administrative Device role: Owner. Participation roles: Chef and Guest.
+  Manager and Inspector remain processes, independent of ownership.
+- UI package: `OpenSoundKit`; commercial applications: OpenSound.
+- Current invitations: `beamaudio://session/v4?ticket=...`.
 
-| Previous name | Current name | Responsibility |
-| --- | --- | --- |
-| `parvi` / `parvi.app.src` | `ba_runtime` / `ba_core.app.src` | Runtime facade / OTP application. |
-| `parvi_clock*` | `ba_swarm_clock*` | Swarm Clock and its existing helpers/tests. |
-| `parvi_cluster_store` | `ba_device_store` | Local identity access and checkpoints. |
-| `parvi_audio_subscription` | `ba_media_session` | Temporary WebRTC media connection. |
-| `parvi_audio_subscription_intent` | `ba_subscription` | Persistent intent to receive a Source. |
-| `parvi_audio_stream_handler` | `ba_stream_handler` | Stream Handler behaviour/selection. |
-| `parvi_audio_stream_handler_legacy` | `ba_stream_handler_pcm` | Current PCM handler, under `handlers/pcm/`. |
-| `parvi_audio_stream_handler_webrtc` | `ba_stream_handler_opus` | Opus handler; PCM also uses WebRTC. |
-| `parvi_cluster_auth/authority/desk/trust` | `ba_legacy_cluster_auth/authority/desk/trust` | Historical trusted Distributed Erlang stack. |
-| `parvi_connection` | `ba_legacy_connection` | Historical OTP-node/cookie connection string. |
-| `parvi_broker*` / `parvi_directory` | `ba_desk*` / `ba_desk_directory` | Historical HTTP Reception directory, separate from the Phoenix service. |
-| `parvi_beam.c/.h`, `parvi_bridge_*` | `ba_beam.c/.h`, `ba_bridge_*` | Native runtime/UI bindings. |
+## Compatibility and installation
 
-Use the [canonical terminology](TERMINOLOGY.md). A Source's stable key, its Stream
-incarnation, a Subscription's saved intent and a Media Session's live attempt
-remain separate identities/lifecycles. This cleanup changes names, not the clock
-algorithm, packet target calculation, Passport policy or checkpoint format.
+This is an explicit breaking namespace migration, including signed domains,
+control fields, data-channel labels and platform application/storage identifiers.
+Old binaries and old signed invitations do not become compatible by relabelling
+UI text. Rebuild matching clients and Reception together and generate fresh
+invitations. Do not introduce a parallel alias/protocol stack.
 
-## Consumers and configuration
+No installed application, user credential store or running public Reception is
+modified by source edits or compilation. Renamed application/storage identifiers
+can select a new platform identity/storage location after installation; existing
+platform data is not deleted. The Windows standalone Web launcher now keeps its
+own stable, DPAPI-protected Device identity per launch slot. This does not import
+identities from earlier ephemeral web launches or from a native app.
 
-Recompile core modules; renamed entry points are not available in existing app
-bundles. Consumers must use `ba_runtime:start(swarm_control)`, application/config
-atom `ba_core`, the renamed modules/native symbols and the matching rebuilt core
-artifacts. Old generated builds are not rewritten by source renaming.
+Owner return depends on retaining `BA_IDENTITY_SEED` and `BA_STATE_DIR` for the
+same Device. Never persist PIDs, sockets, audio buffers, clock observations or
+local monotonic deadlines as ownership evidence.
 
-Change `PARVI_*` configuration to `BA_*`, retaining existing values. For example,
-`BA_IDENTITY_SEED` and `BA_STATE_DIR` must point to the same identity/state as
-before. A missing seed on an ephemeral profile creates an ephemeral identity,
-just as before; renaming the variable does not migrate a launcher automatically.
-Reception host configuration is `BA_DESK_BIND` and `BA_DESK_PORT` (formerly
-`PARVI_BROKER_BIND` / `PARVI_BROKER_PORT`); conventional `PORT` remains supported.
-Native GStreamer configuration is `BA_GSTREAMER_*`. Check the component READMEs
-and scripts for the complete configuration each consumer uses.
-
-The OpenSound repository is intentionally untouched. Step 9 must update its
-runtime calls, launch environment, C/Objective-C bridge symbols, resource paths,
-and packaging to these names before building/launching apps. Product-owned
-`ParviKit`, bundle names and `parvi_windows*` references in product integration
-tests still describe that unmigrated repository. Core Windows capture now belongs
-to `ba_audio_sup`, with no dependency on the product window supervisor.
-
-## Deliberately retained spellings
-
-- Existing `parvi://...` invitation schemes, cryptographic signature domains,
-  media channel labels and the PCM wire-profile identifier. These identify
-  versioned formats, not Erlang modules; changing them would be a protocol migration.
-- `org.opensound.parvi...` secure identity/state locations. Changing those would
-  risk generating a new Device Identity instead of reusing the current one.
-- The existing `parvi-reception-desk.onrender.com` address/Render service identity.
-  Local source renaming does not rename or deploy the hosted service.
-- Dated progress, archived ideas, product documentation and historical decisions.
-  They may mention previous names; current source/API names are defined here.
-
-Checkpoints retain their existing names, version and data. No identity or saved
-membership is erased by this cleanup. The prior deliberate version-1 relationship
-reset is unchanged. Apps, physical audio and deployed-service validation remain
-separate from core compilation and headless checks.
+Run `python3 tests/control/naming-check.py` to audit current project-owned paths
+and text in both checkouts. The audit also checks Erlang module/file consistency.

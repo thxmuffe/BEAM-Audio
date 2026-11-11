@@ -19,7 +19,7 @@ init({Owner, Initiator, IceServers}) ->
     self() ! start,
     {ok, #{owner => Owner, pc => PC, initiator => Initiator, channel => undefined,
         ready => false, handle => undefined, pending => [], buffer => <<>>,
-        packets => queue:new(), waiter => undefined, sent => 0, received => 0,
+        packets => queue:new(), pending_receiver => undefined, sent => 0, received => 0,
         sent_bytes => 0, received_bytes => 0}}.
 
 handle_call({supervisor, Sup}, _, S) -> link(Sup), {reply, ok, S};
@@ -35,7 +35,7 @@ handle_call({send, Data}, _, S) -> {reply, ok, send_packet(Data, S)};
 handle_call(recv, From, #{packets := Q} = S) ->
     case queue:out(Q) of
         {{value, Packet}, Rest} -> {reply, {ok, binary_to_list(Packet)}, S#{packets := Rest}};
-        {empty, _} -> {noreply, S#{waiter := From}}
+        {empty, _} -> {noreply, S#{pending_receiver := From}}
     end;
 handle_call({activate, Handle}, _, #{packets := Q} = S) ->
     [ok = erlang:dist_ctrl_put_data(Handle, P) || P <- queue:to_list(Q)],
@@ -88,7 +88,7 @@ handle_cast({signal, #{<<"kind">> := <<"candidate">>, <<"candidate">> := JSON}},
     end.
 
 handle_info(start, #{initiator := true, pc := PC} = S) ->
-    {ok, #{ref := Ref}} = ?PC:create_data_channel(PC, <<"parvi-otp-dist/v1">>),
+    {ok, #{ref := Ref}} = ?PC:create_data_channel(PC, <<"beamaudio-otp-dist/v1">>),
     {ok, Offer} = ?PC:create_offer(PC),
     ok = ?PC:set_local_description(PC, Offer), description(Offer, S),
     {noreply, S#{channel := Ref}};
@@ -102,7 +102,7 @@ handle_info({ex_webrtc, PC, {ice_candidate, C}}, #{pc := PC} = S) ->
         <<"sdpMid">> => default(maps:get(sdp_mid, C), <<"0">>),
         <<"sdpMLineIndex">> => default(maps:get(sdp_m_line_index, C), 0)},
     notify(S, {signal, #{kind => <<"candidate">>, candidate => JSON}}), {noreply, S};
-handle_info({ex_webrtc, PC, {data_channel, #{label := <<"parvi-otp-dist/v1">>, ref := Ref}}},
+handle_info({ex_webrtc, PC, {data_channel, #{label := <<"beamaudio-otp-dist/v1">>, ref := Ref}}},
         #{pc := PC} = S) -> {noreply, S#{channel := Ref}};
 handle_info({ex_webrtc, PC, {data_channel_state_change, Ref, open}}, #{pc := PC, channel := Ref} = S) ->
     case whereis(ba_legacy_cluster_trust) of
@@ -168,9 +168,9 @@ deliver(0, Packet, #{received := Count, received_bytes := Bytes} = S) ->
     Next = S#{received := Count + 1, received_bytes := Bytes + byte_size(Packet)},
     case maps:get(handle, S) of
         undefined ->
-            case maps:get(waiter, S) of
+            case maps:get(pending_receiver, S) of
                 undefined -> Next#{packets := queue:in(Packet, maps:get(packets, S))};
-                From -> gen_server:reply(From, {ok, binary_to_list(Packet)}), Next#{waiter := undefined}
+                From -> gen_server:reply(From, {ok, binary_to_list(Packet)}), Next#{pending_receiver := undefined}
             end;
         Handle -> ok = erlang:dist_ctrl_put_data(Handle, Packet), Next
     end.

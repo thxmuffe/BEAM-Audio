@@ -6,13 +6,13 @@ start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
     case application:get_env(ba_core,runtime_profile,legacy_apps) of
-        swarm_control ->
+        buffee_control ->
             {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
                  [#{id => ba_device_config,start => {ba_device_config,start_link,[]}},
                   #{id => ba_contacts,start => {ba_contacts,start_link,[]}},
                   #{id => ba_desk_connections_sup,start => {ba_desk_connections_sup,start_link,[]},type => supervisor,shutdown => infinity},
-                  #{id => ba_swarm_desks,start => {ba_swarm_desks,start_link,[]}},
-                  #{id => ba_swarm,start => {ba_swarm,start_link,[]}}]}};
+                  #{id => ba_buffee_desks,start => {ba_buffee_desks,start_link,[]}},
+                  #{id => ba_buffee,start => {ba_buffee,start_link,[]}}]}};
         _ -> existing_profile()
     end.
 
@@ -27,7 +27,7 @@ existing_profile() ->
         #{id => ba_relay, start => {ba_relay, start_link, []}},
         #{id => ba_direct, start => {ba_direct, start_link, []}},
         #{id => ba_network, start => {ba_network, start_link, []}},
-        #{id => ba_swarms, start => {ba_swarms, start_link, []}}
+        #{id => ba_buffees, start => {ba_buffees, start_link, []}}
     ],
     Children = case application:get_env(ba_core, runtime_profile, legacy_apps) of
         native_cluster -> Core ++ case application:get_env(ba_core, native_desk, false) of
@@ -36,6 +36,6 @@ existing_profile() ->
         end;
         legacy_apps -> Core ++ Compatibility
     end,
-    Clock = #{id => ba_swarm_clock_sup, start => {ba_swarm_clock_sup, start_link, []},
+    Clock = #{id => ba_buffee_clock_sup, start => {ba_buffee_clock_sup, start_link, []},
               type => supervisor, shutdown => infinity},
     {ok, {#{strategy => rest_for_one, intensity => 5, period => 10}, Children ++ [Clock]}}.

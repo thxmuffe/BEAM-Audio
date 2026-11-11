@@ -1,51 +1,51 @@
 # BEAM Audio control runtime
 
 Supervised BEAM Audio process failures can emit a short `System: … stopped (…)`
-notice to the current Swarm chat. A Logger handler sends a bounded asynchronous
+notice to the current Buffee chat. A Logger handler sends a bounded asynchronous
 notification to the existing chat worker; publication is one best-effort attempt
 and never blocks the failing process or supervisor. Detailed reports stay in OTP
 Logger. Ordinary shutdowns, unavailable chat/membership and whole-VM crashes do
 not guarantee a notice. No exception arguments, credentials or full state enter
 chat. Check with `python3 tests/control/crash-chat-smoke.py` from the core root.
 
-The macOS app now uses the secure Swarm profile and a local Device Handler audio
+The macOS app now uses the secure Buffee profile and a local Device Handler audio
 Worker. Its JSON boundary exposes consent/action toggles, scoped inspection, chat
 and exclusions. [Mac app behavior, build and user-led checks](../../docs/MACOS_APP.md).
 The Mac build is prepared; hardware/app acceptance is pending, and iOS/Windows
 runtime/UI migration remains later.
 
-Step 9 adds [Ephemeral Swarms and local contacts/groups](../../docs/SWARM_MEMBERSHIP.md).
-Start `ba_runtime:start(swarm_control)` idle, then call `ba_swarm:create/2` or
-explicitly accept an invitation with `ba_swarm:join/1`. `ba_contacts` is the
-durable address book; Swarm policy, Passports, routes and Subscription intent
-are memory-only for that gathering. Captain end/departure tears down its runtime;
-Captain loss ends members when fresh authorization expires. No election or restore.
-Reusable signed v3 invitations currently have no time expiry. Their Swarm ID/name
-can be reused to start a fresh gathering with a new Captain and fresh membership;
+Step 9 adds [Ephemeral Buffees and local contacts/groups](../../docs/BUFFEE_MEMBERSHIP.md).
+Start `ba_runtime:start(buffee_control)` idle, then call `ba_buffee:create/2` or
+explicitly accept an invitation with `ba_buffee:join/1`. `ba_contacts` is the
+durable address book; Buffee policy, Passports, routes and Subscription intent
+are memory-only for that gathering. Owner end/departure tears down its runtime;
+Owner loss ends members when fresh authorization expires. No election or restore.
+Reusable signed v3 invitations currently have no time expiry. Their Buffee ID/name
+can be reused to start a fresh gathering with a new Owner and fresh membership;
 the old authority/grants are not restored. Lookup is capability-scoped at the
-Reception, without simultaneous-Captain coordination. See the membership guide above.
+Reception, without simultaneous-Owner coordination. See the membership guide above.
 The local JSON bridge exposes lifecycle/address-book commands. UI integration
 is step 10, macOS → iOS → Windows; no product app was launched for this work.
 
 Follow-ups 8a–8d are implemented: independently supervised Reception connections and
 route fallback, unchanged Contract no-ops, bounded failure diagnostics and fresh
 nonce-based authorization renewal retaining eligible media. The root supervisor
-isolates Reception ownership from `ba_swarm_runtime_sup`'s dependency-ordered runtime;
+isolates Reception ownership from `ba_buffee_runtime_sup`'s dependency-ordered runtime;
 ordinary route loss is not revocation. Exact current policy and expiry remain
-enforced. See [control/renewal](../../docs/SWARM_CONTROL_PROTOCOL.md),
-[Reception ownership](../../docs/SWARM_MEMBERSHIP.md) and [checks](../../tests/control/README.md).
+enforced. See [control/renewal](../../docs/BUFFEE_CONTROL_PROTOCOL.md),
+[Reception ownership](../../docs/BUFFEE_MEMBERSHIP.md) and [checks](../../tests/control/README.md).
 The 8d maximum-Offset continuity qualification remains open.
 
 Core entry point: `ba_runtime`; OTP application: `ba_core`; configuration: `BA_*`.
 Use the [canonical terminology](../../docs/TERMINOLOGY.md) and
 [migration guide](../../docs/NAMING.md). Subscriptions are saved intent;
-`ba_media_session` owns temporary connections. `ba_swarm_clock` owns shared time
+`ba_media_session` owns temporary connections. `ba_buffee_clock` owns shared time
 and Playback Offset. Historical trusted-cluster instructions below are not the
-current Swarm API or permission boundary.
+current Buffee API or permission boundary.
 
-## Verified Swarm backend — step 8
+## Verified Buffee backend — step 8
 
-The headless `swarm_control` profile now provides the verified membership/job,
+The headless `buffee_control` profile now provides the verified membership/job,
 PCM/Opus collection and authenticated clock/Offset path, with no old cross-device
 OTP control dependency. Step 8 fixes ordinary session renewal resetting the clock
 window, adds bounded buffering over the Offset range and capture rebind after
@@ -56,7 +56,7 @@ Product apps remain unmigrated; step 10 starts with macOS, then iOS, then Window
 
 ## Shared Time and Offset — step 7
 
-[Authenticated Time and revisioned Swarm Offset](../../docs/SWARM_TIME.md) replaces
+[Authenticated Time and revisioned Buffee Offset](../../docs/BUFFEE_TIME.md) replaces
 cross-device clock RPC/discovery. The authority is the initial clock reference and
 single Offset writer. Explicit time_read/offset_write grants, fresh four-timestamp
 samples and existing median/slew policy gate scheduling. Capture stamps from one
@@ -64,12 +64,12 @@ current clock/Offset snapshot; cached policy is not a local override. The real
 WebRTC PCM proof now also runs with this shared clock and a headless output sink.
 Step 8 verifies native decoded-audio mixing and sustained buffering; platform
 capture/output and physical timing remain step-10 gates.
-The revised shared app UI is specified in step 10; abandoned-Swarm return is superseded.
+The revised shared app UI is specified in step 10; abandoned-Buffee return is superseded.
 
 
-## Current Swarm audio path — step 6
+## Current Buffee audio path — step 6
 
-[Independent Streams and Subscriptions](../../docs/SWARM_STREAMS.md) replaces the
+[Independent Streams and Subscriptions](../../docs/BUFFEE_STREAMS.md) replaces the
 single receiver with a gathering-scoped collection, scoped signed signaling, independent
 WebRTC PCM endpoints and one Erlang scheduled mixer. Local publication/receive
 Contracts and separate stream grants are required. Sources may pause or restart
@@ -85,24 +85,24 @@ The historical checkpoints below do not provide the active receiver API.
 > **Reading status — 2026-11-08:** This guide describes the existing runtime and
 > earlier checkpoints. Its cross-device OTP/erpc/pg operations belong to the
 > trusted baseline, not the new untrusted Device boundary. Follow the
-> [active Swarm plan](../../docs/PLAN.md) for migration and work order.
+> [active Buffee plan](../../docs/PLAN.md) for migration and work order.
 
-## Secure Swarm migration
+## Secure Buffee migration
 
-Step 1's [boundary contract and code migration map](../../docs/SWARM_CONTRACT.md)
+Step 1's [boundary contract and code migration map](../../docs/BUFFEE_CONTRACT.md)
 defines Device identity, message/session permissions, local Handler/Worker
 responsibilities and the replacement of remote OTP dependencies. These are target
 interfaces; step 3 now implements a [local Handler/test Worker lifecycle](../../docs/DEVICE_HANDLER.md).
-Step 4 now adds the [Director/Contract/job proof](../../docs/SWARM_JOBS.md), with
+Step 4 now adds the [Manager/Contract/job proof](../../docs/BUFFEE_JOBS.md), with
 local acceptance, leases, idempotent retry and correlated outcomes. Step 2's
-[restricted status protocol](../../docs/SWARM_CONTROL_PROTOCOL.md) is implemented
+[restricted status protocol](../../docs/BUFFEE_CONTROL_PROTOCOL.md) is implemented
 and verified between independent runtimes through the real Reception without OTP
-connectivity. Step 5 introduced [Passports, current permissions and multi-Reception routing](../../docs/SWARM_MEMBERSHIP.md).
-Step 9 now starts that runtime idle; use `ba_swarm` for explicit create/join. The guides give limits and headless check commands.
+connectivity. Step 5 introduced [Passports, current permissions and multi-Reception routing](../../docs/BUFFEE_MEMBERSHIP.md).
+Step 9 now starts that runtime idle; use `ba_buffee` for explicit create/join. The guides give limits and headless check commands.
 New builds ignore old version-1 membership/route/subscription records while
 retaining device keys. Step 3 adds scoped `capabilities.read` queries with their
 own `capabilities_read` grant; they do not grant Worker execution. A separate
-`job_offer` grant, designated Director and explicit local test Contract/consent
+`job_offer` grant, designated Manager and explicit local test Contract/consent
 are required for the bounded test job. App integration
 is step 10: macOS, iOS, then Windows.
 Temporary broken app/control paths during migration are accepted; preserving the
@@ -229,8 +229,8 @@ ba_app -> ba_sup (rest_for_one)
                 +-- ba_pg (OTP pg scope)
                 +-- ba_chat (gen_server)
                 +-- ba_discovery (local HTTP directory client)
-                +-- ba_swarm_clock_sup (one_for_one)
-                      +-- ba_swarm_clock (gen_server + read-only ETS snapshot)
+                +-- ba_buffee_clock_sup (one_for_one)
+                      +-- ba_buffee_clock (gen_server + read-only ETS snapshot)
 ```
 
 `ba_core` is the UI boundary: send, history, status, subscribe/unsubscribe and manual
@@ -261,7 +261,7 @@ Erlang/`pg` detects them. Reconnection is manual; prior history is not merged.
 
 ## Independent application clock
 
-The clock uses the existing `ba_swarm_clock_sup` / `ba_swarm_clock` supervision branch.
+The clock uses the existing `ba_buffee_clock_sup` / `ba_buffee_clock` supervision branch.
 The default reference mode is now `auto`: `pg` discovers clock workers in the
 current native cluster/permission epoch, and a deterministic ordering of stable
 node names selects the master among directly visible clock peers. Each worker
@@ -321,7 +321,7 @@ choice. The existing iOS in-process resolver remains in use.
 ### Monotonic mapping and audio
 
 Time advances from `erlang:monotonic_time/1`, never from the count of timer
-messages. `ba_swarm_clock_mapping` contains the immutable mapping and deadline
+messages. `ba_buffee_clock_mapping` contains the immutable mapping and deadline
 inverse. Initial acquisition establishes a provisional offset. Once 20 measured
 offsets are available, the 30-second check compares their rolling median with
 the currently applied offset. Differences strictly greater than **2 ms** adjust
@@ -330,7 +330,7 @@ there is no backwards step. `remaining_correction_ns` reports convergence still
 in progress. This is application-clock correction, not DAC/sample-rate resampling.
 No OS clock is modified.
 
-`ba_swarm_clock:filtered_utc_time/0` returns `{ok, UTCNanoseconds}` using the
+`ba_buffee_clock:filtered_utc_time/0` returns `{ok, UTCNanoseconds}` using the
 current monotonic mapping; `now/0` is its compatibility alias. `status/0` exposes
 `filtered_utc_time`, `filter_sample_count`, `filter_required_samples`,
 `filter_ready`, `filtered_offset_ns`, `sample_interval_ms` and `threshold_ns`.
@@ -339,10 +339,10 @@ from monotonic time between observations; it is not a cached timestamp or the
 average of old UTC readings. During follower warm-up, the value is provisional
 and state is `acquiring`. Existing audio timestamp APIs share this same mapping.
 
-`ba_swarm_clock_filter` is a pure bounded median filter. `ba_swarm_clock_sync` contains
+`ba_buffee_clock_filter` is a pure bounded median filter. `ba_buffee_clock_sync` contains
 pure four-timestamp measurement and threshold/correction functions.
-`ba_swarm_clock_mapping` converts time and applies monotonic slewing. The supervised
-`ba_swarm_clock` worker owns discovery, sampling, timers and state. Audio processes
+`ba_buffee_clock_mapping` converts time and applies monotonic slewing. The supervised
+`ba_buffee_clock` worker owns discovery, sampling, timers and state. Audio processes
 use these modules/service through composition; no class inheritance, new
 behaviour implementation, native code or Kalman library is needed.
 
@@ -370,12 +370,12 @@ assumption that a fixed `offset_ns` can describe an actively slewing interval.
 Previously submitted OS buffers are not rescheduled by this change.
 
 ```erlang
-ba_swarm_clock:status().
-{ok, UTC} = ba_swarm_clock:now().
-{ok, LocalDeadline} = ba_swarm_clock:to_monotonic(UTC + 100000000).
-{ok, [CaptureUTC, NowUTC]} = ba_swarm_clock:map_times([CaptureMono, NowMono]).
-ok = ba_swarm_clock:resync().             % explicit internal pull/upstream refresh
-ok = ba_swarm_clock:set_reference(auto).  % resume connected-peer discovery
+ba_buffee_clock:status().
+{ok, UTC} = ba_buffee_clock:now().
+{ok, LocalDeadline} = ba_buffee_clock:to_monotonic(UTC + 100000000).
+{ok, [CaptureUTC, NowUTC]} = ba_buffee_clock:map_times([CaptureMono, NowMono]).
+ok = ba_buffee_clock:resync().             % explicit internal pull/upstream refresh
+ok = ba_buffee_clock:set_reference(auto).  % resume connected-peer discovery
 ```
 
 `status/0` is a mailbox-free ETS read. It reports role/master, local instance,
@@ -394,7 +394,7 @@ all saved members are online or that speakers are aligned. Current absolute UTC
 uncertainty/drift is explicitly `unknown`; the last point measurement and RTT
 are diagnostic evidence, not a permanent accuracy bound.
 
-The generic wire clock ID remains `parvi-utc-posix-ns/v1`. That ID alone does not
+The generic wire clock ID remains `beamaudio-utc-posix-ns/v1`. That ID alone does not
 prove shared master/timeline or sufficient accuracy. Native media plans must
 check reference identity, mapping quality and the required output alignment;
 DAC drift correction and acoustic/electrical measurements remain separate work.
@@ -413,7 +413,7 @@ the automatic mode's cold source. `clock_interval_ms` defaults to 30000 (correct
 Run the approved focused checks from `src/control`:
 
 ```sh
-rebar3 eunit --module=ba_swarm_clock_filter_tests,ba_swarm_clock_mapping_tests,ba_swarm_clock_tests,ba_native_tests
+rebar3 eunit --module=ba_buffee_clock_filter_tests,ba_buffee_clock_mapping_tests,ba_buffee_clock_tests,ba_native_tests
 ```
 
 These use a loopback SNTP fixture and two supervised local OTP nodes. They cover
@@ -426,14 +426,14 @@ clock or acoustic-alignment result. App rebuild/deployment remains separate.
 ## Native cluster foundation (opt-in)
 
 `ba_runtime:start(native_cluster)` starts the shared `ba_pg`, `ba_chat` and
-independent `ba_swarm_clock_sup` branch under the standard supervisor. It must be called before
+independent `ba_buffee_clock_sup` branch under the standard supervisor. It must be called before
 the application starts. The default `ba_runtime:start()` keeps the current apps'
 compatibility workers. The selected profile is application configuration and
 persists across application stops; unset `runtime_profile` to return to the
 default before restarting.
 
 The native profile uses OTP process groups and remote `gen_server` casts for
-chat. It does not start swarm gossip, application relay/direct routing,
+chat. It does not start buffee gossip, application relay/direct routing,
 discovery or topology polling. OTP connection/process liveness is separate from
 the invitation policy's permission to reconnect. Group membership converges
 asynchronously; there is no additional application membership registry.
@@ -477,10 +477,10 @@ binary node identities, scoped mailboxes, verified WSS and reconnect. The shared
 OTP settings in `src/ba_core.app.src` provide `default_reception_desk_url`, bundled
 with every native app. Override with `BA_RECEPTION_DESK_URL` at startup (an
 empty value selects local-only transport), or issue bridge `configure_desk` with `url`
-to explicitly start a fresh session. Swarm v2 invitations route through that Reception;
+to explicitly start a fresh session. Buffee v2 invitations route through that Reception;
 local v1 invitations remain the separate developer transport.
 
-`ba_swarm_wire` defines the validated JSON schema. `ba_swarms` owns admission,
+`ba_buffee_wire` defines the validated JSON schema. `ba_buffees` owns admission,
 membership, bounded histories and revocation for either transport. Its relay
 admission path is asynchronous. `ba_network` reports relay connection presence
 without inventing direct distribution edges. The Reception never receives Erlang

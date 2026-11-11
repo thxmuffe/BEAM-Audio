@@ -137,7 +137,7 @@ command(#{<<"op">> := <<"status">>}, C) ->
         connected => [atom_to_binary(N) || N <- nodes(connected)], connections => Connections,
         chat => chat_status(),
         workers => [Id || {Id, _, _, _} <- supervisor:which_children(ba_sup)],
-        legacy_workers => [N || N <- [ba_swarms, ba_relay, ba_direct, ba_discovery, ba_network],
+        legacy_workers => [N || N <- [ba_buffees, ba_relay, ba_direct, ba_discovery, ba_network],
                                 whereis(N) =/= undefined]}, C}.
 
 chat_message(#{id := Ref, sender := Sender, text := Text, sent_at_ms := Time}) ->

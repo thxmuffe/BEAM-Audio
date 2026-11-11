@@ -28,7 +28,7 @@ Opus is the lossy codec; NetEq and GStreamer are different media engines.
 Replacing an engine while retaining Opus does not remove codec loss.
 
 Relevant source files: `src/Audio/adapters/macOS/opus_capture.inc`,
-`src/Audio/handlers/webrtc/parvi_webrtc_audio_session.erl`,
+`src/Audio/handlers/webrtc/ba_webrtc_audio_session.erl`,
 `src/Audio/adapters/iOS/WebRTCPlaybackDevice.swift`, and
 `src/Audio/adapters/Windows/webrtc_output.py`.
 
@@ -42,7 +42,7 @@ schedule to its native engine. Neither native command handler accepts a shared
 presentation schedule or a clock-rate correction instruction.
 
 The handler explicitly advertises presentation_schedule_execution=false;
-parvi_webrtc_audio_timing reports output_schedule_enforced=false. Windows
+ba_webrtc_audio_timing reports output_schedule_enforced=false. Windows
 sync=true follows its own pipeline clock/timestamps, not the Erlang group target.
 iPhone NetEq chooses adaptive delay and can stretch/conceal audio independently.
 Equal minimum buffer settings would not establish equal speaker timing or stop

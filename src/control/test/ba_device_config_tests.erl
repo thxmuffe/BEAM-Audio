@@ -73,7 +73,7 @@ end).
 restart() -> gen_server:stop(ba_device_config),{ok,_}=ba_device_config:start_link(),ok.
 fixture(F) ->
     Env=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
-    Keys=[audio_consent,audio_automation,audio_capture_adapter,audio_output_adapter,swarm_default_permissions],
+    Keys=[audio_consent,audio_automation,audio_capture_adapter,audio_output_adapter,buffee_default_permissions],
     Old=[{K,application:get_env(ba_core,K)} || K <- Keys],
     Dir=filename:join("/tmp","ba-config-"++integer_to_list(erlang:unique_integer([positive]))),
     ok=file:make_dir(Dir),os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$A)),

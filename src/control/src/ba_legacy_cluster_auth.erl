@@ -1,4 +1,4 @@
-%% Historical trusted-app/Distributed Erlang path; not the secure Swarm API.
+%% Historical trusted-app/Distributed Erlang path; not the secure Buffee API.
 %% Admission envelope helpers: OTP Ed25519, JSON, URI and secure randomness.
 %% No custom encryption: credentials travel inside the WebRTC DTLS connection.
 -module(ba_legacy_cluster_auth).
@@ -8,7 +8,7 @@
 fresh(Bytes) -> binary:encode_hex(crypto:strong_rand_bytes(Bytes)).
 sign(Body, Private) ->
     Data = iolist_to_binary(json:encode(Body)),
-    Signature = crypto:sign(eddsa, none, [<<"parvi-otp-admission/v1:">>, Data], [Private, ed25519]),
+    Signature = crypto:sign(eddsa, none, [<<"beamaudio-otp-admission/v1:">>, Data], [Private, ed25519]),
     #{<<"body">> => base64:encode(Data), <<"signature">> => binary:encode_hex(Signature)}.
 read(#{<<"body">> := B, <<"signature">> := Signature}) when byte_size(B) =< 32768 ->
     Data = base64:decode(B),
@@ -18,7 +18,7 @@ verify(Envelope, Public) ->
     {Body, Data, Signature} = read(Envelope),
     true = byte_size(Public) =:= 64 andalso byte_size(Signature) =:= 64,
     Public = binary:encode_hex(binary:decode_hex(Public)),
-    true = crypto:verify(eddsa, none, [<<"parvi-otp-admission/v1:">>, Data], Signature,
+    true = crypto:verify(eddsa, none, [<<"beamaudio-otp-admission/v1:">>, Data], Signature,
                          [binary:decode_hex(Public), ed25519]),
     Body.
 
@@ -30,7 +30,7 @@ parse_invitation(Link) when is_binary(Link), byte_size(Link) =< 2048 ->
     try
         #{scheme := Scheme, host := <<"cluster">>, path := <<"/v1">>, query := Q} =
             URI = uri_string:parse(string:trim(Link)),
-        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
+        true = Scheme =:= <<"beamaudio">>,
         4 = map_size(URI),
         Pairs = uri_string:dissect_query(Q), 7 = length(Pairs),
         F = maps:from_list(Pairs), 7 = map_size(F),

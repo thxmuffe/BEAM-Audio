@@ -20,7 +20,7 @@ node_name(Platform) ->
 load(Name, Default) ->
     case transient(Name) of
         true ->
-            try ets:lookup(ba_swarm_state,Name) of [{_,Data}] -> Data;[] -> Default
+            try ets:lookup(ba_buffee_state,Name) of [{_,Data}] -> Data;[] -> Default
             catch error:badarg -> Default end;
         false -> load_file(Name,Default)
     end.
@@ -33,7 +33,7 @@ load_file(Name,Default) ->
                 {ok, Bytes} ->
                     case binary_to_term(Bytes, [safe]) of
                         #{version := 2, data := Data} -> Data;
-                        %% User-requested clean start for the Swarm migration.
+                        %% User-requested clean start for the Buffee migration.
                         %% Device identity is held separately in secure storage.
                         #{version := 1} -> Default;
                         _ -> error({unsupported_device_state,Name})
@@ -44,7 +44,7 @@ load_file(Name,Default) ->
 
 save(Name, Data) ->
     case transient(Name) of
-        true -> ets:insert(ba_swarm_state,{Name,Data}),ok;
+        true -> ets:insert(ba_buffee_state,{Name,Data}),ok;
         false -> save_file(Name,Data)
     end.
 save_file(Name,Data) ->
@@ -73,8 +73,8 @@ path(Name) ->
             filename:join(Directory, atom_to_list(Name) ++ ".term")
     end.
 
-%% Live records never read/write device files, including old Swarm snapshots.
+%% Live records never read/write device files, including old Buffee snapshots.
 transient(Name) ->
-    application:get_env(ba_core,runtime_profile,legacy_apps)=:=swarm_control andalso
-    lists:member(Name,[swarm_authority,swarm_member,swarm_desks,swarm_time_policy,
-                      swarm_time_cache,audio_subscriptions,swarm_exclusions]).
+    application:get_env(ba_core,runtime_profile,legacy_apps)=:=buffee_control andalso
+    lists:member(Name,[buffee_authority,buffee_member,buffee_desks,buffee_time_policy,
+                      buffee_time_cache,audio_subscriptions,buffee_exclusions]).

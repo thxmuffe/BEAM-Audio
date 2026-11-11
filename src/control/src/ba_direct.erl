@@ -70,9 +70,9 @@ connect(Peer, #{enabled := true, connections := PCs} = S) ->
     end;
 connect(_, S) -> S.
 event(Peer, {signal, Signal}, #{routes := Routes} = S) ->
-    #{swarm := Id, mailbox := Cap, member := Member} = maps:get(Peer, Routes),
-    case ba_swarm_wire:valid_signal(Signal) of
-        true -> ba_relay:send(Peer, Cap, ba_swarm_wire:encode(Id, {rtc, Id, Member, Signal}));
+    #{buffee := Id, mailbox := Cap, member := Member} = maps:get(Peer, Routes),
+    case ba_buffee_wire:valid_signal(Signal) of
+        true -> ba_relay:send(Peer, Cap, ba_buffee_wire:encode(Id, {rtc, Id, Member, Signal}));
         false -> ok
     end, S;
 event(Peer, {ready, Ready}, #{ready := Peers} = S) ->
@@ -80,9 +80,9 @@ event(Peer, {ready, Ready}, #{ready := Peers} = S) ->
 event(Peer, {packet, Data}, #{ready := Ready} = S) when byte_size(Data) =< 131072 ->
     try
         true = lists:member(Peer, Ready),
-        case ba_swarm_wire:decode(json:decode(Data)) of
+        case ba_buffee_wire:decode(json:decode(Data)) of
             {ok, _, {rtc, _, _, _}} -> ok;
-            {ok, _, Event} -> whereis(ba_swarms) ! {relay, {delivery, Peer, Event}};
+            {ok, _, Event} -> whereis(ba_buffees) ! {relay, {delivery, Peer, Event}};
             _ -> ok
         end
     catch _:_ -> ok end, S;

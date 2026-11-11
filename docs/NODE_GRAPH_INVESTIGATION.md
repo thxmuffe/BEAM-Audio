@@ -39,7 +39,7 @@ not observations of live BEAM Audio connections.
 * `set_dbl_click/2` is exported but its message is not handled in the receive
   loop. Clicking a node to copy a connection string needs an actual event hook.
 * The linked ticker redraws roughly every 40 ms while unfrozen. Repulsion loops
-  over vertex pairs; suitability for large swarms has not been benchmarked.
+  over vertex pairs; suitability for large buffees has not been benchmarked.
 * The Windows probe logged an unhandled `wxMove` event, although graph updates
   and drawing continued. The component subscribes to that event without handling
   it; an adapted viewer should fix this.
@@ -52,7 +52,7 @@ Reuse the pinned OTP graph/layout implementation through a small BEAM Audio-spec
 adapter or an attributed source adaptation. Avoid a browser UI and avoid writing
 a new force-layout algorithm. Keep topology state outside the disposable viewer.
 
-The existing status worker knows this node's connections. A complete swarm view
+The existing status worker knows this node's connections. A complete buffee view
 requires gathering each connected node's own adjacency list, with observation
 times and unknown/unreachable states. It must not assume every visible pair is
 connected, or describe a disconnected peer as definitely dead. Transport links

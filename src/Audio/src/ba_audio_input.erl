@@ -8,14 +8,14 @@
 new() -> #{state => stopped, source => undefined, frames => 0,
            blocks => 0, skipped_frames => 0, send_errors => 0}.
 ready() ->
-    case ba_swarm_clock:now() of
+    case ba_buffee_clock:now() of
         {ok, _} -> ok;
         {error, _} -> {error, <<"Clock is not synchronized yet. Try broadcast again shortly.">>}
     end.
 
 open(Name,Descriptor0) -> open(Name,Descriptor0,Name).
 open(Name, Descriptor0, Key) ->
-    Descriptor = Descriptor0#{clock => ba_swarm_clock:id()},
+    Descriptor = Descriptor0#{clock => ba_buffee_clock:id()},
     Handler = ba_stream_handler:default(),
     Frame = Handler:frame_bytes(Descriptor),
     true = Frame =< Handler:max_payload_bytes(channel),
@@ -34,7 +34,7 @@ captured(PCM, Mono, #{descriptor := #{sample_format := Encoding} = Descriptor, h
     Next = S#{frames := maps:get(frames, S) + Frames, meter => Levels,
               last_capture_ms => erlang:monotonic_time(millisecond)},
     %% Use one immutable mapping for both times, including an active clock slew.
-    case ba_swarm_clock:presentation([Mono, erlang:monotonic_time(nanosecond)]) of
+    case ba_buffee_clock:presentation([Mono, erlang:monotonic_time(nanosecond)]) of
         {ok, #{times := [UTC,Now],clock := Clock,offset_ms := Offset}} when Clock=:=map_get(clock,Descriptor) ->
             Lead = Offset * 1000000,
             case UTC + Lead > Now of

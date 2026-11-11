@@ -127,7 +127,7 @@ handle_info(Message,#{decoder := Decoder}=S) ->
     case ba_audio_opus:event(Decoder,Message) of
         ready -> {noreply,opus_open(S#{decoder_ready := true})};
         {pcm,RTP,Frames,PCM} ->
-            Module = application:get_env(ba_core,audio_clock_adapter,ba_swarm_clock),
+            Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
             case {live(S),Module:now(),Module:id()=:=maps:get(clock,maps:get(descriptor,S))} of
                 {true,{ok,Now},true} ->
                     case ba_audio_rtp_time:decode(RTP,Now) of
@@ -172,7 +172,7 @@ deliver(Message,S) ->
 reject(Reason,S) -> ba_diagnostics:count(Reason,S#{rejected := maps:get(rejected,S)+1}).
 bounded_notify(Message,#{owner := Owner}) ->
     case process_info(Owner,message_queue_len) of {message_queue_len,N} when N<64 -> Owner ! Message,ok;_ -> {error,overloaded} end.
-label(#{subscription := Id,attempt := Attempt}) -> <<"parvi-audio/v2/",Id/binary,"/",Attempt/binary>>.
+label(#{subscription := Id,attempt := Attempt}) -> <<"beamaudio-audio/v2/",Id/binary,"/",Attempt/binary>>.
 live(#{context := #{deadline := Deadline}}) -> now_ms()<Deadline.
 now_ms() -> erlang:monotonic_time(millisecond).
 terminate(_,#{pc := PC}=S) ->

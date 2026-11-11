@@ -27,7 +27,7 @@ It does not launch, install or modify any BEAM Audio app or Reception.
 ## Shared OTP foundation (step 2a)
 
 The trust probe starts `ba_runtime:start(native_cluster)`, which runs the existing
-`pg` scope and chat `gen_server` under `ba_sup`. No custom swarm, relay-chat,
+`pg` scope and chat `gen_server` under `ba_sup`. No custom buffee, relay-chat,
 direct application router, discovery or network/topology worker starts. The
 third-party WebRTC libraries carry native distribution; OTP supplies remote
 PIDs, process groups, casts, monitors and supervision. Invitation records
@@ -53,13 +53,13 @@ deliberately unchanged, except the native cluster's display name.
 an initial pair of nodes. It reuses `ba_relay` and the existing Reception protocol;
 the public service and working apps are unchanged. The relay client now accepts
 an explicit Erlang owner and raw-envelope delivery. Its default still decodes
-swarm messages for current apps.
+buffee messages for current apps.
 
 The inviter creates a cluster and opens a mailbox. Its link wraps the existing
 native invitation with the Reception URL, relay identity and mailbox capability:
 
 ```text
-parvi://cluster/v2?desk=URL&node=RELAY_ID&mailbox=CAP&invitation=NATIVE_V1_INVITATION
+beamaudio://cluster/v2?desk=URL&node=RELAY_ID&mailbox=CAP&invitation=NATIVE_V1_INVITATION
 ```
 
 All values are percent encoded. This is an experimental link, not a shipping
@@ -151,7 +151,7 @@ shared cluster cookie. The new experimental invitation is explicitly a grant of
 whole-VM cluster trust:
 
 ```text
-parvi://cluster/v1?v=1&cluster=ID&issuer=PUBLIC_KEY&node=NAME&invite=ID&secret=SECRET&expires=TIME
+beamaudio://cluster/v1?v=1&cluster=ID&issuer=PUBLIC_KEY&node=NAME&invite=ID&secret=SECRET&expires=TIME
 ```
 
 The actual URI uses standard percent encoding. It contains an expiring bearer
@@ -187,7 +187,7 @@ and retained capability records to a survivor, which completes publication.
 
 The user selected **cluster-wide remove both**. The caller and target lose native
 access to all honest surviving nodes, including access associated with other
-logical swarms in this cluster. Their issued invitations and the invitations
+logical buffees in this cluster. Their issued invitations and the invitations
 through which either entered are removed from the authority's live capability
 set, which all admissions consult. Other capabilities remain valid. Membership credentials
 are removed, the epoch advances, native routes/controllers are fenced and peer
@@ -195,13 +195,13 @@ cookies are invalidated. Connections between surviving members stay usable.
 There is no permanent banned-device register; a fresh invitation can authorize
 a new membership for a removed device.
 
-One VM has one native trust domain. Multiple logical swarms may use that domain;
+One VM has one native trust domain. Multiple logical buffees may use that domain;
 they are not VM-security boundaries. A populated domain cannot silently join an
 unrelated domain. A solitary domain can be replaced by explicit invitation
 acceptance. Independently isolated domains require separate VMs or a separately
 designed explicit merge operation. Existing app invitation URLs and UI behavior
 are unchanged until native app integration.
-The isolated authority does not rewrite the existing apps' swarm metadata or
+The isolated authority does not rewrite the existing apps' buffee metadata or
 their legacy relay sessions; that integration remains step 4.
 
 The step-2 smoke test verifies four VMs, invitations by different nodes, remote

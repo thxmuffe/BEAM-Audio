@@ -8,7 +8,7 @@ See [naming/migration](../../docs/NAMING.md) and
 python3 tests/control/naming-check.py
 ```
 
-The integration harness rejects snapshots if any old `parvi`/`parvi_*` Erlang
+The integration harness rejects snapshots if any old `beamaudio`/`ba_*` Erlang
 module was loaded, so stale generated build directories cannot silently supply
 a missing renamed dependency.
 
@@ -22,10 +22,10 @@ From `src/control`, compile and run the focused unit/protocol regression:
 
 ```sh
 rebar3 compile
-rebar3 eunit --module=ba_swarm_control_protocol_tests,ba_swarm_passport_tests,ba_swarm_job_tests,ba_device_handler_tests,ba_device_store_tests,ba_subscription_tests,ba_audio_restore_events_tests,ba_audio_mix_tests,ba_audio_opus_tests,ba_audio_rtp_time_tests,ba_webrtc_audio_timing_tests,ba_audio_engine_tests,ba_audio_gstreamer_schedule_tests,ba_audio_gstreamer_control_tests,ba_audio_meter_tests,ba_swarm_clock_tests,ba_swarm_clock_filter_tests,ba_swarm_clock_mapping_tests,ba_swarm_time_protocol_tests,ba_backend_failures_tests,ba_contacts_tests,ba_swarm_tests
+rebar3 eunit --module=ba_buffee_control_protocol_tests,ba_buffee_passport_tests,ba_buffee_job_tests,ba_device_handler_tests,ba_device_store_tests,ba_subscription_tests,ba_audio_restore_events_tests,ba_audio_mix_tests,ba_audio_opus_tests,ba_audio_rtp_time_tests,ba_webrtc_audio_timing_tests,ba_audio_engine_tests,ba_audio_gstreamer_schedule_tests,ba_audio_gstreamer_control_tests,ba_audio_meter_tests,ba_buffee_clock_tests,ba_buffee_clock_filter_tests,ba_buffee_clock_mapping_tests,ba_buffee_time_protocol_tests,ba_backend_failures_tests,ba_contacts_tests,ba_buffee_tests
 ```
 
-123 checks pass including the Ephemeral Swarm review fixes. Native engine protocol checks use bounded loopback
+123 checks pass including the Ephemeral Buffee review fixes. Native engine protocol checks use bounded loopback
 test endpoints; they do not qualify native playback. The 30-second queue proof
 uses virtual time and two sources; the ordinary clock-renewal unit check requires
 fresh authorization even when observations are retained.
@@ -33,17 +33,17 @@ fresh authorization even when observations are retained.
 From the core root:
 
 ```sh
-python3 tests/control/swarm-control-smoke.py
-python3 tests/control/swarm-membership-smoke.py
-python3 tests/control/swarm-reconnect-smoke.py
-python3 tests/control/swarm-time-smoke.py
-python3 tests/control/swarm-time-smoke.py --production-cadence
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --sustained
+python3 tests/control/buffee-control-smoke.py
+python3 tests/control/buffee-membership-smoke.py
+python3 tests/control/buffee-reconnect-smoke.py
+python3 tests/control/buffee-time-smoke.py
+python3 tests/control/buffee-time-smoke.py --production-cadence
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time --sustained
 ```
 
 The first uses the existing public WSS Reception for signed status/capabilities,
-Director jobs, local consent, retry, cancellation, expiry, Worker crash and
-Director-loss cleanup. Membership/time proofs start two temporary instances of
+Manager jobs, local consent, retry, cancellation, expiry, Worker crash and
+Manager-loss cleanup. Membership/time proofs start two temporary instances of
 the existing Reception service for cross-Reception admission, explicit permissions, revocation, Reception isolation,
 clock/Offset writes, reference restart and control recovery.
 Production cadence takes about 100 seconds, exercising 20 observations at 5 s
@@ -54,24 +54,24 @@ Its test sink checks software target/handoff times, with no output hardware.
 The Homebrew OpenSSL variable is needed only for the existing macOS libsrtp NIF;
 omit or adapt it on other systems.
 
-## Ephemeral Swarms — step 9
+## Ephemeral Buffees — step 9
 
 ```sh
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --ephemeral --swarm-time
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --ephemeral --buffee-time
 ```
 
 This passes the lifecycle exit: saved contacts/group generate recipient-bound
 invitation URIs; voluntary join and explicit Contracts allow two real WebRTC PCM
 Sources to mix at their packet targets. It verifies member leave/rejoin,
-Captain-only end, full process/ETS/Reception teardown on all participants, contacts
+Owner-only end, full process/ETS/Reception teardown on all participants, contacts
 surviving a cold restart, new gathering IDs and rejection of old-gathering tickets.
-It also kills the Captain membership actor and waits through the actual 60-second
+It also kills the Owner membership actor and waits through the actual 60-second
 authorization bound for member teardown. No election or snapshot restoration.
-Storage contains only the Captain's `contacts.term`; other test Devices write no
-Swarm checkpoint files. The corrected two-Reception membership proof also explicitly
-ends the Captain gathering before checking remote cleanup and retained contacts.
+Storage contains only the Owner's `contacts.term`; other test Devices write no
+Buffee checkpoint files. The corrected two-Reception membership proof also explicitly
+ends the Owner gathering before checking remote cleanup and retained contacts.
 
-Local APIs and limits: [Ephemeral Swarms](../../docs/SWARM_MEMBERSHIP.md).
+Local APIs and limits: [Ephemeral Buffees](../../docs/BUFFEE_MEMBERSHIP.md).
 These are headless loopback proofs, not app, hardware or physical timing tests.
 The earlier 8d maximum-Offset continuity issue remains separate and open.
 
@@ -86,8 +86,8 @@ continues the existing rejoin/revocation checks.
 Exact continuous PCM proofs, using actual 60 s control and membership leases:
 
 ```sh
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --renewal --seconds 125 --offset-ms 1000
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --renewal --seconds 85 --offset-ms 30000
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time --renewal --seconds 125 --offset-ms 1000
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time --renewal --seconds 85 --offset-ms 30000
 ```
 
 The test sink timestamps handoff before forwarding PCM to a bounded observer;
@@ -126,7 +126,7 @@ For the real native codec/handoff proof on the existing Mac GStreamer runtime:
 export BA_GSTREAMER_RUNTIME="$PWD/builds/intermediates/gstreamer/runtime"
 export BA_GSTREAMER_PCM_HELPER="$PWD/src/Audio/adapters/gstreamer/pcm_bridge.py"
 export BA_GSTREAMER_PYTHON=/usr/bin/python3
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --opus
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time --opus
 ```
 
 Use a Python/GI installation matching that runtime (the bundled Mac GI is Python
@@ -153,7 +153,7 @@ clock freshness still stop affected execution; this is not an uninterrupted
 playback guarantee under arbitrary network failures. Already submitted native
 output cannot be selectively retracted. Step 9 must qualify sustained app behavior
 and automatic eligible peer reconnection while preserving authorization.
-App integration/listening is step 9; ordinary-member-first abandoned-Swarm
+App integration/listening is step 9; ordinary-member-first abandoned-Buffee
 recovery is step 10. Historical trusted app profiles remain unmigrated, but none
 of these backend checks starts their remote-OTP control stack.
 
@@ -163,7 +163,7 @@ Build `bash src/Tools/CLI/build.sh`, then:
 
 ```sh
 python3 tests/control/cli-smoke.py
-python3 tests/control/cli-swarm-smoke.py
+python3 tests/control/cli-buffee-smoke.py
 ```
 
 These use temporary identities/state and local sockets. The first creates two
@@ -175,18 +175,18 @@ child-environment secret removal and supervised native-output failure checks.
 See [CLI usage/limitations](../../src/Tools/CLI/README.md) for real user-led audio
 commands and the explicitly deferred saved-configuration/undo work.
 
-## Frozen authority and Device collection (2026-11-11)
+## Ownership, participation and clock continuation (2026-11-11)
 
 ```sh
-python3 tests/control/frozen-authority-smoke.py
+python3 tests/control/buffee-roles-smoke.py
 ```
 
-Uses a local Reception and disposable Devices to verify Captain app closure freezes
-existing grants; peers reauthenticate and run a consent/Contract-scoped job without
-a Director privilege; Captain process restart recovers only with a live admitted
-peer; revocation blocks survive recovery; explicit End tears down the gathering;
-the first reuse of the same link starts fresh membership; history without live
-members cannot recover authority; automatic saved Devices/groups deduplicate.
-Presence deadlines are expired inside this non-packaged harness to exercise the
-boundary without waiting a minute. No audio hardware or physical clock continuity
-is tested. The time service remains pinned to the Captain in this increment.
+Uses a local Reception and three disposable Devices. Checks Guest/Chef boundaries,
+shared ownership, administration after the first Owner leaves, cold return to the
+same Buffee, removal of ownership, and Destroy by another Owner. The clock check
+uses the explicit system reference and an accelerated two-sample filter: an already
+synchronized Chef continues the same timeline after the Owner leaves, including
+when no Owner is online. This is software timing evidence, not audio hardware or
+physical alignment qualification. The Owner-return unit test also exercises
+restoration with no other running Device. This replaces the superseded tests for
+surviving-peer-only recovery and implicit ownership of an empty invitation.

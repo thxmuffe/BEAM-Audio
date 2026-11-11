@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Configuration/undo across real CLI VM restarts; idle only, no Swarm/audio."""
+"""Configuration/undo across real CLI VM restarts; idle only, no Buffee/audio."""
 import json
 import os
 from pathlib import Path
@@ -36,10 +36,10 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-config-') as directory:
         run('set', 'device', '--enable', 'speaker')
         assert not history()['can_redo'], 'new edit retained redo branch'
         view = run('inspect', 'device')
-        assert view['swarm']['state'] == 'idle'
+        assert view['buffee']['state'] == 'idle'
         assert 'entries' not in view['configuration'], 'polling sends full history'
         run('stop', 'device')
-        print('CLI configuration smoke passed: resume, persistent undo/redo, no-op and redo branching; no Swarm/audio.')
+        print('CLI configuration smoke passed: resume, persistent undo/redo, no-op and redo branching; no Buffee/audio.')
     finally:
         subprocess.run([str(CLI), 'stop', 'device', '--devicename', 'saved', '--timeout', '2s'],
                        env=env, capture_output=True, timeout=25)

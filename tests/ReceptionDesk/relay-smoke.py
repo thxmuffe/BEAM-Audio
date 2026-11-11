@@ -12,7 +12,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = Path(os.environ.get("OPENSOUND_ROOT", ROOT.parent / "OpenSound"))
-APP = APP_ROOT / 'builds/Windows/Parvi'
+APP = APP_ROOT / 'builds/Windows/OpenSound'
 ERL = Path(os.environ.get('BA_TEST_ERL', APP / 'runtime/bin/erl.exe'))
 ELIXIR = Path(os.environ.get('BA_ELIXIR_ROOT', ROOT / 'builds/intermediates/tools/elixir'))
 
@@ -64,8 +64,8 @@ def wait(node, predicate):
     raise AssertionError('State did not converge')
 
 
-def swarm(state, identity):
-    return next((s for s in state['swarms'] if s['id'] == identity), None)
+def buffee(state, identity):
+    return next((s for s in state['buffees'] if s['id'] == identity), None)
 
 
 def start_desk(port, tls_port=None, cert=None, key=None):
@@ -113,27 +113,27 @@ def main():
         states = [wait(n, lambda s: s['relay']['connected']) for n in nodes]
         assert len(set(s['node'] for s in states)) == 3
         assert all(len(s['node']) == 64 for s in states)
-        x = states[0]['swarms'][0]['id']
-        link = swarm(a.request(), x)['invitation']
+        x = states[0]['buffees'][0]['id']
+        link = buffee(a.request(), x)['invitation']
         assert '/v2?' in link and 'cookie=' not in link
-        assert b.request('join_swarm', invitation=link)['error'] is None
-        link_b = swarm(b.request(), x)['invitation']
-        assert c.request('join_swarm', invitation=link_b)['error'] is None
+        assert b.request('join_buffee', invitation=link)['error'] is None
+        link_b = buffee(b.request(), x)['invitation']
+        assert c.request('join_buffee', invitation=link_b)['error'] is None
         for n in nodes:
-            wait(n, lambda s: len(swarm(s, x)['members']) == 3)
+            wait(n, lambda s: len(buffee(s, x)['members']) == 3)
         if '--idle' in sys.argv:
             # Longer than the server's inactivity timeout: ping/pong must keep it open.
             time.sleep(50)
             assert all(n.request()['relay']['connected'] for n in nodes)
-        y = a.request('create_swarm', name='Another room')['result']['swarm_id']
-        assert b.request('join_swarm', invitation=swarm(a.request(), y)['invitation'])['error'] is None
-        assert a.request('send_swarm', swarm_id=x, text='Relayed hello 🐦')['error'] is None
+        y = a.request('create_buffee', name='Another room')['result']['buffee_id']
+        assert b.request('join_buffee', invitation=buffee(a.request(), y)['invitation'])['error'] is None
+        assert a.request('send_buffee', buffee_id=x, text='Relayed hello 🐦')['error'] is None
         for n in (b, c):
-            wait(n, lambda s: any(m['text'] == 'Relayed hello 🐦' for m in swarm(s, x)['messages']))
-        assert b.request('send_swarm', swarm_id=y, text='Only another room')['error'] is None
-        wait(a, lambda s: any(m['text'] == 'Only another room' for m in swarm(s, y)['messages']))
-        assert swarm(c.request(), y) is None
-        assert c.request('send_swarm', swarm_id=y, text='Unauthorized')['error'] is not None
+            wait(n, lambda s: any(m['text'] == 'Relayed hello 🐦' for m in buffee(s, x)['messages']))
+        assert b.request('send_buffee', buffee_id=y, text='Only another room')['error'] is None
+        wait(a, lambda s: any(m['text'] == 'Only another room' for m in buffee(s, y)['messages']))
+        assert buffee(c.request(), y) is None
+        assert c.request('send_buffee', buffee_id=y, text='Unauthorized')['error'] is not None
         # The service stores neither histories nor memberships. Native state survives restart.
         desk.terminate()
         desk.wait(timeout=5)
@@ -141,19 +141,19 @@ def main():
         desk = start_desk(port)
         for n in nodes:
             wait(n, lambda s: s['relay']['connected'] and len(s['relay']['online']) >= 3)
-        assert c.request('send_swarm', swarm_id=x, text='After desk restart')['error'] is None
-        wait(a, lambda s: any(m['text'] == 'After desk restart' for m in swarm(s, x)['messages']))
-        assert b.request('remove_both', swarm_id=x, target=states[2]['node'])['error'] is None
-        wait(c, lambda s: swarm(s, x) is None)
-        wait(a, lambda s: len(swarm(s, x)['members']) == 1)
-        assert swarm(b.request(), y) is not None
-        assert b.request('join_swarm', invitation=link)['error'] is not None
-        fresh = swarm(a.request(), x)['invitation']
+        assert c.request('send_buffee', buffee_id=x, text='After desk restart')['error'] is None
+        wait(a, lambda s: any(m['text'] == 'After desk restart' for m in buffee(s, x)['messages']))
+        assert b.request('remove_both', buffee_id=x, target=states[2]['node'])['error'] is None
+        wait(c, lambda s: buffee(s, x) is None)
+        wait(a, lambda s: len(buffee(s, x)['members']) == 1)
+        assert buffee(b.request(), y) is not None
+        assert b.request('join_buffee', invitation=link)['error'] is not None
+        fresh = buffee(a.request(), x)['invitation']
         assert fresh != link
-        assert b.request('join_swarm', invitation=fresh)['error'] is None
-        assert a.request('leave_swarm', swarm_id=x)['error'] is None
-        wait(b, lambda s: len(swarm(s, x)['members']) == 1)
-        assert c.request('join_swarm', invitation=swarm(b.request(), x)['invitation'])['error'] is None
+        assert b.request('join_buffee', invitation=fresh)['error'] is None
+        assert a.request('leave_buffee', buffee_id=x)['error'] is None
+        wait(b, lambda s: len(buffee(s, x)['members']) == 1)
+        assert c.request('join_buffee', invitation=buffee(b.request(), x)['invitation'])['error'] is None
         print('PASS: authenticated relay; three independent non-distributed BEAM nodes; scoped admission/chat; desk restart/reconnect; mutual removal/revocation; creator-independent invitation')
     finally:
         for n in nodes:

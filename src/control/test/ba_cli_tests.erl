@@ -6,7 +6,7 @@ idle_link() -> {ok,spawn_link(fun Loop() -> receive stop -> ok;_ -> Loop() end e
 
 command_parser_and_no_restore_command_test() ->
     Spec=ba_cli:spec("/tmp"),
-    ?assertMatch({ok,#{enable := "speaker"},_,_},argparse:parse(["new","device","--devicename","one","--createswarm","--enable","speaker"],Spec,#{progname => "beam-audio"})),
+    ?assertMatch({ok,#{enable := "speaker"},_,_},argparse:parse(["new","device","--devicename","one","--createbuffee","--enable","speaker"],Spec,#{progname => "beam-audio"})),
     ?assertMatch({error,_},argparse:parse(["start","device","--devicename","one"],Spec,#{progname => "beam-audio"})),
     ?assertMatch({ok,#{web_assets := "/tmp",web_port := 0},_,_},
         argparse:parse(["new","device","--devicename","one","--web-assets","/tmp","--web-port","0"],Spec,#{progname => "beamaudio"})),
@@ -15,7 +15,7 @@ command_parser_and_no_restore_command_test() ->
     ?assertNot(ba_cli_store:valid_name("../other")),?assert(ba_cli_store:valid_name("test-1")).
 
 readiness_needs_real_work_and_fresh_progress_test() ->
-    Base=#{swarm => #{state => authorized},consent => #{speaker => true,microphone => false,broadcast => true},
+    Base=#{buffee => #{state => authorized},consent => #{speaker => true,microphone => false,broadcast => true},
         clock => #{state => synchronized,offset_policy => #{ready => true}},
         handler => #{audio => #{broadcast => #{state => starting}}},audio => #{}},
     ?assertNot(maps:get(ready,ba_device_api:readiness(Base))),
@@ -42,7 +42,7 @@ helper_environment_does_not_receive_seed_test() ->
 output_failure_preserves_audio_processes_test() ->
     OldProfile=application:get_env(ba_core,runtime_profile),
     OldState=os:getenv("BA_STATE_DIR"),os:unsetenv("BA_STATE_DIR"),
-    Control=spawn(fun Loop() -> receive _ -> Loop() end end),register(ba_swarm_control,Control),
+    Control=spawn(fun Loop() -> receive _ -> Loop() end end),register(ba_buffee_control,Control),
     try
         {ok,Sup}=ba_audio_sup:start_link(),
         try
@@ -60,7 +60,7 @@ output_failure_preserves_audio_processes_test() ->
         after gen_server:stop(Sup) end
     after
         exit(Control,kill),
-        case whereis(ba_swarm_control) of undefined -> ok;_ -> unregister(ba_swarm_control) end,
+        case whereis(ba_buffee_control) of undefined -> ok;_ -> unregister(ba_buffee_control) end,
         case OldProfile of undefined -> application:unset_env(ba_core,runtime_profile);{ok,P} -> application:set_env(ba_core,runtime_profile,P) end,
         case OldState of false -> os:unsetenv("BA_STATE_DIR");_ -> os:putenv("BA_STATE_DIR",OldState) end
     end.

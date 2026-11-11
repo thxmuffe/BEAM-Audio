@@ -32,14 +32,14 @@ handle_cast(_, S) -> {noreply, S}.
 handle_info({Port, {data, <<1, Metadata/binary>>}}, #{port := Port} = S) ->
     Format = ba_core_audio:format(Metadata),
     Descriptor = #{encoding => opus, sample_format => opus, sample_rate => 48000,
-        channel_count => 2, clock => ba_swarm_clock:id(),
+        channel_count => 2, clock => ba_buffee_clock:id(),
         stream_handler => webrtc_audio_opus,
         rtp_timestamp_semantics => ba_audio_rtp_time:semantics(),
         presentation_stream_id => maps:get(stream_id,maps:get(presentation_state,S))},
     {ok, Source} = ba_audio:publish(#{source_key => <<"default-output">>,name => <<"Mac output - Opus / NetEq comparison">>,
         profiles => #{channel => Descriptor}}, self()),
     {noreply, read(S#{state := running, source => Source, source_monitor => monitor(process, Source),
-        source_clock => ba_swarm_clock:id(),capture_format => Format, format => #{rate => 48000, channels => 2}, handler => <<"webrtc_audio_opus">>})};
+        source_clock => ba_buffee_clock:id(),capture_format => Format, format => #{rate => 48000, channels => 2}, handler => <<"webrtc_audio_opus">>})};
 handle_info({Port, {data, <<8, Host:64/little, Position:64/little-float,
                           Dropped:64/little, Flags:32/little, _Buffers:32/little, Frames:32/little, OutputPosition:64/little>>}},
             #{port := Port, capture_format := Format, capture_timing := Timing} = S) ->
@@ -65,7 +65,7 @@ handle_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
         #{encoder_lookahead_frames => Lookahead, converter_leading_input_frames => Leading,
           converter_trailing_input_frames => Trailing,
           capture_clock_round_trip_ns => maps:get(best_round_trip,S,null)},Timing),
-    {Delay,ClockTimeline} = case ba_swarm_clock:presentation([]) of
+    {Delay,ClockTimeline} = case ba_buffee_clock:presentation([]) of
         {ok,#{offset_ms := Offset,clock := Clock}} -> {Offset*1000000,Clock};
         _ -> {undefined,undefined}
     end,

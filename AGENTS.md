@@ -6,8 +6,7 @@
 
 Food analogies belong to core/backend terminology only. In the UI use **Session**,
 **Device**, **Group**, **Join**, **Leave** and **Destroy**. Buffee remains the
-intentional backend term. Guest/Chef and Manager must not become food-themed UI
-labels. Leave disconnects only this Device; Destroy requests ending the Session
+intentional backend term. Use Owner, Chef and Guest as role labels. Manager and Inspector are process names, not additional Device roles. Leave disconnects only this Device; Destroy requests ending the Session
 for all participants and is available only to an authorized authority. Existing
 signed-End delivery limitations still apply. Never relabel a local Leave as Destroy.
 This rule supersedes earlier recommendations to display Buffee in product UI.
@@ -75,8 +74,8 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
   Select All and Copy. Do not render error messages solely as static labels or
   implement custom clipboard/context-menu handling for them.
 - Use OTP for process lifecycle, supervision, messaging, links/monitors and process-group membership. Keep admission permission distinct from observed connection/process liveness.
-- Do not give mutually untrusted Swarm devices Distributed Erlang connectivity or the ability to invoke arbitrary remote functions. Keep supervision local and cross-device operations authenticated, allowlisted and scoped to explicit permissions.
-- Implementation sources belong under `src/`: platform apps in `src/Apps/`, app-specific shared code in `src/Apps/Shared/`, audio processing and native audio adapters in `src/Audio/`, shared networking/swarm runtime in `src/control/`, and independently deployed services in `src/Services/`. Cross-component integration checks belong in top-level `tests/`; component unit tests can stay beside their component. Documentation belongs in `docs/` and repository-wide tooling in `scripts/`.
+- Do not give mutually untrusted Buffee devices Distributed Erlang connectivity or the ability to invoke arbitrary remote functions. Keep supervision local and cross-device operations authenticated, allowlisted and scoped to explicit permissions.
+- Implementation sources belong under `src/`: platform apps in `src/Apps/`, app-specific shared code in `src/Apps/Shared/`, audio processing and native audio adapters in `src/Audio/`, shared networking/buffee runtime in `src/control/`, and independently deployed services in `src/Services/`. Cross-component integration checks belong in top-level `tests/`; component unit tests can stay beside their component. Documentation belongs in `docs/` and repository-wide tooling in `scripts/`.
 - Keep `src/Audio/src/` platform independent. Platform audio bindings, including
   Erlang port/format/OS-clock adapters and native helpers, belong together under
   `src/Audio/adapters/<platform>/`. Adapters supply source-format descriptions,
@@ -93,19 +92,18 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 
 Use **Buffee** for logical, mutually untrusted device collaboration,
 **Reception** for public admission/introductions, and **Response time** for the
-shared playback delay in new user-facing design. Guest and Chef describe a Device’s roles within a Buffee; Manager coordinates work, without overriding local consent.
-Keep computing capacity literal. Existing Swarm/Desk/Offset code and protocol
-identifiers stay unchanged until an explicit migration. **BEAM Audio** is the open-source
+shared playback delay in new user-facing design. Owner is trusted administration; Chef and Guest are participation roles. Manager and Inspector are predefined processes whose VM placement grants no ownership or override of local consent.
+Keep computing capacity literal. The explicit 2026-11-11 namespace migration applies Buffee to active code, paths, APIs and signed domains; do not add obsolete aliases. **BEAM Audio** is the open-source
 technology; **OpenSound App** names only the commercial user interface. Use the
 canonical component terminology in docs/TERMINOLOGY.md. Core-owned Erlang modules,
 registered processes and native exports use the `ba_` prefix; the OTP application
 is `ba_core`, its facade is `ba_runtime`, and configuration uses `BA_*`. A
 Subscription is persistent intent; a Media Session is a temporary transport.
-Use Swarm Clock and Playback Offset consistently. Legacy "cluster" names describe
-only explicitly trusted Distributed Erlang code, never the secure Swarm boundary.
+Use Buffee Clock and Playback Offset consistently. Legacy "cluster" names describe
+only explicitly trusted Distributed Erlang code, never the secure Buffee boundary.
 Preserve device identity storage, established invitation schemes and signed/wire
 protocol constants unless an explicit migration changes them. See docs/NAMING.md
-and the accepted Swarm roadmap in docs/PLAN.md.
+and the accepted Buffee roadmap in docs/PLAN.md.
 
 BEAM Audio owns reusable runtime, audio handlers, platform bindings, services,
 tooling, tests and project documentation. Commercial UI/app sources live in the
@@ -116,9 +114,17 @@ Canonical shared PNG/SVG logo artwork belongs in `src/Branding/`. OpenSound keep
 its commercial product name while using the BEAM-Audio logo and, where space
 permits, “Powered by BEAM-Audio”; platform icon copies are derived from this art.
 
-Device is the entity; Guest/Chef is its role within a Buffee. Manager is a
+Device is the entity; Chef/Guest is its participation role and Owner is independent trusted administration. Manager is a
 separate coordination responsibility; Worker is a local process. Keep Device
 in entity labels, lists and counts, and display role information separately.
 
 **Buffee** is the intentional product term, not a typo. Preserve this spelling;
 do not autocorrect it to “buffet.” See the canonical terminology guide.
+
+## Trusted ownership and return
+
+Ownership can coexist with Chef or Guest. Any Owner may promote/demote participation,
+share/remove ownership, remove a Device, or destroy the Buffee. Owners are explicitly
+trusted. Leave and disconnection preserve ownership, including full shutdown; Destroy
+is separate. Do not add speculative offline-owner ceremonies, quorums or an external
+ownership registry. Manager/Inspector placement grants no administrative rights.

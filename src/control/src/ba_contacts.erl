@@ -1,9 +1,9 @@
-%% Device-local address book. Saving a key never grants Swarm permissions.
+%% Device-local address book. Saving a key never grants Buffee permissions.
 -module(ba_contacts).
 -behaviour(gen_server).
 -export([start_link/0,list/0,put/2,delete/1,group/2,delete_group/1,resolve/1,observe/3,observe_name/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
-observe(Swarm,Name,Ids) -> gen_server:cast(?MODULE,{observe,Swarm,Name,Ids}).
+observe(Buffee,Name,Ids) -> gen_server:cast(?MODULE,{observe,Buffee,Name,Ids}).
 observe_name(Id,Name) -> gen_server:cast(?MODULE,{observe_name,Id,Name}).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 list() -> gen_server:call(?MODULE,list).
@@ -30,7 +30,7 @@ handle_call(Command,_,S) ->
           error:function_clause -> {reply,{error,invalid_contact_or_group},S}
     end.
 update({put,Id,Name},#{contacts := Contacts}=S) ->
-    true = ba_swarm_job:hex(Id,64),true = contact_label(Name),
+    true = ba_buffee_job:hex(Id,64),true = contact_label(Name),
     (manual_name(Id,S))#{contacts := Contacts#{Id => Name}};
 update({delete,Id},#{contacts := Contacts,groups := Groups}=S) ->
     S#{contacts := maps:remove(Id,Contacts),groups := maps:map(fun(_,Ids) -> lists:delete(Id,Ids) end,Groups)};
@@ -41,25 +41,25 @@ update({group,Name,Ids},#{contacts := Contacts,groups := Groups}=S) ->
 update({delete_group,Name},#{groups := Groups}=S) -> S#{groups := maps:remove(Name,Groups)}.
 label(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<128 -> is_list(unicode:characters_to_list(B));
 label(_) -> false.
-handle_cast({observe,Swarm,Name,Ids},S) ->
+handle_cast({observe,Buffee,Name,Ids},S) ->
     try
-        true=ba_swarm_job:hex(Swarm,32),true=label(Name),
+        true=ba_buffee_job:hex(Buffee,32),true=label(Name),
         true=is_list(Ids) andalso length(Ids)=<32,
-        true=lists:all(fun(Id) -> ba_swarm_job:hex(Id,64) end,Ids),
+        true=lists:all(fun(Id) -> ba_buffee_job:hex(Id,64) end,Ids),
         Collected=lists:foldl(fun(Id,Acc) -> observed_name(Id,binary:part(Id,0,12),Acc) end,S,lists:usort(Ids)),
-        Links=maps:get(swarm_groups,Collected,#{}),Groups=maps:get(groups,Collected),
-        Group=case maps:find(Swarm,Links) of
+        Links=maps:get(buffee_groups,Collected,#{}),Groups=maps:get(groups,Collected),
+        Group=case maps:find(Buffee,Links) of
             {ok,Existing} -> Existing;
             error -> case lists:member(Name,maps:values(Links)) of
                 false -> Name;
-                true -> <<(unicode:characters_to_binary(lists:sublist(unicode:characters_to_list(Name),24)))/binary," | ",(binary:part(Swarm,0,8))/binary>>
+                true -> <<(unicode:characters_to_binary(lists:sublist(unicode:characters_to_list(Name),24)))/binary," | ",(binary:part(Buffee,0,8))/binary>>
             end
         end,
         Members=lists:usort(Ids++maps:get(Group,Groups,[])),
-        persist(Collected#{groups := Groups#{Group => Members},swarm_groups => Links#{Swarm => Group}},S)
+        persist(Collected#{groups := Groups#{Group => Members},buffee_groups => Links#{Buffee => Group}},S)
     catch error:{badmatch,false} -> {noreply,S} end;
 handle_cast({observe_name,Id,Name},S) ->
-    case ba_swarm_job:hex(Id,64) andalso contact_label(Name) of
+    case ba_buffee_job:hex(Id,64) andalso contact_label(Name) of
         true -> persist(observed_name(Id,Name,S),S);
         false -> {noreply,S}
     end;

@@ -17,17 +17,17 @@ boot() ->
         Seed=ba_cli_store:identity(Dir),os:putenv("BA_IDENTITY_SEED",binary_to_list(Seed)),os:putenv("BA_STATE_DIR",Dir),
         os:putenv("BA_APP_PID",os:getpid()),
         os:putenv("BA_DEVICE_NAME",case maps:get(<<"observer">>,C,false) of
-            true -> "Swarm monitor";false -> binary_to_list(maps:get(<<"name">>,C)) end),
+            true -> "Buffee monitor";false -> binary_to_list(maps:get(<<"name">>,C)) end),
         os:putenv("BA_MAC_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_audio_input"])),
         os:putenv("BA_MAC_DEVICE_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_device_audio"])),
         ok=application:load(ba_core),
         Consent=#{speaker => false,microphone => false,broadcast => false},
         ok=ba_app_session:configure(#{platform => mac,consent => Consent}),
         case maps:get(<<"observer">>,C,false) of
-            true -> application:set_env(ba_core,audio_automation,false),application:set_env(ba_core,swarm_observer,true);
+            true -> application:set_env(ba_core,audio_automation,false),application:set_env(ba_core,buffee_observer,true);
             false -> ok
         end,
-        {ok,_}=ba_runtime:start(swarm_control),
+        {ok,_}=ba_runtime:start(buffee_control),
         case maps:find(<<"web">>,C) of
             {ok,#{<<"assets">> := Assets,<<"port">> := WebPort}} ->
                 application:set_env(ba_device_web,options,#{assets => binary_to_list(Assets),port => WebPort}),
@@ -42,10 +42,10 @@ boot() ->
         {ok,Pid}=supervisor:start_child(ba_sup,#{id => ?MODULE,start => {?MODULE,start_link,[Public#{dir => Dir}]},restart => temporary}),
         Command=case maps:get(<<"mode">>,C) of
             <<"idle">> -> #{<<"method">> => <<"snapshot">>};
-            <<"create">> -> #{<<"method">> => <<"create_swarm">>,<<"name">> => maps:get(<<"name">>,C),<<"desks">> => [maps:get(<<"desk">>,C)]};
-            <<"join">> -> #{<<"method">> => <<"join_swarm">>,<<"invitation">> => maps:get(<<"invitation">>,C)}
+            <<"create">> -> #{<<"method">> => <<"create_buffee">>,<<"name">> => maps:get(<<"name">>,C),<<"desks">> => [maps:get(<<"desk">>,C)]};
+            <<"join">> -> #{<<"method">> => <<"join_buffee">>,<<"invitation">> => maps:get(<<"invitation">>,C)}
         end,
-        Pid ! {start_swarm,Command},
+        Pid ! {start_buffee,Command},
         receive shutdown -> ok end
     catch Class:Reason:Stack ->
         %% Do not print launch arguments, credentials or private key material.
@@ -85,7 +85,7 @@ accept(L,Parent) ->
         {error,closed} -> ok;
         {error,R} -> exit({accept_failed,R})
     end.
-handle_info({start_swarm,Command},C) ->
+handle_info({start_buffee,Command},C) ->
     Reply=ba_device_api:request(Command),
     {noreply,C#{startup_error := maps:get(<<"error">>,Reply,null)}};
 handle_info({'EXIT',A,R},#{acceptor := A}=S) -> {stop,{acceptor_exit,R},S};
@@ -107,7 +107,7 @@ handle_call({request,#{<<"instance">> := I}=R},_,#{<<"instance">> := I}=S) ->
     {reply,Reply#{managed => Meta},S};
 handle_call(_,_,S) -> {reply,#{error => <<"Device instance mismatch.">>},S}.
 handle_cast(stop,S) ->
-    ba_swarm:disconnect(),init:stop(),{stop,normal,S};
+    ba_buffee:disconnect(),init:stop(),{stop,normal,S};
 handle_cast(kill,S) ->
     %% Only this process can be killed, after an instance-checked local command.
     spawn(fun() -> os:cmd("/bin/kill -KILL "++os:getpid()) end),{stop,normal,S};

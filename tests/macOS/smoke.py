@@ -7,7 +7,7 @@ import subprocess
 import time
 import uuid
 
-RUNTIME = Path(os.environ.get("OPENSOUND_ROOT", Path(__file__).resolve().parents[2].parent / "OpenSound")) / "builds/macOS/Parvi.app/Contents/Resources/runtime"
+RUNTIME = Path(os.environ.get("OPENSOUND_ROOT", Path(__file__).resolve().parents[2].parent / "OpenSound")) / "builds/macOS/OpenSound.app/Contents/Resources/runtime"
 
 
 class Instance:
@@ -76,7 +76,7 @@ def main():
         second = Instance(2)
         initial = first.request("snapshot")
         assert initial["node"] == first.node
-        assert initial["connection_string"].startswith("parvi://connect/v1?")
+        assert initial["connection_string"].startswith("beamaudio://connect/v1?")
         assert second.request("snapshot")["node"] == second.node
         assert first.request("send", text="Hello from the native bridge 🐦")["error"] is None
         assert first.request("send", text="")["error"] is not None

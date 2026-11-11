@@ -8,8 +8,8 @@ start() ->
     Root = filename:dirname(filename:dirname(code:which(?MODULE))),
     code:add_paths(filelib:wildcard(filename:join([Root, "relay_lib", "*", "ebin"]))),
     application:ensure_all_started(ba_core).
-%% Explicit runtime profiles. Swarm control must use a non-distributed VM.
-start(Profile) when Profile =:= native_cluster; Profile =:= swarm_control ->
+%% Explicit runtime profiles. Buffee control must use a non-distributed VM.
+start(Profile) when Profile =:= native_cluster; Profile =:= buffee_control ->
     case whereis(ba_sup) of
         undefined ->
             application:load(ba_core),

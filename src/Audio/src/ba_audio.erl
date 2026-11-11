@@ -1,4 +1,4 @@
-%% Local publication API. Remote discovery/subscription belongs to Swarm control.
+%% Local publication API. Remote discovery/subscription belongs to Buffee control.
 -module(ba_audio).
 -export([publish/1,publish/2,unpublish/1,pause/2,rebind/2,sources/0,describe/1,watch_sources/0,
          subscribe/2,ready/1,close/1,status/1,sessions/0,push/4,listen/2,
@@ -28,7 +28,7 @@ sources() ->
     case whereis(ba_audio_sup) of undefined -> [];_ ->
         [P || {{source,_},P,_,_} <- supervisor:which_children(ba_audio_sup),is_pid(P)] end.
 describe(Source) when is_pid(Source),node(Source)=:=node() -> gen_server:call(Source,describe).
-watch_sources() -> {error,use_swarm_catalogue}.
+watch_sources() -> {error,use_buffee_catalogue}.
 sessions() -> ba_audio_sup:sessions().
 handler() -> (ba_stream_handler_pcm:info())#{transport => <<"scoped_webrtc_datachannel">>}.
 backend() -> handler().

@@ -3,7 +3,7 @@
 
 render_missing_levels_is_not_silence_test() ->
     Id=binary:copy(<<"A">>,64),Entry=#{<<"state">> => <<"running">>,<<"consent">> => true,<<"available">> => true},
-    View=#{<<"swarm">> => #{<<"name">> => <<"Test">>,<<"swarm">> => binary:copy(<<"B">>,32)},<<"state">> => <<"authorized">>,
+    View=#{<<"buffee">> => #{<<"name">> => <<"Test">>,<<"buffee">> => binary:copy(<<"B">>,32)},<<"state">> => <<"authorized">>,
         <<"devices">> => [#{<<"id">> => Id,<<"state">> => <<"ok">>,<<"capabilities">> => #{<<"audio">> => #{<<"broadcast">> => Entry}}}]},
     Text=iolist_to_binary(ba_cli_monitor:render(View)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"N/A">>)),
@@ -45,7 +45,7 @@ render_devices_once_with_separators_and_opt_in_color_test() ->
     Id=binary:copy(<<"A">>,64),Other=binary:copy(<<"B">>,64),
     Running=#{<<"state">> => <<"running">>},Disabled=#{<<"state">> => <<"disabled">>},
     Name = <<"Paavo’s iPhone (2)"/utf8>>,
-    View=#{<<"swarm">> => #{<<"name">> => <<"Together">>},<<"state">> => <<"authorized">>,
+    View=#{<<"buffee">> => #{<<"name">> => <<"Together">>},<<"state">> => <<"authorized">>,
         <<"devices">> => [#{<<"id">> => Id,<<"name">> => Name,<<"state">> => <<"ok">>,
             <<"capabilities">> => #{<<"audio">> => #{<<"speaker">> => Running,<<"microphone">> => Disabled,<<"broadcast">> => Disabled}}},
             #{<<"id">> => Other,<<"state">> => <<"connecting">>}]},
@@ -60,14 +60,14 @@ render_devices_once_with_separators_and_opt_in_color_test() ->
     ?assertNotEqual(nomatch,binary:match(Color,<<27,"[90m">>)).
 
 render_untrusted_device_names_without_terminal_controls_test() ->
-    View=#{<<"swarm">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
+    View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
         #{<<"id">> => binary:copy(<<"A">>,64),<<"name">> => <<"Phone",27,"[2J",10,"spoof">>,<<"state">> => <<"connecting">>}]},
     Text=unicode:characters_to_binary(ba_cli_monitor:render(View)),
     ?assertEqual(nomatch,binary:match(Text,<<27>>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"Phone?[2J?spoof">>)).
 
 render_channel_error_and_missed_targets_test() ->
-    View=#{<<"swarm">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
+    View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
         #{<<"id">> => binary:copy(<<"A">>,64),<<"state">> => <<"ok">>,<<"capabilities">> => #{
             <<"audio">> => #{<<"speaker">> => #{<<"state">> => <<"error">>,<<"error">> => <<"output_closed">>}},
             <<"audio_diagnostics">> => #{<<"clock.state">> => <<"synchronized">>,<<"mixer.rendered">> => 10,

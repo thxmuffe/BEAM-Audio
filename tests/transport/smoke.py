@@ -33,27 +33,27 @@ try:
     nodes += [a, b]
     sa, sb = [r.wait(n, lambda s: s['relay']['connected']) for n in nodes]
     assert all(s['direct']['enabled'] for s in [sa, sb])
-    group = sa['swarms'][0]
-    assert b.request('join_swarm', invitation=group['invitation'])['error'] is None
+    group = sa['buffees'][0]
+    assert b.request('join_buffee', invitation=group['invitation'])['error'] is None
     r.wait(a, lambda s: sb['node'] in s['direct']['peers'])
     r.wait(b, lambda s: sa['node'] in s['direct']['peers'])
-    other = a.request('create_swarm')
-    second = r.swarm(other, other['result']['swarm_id'])
-    assert b.request('join_swarm', invitation=second['invitation'])['error'] is None
+    other = a.request('create_buffee')
+    second = r.buffee(other, other['result']['buffee_id'])
+    assert b.request('join_buffee', invitation=second['invitation'])['error'] is None
 
     desk.kill()  # Deliberate crash: graceful Phoenix shutdown drains live sockets.
     desk.wait(timeout=5)
     for n in nodes:
         r.wait(n, lambda s: not s['relay']['connected'] and len(s['direct']['peers']) == 1)
     for sender, receiver, text in [(a, b, 'BEAM direct: desk is gone'), (b, a, 'BEAM direct reply')]:
-        assert sender.request('send_swarm', swarm_id=group['id'], text=text)['error'] is None
-        state = r.wait(receiver, lambda s: any(m['text'] == text for m in r.swarm(s, group['id'])['messages']))
+        assert sender.request('send_buffee', buffee_id=group['id'], text=text)['error'] is None
+        state = r.wait(receiver, lambda s: any(m['text'] == text for m in r.buffee(s, group['id'])['messages']))
         assert all(n['state'] == 'running' for n in state['network']['nodes'])
-    assert a.request('send_swarm', swarm_id=second['id'], text='Other swarm stays separate')['error'] is None
-    r.wait(b, lambda s: any(m['text'] == 'Other swarm stays separate' for m in r.swarm(s, second['id'])['messages']))
-    assert not any(m['text'] == 'Other swarm stays separate' for m in r.swarm(b.request(), group['id'])['messages'])
-    assert b.request('leave_swarm', swarm_id=group['id'])['error'] is None
-    r.wait(a, lambda s: len(r.swarm(s, group['id'])['members']) == 1 and len(s['direct']['peers']) == 1)
+    assert a.request('send_buffee', buffee_id=second['id'], text='Other buffee stays separate')['error'] is None
+    r.wait(b, lambda s: any(m['text'] == 'Other buffee stays separate' for m in r.buffee(s, second['id'])['messages']))
+    assert not any(m['text'] == 'Other buffee stays separate' for m in r.buffee(b.request(), group['id'])['messages'])
+    assert b.request('leave_buffee', buffee_id=group['id'])['error'] is None
+    r.wait(a, lambda s: len(r.buffee(s, group['id'])['members']) == 1 and len(s['direct']['peers']) == 1)
 
     desk = r.start_desk(port)
     for n in nodes:
@@ -61,10 +61,10 @@ try:
     legacy = r.Node(url, {'ERL_FLAGS': shlex.join(['-pa', *map(str, core)])})
     nodes.append(legacy)
     r.wait(legacy, lambda s: s['relay']['connected'])
-    assert legacy.request('join_swarm', invitation=r.swarm(a.request(), second['id'])['invitation'])['error'] is None
-    assert legacy.request('send_swarm', swarm_id=second['id'], text='Relay-only peer still works')['error'] is None
-    r.wait(a, lambda s: any(m['text'] == 'Relay-only peer still works' for m in r.swarm(s, second['id'])['messages']))
-    print('PASS: third-party BEAM WebRTC; direct chat with desk stopped; scoped swarms; retained shared connection; relay-only interoperability')
+    assert legacy.request('join_buffee', invitation=r.buffee(a.request(), second['id'])['invitation'])['error'] is None
+    assert legacy.request('send_buffee', buffee_id=second['id'], text='Relay-only peer still works')['error'] is None
+    r.wait(a, lambda s: any(m['text'] == 'Relay-only peer still works' for m in r.buffee(s, second['id'])['messages']))
+    print('PASS: third-party BEAM WebRTC; direct chat with desk stopped; scoped buffees; retained shared connection; relay-only interoperability')
 finally:
     for node in nodes:
         node.close()

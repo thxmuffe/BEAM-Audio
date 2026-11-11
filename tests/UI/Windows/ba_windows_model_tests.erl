@@ -18,7 +18,7 @@ message_level_filter_test() ->
 membership_filters_graph_test() ->
     A = <<"a@localhost">>, B = <<"b@localhost">>, C = <<"c@localhost">>,
     State = #{selected => <<"one">>, drafts => #{}, snapshot => #{
-        <<"swarms">> => [#{<<"id">> => <<"one">>, <<"members">> => [A, B]},
+        <<"buffees">> => [#{<<"id">> => <<"one">>, <<"members">> => [A, B]},
                           #{<<"id">> => <<"two">>, <<"members">> => [A, C]}],
         <<"network">> => #{<<"nodes">> => [#{<<"id">> => A, <<"state">> => <<"running">>}],
                            <<"edges">> => [[A, B], [A, C]]}}},
@@ -33,45 +33,45 @@ session_test_() ->
         {ok, Model} = os_windows_model:start_link(#{}), Model
     end, fun(Model) -> gen_server:stop(Model), application:stop(ba_core) end,
     fun() ->
-        Reply = request(#{method => create_swarm}, create),
-        A = maps:get(<<"swarm_id">>, maps:get(<<"result">>, Reply)),
-        Reply2 = request(#{method => create_swarm}, create),
-        B = maps:get(<<"swarm_id">>, maps:get(<<"result">>, Reply2)),
+        Reply = request(#{method => create_buffee}, create),
+        A = maps:get(<<"buffee_id">>, maps:get(<<"result">>, Reply)),
+        Reply2 = request(#{method => create_buffee}, create),
+        B = maps:get(<<"buffee_id">>, maps:get(<<"result">>, Reply2)),
         ?assertEqual(B, maps:get(selected, os_windows_model:get())),
-        os_windows_model:put(#{selected => A, drafts => #{A => "original", B => "other swarm"}}),
-        ok = sys:suspend(ba_swarms),
+        os_windows_model:put(#{selected => A, drafts => #{A => "original", B => "other buffee"}}),
+        ok = sys:suspend(ba_buffees),
         Ref = make_ref(),
         try
-            os_windows_model:request(#{method => send_swarm, swarm_id => A, text => <<"original">>}, send, self(), Ref),
+            os_windows_model:request(#{method => send_buffee, buffee_id => A, text => <<"original">>}, send, self(), Ref),
             os_windows_model:put(#{selected => B})
-        after sys:resume(ba_swarms) end,
+        after sys:resume(ba_buffees) end,
         receive {reply, Ref, send, #{<<"error">> := null}} -> ok after 3000 -> error(send_timeout) end,
         Saved = os_windows_model:get(),
-        ?assertEqual("other swarm", os_windows_model:draft(Saved)),
+        ?assertEqual("other buffee", os_windows_model:draft(Saved)),
         ?assertEqual("", maps:get(A, maps:get(drafts, Saved))),
-        Swarms = maps:get(<<"swarms">>, maps:get(snapshot, Saved)),
-        [ASwarm] = [S || #{<<"id">> := Id} = S <- Swarms, Id =:= A],
-        [BSwarm] = [S || #{<<"id">> := Id} = S <- Swarms, Id =:= B],
-        ?assertEqual([<<"original">>], [maps:get(<<"text">>, M) || M <- maps:get(<<"messages">>, ASwarm)]),
-        ?assertEqual([], maps:get(<<"messages">>, BSwarm)),
-        %% An acknowledgment cannot erase a newer draft in the same swarm.
-        os_windows_model:put(#{selected => A, drafts => #{A => "sent", B => "other swarm"}}),
-        ok = sys:suspend(ba_swarms), Ref2 = make_ref(),
+        Buffees = maps:get(<<"buffees">>, maps:get(snapshot, Saved)),
+        [ABuffee] = [S || #{<<"id">> := Id} = S <- Buffees, Id =:= A],
+        [BBuffee] = [S || #{<<"id">> := Id} = S <- Buffees, Id =:= B],
+        ?assertEqual([<<"original">>], [maps:get(<<"text">>, M) || M <- maps:get(<<"messages">>, ABuffee)]),
+        ?assertEqual([], maps:get(<<"messages">>, BBuffee)),
+        %% An acknowledgment cannot erase a newer draft in the same buffee.
+        os_windows_model:put(#{selected => A, drafts => #{A => "sent", B => "other buffee"}}),
+        ok = sys:suspend(ba_buffees), Ref2 = make_ref(),
         try
-            os_windows_model:request(#{method => send_swarm, swarm_id => A, text => <<"sent">>}, send, self(), Ref2),
-            os_windows_model:put(#{drafts => #{A => "newer", B => "other swarm"}})
-        after sys:resume(ba_swarms) end,
+            os_windows_model:request(#{method => send_buffee, buffee_id => A, text => <<"sent">>}, send, self(), Ref2),
+            os_windows_model:put(#{drafts => #{A => "newer", B => "other buffee"}})
+        after sys:resume(ba_buffees) end,
         receive {reply, Ref2, send, _} -> ok after 3000 -> error(send_timeout) end,
         ?assertEqual("newer", os_windows_model:draft(os_windows_model:get())),
         os_windows_model:put(#{incoming => "invalid invitation"}),
-        #{<<"error">> := Error} = request(#{method => join_swarm, invitation => <<"invalid invitation">>}, join),
+        #{<<"error">> := Error} = request(#{method => join_buffee, invitation => <<"invalid invitation">>}, join),
         ?assertNotEqual(null, Error),
         ?assertEqual("invalid invitation", maps:get(incoming, os_windows_model:get())),
         %% No membership is required for the node/model to stay alive.
-        [request(#{method => leave_swarm, swarm_id => maps:get(id, S)}, leave) || S <- ba_swarms:snapshot()],
+        [request(#{method => leave_buffee, buffee_id => maps:get(id, S)}, leave) || S <- ba_buffees:snapshot()],
         ?assertEqual(undefined, maps:get(selected, os_windows_model:get())),
-        ?assert(is_pid(whereis(ba_swarms))),
-        request(#{method => create_swarm}, create),
+        ?assert(is_pid(whereis(ba_buffees))),
+        request(#{method => create_buffee}, create),
         ?assertNotEqual(undefined, maps:get(selected, os_windows_model:get()))
     end}.
 
@@ -106,20 +106,20 @@ runtime_notifications_test_() ->
         [ba_events:notify(test) || _<-lists:seq(1,100)],
         await_model(fun(S)->maps:get(serial,S)>Before andalso settled(S) end),
         ?assert(maps:get(serial,os_windows_model:get())-Before=<2),
-        {ok,Id}=ba_swarms:create(<<"External change">>),
+        {ok,Id}=ba_buffees:create(<<"External change">>),
         await_model(fun(S)->lists:any(fun(#{<<"id">>:=I})->I=:=Id end,
-            maps:get(<<"swarms">>,maps:get(snapshot,S),[])) end),
-        ok=ba_swarms:send(Id,<<"Event-driven history">>),
-        await_model(fun(S)->lists:any(fun(Swarm)->
+            maps:get(<<"buffees">>,maps:get(snapshot,S),[])) end),
+        ok=ba_buffees:send(Id,<<"Event-driven history">>),
+        await_model(fun(S)->lists:any(fun(Buffee)->
             lists:any(fun(#{<<"text">>:=T})->T=:=<<"Event-driven history">> end,
-                maps:get(<<"messages">>,Swarm,[])) end,
-            maps:get(<<"swarms">>,maps:get(snapshot,S),[])) end),
+                maps:get(<<"messages">>,Buffee,[])) end,
+            maps:get(<<"buffees">>,maps:get(snapshot,S),[])) end),
         OldPg=whereis(ba_pg),exit(OldPg,kill),
         await_model(fun(S)->is_reference(maps:get(runtime_monitor,S)) andalso
             is_pid(whereis(ba_pg)) andalso whereis(ba_pg)=/=OldPg andalso settled(S) end),
-        {ok,NewId}=ba_swarms:create(<<"After scope restart">>),
+        {ok,NewId}=ba_buffees:create(<<"After scope restart">>),
         await_model(fun(S)->lists:any(fun(#{<<"id">>:=I})->I=:=NewId end,
-            maps:get(<<"swarms">>,maps:get(snapshot,S),[])) end)
+            maps:get(<<"buffees">>,maps:get(snapshot,S),[])) end)
     end}.
 
 settled(S) -> map_size(maps:get(pending,S))=:=0 andalso maps:get(refresh_timer,S)=:=undefined.

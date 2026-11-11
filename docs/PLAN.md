@@ -12,7 +12,7 @@ THIRD_PARTY file; the optional model-test path/calls match the renamed modules.
 Legacy means the older trusted Distributed Erlang cluster/control APIs, not
 wxErlang itself or all native code. Native Windows still needs those APIs until
 its model/commands migrate to ba_device_api; changing its runtime flag alone
-would break startup and snapshots. Web startup explicitly selects swarm_control
+would break startup and snapshots. Web startup explicitly selects buffee_control
 and does not use that fallback. Do not delete compatibility modules or claim
 Windows migration finished merely because packaging succeeds. Prioritize the
 webapp/common backend; native Apple work is opt-in, not a gate for web iteration.
@@ -55,7 +55,7 @@ reconstructs the existing credential envelope and invokes the same verification
 and invitation validation. No compression, alias registry, shortening service or
 Reception storage is involved. The link remains a private bearer credential.
 
-Existing v3 links with parvi/beamaudio and swarm/session spellings remain readable;
+Existing v3 links with beamaudio/beamaudio and buffee/session spellings remain readable;
 Invite re-encodes saved v3 credentials as v4 without renewing or changing rights.
 Older installed applications need updating to read v4; old v3 links still work
 on updated applications. The sample fixture shrinks from 1036 to 713 characters
@@ -100,7 +100,7 @@ monitor-failure continuity are not hardware-qualified by this startup check.
 ## 2026-11-11 — Windows web launcher repaired
 
 `OpenSound/Start Web UI.cmd` and the compatibility Preview filename now build
-with bundled OTP/rebar3 and start an actual local `swarm_control` Device using
+with bundled OTP/rebar3 and start an actual local `buffee_control` Device using
 `--local-device`, rather than the browser preview adapter. This standalone launch
 uses a fresh temporary Device identity/state directory per run; persistent slots
 and Windows secure audio-adapter integration remain follow-up work. Audio consent
@@ -110,14 +110,14 @@ Windows opens Chrome when found in standard installation paths or App Paths,
 otherwise the default browser. Browser opening uses structured PowerShell
 arguments. The cmd wrappers use CRLF and retain process-only execution-policy
 bypass. Build/start passed outside the sandbox DNS-helper restriction; HTTP
-session and authenticated snapshot confirmed device mode, swarm_control profile,
+session and authenticated snapshot confirmed device mode, buffee_control profile,
 a valid identity, idle state and no error. Browser helper PowerShell syntax and
 diff checks pass. Actual browser launch and physical audio were not verified.
 
 ## 2026-11-11 — beamaudio invitation scheme
 
 New secure and Windows compatibility invitation/connection generators emit
-`beamaudio:`; parsers also accept existing `parvi:` links, with unchanged signed
+`beamaudio:`; parsers also accept existing `beamaudio:` links, with unchanged signed
 payloads and validation. Existing saved reusable links can retain their original
 spelling. Five affected generators/parsers compile with warnings as errors;
 three focused credential tests pass, including old/new scheme equivalence and
@@ -131,7 +131,7 @@ service. Do not remove authentication data merely to shorten links.
 
 Device is the entity; Guest/Chef is its role within a Buffee. Manager is a
 coordination responsibility and Worker is a local process. Apply this distinction
-to UI labels and future role enforcement. Existing internal `ba_swarm*` names
+to UI labels and future role enforcement. Existing internal `ba_buffee*` names
 remain legacy identifiers pending a separate source/API migration.
 
 ## Buffee terminology — approved 2026-11-11
@@ -153,36 +153,36 @@ verification and actual Windows layout/audio acceptance remain pending.
 Next: resolve Guest-to-Chef elevation, job permissions, Manager startup/replacement,
 local exclusions versus shared bans and return after complete shutdown. Guest/Chef
 permission statuses and a general job pool are not implemented by display renaming.
-Do not relabel Captain as Chef or Manager. Existing Captain authority below still
+Do not relabel Owner as Chef or Manager. Existing Owner authority below still
 describes runtime behavior. Clock-provider independence, maximum-Offset scheduling
 and physical audio qualification remain separate open work.
 
-## Accepted Captain/authority model — 2026-11-11
+## Accepted Owner/authority model — 2026-11-11
 
-This decision supersedes older roadmap wording that Captain disappearance or a
-Captain-proof lease expiring must end an ephemeral gathering.
+This decision supersedes older roadmap wording that Owner disappearance or a
+Owner-proof lease expiring must end an ephemeral gathering.
 
 - Already admitted live Devices keep their last signed permissions indefinitely
-  when the Captain is unavailable; show its Device/Handler name and “authority
-  frozen.” Initial admission and permission changes still require the Captain.
-- Only the Captain can explicitly End Swarm. Other Devices may Leave; app closure
-  is transport loss, not End. A Captain can also disconnect without ending peers.
-- On app restart, a Captain may recover the surviving gathering only after a
+  when the Owner is unavailable; show its Device/Handler name and “authority
+  frozen.” Initial admission and permission changes still require the Owner.
+- Only the Owner can explicitly End Buffee. Other Devices may Leave; app closure
+  is transport loss, not End. A Owner can also disconnect without ending peers.
+- On app restart, a Owner may recover the surviving gathering only after a
   fresh signed response from a still-running admitted Device. A private recovery
   snapshot alone cannot revive an abandoned gathering. End clears that intent.
 - Reusing an invitation after End starts a new gathering: the first arrival is
-  Captain with fresh membership/permissions. No split-gathering prevention added.
-- Director/coordinator code has no special authority. Normal grants, local
+  Owner with fresh membership/permissions. No split-gathering prevention added.
+- Manager/coordinator code has no special authority. Normal grants, local
   Contracts, consent and leases apply to its preprogrammed jobs.
-- Saved Devices are collected automatically by Device ID; Swarms become groups
-  deduplicated by Swarm ID. Manually assigned names are preserved.
+- Saved Devices are collected automatically by Device ID; Buffees become groups
+  deduplicated by Buffee ID. Manually assigned names are preserved.
 
-Implemented/verified membership continuity does not yet decouple the Swarm clock:
-that service is still pinned to the Captain. Separate clock ownership/failover
+Implemented/verified membership continuity does not yet decouple the Buffee clock:
+that service is still pinned to the Owner. Separate clock ownership/failover
 without loosening freshness or per-packet timing is the next architecture step
-before claiming uninterrupted audio during Captain loss. The exact mechanism is
+before claiming uninterrupted audio during Owner loss. The exact mechanism is
 not selected in this increment. Participant cold-restart admission still uses
-fresh Captain authorization; live frozen members retain the in-memory policy.
+fresh Owner authorization; live frozen members retain the in-memory policy.
 
 ## Near-future UI and invitation work — requested 2026-11-11
 
@@ -199,7 +199,7 @@ not implemented by recording this list.
    state and put technical details behind diagnostics. Update the product UI
    standards first and use them as acceptance criteria for the shared frontend.
 2. **Use beamaudio: invitation links.** Plan generation/parsing migration from
-   parvi: to beamaudio:, retaining already shared reusable parvi: links as inputs.
+   beamaudio: to beamaudio:, retaining already shared reusable beamaudio: links as inputs.
    Changing the URI scheme must not change Device identity, signed ticket rules
    or permissions. Register the scheme with platform OSes so a protocol-capable
    app such as OpenSound can handle it. iOS/macOS registration and Windows
@@ -207,22 +207,22 @@ not implemented by recording this list.
    platform work, not a currently implemented app.
 3. **Unify Open/Share-to-join.** An OS-opened invitation or an iOS Share-to-OpenSound
    action uses the same asynchronous BEAM join command. Sharing a supported link
-   to OpenSound means join that Swarm. Already joined means no action. Plan the
+   to OpenSound means join that Buffee. Already joined means no action. Plan the
    iOS Share extension and app handoff; never block local UI on target admission.
 4. **Default-on Auto-join checkbox in Chat.** When an invitation is posted in chat,
    each Device with this local option enabled automatically follows it into the
-   target Swarm. Turning it off disables that behavior for that Device. This is
+   target Buffee. Turning it off disables that behavior for that Device. This is
    intended to make moving together out of stale gatherings easy. Use the same
    join path as Open/Share, avoid repeated processing/loops, and make progress
-   visible without blocking controls. The current runtime has one active Swarm;
-   implement this as a move/jump unless multi-Swarm membership is explicitly
-   selected later. Moving a Captain must not silently issue End Swarm.
+   visible without blocking controls. The current runtime has one active Buffee;
+   implement this as a move/jump unless multi-Buffee membership is explicitly
+   selected later. Moving a Owner must not silently issue End Buffee.
 5. **Fix iOS QR proportions.** Preserve a square QR image at all dialog widths,
    orientations and text sizes; verify real iPhone presentation and scanning.
 
 Acceptance: new/join/rejoin and repeated-link no-op cases; unavailable/delayed
 Reception; keyboard/IME with touch emulation and real phone keyboards; Share-to-join;
-Auto-join on/off, repeated links and Captain jumps; square/scannable QR codes.
+Auto-join on/off, repeated links and Owner jumps; square/scannable QR codes.
 All local navigation, menus and editing remain available while BEAM/network work
 is pending. The goal is friction-free testing without weakening admission or
 pretending that successful UI actions prove audio playback.
@@ -232,7 +232,7 @@ pretending that successful UI actions prove audio playback.
 For later: evaluate an iOS 26-compatible system-audio broadcasting path, including
 ReplayKit with a Broadcast Upload Extension. Preserve sharing other apps' audio;
 do not silently substitute app-only capture. Keep native code to OS capture and
-buffer transfer, with Swarm/transport/timing policy in BEAM. Current iOS 27
+buffer transfer, with Buffee/transport/timing policy in BEAM. Current iOS 27
 ScreenCaptureKit binding remains unchanged pending that investigation.
 
 ## iOS capture availability clarification (2026-11-11)
@@ -304,7 +304,7 @@ responsive browser checks pass; user testing can continue after a refresh.
 
 Unexpected monitor exits no longer shut down the product launcher's Device.
 Caught CLI failures use OTP Logger with sanitized source locations. Best-effort
-supervised-process crash summaries can reach the current Swarm chat through an
+supervised-process crash summaries can reach the current Buffee chat through an
 asynchronous Logger notification to the existing chat worker; failure/restart
 never waits for chat delivery. Local unit/integration and launcher failure checks
 pass. The original real-app monitor exception is still unreproduced; obtain the
@@ -321,21 +321,21 @@ pass runtime-import validation; signed installation and device/audio acceptance
 remain user-led.
 
 Invitations currently have no time expiry, including previously signed links.
-The same link/Swarm ID can start fresh gatherings: a Device joins a live Captain
-advertised at its capability-addressed Reception mailbox, or becomes Captain when the
+The same link/Buffee ID can start fresh gatherings: a Device joins a live Owner
+advertised at its capability-addressed Reception mailbox, or becomes Owner when the
 Reception confirms no live owner. Membership, permissions and runtime state start
 fresh; old authority is never restored. This refines step 9: live gathering state
 is still ephemeral, while the invitation address can be reused. Repeated Invite
 and contact/group sharing use the same link. Observer helpers never start an
-empty gathering. There is deliberately no simultaneous-Captain prevention or
-convergence mechanism. See [membership semantics](SWARM_MEMBERSHIP.md).
+empty gathering. There is deliberately no simultaneous-Owner prevention or
+convergence mechanism. See [membership semantics](BUFFEE_MEMBERSHIP.md).
 
 Implementation, local integration and public Reception reuse checks pass. Render is
 live on core revision `f017376`; its source now points to BEAM-Audio/main with the
 current Dockerfile path. Restart the web Device to load the compiled local code.
 Native applications need rebuilding/restarting for these invitation semantics.
 
-## Accepted direction — secure Swarm architecture (2026-11-08)
+## Accepted direction — secure Buffee architecture (2026-11-08)
 
 This is the **next architecture roadmap** for BEAM Audio. It supersedes the older
 trusted-cross-device-OTP-cluster design as the *target architecture*. Reuse useful
@@ -378,7 +378,7 @@ runs the named Device monitor in the same Terminal. It chooses a free local
 port; Create/Join/Leave remain runtime operations. Explicit `run.sh --preview`
 is still available for design review. Isolated live-launch, HTTP, idle-monitor,
 reuse and Ctrl-C cleanup checks pass. Next: Finder/browser interaction, Windows
-startup and live Swarm/audio acceptance. CLI `new device --web-assets` supports
+startup and live Buffee/audio acceptance. CLI `new device --web-assets` supports
 the optional web application; native app bundles do not yet package/start it.
 Shared logo artwork now lives in core `src/Branding/`. OpenSound keeps its name,
 uses that PNG/SVG across web/native branding and credits BEAM-Audio. Platform
@@ -386,17 +386,17 @@ icon resources are regenerated; native apps need rebuilding/installing for the
 new bundled artwork. No native app build/deployment is part of this logo change.
 No Windows native app migration or paid framework is included. Core behavior and
 existing audio acceptance issues remain governed by this roadmap.
-Ephemeral Swarms (step 9) are implemented: identities and contacts/groups survive,
+Ephemeral Buffees (step 9) are implemented: identities and contacts/groups survive,
 live gatherings do not. The earlier 8d maximum-Offset continuity issue remains
 open. Neither compilation nor same-host tests establish physical speaker alignment.
 
-The secure `swarm_control` runtime, real Device Handler audio automation, scoped
+The secure `buffee_control` runtime, real Device Handler audio automation, scoped
 inspection, PCM/Opus media and shared Time/Offset path exist. The legacy
 `ba_inspector` still uses trusted Distributed Erlang; it is preserved, but must
 not become the control backend of the new CLI. See [backend evidence and limits](../tests/control/README.md),
 [progress](PROGRESS.md), [component names](TERMINOLOGY.md) and
 [API/configuration migration](NAMING.md). Historical stages below record how we
-arrived here; their durable-Swarm/rejoin assumptions are superseded by step 9.
+arrived here; their durable-Buffee/rejoin assumptions are superseded by step 9.
 Product guides now live in [OpenSound docs](../../OpenSound/docs/README.md).
 
 ### Playback diagnostics gap found in live testing (2026-11-09)
@@ -407,7 +407,7 @@ Device clock quality. Step 8c's owner-local counters now have a bounded, cached 
 opt-in diagnostic replies, shared by all clients. Local validation is in
 PROGRESS.md; rebuilt app/observer acceptance and actual glitch diagnosis remain
 pending. Native underrun measurement and RTP loss statistics are not established. Do not infer glitch causes from meters or the
-observer's clock, and do not use legacy Distributed Erlang inspection on Swarm
+observer's clock, and do not use legacy Distributed Erlang inspection on Buffee
 Devices. Render's deployed routing logic already handles the current envelopes;
 no Reception update is required for these recent client/core changes.
 
@@ -428,10 +428,10 @@ crackling; cause, startup latency and sustained quality remain unverified.
 Implement the shared OTP reconnect intent and Passport checkpoint, immediate
 participant rejoin on Apple app startup, and visible shared header progress.
 Explicit Leave forgets the connection; closing a participant app retains it.
-Captain shutdown continues to end its ephemeral gathering and reopening must
+Owner shutdown continues to end its ephemeral gathering and reopening must
 explain that limitation. No UI-owned restore logic, clock leases or media buffers
 are persisted. This refines step 9's blanket “start idle” behavior for participants
-without resurrecting a dead Captain. Validate with fresh independent runtimes and
+without resurrecting a dead Owner. Validate with fresh independent runtimes and
 shared model tests; app rebuild and actual Mac/iPhone acceptance remain user-led.
 
 ### Invitation behavior correction and CLI command (2026-11-09)
@@ -442,7 +442,7 @@ link. Expiry, the lifetime of the gathering and explicit Device revocation still
 apply; contact/group selection is delivery metadata. This supersedes earlier
 recipient-bound/first-claim invitation behavior. The canonical CLI command is
 `beamaudio`; `beam-audio` remains an alias and existing Device storage is retained.
-Rebuild the Captain app to apply this admission correction; the running app has
+Rebuild the Owner app to apply this admission correction; the running app has
 not been updated. Continue user-led Mac/iPhone audio testing afterward.
 
 ### Next three steps — CLI first (2026-11-09)
@@ -457,9 +457,9 @@ refine the existing CLI follow-up in step 10; they do not restart steps 1–9 or
 require implementing the independent review's entire proposed redesign.
 
 1. **One OTP command/state interface and one real headless Device.**
-   Reuse the current Swarm bridge, Device Handler and platform adapters. Separate
+   Reuse the current Buffee bridge, Device Handler and platform adapters. Separate
    app-specific startup from reusable Device configuration/commands; keep consent,
-   capability changes, exclusions, Swarm operations and readiness decisions in
+   capability changes, exclusions, Buffee operations and readiness decisions in
    OTP. CLI and apps are clients of the same allowlisted interface and state
    model; UI drafts/navigation remain UI-owned. Do not create a second audio
    coordinator or prematurely generalize every existing module.
@@ -468,7 +468,7 @@ require implementing the independent review's entire proposed redesign.
    rebar3/relx packaging; no new CLI framework. Start on macOS. Each named Device
    gets a separate **unnamed Erlang VM**, persistent Device Identity/configuration,
    own state directory and protected local command endpoint. Use OTP supervision,
-   monitors and bounded calls/timeouts; no shared Swarm cookie, `erpc`, remote
+   monitors and bounded calls/timeouts; no shared Buffee cookie, `erpc`, remote
    shell/eval or arbitrary process/function access. Prefer existing local bridge
    framing and OS-local sockets over a new HTTP service or central daemon.
 
@@ -497,20 +497,20 @@ require implementing the independent review's entire proposed redesign.
    forced termination, and `--all` affects only this CLI's managed Devices.
 
    ```sh
-   beam-audio new device --devicename test1 --createswarm --enable speaker
-   swarm=$(beam-audio get swarm --devicename test1)
+   beam-audio new device --devicename test1 --createbuffee --enable speaker
+   buffee=$(beam-audio get buffee --devicename test1)
    invitation=$(beam-audio get invitation --devicename test1)
-   beam-audio new device --devicename test2 --joinswarm "$invitation" --enable broadcast
+   beam-audio new device --devicename test2 --joinbuffee "$invitation" --enable broadcast
    beam-audio wait device --devicename test1,test2 --until audio-flowing --timeout 120s
    beam-audio inspect device --devicename test1
-   beam-audio inspect swarm --swarmid "$swarm"
+   beam-audio inspect buffee --buffeeid "$buffee"
    beam-audio stop device --all
    # Step 3, not implemented:
    # beam-audio start device --devicename test1,test2
    ```
 
-   Commands above exist except the explicitly commented step-3 restart command. `get swarm`
-   returns the ID; joining requires an invitation, not that ID. Inspect Swarm
+   Commands above exist except the explicitly commented step-3 restart command. `get buffee`
+   returns the ID; joining requires an invitation, not that ID. Inspect Buffee
    uses a selected locally running authorized participant's view; an ID is not a
    credential or a globally queryable registry. Ambiguous/unavailable views must
    be reported. Existing physical/remote Devices can be inspected only through
@@ -553,7 +553,7 @@ require implementing the independent review's entire proposed redesign.
 
 3. **Simple Device configuration resume and undo/redo — implemented.**
    `ba_device_config` is a supervised Device-local `gen_server`, outside the
-   ephemeral Swarm subtree. It owns the three durable Device audio settings:
+   ephemeral Buffee subtree. It owns the three durable Device audio settings:
    speaker, microphone and system-output broadcast. App/CLI commands and the
    existing internal consent/configuration setters use this same owner. No-op
    and invalid changes create no edit. A CLI multi-capability change is one edit.
@@ -563,7 +563,7 @@ require implementing the independent review's entire proposed redesign.
    `device_configuration.term` document via the existing versioned/sync/replace
    store. Persist before notifying the Device Handler to reconcile. On failure,
    retain previous in-memory settings/history and report the error. On restart,
-   load desired settings and the same undo/redo position before Swarm work starts.
+   load desired settings and the same undo/redo position before Buffee work starts.
    Undo/redo moves the cursor and increments revision; a fresh edit after undo
    drops the redo tail. Stale revision and duplicate retry protection are in OTP.
    Unknown/corrupt stored schema fails explicitly rather than resetting history.
@@ -583,15 +583,15 @@ require implementing the independent review's entire proposed redesign.
    permissions and current admission/clock availability. iOS system broadcast
    still needs system-picker authorization; saved intent does not recreate it.
 
-   **Scope:** contacts keep their existing persistent owner. Swarm membership,
+   **Scope:** contacts keep their existing persistent owner. Buffee membership,
    subscriptions, shared Offset and per-gathering exclusions retain their current
    lifecycles and are not included in this Device undo history. No settings change
-   restores an ended Swarm or revoked permission. Runtime failures/counters,
+   restores an ended Buffee or revoked permission. Runtime failures/counters,
    reconnects, packet/clock state and reconciliation are never history edits.
    This initial version restores Device audio configuration, not UI drafts/tabs
    or a whole application/workspace snapshot. Direct env/ETS/file/debugger writes
    outside supported setters cannot be tracked. No new remote write permission
-   was granted to Swarm members/inspectors.
+   was granted to Buffee members/inspectors.
 
    **Checks:** seven new file/restart/configuration tests; 57 focused existing/new
    OTP regressions; five Swift model tests, including external state updates with
@@ -601,7 +601,7 @@ require implementing the independent review's entire proposed redesign.
    database transaction or physical audio restoration guarantee.
 
    **Later, separately:** saved test-group startup recipes, `start device`,
-   automatic fresh-Swarm creation/invitation, more setting types and push updates
+   automatic fresh-Buffee creation/invitation, more setting types and push updates
    remain unimplemented. [Git-backed history](possibly-useful/IDEAS.md#git-backed-configuration-history--deferred)
    is long-term only, explicitly not part of current work. Full configuration /
    history behavior and limits are in the [CLI guide](../src/Tools/CLI/README.md).
@@ -634,8 +634,8 @@ inform the CLI milestone:
   the optional Opus comparison helper. A synthetic subprocess check verifies
   absence while the parent retains its identity. No signer service/NIF was added.
 - **Confirmed: membership/route changes still reset control sessions.**
-  `ba_swarm_membership:admit/5` bumps policy revision for a new member/route;
-  `ba_swarm_control` resets sessions when its policy/routes change. This can
+  `ba_buffee_membership:admit/5` bumps policy revision for a new member/route;
+  `ba_buffee_control` resets sessions when its policy/routes change. This can
   interrupt existing work even though ordinary authorization renewal preserves
   sessions. CLI step 2 must reproduce/report the disruption. Selective invalidation
   needs a scoped follow-up with revocation/replay tests; do not label renewal
@@ -652,8 +652,8 @@ inform the CLI milestone:
 - **Outdated/mixed:** Reception failure isolation, idempotent Contract installation,
   authorization renewal, audio capabilities/automatic connections, Mac output
   and app migration have since been implemented to their documented limits.
-  Captain loss ending a Swarm is now intentional; durable policy gossip,
-  elections and abandoned-Swarm recovery conflict with step 9. Do not reinstate
+  Owner loss ending a Buffee is now intentional; durable policy gossip,
+  elections and abandoned-Buffee recovery conflict with step 9. Do not reinstate
   them from this review. Likewise do not extend authorization from cached state.
 - **Deferred hypotheses:** per-peer/per-Subscription `gen_statem` conversion,
   ETS/control transport redesign, one PeerConnection per peer, replacing codecs,
@@ -662,13 +662,13 @@ inform the CLI milestone:
   needs them; evaluate timing/CPU changes with evidence rather than a wholesale
   rewrite. Keep existing native-mixing/RTP evaluation limits intact.
 
-### Current test support — Swarm monitoring (2026-11-09)
+### Current test support — Buffee monitoring (2026-11-09)
 
 `beam-audio monitor --all` now joins/reuses an ordinary audio-disabled observer
 Device and reads every member through scoped signed capability requests. The
 private saved invitation is outside Git; first admission needs an unused ticket.
 Existing live membership may be reused after ticket expiry; cold rejoin still
-requires valid current admission. No ended-Swarm resurrection or audio Jobs.
+requires valid current admission. No ended-Buffee resurrection or audio Jobs.
 
 The refreshing table/JSON reports state plus opt-in bounded capture/receive
 meters. Old app builds remain inspectable but show N/A for levels until rebuilt;
@@ -679,9 +679,9 @@ and existing app state reads have been checked with the user's test invitation;
 no observer microphone/speaker/broadcast was enabled.
 
 User-led test findings to revisit after monitoring: iPhone joining a Mac-created
-Swarm failed while the reverse direction worked; make the iPhone Create/Join /
+Buffee failed while the reverse direction worked; make the iPhone Create/Join /
 paste-invitation action clearer. Device undo intentionally does not undo shared
-Swarm Offset; labels/scope need clearer UI wording. The default-output capability
+Buffee Offset; labels/scope need clearer UI wording. The default-output capability
 word “broadcast” and antenna icon also need a later consistent UI review, recorded
 in [long-term ideas](possibly-useful/IDEAS.md#publishdefault-output-wording-and-icon--ui-follow-up).
 These are observed/reported issues, not fixes claimed in this monitor increment.
@@ -689,14 +689,14 @@ These are observed/reported issues, not fixes claimed in this monitor increment.
 ### Vocabulary and ownership
 
 Use the 22 component names and boundaries in [TERMINOLOGY.md](TERMINOLOGY.md).
-Under the **Ephemeral Swarms** model:
-- A **Swarm** is temporary; its creator is Captain for its lifetime. When the
-  gathering ends, the Swarm disappears.
+Under the **Ephemeral Buffees** model:
+- A **Buffee** is temporary; its creator is Owner for its lifetime. When the
+  gathering ends, the Buffee disappears.
 - **Contacts and groups** belong to Devices (like a phone's address book).
   No mutual friendship, approval or synchronization is required.
 - A **Source** has a stable identity, a **Stream** is its audio
   publication, a **Subscription** is persistent intent to receive that Source, and
-  a **Media Session** is a temporary transport. The **Swarm Clock** owns the shared
+  a **Media Session** is a temporary transport. The **Buffee Clock** owns the shared
   timeline and **Playback Offset** policy; Audio Engines execute approved
   Presentation Targets. Device Identity and Passport are separate credentials.
 
@@ -704,7 +704,7 @@ Core-owned names use `ba_`, application `ba_core` and configuration `BA_*`;
 [NAMING.md](NAMING.md) records the migration and retained identity/wire spellings.
 Use **BEAM Audio** for the core and **OpenSound App** for the commercial UI.
 Trusted Distributed Erlang terminology belongs only to explicitly historical
-trusted-cluster code; it is not the current Swarm boundary.
+trusted-cluster code; it is not the current Buffee boundary.
 
 ### Implementation sequence — approved order
 
@@ -714,7 +714,7 @@ trusted-cluster code; it is not the current Swarm boundary.
    observations of connectivity. Identify existing trusted-OTP dependencies.
    **Exit:** a small design contract and migration map grounded in current code.
 
-2. **Secure Swarm messaging, before jobs or new workers.** Extend the existing
+2. **Secure Buffee messaging, before jobs or new workers.** Extend the existing
    authenticated Reception/WebRTC control path to carry versioned, allowlisted
    messages with sender authentication, replay protection, size bounds and
    per-operation authorization. No arbitrary OTP RPC, executable terms,
@@ -731,23 +731,23 @@ trusted-cluster code; it is not the current Swarm boundary.
    **Exit:** remote requests cannot directly spawn workers; local lifecycle and
    worker-crash recovery are demonstrated.
 
-4. **Contracts and Jobs.** Implement Director job advertisements, Device Handler
+4. **Contracts and Jobs.** Implement Manager job advertisements, Device Handler
    evaluation/acceptance, minimal job IDs, ownership, acknowledgements, lease or
    expiry, cancellation and idempotent retry. Publishing audio can request a
-   Swarm job to maintain subscriptions, but receivers accept according to their
+   Buffee job to maintain subscriptions, but receivers accept according to their
    Contracts; no blanket authority over microphones or speaker output.
-   **Exit:** a Director offers a non-audio test job, another Device's Handler
+   **Exit:** a Manager offers a non-audio test job, another Device's Handler
    accepts it, a Worker completes it, and an unauthorized job is rejected.
 
 5. **Receptions, Passports and rejoin.** Extend existing persistent Ed25519 device
    identity, stored membership and challenge/response. Separate durable Passport
    from ephemeral sessions and initial invitations; enforce revocation/epoch
    updates on return. Make several ephemeral Receptions introduce devices to the
-   *same* Swarm, with explicit cross-Reception discovery/routing or introduction;
+   *same* Buffee, with explicit cross-Reception discovery/routing or introduction;
    merely starting isolated replicas does not suffice.
-   **Exit:** two Receptions admit/reconnect devices to one Swarm; a previously admitted
+   **Exit:** two Receptions admit/reconnect devices to one Buffee; a previously admitted
    device rejoins without a new invitation, while a revoked device cannot.
-   **Complete:** [membership implementation and limits](SWARM_MEMBERSHIP.md);
+   **Complete:** [membership implementation and limits](BUFFEE_MEMBERSHIP.md);
    two independent temporary Reception services share one durable authority and route
    devices across Receptions. Authority/member restarts and revoked return are verified.
 
@@ -759,23 +759,23 @@ trusted-cluster code; it is not the current Swarm boundary.
    independent of media transports and preserve the proven packet-target rule.
    **Exit:** two sources play together on one receiver; either can pause, resume,
    unsubscribe or disappear without disturbing the other.
-   **Implemented for PCM:** [collection, scoped WebRTC control and mixer](SWARM_STREAMS.md).
+   **Implemented for PCM:** [collection, scoped WebRTC control and mixer](BUFFEE_STREAMS.md).
    A real two-publisher media proof uses a test clock/sink, including receiver
    restart without restored Contracts. Concurrent output requires one common rate
    and clock; incompatible output is explicit and does not remove its subscription.
    Step 8 subsequently integrates native Opus decoded-audio handoff into this mixer;
    native platform output remains step 10.
 
-7. **Time and Playback Offset over Swarm control.** Adapt clock discovery,
+7. **Time and Playback Offset over Buffee control.** Adapt clock discovery,
    sampling and policy updates that currently depend on `pg`, `erpc` or
-   fully trusted OTP peers to the restricted Swarm messaging boundary. Preserve
+   fully trusted OTP peers to the restricted Buffee messaging boundary. Preserve
    UTC-referenced per-packet broadcaster-assigned targets, real deadline execution,
    explicit failures, and clock quality diagnostics. Distribute revisioned
    Playback Offset updates from any authorized device, without divergent local
    overrides. **Exit:** devices share an authenticated timeline/Offset setting,
    recover after reconnect, and reject stale/unauthorized updates; separate
    software scheduling from physical-speaker alignment claims.
-   **Implemented:** [Time/Offset](SWARM_TIME.md), retaining existing timestamp
+   **Implemented:** [Time/Offset](BUFFEE_TIME.md), retaining existing timestamp
    measurement, median and slew policy. Two-Reception authority/reconnect checks and
    real WebRTC PCM with production capture stamping pass using a headless output
    sink. Step 8 subsequently verifies sustained buffering, capture recovery and
@@ -783,7 +783,7 @@ trusted-cluster code; it is not the current Swarm boundary.
    output qualification remains step 10.
 
 8. **Backend end-to-end verification and migration.** Run two-device/one-Reception and
-   multi-Reception tests: join, retained membership, revoked Passport, Director/job
+   multi-Reception tests: join, retained membership, revoked Passport, Manager/job
    failure, worker crash, reconnect, independent streams, pause/resume,
    clock/Offset updates and backend scheduling boundaries. Use headless runtimes;
    app launches and physical listening/output evidence belong to step 10.
@@ -802,7 +802,7 @@ trusted-cluster code; it is not the current Swarm boundary.
 
    **8a. Isolate Reception failures.** Supervise each Reception connection independently,
    using established OTP supervision. A connection crash or disconnect must not
-   restart membership, Device Handlers/Workers, control or the Swarm Clock, or
+   restart membership, Device Handlers/Workers, control or the Buffee Clock, or
    reset sessions routed through healthy Receptions. Remove both restart cascades and
    global disconnect handling; making the child supervisor `one_for_one` alone
    is insufficient. Bound failed-Reception recovery and scope availability changes to
@@ -868,34 +868,34 @@ trusted-cluster code; it is not the current Swarm boundary.
    These are backend corrections, not new app UI or a new clock algorithm.
    Verification used isolated headless checks; no product app was launched.
 
-9. **Implementation Step — Ephemeral Swarms.**
+9. **Implementation Step — Ephemeral Buffees.**
    Even simpler: no friends list. Just saved contacts and groups. Like a phone's
    address book. No mutual friendship, approval or synchronization required.
 
-   1. **Create:** Every Swarm is new. Its creator is Captain for its lifetime.
+   1. **Create:** Every Buffee is new. Its creator is Owner for its lifetime.
    2. **Join:** Devices voluntarily join, subscribe and leave. Each controls its
       own permissions.
    3. **Remember:** A Device can save participants as contacts or a named group.
-   4. **Invite:** Select contacts or a saved group and invite them into a new Swarm.
-   5. **End:** When the gathering ends, the Swarm disappears. Contacts and groups remain.
+   4. **Invite:** Select contacts or a saved group and invite them into a new Buffee.
+   5. **End:** When the gathering ends, the Buffee disappears. Contacts and groups remain.
 
-   **Architecture:** Swarms are temporary; contacts and groups belong to Devices.
-   No live-Swarm snapshots, elections, mutual friendship requirements or permanent
-   Swarm membership. Device settings snapshots in the CLI milestone do not restore
+   **Architecture:** Buffees are temporary; contacts and groups belong to Devices.
+   No live-Buffee snapshots, elections, mutual friendship requirements or permanent
+   Buffee membership. Device settings snapshots in the CLI milestone do not restore
    a gathering or its credentials.
    Use existing OTP components and keep the implementation minimal:
    - Device-local storage for contacts and groups (`ba_contacts`).
-   - Ephemeral Swarm supervision tree lifecycle: initialized with a fresh random
-     Swarm ID, creator as Captain/authority/Director for its lifetime, clean
-     process teardown on end without persistent Swarm snapshots or durable
+   - Ephemeral Buffee supervision tree lifecycle: initialized with a fresh random
+     Buffee ID, creator as Owner/authority/Manager for its lifetime, clean
+     process teardown on end without persistent Buffee snapshots or durable
      registry.
    - Voluntary join, leave, subscribe under local Device Handler control.
    - Invitation dispatch to saved contacts or groups via Reception mailbox (or QR/URI).
    **Exit — verified:** the [core proof](../tests/control/README.md) uses saved-group
    invitation URIs, voluntary admission, real two-source PCM, leave/rejoin and
-   Captain end. It checks full process/ETS/Reception teardown, contacts surviving cold
-   restart, fresh creation IDs, and Captain crash followed by actual lease expiry.
-   [Lifecycle/API details](SWARM_MEMBERSHIP.md). Contacts never grant permission;
+   Owner end. It checks full process/ETS/Reception teardown, contacts surviving cold
+   restart, fresh creation IDs, and Owner crash followed by actual lease expiry.
+   [Lifecycle/API details](BUFFEE_MEMBERSHIP.md). Contacts never grant permission;
    automatic unsolicited invitation delivery is outside this URI-based proof.
 
 10. **Update and verify the applications — macOS, then iOS, then Windows.**
@@ -903,7 +903,7 @@ trusted-cluster code; it is not the current Swarm boundary.
    [Current app behavior, native evaluation and limits](../../OpenSound/docs/MACOS_APP.md). No app or
    hardware was launched by the agent. The iOS migration now also compiles for
    user-led acceptance: [current iPhone behavior and limits](../../OpenSound/docs/iOS/README.md).
-   It reuses the shared Swarm UI and Device Handler, with native mic/speaker and
+   It reuses the shared Buffee UI and Device Handler, with native mic/speaker and
    iOS 27 system-picker audio broadcast. Windows remains unmigrated. CLI steps 1–2
    are now implemented; the top section records evidence and remaining hardware
    checks. Native mixing/RTP adoption and
@@ -911,13 +911,13 @@ trusted-cluster code; it is not the current Swarm boundary.
 
    Integrate the new runtime and permission/state model into each app in that
    order, with the **same functionality, layout and information hierarchy on
-   every platform**. Start with forgotten old Swarms/subscriptions rather than
+   every platform**. Start with forgotten old Buffees/subscriptions rather than
    restoring them. Supporting platform code may change earlier when needed, but
    do not launch product apps during backend development: installed versions can
    auto-restore old connections/audio. Build/install/launch for this explicit phase.
 
    **macOS first — runtime and audio integration:** adopt the renamed `ba_*` /
-   `BA_*` interfaces, secure Swarm runtime, local consent/Contracts and scoped
+   `BA_*` interfaces, secure Buffee runtime, local consent/Contracts and scoped
    chat/graph/diagnostic APIs. Begin the macOS audio work with a small combined
    evaluation of the two approved proposals below, before finalizing its Audio
    Engine boundary. This is part of macOS integration. iOS migration is now authorized;
@@ -926,7 +926,7 @@ trusted-cluster code; it is not the current Swarm boundary.
 
    **Native mixing evaluation:** keep mixing local to the receiving Device,
    preferably through an established Audio Engine/OS facility and existing
-   approved backends. Erlang continues to own Swarm coordination, consent,
+   approved backends. Erlang continues to own Buffee coordination, consent,
    Contracts, shared time and scheduling/correction policy; the engine executes
    approved targets. The production direction is native mixing rather than
    ordinary PCM sample processing in Erlang. Keep the Erlang Mixer as a reference
@@ -963,36 +963,36 @@ trusted-cluster code; it is not the current Swarm boundary.
 
    **Address book (Contacts & Groups):** show saved contacts and named groups.
    Allow adding contacts by Device ID or invite, organizing into groups, and
-   starting a new Swarm by inviting contacts or a group. No friends list or mutual
+   starting a new Buffee by inviting contacts or a group. No friends list or mutual
    approval is shown.
 
-   **Swarm:** show the current ephemeral Swarm name, ID, and Captain status.
-   Allow ending (Captain) or leaving (participant) the gathering.
+   **Buffee:** show the current ephemeral Buffee name, ID, and Owner status.
+   Allow ending (Owner) or leaving (participant) the gathering.
 
-   **Graph:** show Device Handlers and their children; the master Swarm clock and
-   the time it keeps; the Director with its jobs; and inspectors. Adapt the
+   **Graph:** show Device Handlers and their children; the master Buffee clock and
+   the time it keeps; the Manager with its jobs; and inspectors. Adapt the
    necessary scoped state/inspection APIs as part of this integration; do not
    expose arbitrary remote OTP inspection or execution to implement the graph.
 
    **Audio:** use three symbol toggle switches, with text labels as tooltips:
-   speaker, microphone, and send audio to Swarm. Provide accessible text/help on
+   speaker, microphone, and send audio to Buffee. Provide accessible text/help on
    platforms without hover while retaining the same controls and layout.
-   Enabling **send audio to Swarm immediately starts broadcasting the default
+   Enabling **send audio to Buffee immediately starts broadcasting the default
    output**. Enabling microphone immediately starts its capture/publication;
-   enabling speaker immediately starts receiving/playing eligible Swarm audio.
+   enabling speaker immediately starts receiving/playing eligible Buffee audio.
    Speaker may be enabled by default. These toggles are both permission and
    action: do not add separate Subscribe or Start/Stop Playback controls. Turning
    a toggle off stops its corresponding active work. Request required OS access
    at the point of action and report real failures/unavailable state; a permission
    flag alone is not a successful capture/playback start. Runtime subscriptions,
    Contracts and jobs remain internal bookkeeping behind the toggles. Place the
-   shared **Swarm Offset** control here.
+   shared **Buffee Offset** control here.
 
    **Device exclusions:** from either a device in the graph or its audio entry,
    let the user choose “Don't connect with this device” and later undo it. In
    general, accept/do authorized eligible jobs automatically according to the
    enabled capabilities, while allowing specific devices to be excluded. Persist
-   exclusions locally per Swarm/device for that live gathering (retained through
+   exclusions locally per Buffee/device for that live gathering (retained through
    worker recovery, discarded at gathering end), prevent automatic connections/jobs/
    audio, and stop affected existing work without disturbing other devices.
    Exclusion is distinct from authority revocation or deleting membership. If
@@ -1013,8 +1013,8 @@ trusted-cluster code; it is not the current Swarm boundary.
    real listening/output-timing evidence. Record actual platform limitations;
    software tests alone do not qualify physical speaker alignment.
 
-    **Former step 10 superseded:** Returning to an abandoned Swarm is removed.
-    Swarms are temporary gatherings; when a gathering ends, the Swarm disappears.
+    **Former step 10 superseded:** Returning to an abandoned Buffee is removed.
+    Buffees are temporary gatherings; when a gathering ends, the Buffee disappears.
     Contacts and groups remain on Devices.
 
 ### Scope constraints and immediate milestone
@@ -1032,10 +1032,10 @@ trusted-cluster code; it is not the current Swarm boundary.
   for simplicity. Multiplexing, packet bundling, RabbitMQ, MQTT/EMQX, Redis,
   PostgreSQL, federation and large-scale routing are **not required** now.
 - First integrated job proof (step 4, after the step-2 messaging proof):
-  **Director advertises one job; a second Device Handler
+  **Manager advertises one job; a second Device Handler
   verifies/accepts it, starts a local Worker, and reports completion via secure
-  Swarm messaging**. No audio-engine rewrite is needed for this proof.
-  Implemented and verified in [step 4](SWARM_JOBS.md).
+  Buffee messaging**. No audio-engine rewrite is needed for this proof.
+  Implemented and verified in [step 4](BUFFEE_JOBS.md).
 
 ### Dependencies and migration boundaries
 
@@ -1047,9 +1047,9 @@ trusted-cluster code; it is not the current Swarm boundary.
   cross-device Distributed Erlang connection. No parallel compatibility path is
   required. Step 3 uses predefined local test
   workers; mentioning DSP Workers does not require a DSP engine or algorithm.
-- Step 5 connects multiple Receptions to **one** Swarm. Federation of different Swarms
-  and automatic Director failover are outside this roadmap. A Reception introduces
-  devices; membership/revocation policy belongs to the explicit Swarm authority
+- Step 5 connects multiple Receptions to **one** Buffee. Federation of different Buffees
+  and automatic Manager failover are outside this roadmap. A Reception introduces
+  devices; membership/revocation policy belongs to the explicit Buffee authority
   defined in step 1, independently of where a Reception is hosted.
 - Steps 6–8 implement the PCM/Opus collection, authenticated clock/Offset path,
   decoded-audio handoff, bounded sustained buffering and capture recovery.
@@ -1080,5 +1080,5 @@ implemented. Group startup recipes, whole-workspace restoration and Git history
 remain deferred. Continue broader app work only when requested. No app or audio hardware is launched merely to
 update this plan. Keep the existing clock/per-packet target policy and ephemeral
 membership model; earlier 8d maximum-Offset and physical-output limits remain open.
-See [Time/Offset](SWARM_TIME.md), [streams](SWARM_STREAMS.md),
-[membership](SWARM_MEMBERSHIP.md) and [jobs](SWARM_JOBS.md).
+See [Time/Offset](BUFFEE_TIME.md), [streams](BUFFEE_STREAMS.md),
+[membership](BUFFEE_MEMBERSHIP.md) and [jobs](BUFFEE_JOBS.md).

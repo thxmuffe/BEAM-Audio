@@ -34,8 +34,8 @@ spec(Root) ->
           handler => fun(A) -> ba_cli_monitor:run(A,Root) end},
       "new" => #{commands => #{"device" => Device(fun(A) -> emit(new_device(A,Root)) end,
           [#{name => next_instance,long => "-next-instance",action => {store,true},default => false},
-           #{name => createswarm,long => "-createswarm",action => {store,true},default => false},
-           #{name => joinswarm,long => "-joinswarm",type => string},
+           #{name => createbuffee,long => "-createbuffee",action => {store,true},default => false},
+           #{name => joinbuffee,long => "-joinbuffee",type => string},
            #{name => enable,long => "-enable",type => string},
            #{name => desk,long => "-desk",type => string},
            #{name => until,long => "-wait",type => {string,["endpoint","admitted","ready"]},default => "admitted"},
@@ -49,8 +49,8 @@ spec(Root) ->
               end,
               emit(request(one_name(A),Command))
           end,[#{name => deviceid,long => "-deviceid",type => string}]),
-          "swarm" => Device(fun inspect_swarm/1,[#{name => swarmid,long => "-swarmid",type => string,required => true}]),
-          "legacy" => #{handler => fun(_) -> fail(2,<<"Use src/Tools/Inspector/run.sh; the legacy Inspector is unchanged and is not a scoped Swarm client.">>) end}}},
+          "buffee" => Device(fun inspect_buffee/1,[#{name => buffeeid,long => "-buffeeid",type => string,required => true}]),
+          "legacy" => #{handler => fun(_) -> fail(2,<<"Use src/Tools/Inspector/run.sh; the legacy Inspector is unchanged and is not a scoped Buffee client.">>) end}}},
       "get" => #{commands => #{
           "web" => Device(fun(A) ->
               R=request(one_name(A),#{<<"method">> => <<"snapshot">>}),
@@ -59,7 +59,7 @@ spec(Root) ->
                   URL -> scalar(URL,A)
               end
           end,[]),
-          "swarm" => Device(fun(A) -> scalar(get_swarm(A),A) end,[]),
+          "buffee" => Device(fun(A) -> scalar(get_buffee(A),A) end,[]),
           "invitation" => Device(fun(A) -> R=request(one_name(A),#{<<"method">> => <<"invitation">>}),scalar(maps:get(<<"result">>,R),A) end,[])}},
       "history" => #{commands => #{"device" => Device(fun(A) -> emit(request(one_name(A),#{<<"method">> => <<"configuration">>})) end,[])}},
       "undo" => #{commands => #{"device" => Device(fun(A) -> history_action(A,<<"undo">>) end,[])}},
@@ -73,8 +73,8 @@ spec(Root) ->
     }}.
 new_device(A,Root) ->
     BaseName=one_name(A),Enabled=capabilities(maps:get(enable,A,"")),Timeout=timeout(A),
-    Create=maps:get(createswarm,A),Join=maps:get(joinswarm,A,undefined),
-    case Create andalso Join=/=undefined of true -> fail(2,<<"Choose createswarm or joinswarm, not both.">>);false -> ok end,
+    Create=maps:get(createbuffee,A),Join=maps:get(joinbuffee,A,undefined),
+    case Create andalso Join=/=undefined of true -> fail(2,<<"Choose createbuffee or joinbuffee, not both.">>);false -> ok end,
     case os:type() of {unix,darwin} -> ok;_ -> fail(2,<<"Real hardware CLI currently supports macOS only.">>) end,
     Helpers=[{<<"speaker">>,"ba_device_audio"},{<<"microphone">>,"ba_audio_input"},{<<"broadcast">>,"ba_audio_input"}],
     [case filelib:is_regular(filename:join([Root,"builds/CLI",H])) of true -> ok;false -> fail(2,<<"Missing native binding; run bash src/Tools/CLI/build.sh.">>) end || {K,H} <- Helpers,lists:member(K,Enabled)],
@@ -150,14 +150,14 @@ poll(N,Previous) ->
         _ -> #{<<"endpoint">> => false}
     end.
 predicate(P,V) -> V#{<<"satisfied">> => maps:get(list_to_binary(P),V,false)}.
-inspect_swarm(A) ->
-    Id=list_to_binary(maps:get(swarmid,A)),
+inspect_buffee(A) ->
+    Id=list_to_binary(maps:get(buffeeid,A)),
     Candidates=case maps:find(devicename,A) of {ok,_} -> names(A);error -> ba_cli_store:names() end,
-    Views=[R || N <- Candidates,R <- [request(N,#{<<"method">> => <<"snapshot">>})],maps:get(<<"swarm">>,maps:get(<<"swarm">>,R,#{}),null)=:=Id],
-    case Views of [] -> fail(1,<<"No running authorized local view of that Swarm. Supply --devicename when needed.">>);_ -> emit(#{swarm => Id,views => Views}) end.
-get_swarm(A) ->
+    Views=[R || N <- Candidates,R <- [request(N,#{<<"method">> => <<"snapshot">>})],maps:get(<<"buffee">>,maps:get(<<"buffee">>,R,#{}),null)=:=Id],
+    case Views of [] -> fail(1,<<"No running authorized local view of that Buffee. Supply --devicename when needed.">>);_ -> emit(#{buffee => Id,views => Views}) end.
+get_buffee(A) ->
     R=request(one_name(A),#{<<"method">> => <<"snapshot">>}),
-    case maps:get(<<"swarm">>,maps:get(<<"swarm">>,R),null) of null -> fail(1,<<"Device has no active Swarm.">>);Id -> Id end.
+    case maps:get(<<"buffee">>,maps:get(<<"buffee">>,R),null) of null -> fail(1,<<"Device has no active Buffee.">>);Id -> Id end.
 set_device(A) ->
     N=one_name(A),On=capabilities(maps:get(enable,A)),Off=capabilities(maps:get(disable,A)),
     case [K || K <- On,lists:member(K,Off)] of [] -> ok;_ -> fail(2,<<"A capability cannot be both enabled and disabled.">>) end,

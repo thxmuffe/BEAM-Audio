@@ -25,7 +25,7 @@ init(Rate) ->
     after 3000 -> port_close(Port),{stop,native_output_timeout} end.
 calibrate(Port) ->
     %% Map clocks only after engine startup, so startup latency cannot bias the
-    %% request midpoint. This is a platform clock binding, not Swarm clock policy.
+    %% request midpoint. This is a platform clock binding, not Buffee clock policy.
     Sent=erlang:monotonic_time(nanosecond),true=port_command(Port,<<3>>),
     receive
         {Port,{data,<<3,Host:64,Latency:64>>}} ->

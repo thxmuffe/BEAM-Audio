@@ -16,7 +16,7 @@ status() -> gen_server:call(?MODULE,status).
 enable_test(Enabled) -> gen_server:call(?MODULE,{enable_test,Enabled}).
 start(Capability,Args) -> gen_server:call(?MODULE,{start,Capability,Args}).
 cancel(Id) -> gen_server:call(?MODULE,{cancel,Id}).
-set_test_contract(Director,Id,Revision) -> gen_server:call(?MODULE,{test_contract,Director,Id,Revision}).
+set_test_contract(Manager,Id,Revision) -> gen_server:call(?MODULE,{test_contract,Manager,Id,Revision}).
 clear_test_contract() -> gen_server:call(?MODULE,clear_test_contract).
 accept_job(Context,Id,Offer) -> gen_server:call(?MODULE,{accept_job,Context,Id,Offer}).
 cancel_job(Context,Id) -> gen_server:call(?MODULE,{cancel_job,Context,Id}).
@@ -32,12 +32,12 @@ handle_call(status,_,S) ->
     {reply,#{capabilities => capability_snapshot(S),active =>
         maps:map(fun(_,W) -> public(W) end,maps:get(active,S)),history => maps:get(history,S),
         jobs => maps:map(fun(_,J) -> maps:get(report,J) end,maps:get(jobs,S)),contract => maps:get(contract,S),audio => maps:get(audio,S,#{})},S};
-handle_call({test_contract,Director,Id,Revision},_,S) ->
-    case ba_swarm_job:hex(Director,64) andalso ba_swarm_job:hex(Id,32) andalso
+handle_call({test_contract,Manager,Id,Revision},_,S) ->
+    case ba_buffee_job:hex(Manager,64) andalso ba_buffee_job:hex(Id,32) andalso
          is_integer(Revision) andalso Revision > 0 andalso Revision =< 9007199254740991 of
         false -> {reply,{error,invalid_contract},S};
         true ->
-            New = #{director => Director,id => Id,revision => Revision},
+            New = #{manager => Manager,id => Id,revision => Revision},
             case maps:get(contract,S) of
                 New -> {reply,ok,S};
                 #{id := Id,revision := Old} when Revision =< Old -> {reply,{error,stale_contract},S};
@@ -47,17 +47,17 @@ handle_call({test_contract,Director,Id,Revision},_,S) ->
 handle_call(clear_test_contract,_,S) ->
     {reply,ok,changed((stop_jobs(fun(_) -> true end,contract_revoked,S))#{contract := undefined})};
 handle_call({accept_job,Context,Id,Offer},{Caller,_},S) ->
-    case Caller =:= whereis(ba_swarm_control) of
+    case Caller =:= whereis(ba_buffee_control) of
         true -> evaluate_job(Context,Id,Offer,watch_control(Caller,S));
         false -> {reply,{error,not_control},S}
     end;
 handle_call({cancel_job,Context,Id},{Caller,_},S) ->
-    case Caller =:= whereis(ba_swarm_control) of
+    case Caller =:= whereis(ba_buffee_control) of
         true -> cancel_network_job(Context,Id,watch_control(Caller,S));
         false -> {reply,{error,not_control},S}
     end;
 handle_call({session_down,Peer,Session},{Caller,_},S) ->
-    case Caller =:= whereis(ba_swarm_control) of
+    case Caller =:= whereis(ba_buffee_control) of
         true ->
             Match = fun(#{context := C}) -> maps:get(peer,C) =:= Peer andalso maps:get(session,C) =:= Session end,
             Next = stop_jobs(Match,session_lost,S),
@@ -233,9 +233,9 @@ evaluate_job(Context,Id,Offer,#{jobs := Jobs} = S) ->
     end.
 job_permission(#{peer := Peer,deadline := Deadline},Offer,S) ->
     try
-        ok = ba_swarm_job:validate_offer(Offer),
+        ok = ba_buffee_job:validate_offer(Offer),
         true = erlang:monotonic_time(millisecond) < Deadline,
-        #{director := Peer,id := Contract,revision := Revision} = maps:get(contract,S),
+        #{manager := Peer,id := Contract,revision := Revision} = maps:get(contract,S),
         Contract = maps:get(<<"contract">>,Offer), Revision = maps:get(<<"contract_revision">>,Offer),
         case {maps:get(enabled,S),map_size(maps:get(active,S)) < ?CAPACITY} of
             {false,_} -> consent_required;
@@ -250,7 +250,7 @@ accept_test_job(Context,Id,Offer,S) ->
     case start_test(maps:get(<<"duration_ms">>,Offer),S) of
         {reply,{ok,Worker},#{active := Active,jobs := Jobs} = Next} ->
             W = maps:get(Worker,Active), Attempt = maps:get(attempt,W),
-            Report = ba_swarm_job:report(Attempt,<<"accepted">>,<<"none">>),
+            Report = ba_buffee_job:report(Attempt,<<"accepted">>,<<"none">>),
             Timer = erlang:send_after(max(0,Deadline-erlang:monotonic_time(millisecond)),self(),{job_expire,Id,Attempt}),
             J = #{context => Context,offer => Offer,report => Report,worker => Worker,deadline => Deadline,timer => Timer},
             {reply,{ok,Report},Next#{active := Active#{Worker := W#{job => Id}},jobs := Jobs#{Id => J}}};
@@ -270,7 +270,7 @@ cancel_network_job(Context,Id,#{jobs := Jobs} = S) ->
             end;
         error when map_size(Jobs) >= 32 -> {reply,{ok,rejected(job_limit)},S};
         error ->
-            Report = ba_swarm_job:report(null,<<"cancelled">>,<<"cancelled">>),
+            Report = ba_buffee_job:report(null,<<"cancelled">>,<<"cancelled">>),
             {reply,{ok,Report},S#{jobs := Jobs#{Id => #{context => Context,report => Report}}}}
     end.
 expire_job(Id,#{jobs := Jobs} = S) ->
@@ -299,9 +299,9 @@ finish_job(#{job := Id,attempt := Attempt},Outcome,#{jobs := Jobs,control := Con
         contract_revoked -> {<<"cancelled">>,<<"contract_revoked">>};
         session_lost -> {<<"cancelled">>,<<"session_lost">>}
     end,
-    Report = ba_swarm_job:report(Attempt,State,Reason),
+    Report = ba_buffee_job:report(Attempt,State,Reason),
     Control ! {job_report,self(),maps:get(context,J),Id,Report},
     {Final,S#{jobs := Jobs#{Id := (maps:without([timer,worker],J))#{report := Report}}}};
 finish_job(_,Outcome,S) -> {Outcome,S}.
-same_context(A,B) -> maps:with([peer,session,swarm],A) =:= maps:with([peer,session,swarm],B).
-rejected(Reason) -> ba_swarm_job:report(null,<<"rejected">>,atom_to_binary(Reason)).
+same_context(A,B) -> maps:with([peer,session,buffee],A) =:= maps:with([peer,session,buffee],B).
+rejected(Reason) -> ba_buffee_job:report(null,<<"rejected">>,atom_to_binary(Reason)).

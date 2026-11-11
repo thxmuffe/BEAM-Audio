@@ -14,7 +14,7 @@ restarting Media Sessions/decoders or clearing queues. The Mixer admits bounded
 future audio but enforces the current permission on every output span. Bounded
 failure diagnostics are visible in local receiver/transport/Mixer snapshots.
 Continuous loopback PCM passes at 1000 and 30000 ms Offset across actual renewal;
-expiry/revocation still discards future audio. See [stream semantics](../../docs/SWARM_STREAMS.md)
+expiry/revocation still discards future audio. See [stream semantics](../../docs/BUFFEE_STREAMS.md)
 and [checks/limits](../../tests/control/README.md). No app or physical output was used.
 
 Use the [canonical terminology](../../docs/TERMINOLOGY.md) and
@@ -26,7 +26,7 @@ uses `BA_*`; the OpenSound App integration remains step 9.
 
 ## Backend integration — step 8
 
-The [current stream path](../../docs/SWARM_STREAMS.md) supports PCM and explicit
+The [current stream path](../../docs/BUFFEE_STREAMS.md) supports PCM and explicit
 Opus audio tracks through the same signed catalogue/subscription/SDP boundary.
 GStreamer decodes Opus into the Erlang mixer, retaining each packet's own target;
 native platform output and decoder packaging remain step 9. Bounded binary queues
@@ -44,7 +44,7 @@ not the new backend API. Next: step 9, macOS then Windows then iOS.
 
 ## Shared Time and Offset — step 7
 
-[Authenticated Time and revisioned Swarm Offset](../../docs/SWARM_TIME.md) replaces
+[Authenticated Time and revisioned Buffee Offset](../../docs/BUFFEE_TIME.md) replaces
 cross-device clock RPC/discovery. The authority is the initial clock reference and
 single Offset writer. Explicit time_read/offset_write grants, fresh four-timestamp
 samples and existing median/slew policy gate scheduling. Capture stamps from one
@@ -52,12 +52,12 @@ current clock/Offset snapshot; cached policy is not a local override. The real
 WebRTC PCM proof now also runs with this shared clock and a headless output sink.
 Step 8 verifies native decoded-audio mixing and sustained buffering; platform
 capture/output and physical timing remain step-9 gates.
-The revised shared app UI is specified in step 9; abandoned-Swarm return is step 10.
+The revised shared app UI is specified in step 9; abandoned-Buffee return is step 10.
 
 
-## Current Swarm audio path — step 6
+## Current Buffee audio path — step 6
 
-[Independent Streams and Subscriptions](../../docs/SWARM_STREAMS.md) replaces the
+[Independent Streams and Subscriptions](../../docs/BUFFEE_STREAMS.md) replaces the
 single receiver with a durable collection, scoped signed signaling, independent
 WebRTC PCM endpoints and one Erlang scheduled mixer. Local publication/receive
 Contracts and separate stream grants are required. Sources may pause or restart
@@ -71,7 +71,7 @@ mixer in step 8. Platform output remains step 9. No product apps were launched.
 The historical checkpoints below do not provide the active receiver API.
 
 > **Reading status — 2026-11-08:** This guide includes historical implementation
-> checkpoints. Follow the [active Swarm roadmap](../../docs/PLAN.md) for work
+> checkpoints. Follow the [active Buffee roadmap](../../docs/PLAN.md) for work
 > order and the [engine interface](../../docs/AUDIO_ENGINE_INTERFACE.md) for the
 > current per-packet scheduling rule/platform limits. Older NetEq-only,
 > anchor-based or GStreamer-deferral statements below describe earlier stages.
@@ -238,7 +238,7 @@ path or Erlang clock policy; real LAN and synchronization evidence remain pendin
 
 The subsequent [clock revision](../../docs/decisions/0007-cluster-clock-pulls-and-monotonic-mapping.md)
 adds asynchronous discovery/pulls and a slewing mapping. Capture now calls
-`ba_swarm_clock:map_times/1` for capture/expiry times from one snapshot; output uses
+`ba_buffee_clock:map_times/1` for capture/expiry times from one snapshot; output uses
 its deadline inverse. A usable holdover mapping remains available to the legacy
 prototype, with quality/coverage reported separately. This does not implement
 DAC resampling or prove synchronized speakers. Updated device playback with
@@ -394,7 +394,7 @@ No new automated test cases were added. Sustained operation, overload behavior,
 Mac capture, iPhone UI/meter, clock synchronization and playback are unverified.
 The existing PC mailbox guard is not full SCTP/network backpressure.
 
-The [historical architecture discussion](../../docs/old-ideas/PLAN-before-swarm-2026-11-08.md#audio-adapters-and-heterogeneous-streams--discussion-2026-10-31)
+The [historical architecture discussion](../../docs/old-ideas/PLAN-before-buffee-2026-11-08.md#audio-adapters-and-heterogeneous-streams--discussion-2026-10-31)
 describes a shared Erlang audio-stream boundary with small platform adapters.
 Streams may retain different source formats; a common description does not imply
 a common sample rate or bit depth. Capture is for processing and IP delivery to
@@ -494,7 +494,7 @@ Focused timing checks (from the repository root):
 
 ```sh
 cd src/control
-rebar3 eunit --module=ba_webrtc_audio_timing_tests,ba_swarm_clock_mapping_tests
+rebar3 eunit --module=ba_webrtc_audio_timing_tests,ba_buffee_clock_mapping_tests
 ```
 
 Seven recovery/timestamp checks plus three clock-mapping checks pass. They use a
