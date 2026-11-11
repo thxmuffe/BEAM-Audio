@@ -82,6 +82,7 @@ def main():
                 time.sleep(.05)
             assert b.request('clock_snapshot')['timeline']==timeline
             assert not b.request('snapshot')['membership']['owner_present']
+            assert b.request('start_runtime')['connection']['state']=='joined'
             a.close()
             a = device('owner', first_seed)
             assert a.identity['id'] == first_id

@@ -104,10 +104,12 @@ bridge_json_protocol() ->
 
 leave_and_resume_owner() ->
     ok=ba_buffee:create(<<"Remember ownership">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),
-    Before=ba_buffee:status(),
+    Before=ba_buffee:status(),{ok,Link}=ba_buffee_membership:invite(null),
     ok=ba_buffee:leave(),ok=ba_buffee:leave(),?assertEqual(#{state => idle},ba_buffee:status()),
-    #{config := Config}=ba_device_store:load(buffee_connection,undefined),
-    ok=ba_buffee:start(Config),After=ba_buffee:status(),
+    #{config := #{mode := recover_authority}}=ba_device_store:load(buffee_connection,undefined),
+    ok=ba_buffee:join(Link),After=ba_buffee:status(),
     ?assertEqual(maps:get(buffee,Before),maps:get(buffee,After)),
     ?assertEqual([owner,chef],maps:get(roles,After)),
+    ok=ba_buffee:leave(),#{config := Config}=ba_device_store:load(buffee_connection,undefined),
+    ok=ba_buffee:start(Config),
     ok=ba_buffee:end_buffee(),?assertEqual(undefined,ba_device_store:load(buffee_connection,undefined)).

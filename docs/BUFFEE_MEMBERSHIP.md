@@ -58,7 +58,8 @@ result does not turn an arbitrary Guest into an Owner or create a replacement.
 
 `ba_buffee:leave/0` disconnects only the local Device. Owners retain a saved
 ownership/policy/invitation record. With the same Device identity, startup can
-restore that Buffee even if every Device previously shut down. `restore_buffee_on_start`
+restore that Buffee even if every Device previously shut down. Joining its saved
+invitation after Leave also restores the remembered ownership directly. `restore_buffee_on_start`
 enables automatic restoration. Live processes and clock mappings are recreated,
 not restored from disk. Ordinary presence/state exchange refreshes routes and
 known policy when a Device reconnects; return is not gated on a special surviving

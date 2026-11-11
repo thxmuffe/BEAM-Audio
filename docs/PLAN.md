@@ -1,5 +1,38 @@
 # Development plan
 
+## Current priority — trusted ownership and working audio, 2026-11-11
+
+The current [membership model](BUFFEE_MEMBERSHIP.md) supersedes earlier entries
+below about a single Owner, surviving-peer recovery or first-arrival ownership.
+Owner is trusted administration independent of Chef/Guest participation. Leave,
+disconnection and full shutdown preserve saved ownership; an Owner can reopen
+the same Buffee with the same Device identity and state. Hosting Manager or
+Inspector grants no privileges. Any Owner can change roles, share/remove
+ownership, remove a Device or explicitly destroy the Buffee. No additional
+offline-owner ceremony, public ownership registry or quorum is planned.
+
+The active-source namespace migration and shared-runtime role enforcement are
+implemented. See [validation and limits](PROGRESS.md). Matching clients and
+Reception must be rebuilt/deployed together with fresh invitations: signed
+domains, protocol names and platform identifiers changed. Source edits and
+local checks have not updated the hosted service or installed applications.
+
+Next, connect the Windows standalone Web Device to its native capture/output
+Worker under Erlang control. It currently starts the real control runtime but
+does not configure native audio, so its consent switches cannot establish
+physical playback. Reuse the existing Windows adapters and shared audio policy;
+do not select a replacement backend as part of this repair. Windows is currently
+unavailable; compilation/execution, DPAPI identity-slot reuse and physical
+playback checks must wait for that machine. Mac checks establish software
+packet delivery and scheduling only.
+
+After Windows is available, verify two Devices can publish/receive, retain local
+consent, execute each packet's assigned playback target, and recover from an
+ordinary disconnect. Record actual capture/output errors and device timing before
+adjusting buffers or choosing transport changes. The professional-networking
+[research bookmarks](possibly-useful/audio-networking-adapters.md) are saved for
+later; no new SDK, multicast topology or relay architecture is selected.
+
 ## 2026-11-11 — Web-first builds and Windows compatibility boundary
 
 OpenSound `build.ps1` defaults to `-Target Web`, compiling the current control and

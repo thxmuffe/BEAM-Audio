@@ -1,5 +1,51 @@
 # Progress
 
+## 2026-11-11 — Buffee names, trusted Owners and persistent return
+
+Migrated active project-owned paths, modules, APIs, protocol fields and documents
+to the current names. Historical documents, generated dependencies/builds and
+Git history remain historical. The [naming audit](../tests/control/naming-check.py)
+covers both repositories. The [namespace guide](NAMING.md) records the breaking
+protocol/platform changes and the need for matching client/Reception rollout
+with fresh invitations; no public deployment or installed-app update was done.
+
+Implemented Owner administration independently of Chef/Guest participation,
+including multiple trusted Owners, role changes, ownership sharing/removal and
+Device removal. Hosting Manager/Inspector confers no administration. Guests can
+contribute microphones with local consent; other publication requires Chef.
+Leave retains membership/ownership, while Destroy explicitly clears return intent
+on reached Devices. Same-identity Owners restore private saved state after full
+shutdown or by joining their saved invitation after Leave. Existing signed state
+exchange refreshes returning Devices; there is no new offline-owner ceremony.
+An absent Device cannot receive Destroy until reached; no public end registry
+was introduced. The acquired clock can continue on an available synchronized
+Chef without an online Owner, preserving its shared timeline.
+
+The Windows Web launcher now reserves stable per-user Device slots and protects
+their persistent identity seeds with CurrentUser DPAPI. Earlier ephemeral web
+identities cannot be recovered, and native app identity stores are not imported.
+Windows is unavailable in this session, so this launcher change remains
+unexecuted on its target platform. The standalone Web Device also lacks native
+audio Worker configuration; fixing that integration is the next audio step.
+
+Validation on the Mac:
+
+- Core EUnit: 187 tests pass; DeviceWeb EUnit: 7 pass; Reception: 3 pass;
+  web frontend: 10 pass. Core/component compilation and web asset build pass.
+- The three-Device role smoke check passes Owner leave/cold return, multiple
+  Owners, owner-only commands, removal of the original Owner, Destroy, and
+  acquired-clock continuation with Chefs and no online Owner.
+- The real WebRTC PCM smoke check passes two publishers, packet-target mixing,
+  pause/resume, disappearance/incarnation recovery and scoped unsubscribe/Contract
+  revocation using a headless sink. It does not qualify physical speaker timing.
+- The Swift shared library target builds. Swift tests cannot run with this
+  CommandLineTools SDK because XCTest is unavailable.
+
+No Windows execution, native app installation, browser visual acceptance or
+physical capture/playback is claimed. Earlier entries below are implementation
+history; the current model is [Buffee membership](BUFFEE_MEMBERSHIP.md).
+Professional-audio networking/SDK ideas are [bookmarked for later](possibly-useful/audio-networking-adapters.md).
+
 ## 2026-11-11 — Web-first builds and Windows compatibility boundary
 
 OpenSound `build.ps1` defaults to `-Target Web`, compiling the current control and

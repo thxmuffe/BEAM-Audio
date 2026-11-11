@@ -85,7 +85,7 @@ handle_call(status,_,S) ->
     P = maps:get(policy,S),
     {reply,#{id => maps:get(id,S),buffee => maps:get(buffee,S),role => public_role(S),roles => public_roles(S),owners => owners(P),
         name => maps:get(name,S),owner => maps:get(authority,S),
-        state => maps:get(state,S),authority_state => authority_state(S),owner_present => owner_present(S),epoch => value(<<"epoch">>,P),revision => value(<<"revision">>,P),
+        state => maps:get(state,S),owner_present => owner_present(S),epoch => value(<<"epoch">>,P),revision => value(<<"revision">>,P),
         members => case P of undefined -> [];_ -> maps:keys(maps:get(<<"members">>,P)) end,
         membership => case P of undefined -> null;_ ->
             maps:get(<<"membership">>,maps:get(maps:get(id,S),maps:get(<<"members">>,P)),null) end,
@@ -395,9 +395,6 @@ owner_present(#{policy := P,id := Self}) when is_map(P) ->
     lists:any(fun(Id) -> Id=:=Self orelse
         (try ba_buffee_desks:peer_online(Id) catch exit:_ -> false end) end,owners(P));
 owner_present(_) -> false.
-authority_state(#{role := authority}) -> available;
-authority_state(#{state := authorized}=S) -> case owner_present(S) of true -> available;false -> frozen end;
-authority_state(_) -> waiting.
 value(_,undefined) -> null;
 value(K,P) -> maps:get(K,P).
 fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).

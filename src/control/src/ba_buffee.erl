@@ -27,7 +27,8 @@ handle_call(status,_,S) ->
     View = membership_status(),
     {reply,View,S};
 handle_call(connection,_,S) -> {reply,connection_view(S),S};
-handle_call({start,Config},_,#{state := idle}=S) ->
+handle_call({start,Input},_,#{state := idle}=S) ->
+    Config=rejoin_config(Input,maps:get(remembered,S,undefined)),
     case valid(Config) of
         false -> {reply,{error,invalid_buffee_config},S};
         true ->
@@ -91,7 +92,7 @@ handle_info(cleanup,S) ->
     {noreply,Next};
 handle_info(restore,#{state := idle,remembered := #{config := Config}}=S) ->
     case maps:get(mode,Config) of
-        create -> {noreply,S#{connection_state := ended}};
+        create -> {noreply,S#{connection_state := failed}};
         _ -> case valid(Config) of
             true -> {_,Next}=activate(Config,S),{noreply,Next};
             false -> {noreply,S#{connection_state := failed}}
@@ -130,10 +131,8 @@ connection_view(#{remembered := undefined}) -> #{state => idle};
 connection_view(#{remembered := Saved}=S) ->
     State=case maps:get(state,S) of
         active -> case membership_status() of
-            #{role := recovering} -> recovering_authority;
             #{state := ended} -> unavailable;
             #{state := ending} -> unavailable;
-            #{state := authorized,authority_state := frozen} -> authority_frozen;
             #{state := authorized} -> joined;
             #{state := revoked} -> revoked;
             _ -> rejoining
@@ -144,10 +143,7 @@ connection_view(#{remembered := Saved}=S) ->
     Label=maps:get(owner_name,Saved,owner_fallback(Owner)),
     Message=case State of
         joined -> <<"Connected">>;
-        recovering_authority -> <<"Waiting for a surviving Device to restore permission management…"/utf8>>;
-        authority_frozen -> <<Label/binary," unavailable — authority frozen. Existing permissions remain active."/utf8>>;
         rejoining -> <<"Rejoining Session — waiting for Reception and ",Label/binary,"…"/utf8>>;
-        ended -> <<"This Device hosted the previous Session. That gathering ended when it stopped.">>;
         unavailable -> <<"Could not reconnect to ",Label/binary,". That Device is unavailable or the Session has ended.">>;
         revoked -> <<"Admission denied. This Device may have been removed from the Session.">>;
         failed -> <<"Could not restore the saved connection. Paste its invitation to join or start a fresh gathering.">>;
@@ -181,3 +177,11 @@ valid(#{mode := rejoin,name := Name,member := #{id := Id,passport := Passport,au
         ba_buffee_passport:passport(Passport,maps:get(<<"authority">>,Body),Id,Buffee),true catch _:_ -> false end;
 valid(_) -> false.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([state],S);(log,_) -> [];(_,_) -> redacted end,Status).
+
+rejoin_config(#{mode := join,invitation := Link}=Config,
+              #{buffee := Id,config := #{mode := recover_authority}=Recovery}) ->
+    try
+        {_,Invitation}=ba_buffee_passport:parse_invitation(Link),
+        case maps:get(<<"buffee">>,Invitation)=:=Id of true -> Recovery;false -> Config end
+    catch _:_ -> Config end;
+rejoin_config(Config,_) -> Config.
