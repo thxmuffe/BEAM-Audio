@@ -1,6 +1,6 @@
 ## Repository workflow — main branch only
 
-**Never create a separate branch or pull request unless the user explicitly requests one.** Make requested repository edits directly on `main` as ordinary commits. Do not create a branch for safety, documentation reviews or intermediate work; preserve concurrent edits and report conflicts instead.
+This is a small personal project worked on directly by the owner and assistant. Use common sense and favor practical progress over corporate/team rituals, elaborate approval flows, or mechanically applying generic best practices. Make focused edits directly on `main` without creating branches or pull requests unless explicitly asked. Do not be excessively cautious about ordinary development breakage: it is acceptable for work in progress to break, and we will fix problems as we find them. Do not knowingly compromise credentials, security boundaries or user data; preserve unrelated changes.
 
 ## UI vocabulary boundary — 2026-11-11
 
