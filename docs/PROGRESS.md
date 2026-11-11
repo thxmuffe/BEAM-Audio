@@ -1,5 +1,34 @@
 # Progress
 
+## 2026-11-11 — Distinct Device Handler labels
+
+Added shared display labels with pipe separators and an eight-character Handler
+instance suffix. Native apps use the OS device name; local web Devices add Web
+and the listening port, for example `OpenSound | Web | 64416 | A1B2C3D4`.
+Labels do not change cryptographic identity, managed CLI names or routing.
+An idle Device without a Handler uses its short Device identity temporarily.
+
+Names now travel in ordinary authenticated capability replies, rather than only
+opt-in metrics. After a control session becomes authorized, each side performs
+one asynchronous capability read, after the handshake packets have been sent.
+The control process caches only the display name for app snapshots; UI polling
+never waits for a remote read. Web and shared native model labels consume those
+names, with contacts/short IDs as fallbacks. Monitors use the same labels.
+
+Native development launches can override the base name with `BA_DEVICE_NAME`.
+iOS still needs Apple's granted user-assigned-device-name entitlement to obtain
+names such as “Paavo’s iPhone (2)” automatically; it normally returns iPhone.
+No restricted entitlement or signing change was added. The development override
+allows the exact name to be used for testing now.
+
+Validation: core compilation and 28 focused EUnit checks pass; 6 web state tests
+and 7 shared native model tests pass. A disposable two-VM integration check with
+a local Desk confirms both directions discover different Handler suffixes while
+using the same hardware name, and that app snapshots expose those labels.
+Static web assets were rebuilt. Native app bundles were not rebuilt or installed;
+no hardware audio test, joining-semantics change or playback fix is included.
+
+
 ## 2026-11-10 — Compact primary web navigation
 
 Fixed the product web grid's stretched navigation row and reduced header/main

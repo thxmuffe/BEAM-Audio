@@ -20,7 +20,7 @@ read(Self,Self,Metrics) ->
             %% An idle Device has no Swarm audio Handler. Report that honestly,
             %% so a local monitor can stay open across Create/Join/Leave.
             #{id => Self,local => true,state => idle,
-              name => unicode:characters_to_binary(os:getenv("BA_DEVICE_NAME","This Device"))};
+              name => ba_device_label:local(Self)};
         _ -> #{id => Self,local => true,state => ok,capabilities => ba_device_handler:capabilities(Metrics)}
     end;
 read(Peer,_,Metrics) ->

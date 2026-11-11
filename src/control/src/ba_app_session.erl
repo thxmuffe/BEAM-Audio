@@ -48,7 +48,7 @@ contract(Swarm,Publisher,#{receiver := Receiver,source := Source}) ->
 snapshot() ->
     {Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
     Swarm=ba_swarm:status(),Config=ba_device_config:snapshot(),
-    Base=#{profile => swarm_control,device => Id,swarm => Swarm,connection => ba_swarm:connection(),contacts => ba_contacts:list(),
+    Base=#{profile => swarm_control,device => Id,device_name => ba_device_label:local(Id),swarm => Swarm,connection => ba_swarm:connection(),contacts => ba_contacts:list(),
         desks => safe(fun ba_swarm_desks:status/0,#{}),
         default_desk => application:get_env(ba_core,default_reception_desk_url,<<>>),
         configuration => maps:without([entries],Config),consent => maps:get(consent,Config),excluded => exclusions(),messages => [],devices => [],jobs => [],
@@ -59,13 +59,15 @@ snapshot() ->
             Handler=safe(fun ba_device_handler:status/0,#{}),Control=safe(fun ba_swarm_control:snapshot/0,#{}),
             Audio=safe(fun() -> case whereis(ba_audio_receiver) of undefined -> #{};_ -> ba_audio_receiver:snapshot() end end,#{}),
             Clock=ba_swarm_clock:status(),
-            Devices=[#{id => D,local => D=:=Id,excluded => excluded(D),
+            LocalName=maps:get(<<"device_name">>,maps:get(capabilities,Handler,#{}),ba_device_label:local(Id)),
+            Devices=[#{id => D,name => case D=:=Id of true -> LocalName;false -> maps:get(D,maps:get(peer_names,Control,#{}),<<>>) end,
+                local => D=:=Id,excluded => excluded(D),
                 captain => D=:=maps:get(captain,Swarm),
                 state => case D=:=Id of true -> authorized;false -> maps:get(stage,maps:get(D,maps:get(sessions,Control,#{}),#{}),disconnected) end}
                 || D <- maps:get(members,Swarm,[])],
             LocalJobs=[#{id => atom_to_binary(K),device => Id,capability => K,state => maps:get(state,V,waiting)}
                 || {K,V} <- maps:to_list(maps:get(audio,Handler,#{})),maps:get(state,V,disabled)=/=disabled],
-            Base#{handler => Handler,devices := Devices,audio := Audio,clock := Clock,
+            Base#{device_name := LocalName,handler => Handler,devices := Devices,audio := Audio,clock := Clock,
                 jobs := LocalJobs++[J#{id => Key} || {Key,J} <- maps:to_list(maps:get(jobs,Control,#{}))],
                 messages := safe(fun ba_swarm_chat:history/0,[]),
                 passport := maps:with([swarm,captain,membership,role,state,epoch,revision],Swarm)}

@@ -167,7 +167,7 @@ public(W) -> maps:with([id,attempt,state],W).
 changed(S) -> S#{revision := maps:get(revision,S)+1}.
 capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,revision := Revision}=S) ->
     Count = map_size(Active),
-    Base=#{<<"instance">> => Instance,<<"revision">> => Revision,<<"test">> => #{
+    Base=#{<<"device_name">> => ba_device_label:local(Instance),<<"instance">> => Instance,<<"revision">> => Revision,<<"test">> => #{
         <<"supported">> => true,<<"available">> => Enabled andalso Count < ?CAPACITY andalso
             is_pid(whereis(ba_device_worker_sup)),
         <<"requires_consent">> => true,<<"consent">> => Enabled,
@@ -180,14 +180,7 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
     end.
 
 capability_metrics(S) ->
-    Base0=capability_snapshot(S),
-    %% Names are opt-in diagnostics so ordinary capability replies keep their shape.
-    Named=case os:getenv("BA_DEVICE_NAME") of
-        false -> Base0;
-        Text -> Name=unicode:characters_to_binary(Text),
-            case is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<256 of
-                true -> Base0#{<<"device_name">> => Name};false -> Base0 end
-    end,
+    Named=capability_snapshot(S),
     Base=case maps:find(audio_diagnostics,S) of
         {ok,D} -> Named#{<<"audio_diagnostics">> => D};error -> Named end,
     case maps:find(<<"audio">>,Base) of

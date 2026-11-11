@@ -1,5 +1,14 @@
 # Development plan
 
+## Device identification (2026-11-10)
+
+Display labels now include a short Handler instance ID, with Web/port context
+for the local web runtime. Names travel through ordinary authenticated capability
+replies and shared app snapshots. Finish user testing after restarting web and
+rebuilding native apps. iOS automatic user-assigned names need the Apple-granted
+entitlement; BA_DEVICE_NAME provides a development override. Joining/rejoining
+semantics, rejoin latency and audio playback issues remain deferred by request.
+
 ## Compact primary web UI (2026-11-10)
 
 The product web navigation now uses a content-sized row at narrow widths;

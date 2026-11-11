@@ -38,13 +38,13 @@ init([]) ->
     Protocol = (ba_swarm_control_protocol:new(Identity,maps:get(policy,View)))#{
         membership_deadline => maps:get(until,View),lease_ms => application:get_env(ba_core,control_session_lease_ms,60000)},
     erlang:send_after(250,self(),expire),
-    {ok,#{protocol => Protocol,config => Config,callers => #{},jobs => #{},
+    {ok,#{protocol => Protocol,config => Config,callers => #{},peer_names => #{},jobs => #{},
           handler_requests => gen_server:reqids_new(),handler_monitor => monitor(process,whereis(ba_device_handler)),
           rejected => 0,last_rejection => null}}.
 
 handle_call(snapshot,_,S) ->
     Public = ba_swarm_control_protocol:snapshot(maps:get(protocol,S)),
-    {reply,Public#{relay => ba_swarm_desks:status(),membership => ba_swarm_membership:status(),rejected => maps:get(rejected,S),
+    {reply,Public#{peer_names => maps:with(maps:keys(maps:get(sessions,Public)),maps:get(peer_names,S)),relay => ba_swarm_desks:status(),membership => ba_swarm_membership:status(),rejected => maps:get(rejected,S),
         last_rejection => maps:get(last_rejection,S),diagnostics => ba_diagnostics:view(S),jobs => maps:map(fun(_,J) -> public_job(J) end,maps:get(jobs,S))},S};
 handle_call({exclude,Peer},_,#{protocol := P}=S) ->
     case maps:find(Peer,maps:get(sessions,P)) of {ok,Session} -> drop_session(Peer,maps:get(id,Session));error -> ok end,
@@ -174,13 +174,21 @@ handle_info({desk_delivery,_,Peer,Packet},S0) ->
                         _ -> Applied
                     end,
                     case lists:all(fun(P) -> send(Peer,P,Next) =:= ok end,Packets) of
-                        true -> {noreply,Next};
+                        true ->
+                            OldSession=maps:get(Peer,maps:get(sessions,maps:get(protocol,S)),#{}),
+                            NewSession=maps:get(Peer,maps:get(sessions,Protocol),#{}),
+                            case {maps:get(stage,OldSession,undefined),maps:get(stage,NewSession,undefined)} of
+                                {Old,authorized} when Old=/=authorized -> self() ! {discover_name,Peer};
+                                _ -> ok
+                            end,
+                            {noreply,Next};
                         false -> {noreply,rejected(transport_failed,Next)}
                     end;
                 {error,Reason,_} -> {noreply,rejected(Reason,S)}
             end;
         false -> {noreply,rejected(membership_expired,S)}
     end;
+handle_info({discover_name,Peer},S) -> {noreply,discover_name(Peer,S)};
 handle_info({desk_event,_,disconnected},S) -> {noreply,S};
 handle_info({desk_event,URL,{presence,Online}},#{config := #{routes := Routes}} = S) ->
     Peers = maps:keys(maps:get(sessions,maps:get(protocol,S))),
@@ -236,7 +244,13 @@ read_capabilities_call(Peer,Metrics,From,#{callers := Callers}=S) ->
 send(Peer,Packet,_) -> ba_swarm_desks:send(Peer,<<"swarm_control">>,Packet).
 event(Peer,{reply,<<"status.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
 event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
-event(Peer,{reply,<<"capabilities.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
+event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->
+    Names=maps:get(peer_names,S),
+    Next=case maps:find(<<"device_name">>,Value) of
+        {ok,Name} -> S#{peer_names := Names#{Peer => Name}};
+        error -> S#{peer_names := maps:remove(Peer,Names)}
+    end,
+    reply(Peer,{ok,Value},Next);
 event(Peer,{reply,<<"capabilities.error">>,#{<<"reason">> := Reason}},S) ->
     Error = case Reason of <<"forbidden">> -> forbidden; <<"unavailable">> -> unavailable end,
     reply(Peer,{error,Error},S);
@@ -286,6 +300,16 @@ event(Peer,{session_replaced,Old},S) ->
 event(_,{session_renewed,Context},S) ->
     audio_notify({audio_session_renewed,Context}),S;
 event(_,authorized,S) -> S.
+
+discover_name(Peer,S) ->
+    %% One asynchronous ordinary capability read after authentication and after
+    %% sending ready, so both sides accept authenticated traffic. Snapshots
+    %% consume the result without making UI polling wait for a network request.
+    Names=maps:remove(Peer,maps:get(peer_names,S)),
+    case ba_swarm_control_protocol:request_capabilities(Peer,now_ms(),maps:get(protocol,S)) of
+        {ok,Packet,P} -> _=send(Peer,Packet,S),S#{protocol := P,peer_names := Names};
+        _ -> S#{peer_names := Names}
+    end.
 renew_sessions(S) ->
     lists:foldl(fun(Peer,Acc) ->
         case ba_swarm_control_protocol:renew(Peer,now_ms(),maps:get(protocol,Acc)) of
@@ -308,7 +332,7 @@ reset(Reason,#{callers := Callers,protocol := Protocol} = S) ->
     lists:foreach(fun({Ref,_}) -> try gen_server:receive_response(Ref,0) catch _:_ -> ok end end,
                   gen_server:reqids_to_list(maps:get(handler_requests,S))),
     Jobs = maps:map(fun(_,J) -> fence_job(J) end,maps:get(jobs,S)),
-    S#{callers := #{},protocol := ba_swarm_control_protocol:reset(Protocol),
+    S#{callers := #{},peer_names := #{},protocol := ba_swarm_control_protocol:reset(Protocol),
        handler_requests := gen_server:reqids_new(),jobs := Jobs}.
 rejected(Reason,S) -> ba_diagnostics:count(Reason,S#{rejected := maps:get(rejected,S)+1,last_rejection := Reason}).
 now_ms() -> erlang:monotonic_time(millisecond).
