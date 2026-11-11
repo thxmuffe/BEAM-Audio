@@ -1,7 +1,7 @@
 # Core names and migration
 
-The [Buffee terminology review](TERMINOLOGY.md) proposes product vocabulary;
-implementation awaits the user's “go.” Reception is now the documentation name
+The user approved the [Buffee product vocabulary](TERMINOLOGY.md) on 2026-11-11.
+Reception is now the display/documentation name
 for the introduction/routing service. Existing identifiers such as
 `ba_swarm_desks`, `BA_DESK_PORT`, `ReceptionDesk` and hosted URLs stay unchanged.
 The migration history below does not authorize a new code/protocol migration.

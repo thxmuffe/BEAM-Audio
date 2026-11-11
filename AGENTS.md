@@ -75,9 +75,11 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 
 ### Repository split
 
-Use **Swarm** for logical, mutually untrusted device collaboration,
-**Reception** for public admission/introductions, and **Offset** for the shared playback
-target setting in new user-facing design. **BEAM Audio** is the open-source
+Use **Buffee** for logical, mutually untrusted device collaboration,
+**Reception** for public admission/introductions, and **Response time** for the
+shared playback delay in new user-facing design. Guest and Chef describe a Device’s roles within a Buffee; Manager coordinates work, without overriding local consent.
+Keep computing capacity literal. Existing Swarm/Desk/Offset code and protocol
+identifiers stay unchanged until an explicit migration. **BEAM Audio** is the open-source
 technology; **OpenSound App** names only the commercial user interface. Use the
 canonical component terminology in docs/TERMINOLOGY.md. Core-owned Erlang modules,
 registered processes and native exports use the `ba_` prefix; the OTP application
@@ -97,3 +99,7 @@ keep generated core artifacts under this repository's builds/.
 Canonical shared PNG/SVG logo artwork belongs in `src/Branding/`. OpenSound keeps
 its commercial product name while using the BEAM-Audio logo and, where space
 permits, “Powered by BEAM-Audio”; platform icon copies are derived from this art.
+
+Device is the entity; Guest/Chef is its role within a Buffee. Manager is a
+separate coordination responsibility; Worker is a local process. Keep Device
+in entity labels, lists and counts, and display role information separately.

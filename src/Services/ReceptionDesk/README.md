@@ -1,5 +1,9 @@
 # BEAM Audio Reception
 
+Product labels now use **Buffee**, **Reception** and **Response time**. Existing
+API fields, commands, module names and hosted URLs retain their established
+spellings. Guest/Chef permissions and Manager succession remain separate work.
+
 A **Reception** provides authentication, introduction and message routing for Devices.
 The current Phoenix/WebSocket service uses `ba_reception_sessions`; core Reception
 configuration is `BA_DESK_BIND` / `BA_DESK_PORT` (or conventional `PORT`). Existing

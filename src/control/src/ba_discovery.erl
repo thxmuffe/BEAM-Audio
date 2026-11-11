@@ -38,10 +38,10 @@ fetch(URL) when is_binary(URL), byte_size(URL) =< 256 ->
                 true = is_list(IDs) andalso length(IDs) =< 256,
                 true = lists:all(fun valid/1, IDs),
                 {ok, lists:usort([ID || ID <- IDs, ID =/= atom_to_binary(node())])};
-            _ -> {error, <<"Reception desk unavailable. Start src/Services/ReceptionDesk/run.sh and check its URL.">>}
+            _ -> {error, <<"Reception unavailable. Start src/Services/ReceptionDesk/run.sh and check its URL.">>}
         end
     catch
-        _:_ -> {error, <<"Use a local reception desk URL such as http://127.0.0.1:8765. Invalid directory replies are rejected.">>}
+        _:_ -> {error, <<"Use a local Reception URL such as http://127.0.0.1:8765. Invalid directory replies are rejected.">>}
     end;
 fetch(_) -> {error, <<"Invalid broker URL">>}.
 

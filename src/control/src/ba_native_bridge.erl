@@ -53,7 +53,7 @@ command(#{<<"method">> := <<"stop_broadcast">>}) -> ba_mac_opus_audio:stop(), ba
 command(#{<<"method">> := <<"set_audio_presentation_delay">>, <<"delay_ms">> := Value}) ->
     try binary_to_integer(Value) of
         Delay -> ba_legacy_cluster_trust:set_audio_sync_delay(Delay)
-    catch error:badarg -> {error, <<"Offset must be 5-30000 ms.">>} end;
+    catch error:badarg -> {error, <<"Response time must be 5-30000 ms.">>} end;
 command(#{<<"method">> := <<"create_swarm">>}) ->
     case ba_legacy_cluster_desk:create() of
         {ok, #{<<"cluster">> := Id}} -> {ok, #{swarm_id => Id}};
@@ -204,7 +204,7 @@ event_error({native_connected, Node, false},_) ->
         false -> <<"Native connection failed. Known members reconnect automatically while online.">>
     end;
 event_error({channel_stopped, _, {shutdown,peer_unavailable}},undefined) ->
-    <<"Inviting peer or mailbox is unavailable at the Reception desk. Keep the inviting app open and retry.">>;
+    <<"Inviting peer or mailbox is unavailable at the Reception. Keep the inviting app open and retry.">>;
 event_error({channel_stopped, _, Reason},undefined) ->
     iolist_to_binary(["Join did not complete (",channel_reason(Reason),
         "). Check the desk and invited peer, then submit the invitation again."]);

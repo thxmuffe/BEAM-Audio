@@ -1,5 +1,43 @@
 # Progress
 
+## 2026-11-11 — Device/entity versus participation-role consistency
+
+Corrected the canonical glossary and product/repository guidance: Device is the
+entity, Guest/Chef its role, Manager a coordination responsibility, Worker a local
+process. Removed conflicting old display vocabulary from the technical glossary
+and active product UI guidance. Web/Windows entity lists already say Devices; no
+role was inferred from existing Captain state or audio toggles. Historical records
+and technical identifiers remain explicit migration references. Documentation-only
+follow-through; diff whitespace checks pass.
+
+## 2026-11-11 — Approved Buffee terminology applied, web app first
+
+The user approved implementation, retaining **computing capacity** without a
+food metaphor. Updated the primary web app's visible Buffee, Reception and
+Response time labels first, then wxErlang Windows labels and Reception's public
+landing page. Runtime-owned connection/input-error messages use the same names.
+Existing API keys, commands, signed formats, identities, paths and service URLs
+remain unchanged; no deployment or installed-app replacement was performed.
+
+Windows keeps wxErlang, adopts the web reference's light green/neutral palette,
+uses Audio before Chat and places topology under Connection details. Response
+time applies through Enter/Apply rather than focus loss. Corrected stale product
+calls to the core-owned `ba_windows_audio` and `ba_windows_playback` modules.
+Windows still uses its earlier trusted runtime; this is not secure-runtime or
+full web-feature parity. Guest/Chef permission enforcement, promotion, Manager
+selection/failover and shared banning are not implemented by terminology changes.
+
+Validation: all 10 existing web state/native-transport tests pass; JavaScript
+syntax check and static-asset build pass. All affected Erlang modules compile
+with warnings as errors using the private Windows OTP runtime. An isolated wx
+preview starts with synthetic UI state and no audio/network resources; its
+accessibility tree confirms Buffee/Response time wording and Audio-first content.
+Screenshot capture/activation did not provide a usable app image, so palette and
+layout remain visually unqualified. Browser tooling denied access to the local
+web preview; no alternate browser route was used. Reception compiles with warnings
+as errors and all 3 existing ExUnit relay tests pass. No full Windows installer
+build, live multi-Device/audio test, Apple rebuild or public service deployment.
+
 ## 2026-11-11 — Buffee vocabulary prepared for review; no implementation
 
 Recorded the proposed Buffee / Guest / Chef / Manager / Response time vocabulary

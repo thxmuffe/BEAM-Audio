@@ -63,7 +63,7 @@ command(#{<<"method">> := <<"join_swarm">>, <<"invitation">> := Invitation}) ->
         {ok, #{desk := Desk} = Parsed} ->
             case ba_relay:url() of
                 Desk -> swarm_result(ba_swarms:join_relay(Parsed));
-                _ -> <<"Set this invitation's Reception desk URL first. Changing desks starts a new node session.">>
+                _ -> <<"Set this invitation's Reception URL first. Changing Reception starts a new node session.">>
             end;
         {ok, #{node := Name, cookie := Cookie, swarm := Id, token := Token}} ->
             case command(#{<<"method">> => <<"connect">>, <<"node">> => Name, <<"cookie">> => Cookie}) of

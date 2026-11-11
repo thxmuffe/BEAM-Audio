@@ -144,12 +144,12 @@ connection_view(#{remembered := Saved}=S) ->
         joined -> <<"Connected">>;
         recovering_authority -> <<"Waiting for a surviving Device to restore permission management…"/utf8>>;
         authority_frozen -> <<Label/binary," unavailable — authority frozen. Existing permissions remain active."/utf8>>;
-        rejoining -> <<"Rejoining Swarm — waiting for Desk and ",Label/binary,"…"/utf8>>;
-        ended -> <<"This Device hosted the previous Swarm. That gathering ended when it stopped.">>;
-        unavailable -> <<"Could not reconnect to ",Label/binary,". That Device is unavailable or the Swarm has ended.">>;
-        revoked -> <<"Admission denied. This Device may have been removed from the Swarm.">>;
+        rejoining -> <<"Rejoining Buffee — waiting for Reception and ",Label/binary,"…"/utf8>>;
+        ended -> <<"This Device hosted the previous Buffee. That gathering ended when it stopped.">>;
+        unavailable -> <<"Could not reconnect to ",Label/binary,". That Device is unavailable or the Buffee has ended.">>;
+        revoked -> <<"Admission denied. This Device may have been removed from the Buffee.">>;
         failed -> <<"Could not restore the saved connection. Paste its invitation to join or start a fresh gathering.">>;
-        idle -> <<"Previous Swarm remembered">>
+        idle -> <<"Previous Buffee remembered">>
     end,
     (maps:with([name,swarm],Saved))#{state => State,message => Message,captain => Captain,captain_name => Label}.
 captain_id(#{config := #{member := #{authority := Id}}}) -> Id;

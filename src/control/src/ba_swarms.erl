@@ -18,7 +18,7 @@ join_relay(Invitation) -> gen_server:call(?MODULE, {join_relay, Invitation}, 800
 connected_call(Command) ->
     case ba_relay:enabled() andalso not maps:get(connected, ba_relay:status())
          andalso ba_direct:peers() =:= [] of
-        true -> {error, <<"Reception desk disconnected. Wait for reconnection.">>};
+        true -> {error, <<"Reception disconnected. Wait for reconnection.">>};
         false -> gen_server:call(?MODULE, Command)
     end.
 
@@ -55,7 +55,7 @@ handle_call_event({join_relay, #{node := Owner, swarm := Id, token := Token, mai
                     Timer = erlang:send_after(6000, self(), {join_timeout, Request}),
                     Entry = #{from => From, owner => Owner, member => Member, swarm => Id, timer => Timer},
                     {noreply, State#{pending := Pending#{Request => Entry}}};
-                _ -> ba_relay:close(maps:get(mailbox, Member)), {reply, {error, <<"Reception desk is not connected.">>}, State}
+                _ -> ba_relay:close(maps:get(mailbox, Member)), {reply, {error, <<"Reception is not connected.">>}, State}
             end;
         error -> {reply, {error, <<"Swarm session or pending admission limit reached.">>}, State}
     end;

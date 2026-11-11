@@ -1,21 +1,34 @@
 # Development plan
 
-## Buffee terminology review — 2026-11-11, implementation awaiting “go”
+## Entity and role naming clarification — 2026-11-11
 
-Review the [proposed vocabulary and unresolved decisions](TERMINOLOGY.md): Buffee,
-Guest, Chef, Manager, Response time and Reception. This is documentation work
-only; do not implement the terminology or new behavior until the user says “go.”
-Reception replaces the former service name in documentation prose; existing code,
-paths, URLs, configuration and protocol names remain unchanged.
+Device is the entity; Guest/Chef is its role within a Buffee. Manager is a
+coordination responsibility and Worker is a local process. Apply this distinction
+to UI labels and future role enforcement. Existing internal `ba_swarm*` names
+remain legacy identifiers pending a separate source/API migration.
 
-After approval, update the primary web app first. Keep Windows in wxErlang,
-matching the web app's look and behavior as closely as possible. Authorized
-implementation scope is web app, Windows app and Reception, not Apple apps.
-Resolve Chef elevation, job permissions, Manager coordination, local exclusions
-versus shared bans and complete-shutdown return behavior before changing those
-semantics. The older Captain model below describes current behavior, not an
-approved implementation of the Buffee proposal. Audio timing/quality and existing
-maximum-Offset qualification remain separate open work.
+## Buffee terminology — approved 2026-11-11
+
+The user approved [Buffee, Guest, Chef, Manager, Response time and
+Reception](TERMINOLOGY.md), keeping **computing capacity** literal. Apply product
+labels to the primary web app first, then Windows and Reception. Windows stays
+wxErlang and follows the web app's appearance and behavior. Preserve existing
+identifiers, storage locations, signed/wire formats and hosted URLs.
+
+The terminology increment changes web/Windows labels, runtime-owned connection
+messages and Reception landing-page copy. Windows adopts the web reference's
+light palette and Audio-first navigation. It remains on its earlier trusted
+runtime; this does not establish Windows secure-runtime or feature parity.
+Web tests (10), Reception tests (3) and affected-module warnings-as-errors
+compilation pass. Windows preview startup/labels are checked; browser visual
+verification and actual Windows layout/audio acceptance remain pending.
+
+Next: resolve Guest-to-Chef elevation, job permissions, Manager startup/replacement,
+local exclusions versus shared bans and return after complete shutdown. Guest/Chef
+permission statuses and a general job pool are not implemented by display renaming.
+Do not relabel Captain as Chef or Manager. Existing Captain authority below still
+describes runtime behavior. Clock-provider independence, maximum-Offset scheduling
+and physical audio qualification remain separate open work.
 
 ## Accepted Captain/authority model — 2026-11-11
 

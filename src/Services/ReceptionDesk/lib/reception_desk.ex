@@ -29,11 +29,11 @@ defmodule ReceptionDesk.Router do
   get "/" do
     html = """
     <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-    <title>BEAM Audio Reception Desk</title><body style="font:18px system-ui;max-width:44rem;margin:4rem auto;padding:1rem">
-    <h1>BEAM Audio Desk</h1><p>This Desk authenticates Devices, introduces them and routes messages over their open WebSocket connections.</p>
-    <p>In your app, set this Desk's WebSocket address (this origin with <code>/relay/v1</code>),
-    select a swarm and share its invitation. Paste a member's invitation into <strong>Add a swarm</strong> to join.</p>
-    <p>Your native app owns its node, swarm memberships and chats. The full browser app is separate.</p></body></html>
+    <title>BEAM Audio Reception</title><body style="font:18px system-ui;max-width:44rem;margin:4rem auto;padding:1rem">
+    <h1>BEAM Audio Reception</h1><p>Reception authenticates Devices, introduces them and routes messages over their open WebSocket connections.</p>
+    <p>In your app, set Reception’s WebSocket address (this origin with <code>/relay/v1</code>),
+    create a Buffee and share its invitation. Choose <strong>Join a Buffee</strong> in OpenSound and paste an invitation to join.</p>
+    <p>Your Device controls its participation, audio and computing capacity. Reception introduces Devices; it does not carry audio or control their resources.</p></body></html>
     """
     conn |> put_resp_header("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
     |> put_resp_header("referrer-policy", "no-referrer")
