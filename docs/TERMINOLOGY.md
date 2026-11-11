@@ -2,6 +2,11 @@
 
 ## Buffee vocabulary — approved 2026-11-11
 
+**Buffee is an intentional name, not a spelling error.** It evokes a buffet of
+shared audio and computing resources, with a playful connection to audio buffers.
+Keep the spelling **Buffee** in product text, documentation and future code naming;
+do not autocorrect it to “buffet.” The user explicitly confirmed this choice.
+
 The user approved this product vocabulary and implementation on 2026-11-11.
 The vocabulary supersedes older product wording below. The technical table
 records existing implementation names; approval of terminology does not resolve

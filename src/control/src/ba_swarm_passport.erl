@@ -44,9 +44,11 @@ permission(<<"stream_read">>) -> stream_read;
 permission(<<"stream_subscribe">>) -> stream_subscribe;
 permission(<<"time_read">>) -> time_read;
 permission(<<"offset_write">>) -> offset_write.
-invitation(Packet) -> <<"parvi://swarm/v3?",(uri_string:compose_query([{<<"ticket">>,base64:encode(Packet)}]))/binary>>.
+invitation(Packet) -> <<"beamaudio://swarm/v3?",(uri_string:compose_query([{<<"ticket">>,base64:encode(Packet)}]))/binary>>.
 parse_invitation(Link) when is_binary(Link),byte_size(Link) =< 32768 ->
-    #{scheme := <<"parvi">>,host := <<"swarm">>,path := <<"/v3">>,query := Q} = U = uri_string:parse(Link),
+    #{scheme := Scheme,host := <<"swarm">>,path := <<"/v3">>,query := Q} = U = uri_string:parse(Link),
+    true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
+        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
     true = map_size(U) =:= 4,[{<<"ticket">>,B64}] = uri_string:dissect_query(Q),Packet = base64:decode(B64),
     E = decode(Packet),Body = decode(base64:decode(maps:get(<<"body">>,E))),Authority = maps:get(<<"authority">>,Body),
     Body = verify(Packet,Authority),

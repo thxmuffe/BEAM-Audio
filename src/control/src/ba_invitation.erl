@@ -6,18 +6,19 @@ relay(Swarm, Token, Mailbox) ->
     Query = uri_string:compose_query([{<<"desk">>, ba_relay:url()},
         {<<"node">>, ba_relay:id()}, {<<"mailbox">>, Mailbox},
         {<<"swarm">>, Swarm}, {<<"token">>, Token}]),
-    <<"parvi://swarm/v2?", Query/binary>>.
+    <<"beamaudio://swarm/v2?", Query/binary>>.
 
 format(Swarm, Token) ->
     Query = uri_string:compose_query([{<<"node">>, atom_to_binary(node())},
         {<<"cookie">>, atom_to_binary(erlang:get_cookie())},
         {<<"swarm">>, Swarm}, {<<"token">>, Token}]),
-    <<"parvi://swarm/v1?", Query/binary>>.
+    <<"beamaudio://swarm/v1?", Query/binary>>.
 
 parse(Input) when is_binary(Input), byte_size(Input) =< 2048 ->
     try
-        #{scheme := <<"parvi">>, host := <<"swarm">>, path := Path, query := Query} =
+        #{scheme := Scheme, host := <<"swarm">>, path := Path, query := Query} =
             URI = uri_string:parse(string:trim(Input)),
+        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
         4 = map_size(URI),
         parse_query(Path, lists:sort(uri_string:dissect_query(Query)))
     catch _:_ -> {error, invalid_invitation} end;

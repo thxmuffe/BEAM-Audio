@@ -1,5 +1,18 @@
 # Development plan
 
+## 2026-11-11 — beamaudio invitation scheme
+
+New secure and Windows compatibility invitation/connection generators emit
+`beamaudio:`; parsers also accept existing `parvi:` links, with unchanged signed
+payloads and validation. Existing saved reusable links can retain their original
+spelling. Five affected generators/parsers compile with warnings as errors;
+three focused credential tests pass, including old/new scheme equivalence and
+unsupported-scheme rejection. No installed app rebuild, OS protocol-handler
+registration or service deployment is included. Link shortening remains separate:
+the current self-contained signed JSON envelope has nested Base64 and a hex
+signature; a compact versioned encoding could reduce size without a redirect
+service. Do not remove authentication data merely to shorten links.
+
 ## Entity and role naming clarification — 2026-11-11
 
 Device is the entity; Guest/Chef is its role within a Buffee. Manager is a

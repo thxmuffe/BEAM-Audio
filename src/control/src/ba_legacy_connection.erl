@@ -6,12 +6,13 @@ local() -> format(atom_to_binary(node()), atom_to_binary(erlang:get_cookie())).
 
 format(Node, Cookie) when is_binary(Node), is_binary(Cookie) ->
     Query = uri_string:compose_query([{<<"node">>, Node}, {<<"cookie">>, Cookie}]),
-    <<"parvi://connect/v1?", Query/binary>>.
+    <<"beamaudio://connect/v1?", Query/binary>>.
 
 parse(Input) when is_binary(Input), byte_size(Input) =< 2048 ->
     try
-        #{scheme := <<"parvi">>, host := <<"connect">>, path := <<"/v1">>,
+        #{scheme := Scheme, host := <<"connect">>, path := <<"/v1">>,
           query := Query} = URI = uri_string:parse(string:trim(Input)),
+        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
         4 = map_size(URI),
         [{<<"cookie">>, Cookie}, {<<"node">>, Node}] =
             lists:sort(uri_string:dissect_query(Query)),

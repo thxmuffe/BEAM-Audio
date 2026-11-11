@@ -103,3 +103,6 @@ permits, “Powered by BEAM-Audio”; platform icon copies are derived from this
 Device is the entity; Guest/Chef is its role within a Buffee. Manager is a
 separate coordination responsibility; Worker is a local process. Keep Device
 in entity labels, lists and counts, and display role information separately.
+
+**Buffee** is the intentional product term, not a typo. Preserve this spelling;
+do not autocorrect it to “buffet.” See the canonical terminology guide.

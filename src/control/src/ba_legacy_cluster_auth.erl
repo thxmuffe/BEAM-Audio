@@ -25,11 +25,12 @@ verify(Envelope, Public) ->
 invitation(Fields) ->
     Pairs = [{K, case V of N when is_integer(N) -> integer_to_binary(N); _ -> V end}
              || {K, V} <- maps:to_list(Fields)],
-    <<"parvi://cluster/v1?", (uri_string:compose_query(Pairs))/binary>>.
+    <<"beamaudio://cluster/v1?", (uri_string:compose_query(Pairs))/binary>>.
 parse_invitation(Link) when is_binary(Link), byte_size(Link) =< 2048 ->
     try
-        #{scheme := <<"parvi">>, host := <<"cluster">>, path := <<"/v1">>, query := Q} =
+        #{scheme := Scheme, host := <<"cluster">>, path := <<"/v1">>, query := Q} =
             URI = uri_string:parse(string:trim(Link)),
+        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
         4 = map_size(URI),
         Pairs = uri_string:dissect_query(Q), 7 = length(Pairs),
         F = maps:from_list(Pairs), 7 = map_size(F),

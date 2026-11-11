@@ -246,8 +246,9 @@ send(Peer, Cap, Id, Signal, S) ->
 
 parse_link(Link) ->
     try
-        #{scheme := <<"parvi">>, host := <<"cluster">>, path := <<"/v2">>, query := Query} =
+        #{scheme := Scheme, host := <<"cluster">>, path := <<"/v2">>, query := Query} =
             uri_string:parse(string:trim(Link)),
+        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
         #{<<"desk">> := URL, <<"node">> := Peer, <<"mailbox">> := Cap,
           <<"invitation">> := Invitation} = maps:from_list(uri_string:dissect_query(Query)),
         true = ba_relay:valid_url(URL), URL = ba_relay:url(),
@@ -270,7 +271,7 @@ make_invitation(TTL, S) ->
             Query = uri_string:compose_query([
                 {<<"desk">>, ba_relay:url()}, {<<"node">>, ba_relay:id()},
                 {<<"mailbox">>, maps:get(mailbox, S)}, {<<"invitation">>, Invitation}]),
-            {ok, <<"parvi://cluster/v2?", Query/binary>>};
+            {ok, <<"beamaudio://cluster/v2?", Query/binary>>};
         Error -> Error
     end.
 
