@@ -1,5 +1,21 @@
 # Development plan
 
+## 2026-11-11 — Windows web console runs the shared monitor
+
+Windows double-click launchers pass `--monitor` after real local Device startup
+and browser opening. DeviceWeb uses `ba_cli_monitor:run_local/1`, reusing the
+same polling, metrics, timeout/backoff and renderer as `beamaudio monitor --all`,
+with the in-process Device API instead of the CLI's Unix-domain socket. No second
+Device, monitor protocol or separate dashboard is introduced. The monitor is an
+unlinked monitored process: display failure leaves the backend/web service alive.
+Ctrl-C terminates this standalone launch. Monitor header uses Buffee.
+
+Validation: affected Erlang modules compile with warnings as errors. The actual
+Windows launcher backend starts and prints the shared channel/state/meter table
+for its real idle Device, including its Web port and Handler label. Check ran
+without opening a browser or accessing audio hardware; joined/audio metrics and
+monitor-failure continuity are not hardware-qualified by this startup check.
+
 ## 2026-11-11 — Windows web launcher repaired
 
 `OpenSound/Start Web UI.cmd` and the compatibility Preview filename now build

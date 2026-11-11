@@ -1,6 +1,14 @@
 %% Console projection of ordinary Swarm-member observations. No PCM or audio I/O.
 -module(ba_cli_monitor).
--export([run/2,render/1,render/2,invitation_path/2]).
+-export([run/2,run_local/1,render/1,render/2,invitation_path/2]).
+%% Embedded launchers use the same monitor loop without a second Device/socket.
+run_local(Options) ->
+    Request=fun(Command) ->
+        json:decode(iolist_to_binary(json:encode(ba_device_api:request(Command))))
+    end,
+    loop(Request,Options,false,#{},#{},#{}).
+monitor_request(Request,Command) when is_function(Request,1) -> Request(Command);
+monitor_request(Name,Command) -> ba_cli:request(Name,Command).
 run(A,Root) ->
     case maps:get(all,A,false) of true -> ok;false -> fail(<<"Use beamaudio monitor --all.">>) end,
     _=ba_cli:timeout(A),
@@ -88,7 +96,7 @@ await_admission(Name,Until,LastState) ->
 loop(Name,A,Metrics,Plain,Instances,Names) ->
     Now=erlang:monotonic_time(millisecond),
     Skip=[Id || {Id,#{retry := Until}} <- maps:to_list(Plain),Now<Until],
-    R=ba_cli:request(Name,#{<<"method">> => <<"monitor">>,<<"metrics">> => Metrics,<<"plain">> => Skip}),
+    R=monitor_request(Name,#{<<"method">> => <<"monitor">>,<<"metrics">> => Metrics,<<"plain">> => Skip}),
     Raw=maps:get(<<"result">>,R),
     Rows=[case maps:get(<<"name">>,Row,maps:get(maps:get(<<"id">>,Row),Names,<<>>)) of
         <<>> -> Row;N -> Row#{<<"name">> => N}
@@ -120,7 +128,7 @@ loop(Name,A,Metrics,Plain,Instances,Names) ->
 render(Data) -> render(Data,false).
 render(Data,Color) ->
     Swarm=maps:get(<<"swarm">>,Data),Rows=maps:get(<<"devices">>,Data),
-    Header=io_lib:format("Swarm: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Swarm,<<>>)),safe(maps:get(<<"swarm">>,Swarm,<<>>)),safe(maps:get(<<"state">>,Data))]),
+    Header=io_lib:format("Buffee: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Swarm,<<>>)),safe(maps:get(<<"swarm">>,Swarm,<<>>)),safe(maps:get(<<"state">>,Data))]),
     Names=[device_name(R) || R <- Rows],
     [Header,"  CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
      [row_lines(R,Color,length([N || N <- Names,N=:=device_name(R)])>1) || R <- Rows],

@@ -8,6 +8,7 @@ main() ->
             true -> ok;
             false -> error(missing_mode)
         end,
+        true=not maps:get(monitor,Options,false) orelse maps:get(local_device,Options,false),
         case maps:get(local_device,Options,false) of
             true ->
                 {ok,_}=application:ensure_all_started(crypto),
@@ -27,7 +28,18 @@ main() ->
         URL=binary_to_list(ba_device_web_sup:origin()),
         io:format("BEAM Audio: ~s (~p)~nPress Control-C to stop.~n",[URL,maps:get(mode,Options,device)]),
         case Open of true -> open_browser(URL);false -> ok end,
-        receive shutdown -> application:stop(ba_device_web),halt() end
+        case maps:get(monitor,Options,false) of
+            true ->
+                {Pid,Ref}=spawn_monitor(fun() -> ba_cli_monitor:run_local(#{all => true}) end),
+                receive
+                    {'DOWN',Ref,process,Pid,_} ->
+                        io:put_chars(standard_error,"Monitor stopped; Device and web app remain running.\n"),
+                        receive shutdown -> ok end;
+                    shutdown -> ok
+                end;
+            false -> receive shutdown -> ok end
+        end,
+        application:stop(ba_device_web),halt()
     catch _:_ ->
         io:format(standard_error,"Cannot start Device Web. Use --assets DIR [--port PORT] (--local-device | --preview | --device-record FILE) [--open].~nCheck that the port is free and the paths/options are valid.~n",[]),
         halt(1)
@@ -38,6 +50,8 @@ options(["--assets",Path|Rest],Options,Open) ->
     true=filelib:is_dir(Path),options(Rest,Options#{assets => filename:absname(Path)},Open);
 options(["--port",Port|Rest],Options,Open) ->
     N=list_to_integer(Port),true=N>=0 andalso N=<65535,options(Rest,Options#{port => N},Open);
+options(["--monitor"|Rest],Options,Open) ->
+    options(Rest,Options#{monitor => true},Open);
 options(["--local-device"|Rest],Options,Open) ->
     false=maps:is_key(record,Options),
     false=maps:get(mode,Options,device)=:=preview,
