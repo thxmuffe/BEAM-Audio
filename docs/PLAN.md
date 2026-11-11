@@ -1,5 +1,23 @@
 # Development plan
 
+## Shared Apple/web frontend and UI responsiveness (2026-11-11)
+
+macOS and iOS now bundle the product web frontend directly in system WKWebView,
+with a small allowlisted bridge to their existing app-owned BEAM runtime.
+Microphone/broadcast permission, copy/share and lifecycle handling remain native.
+Core membership, reconnection and audio policy are unchanged. The old SwiftUI
+screens are no longer the app entry points. Mac icon generation now adds
+conventional transparent padding and uses the bundle ICNS without overriding it.
+
+Shared bridge I/O/JSON decoding and iPhone identity loading run off the main actor.
+UI request replies have bounded timeouts; local navigation is independent of
+runtime replies. Existing native snapshot polling remains, so this is not a new
+OTP event/subscription architecture. Tests and both native verification builds
+pass. Next: user-led Command-Tab/Dock, phone foreground/background/keyboard/share
+and simultaneous native/web audio testing. The original intermittent iPhone hang
+has not been reproduced on hardware; do not treat code-path fixes as proof that
+all hangs are gone. Rejoin semantics/latency and playback issues remain deferred.
+
 ## Device identification (2026-11-10)
 
 Display labels now include a short Handler instance ID, with Web/port context

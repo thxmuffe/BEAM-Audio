@@ -1,5 +1,42 @@
 # Progress
 
+## 2026-11-11 — Apple apps reuse the web frontend
+
+The product's macOS/iOS entry points now host the exact bundled web assets in
+WKWebView, preserving the responsive Audio/Chat/Contacts layout, compact header,
+forms, settings, chat draft handling and Device labels. A custom bundled-asset
+origin serves only local frontend files. Allowlisted asynchronous WebKit messages
+call each app's existing BEAM adapter; no HTTP backend/server is added to native
+apps. Native permissions, ReplayKit authorization, sharing/clipboard, Keychain
+identity and audio lifecycle adapters remain in use. Build scripts bundle the
+same assets/artwork/QR licence; installed native apps need rebuilding for UI edits.
+The former SwiftUI screens remain as legacy sources, not active entry points.
+
+The old native bridges parsed response bytes and JSON on the main actor and wrote
+to pipes/sockets synchronously there. Shared DispatchIO now uses background
+chunked reads/decoding and asynchronous cancellable writes. iPhone Keychain
+identity loading is also moved off the main actor. The WebKit host bounds pending
+command replies, times them out after 22 seconds and coalesces visual snapshots.
+Local menus/navigation stay independent of Device replies. Snapshot polling in
+the native adapters remains (Mac 0.5s, iOS 0.6s with no request pending); this work
+does not introduce OTP push subscriptions or claim every intermittent hang fixed.
+Timeout does not cancel a command already executing in BEAM.
+
+Mac icon generation places the canonical art in an 864px square on a transparent
+1024px canvas before producing the ICNS family. The app uses the bundle icon;
+the runtime NSApplication icon override is removed. Canonical artwork and iOS
+icon resources are unchanged. Padding is visually inspected in the generated PNG;
+real Dock/Command-Tab selection remains a manual check after relaunch.
+
+Validation: 10 shared Swift tests pass, including actual WebKit loading of the
+bundled ES-module frontend, Device labels, compact header and Settings while a
+Device inspection deliberately never responds. Chunked 300KB response and blocked
+command-pipe tests pass without blocking the main actor. Eight frontend state/
+transport tests pass. The macOS app build and generic unsigned iOS build pass;
+both include the frontend. No phone installation, live Swarm/audio run, hardware
+hang reproduction, full accessibility/performance-budget measurement or Render
+deployment was performed. Joining semantics and playback policy remain unchanged.
+
 ## 2026-11-11 — Distinct Device Handler labels
 
 Added shared display labels with pipe separators and an eight-character Handler
