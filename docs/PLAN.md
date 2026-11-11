@@ -1,5 +1,22 @@
 # Development plan
 
+## 2026-11-11 — Windows web launcher repaired
+
+`OpenSound/Start Web UI.cmd` and the compatibility Preview filename now build
+with bundled OTP/rebar3 and start an actual local `swarm_control` Device using
+`--local-device`, rather than the browser preview adapter. This standalone launch
+uses a fresh temporary Device identity/state directory per run; persistent slots
+and Windows secure audio-adapter integration remain follow-up work. Audio consent
+starts off. Existing installed native-app identities are not used or changed.
+
+Windows opens Chrome when found in standard installation paths or App Paths,
+otherwise the default browser. Browser opening uses structured PowerShell
+arguments. The cmd wrappers use CRLF and retain process-only execution-policy
+bypass. Build/start passed outside the sandbox DNS-helper restriction; HTTP
+session and authenticated snapshot confirmed device mode, swarm_control profile,
+a valid identity, idle state and no error. Browser helper PowerShell syntax and
+diff checks pass. Actual browser launch and physical audio were not verified.
+
 ## 2026-11-11 — beamaudio invitation scheme
 
 New secure and Windows compatibility invitation/connection generators emit
