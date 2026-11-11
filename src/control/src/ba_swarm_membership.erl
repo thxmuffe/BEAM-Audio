@@ -94,7 +94,7 @@ handle_call(current,_,#{state := authorized} = S) ->
     {reply,{ok,view(S)},S};
 handle_call(current,_,S) -> {reply,{error,maps:get(state,S)},S};
 handle_call({invite,_},_,#{role := authority,reusable_link := Link}=S) ->
-    {reply,{ok,Link},S};
+    {reply,{ok,compact_link(Link)},S};
 handle_call({invite,TTL},_,S) ->
     case invitations([undefined],TTL,S) of
         {ok,[#{invitation := Link}],Next} -> {reply,{ok,Link},Next#{reusable_link => Link}};
@@ -420,7 +420,7 @@ invitations(Ids,_TTL,#{role := authority,invitations := Existing}=S)
                 %% Explicitly inviting a selected contact can undo its removal;
                 %% merely forwarding the same link does not clear that block.
                 Invites=maps:map(fun(_,E) -> E#{blocked => maps:get(blocked,E,[])--Ids} end,Existing),
-                {Shared,S#{invitations := Invites}};
+                {compact_link(Shared),S#{invitations := Invites}};
               error ->
                 Id = fresh(16),Secret = fresh(32),
                 I = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"name">> => maps:get(name,S),
@@ -435,3 +435,7 @@ invitations(Ids,_TTL,#{role := authority,invitations := Existing}=S)
             {ok,[#{device => Device,invitation => Link} || Device <- Ids],Next}
     end;
 invitations(_,_,_) -> {error,captain_or_valid_invitation_required}.
+
+compact_link(Link) ->
+    {Packet,_}=ba_swarm_passport:parse_invitation(Link),
+    ba_swarm_passport:invitation(Packet).

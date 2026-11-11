@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: parvi-reception-desk
+    name: beamaudio-reception
     runtime: docker
     dockerfilePath: ./src/Services/ReceptionDesk/Dockerfile
     dockerContext: .

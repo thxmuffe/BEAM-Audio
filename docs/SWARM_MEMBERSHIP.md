@@ -1,5 +1,27 @@
 # Ephemeral Swarms, Passports and multiple Receptions — step 9
 
+## Compact self-contained invitation links — v4, 2026-11-11
+
+New/shared invitations use `beamaudio://session/v4?ticket=...`. The ticket is
+unpadded URL-safe Base64 of a 64-byte Ed25519 signature followed by the exact
+original signed JSON body. The existing signature domain, signed fields, random
+secret, identity/admission checks and strict bounds remain unchanged. Parsing
+reconstructs the existing credential envelope and invokes the same verification
+and invitation validation. No compression, alias registry, shortening service or
+Reception storage is involved. The link remains a private bearer credential.
+
+Existing v3 links with parvi/beamaudio and swarm/session spellings remain readable;
+Invite re-encodes saved v3 credentials as v4 without renewing or changing rights.
+Older installed applications need updating to read v4; old v3 links still work
+on updated applications. The sample fixture shrinks from 1036 to 713 characters
+(31%); actual length varies with names and Reception URLs. Further compaction of
+the signed body would require another explicitly versioned credential migration.
+
+All six passport tests pass, including v3/v4 equivalence, signature/body tampering,
+truncation, oversized links and existing binding/expiry metadata checks. Affected
+Erlang modules compile with warnings as errors. No app installation, public
+Reception deployment or hardware/network integration test is claimed.
+
 ## Current lifetime model — 2026-11-11
 
 A Captain manages admission and permission changes. Its disappearance does not end

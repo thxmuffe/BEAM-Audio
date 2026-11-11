@@ -1,5 +1,41 @@
 # Development plan
 
+## Compact self-contained invitation links — v4, 2026-11-11
+
+New/shared invitations use `beamaudio://session/v4?ticket=...`. The ticket is
+unpadded URL-safe Base64 of a 64-byte Ed25519 signature followed by the exact
+original signed JSON body. The existing signature domain, signed fields, random
+secret, identity/admission checks and strict bounds remain unchanged. Parsing
+reconstructs the existing credential envelope and invokes the same verification
+and invitation validation. No compression, alias registry, shortening service or
+Reception storage is involved. The link remains a private bearer credential.
+
+Existing v3 links with parvi/beamaudio and swarm/session spellings remain readable;
+Invite re-encodes saved v3 credentials as v4 without renewing or changing rights.
+Older installed applications need updating to read v4; old v3 links still work
+on updated applications. The sample fixture shrinks from 1036 to 713 characters
+(31%); actual length varies with names and Reception URLs. Further compaction of
+the signed body would require another explicitly versioned credential migration.
+
+All six passport tests pass, including v3/v4 equivalence, signature/body tampering,
+truncation, oversized links and existing binding/expiry metadata checks. Affected
+Erlang modules compile with warnings as errors. No app installation, public
+Reception deployment or hardware/network integration test is claimed.
+
+## 2026-11-11 — Plain UI vocabulary and quieter web pages
+
+Food analogies are backend-only. Product UI uses Session, Device, Group, Join,
+Leave and Destroy; Buffee remains the intentional internal term. Web assets were
+updated first, followed by Windows display labels and runtime-owned UI messages.
+Web Leave always disconnects this Device; the existing authorized End command
+has a separate Destroy Session action and confirmation. Backend End delivery
+limits and authority checks are unchanged; Windows does not gain a fake Destroy
+operation over its older runtime. Removed web connection footer and chat-note
+footer. Connection status is live in Settings. Ten existing frontend tests pass
+in-process (the sandbox blocks the test runner's child spawning); JavaScript
+syntax, static asset rebuild, affected Erlang warnings-as-errors compilation and
+diff checks pass. Browser visual verification and deployment are not performed.
+
 ## 2026-11-11 — Windows web console runs the shared monitor
 
 Windows double-click launchers pass `--monitor` after real local Device startup

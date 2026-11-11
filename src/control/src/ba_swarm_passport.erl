@@ -44,12 +44,25 @@ permission(<<"stream_read">>) -> stream_read;
 permission(<<"stream_subscribe">>) -> stream_subscribe;
 permission(<<"time_read">>) -> time_read;
 permission(<<"offset_write">>) -> offset_write.
-invitation(Packet) -> <<"beamaudio://swarm/v3?",(uri_string:compose_query([{<<"ticket">>,base64:encode(Packet)}]))/binary>>.
+%% v4 transports the exact signed JSON bytes plus the raw Ed25519 signature.
+%% No re-signing, compression, external lookup or Reception-side state.
+invitation(Packet) ->
+    E=decode(Packet),exact(E,[<<"body">>,<<"signature">>]),
+    Data=base64:decode(maps:get(<<"body">>,E)),
+    Sig=binary:decode_hex(maps:get(<<"signature">>,E)),64=byte_size(Sig),
+    Ticket=base64:encode(<<Sig/binary,Data/binary>>,#{mode => urlsafe,padding => false}),
+    <<"beamaudio://session/v4?ticket=",Ticket/binary>>.
+invitation_packet(<<"/v3">>,B64) -> base64:decode(B64);
+invitation_packet(<<"/v4">>,B64) ->
+    <<Sig:64/binary,Data/binary>>=base64:decode(B64,#{mode => urlsafe,padding => false}),
+    iolist_to_binary(json:encode(#{<<"body">> => base64:encode(Data),
+        <<"signature">> => binary:encode_hex(Sig)})).
 parse_invitation(Link) when is_binary(Link),byte_size(Link) =< 32768 ->
-    #{scheme := Scheme,host := <<"swarm">>,path := <<"/v3">>,query := Q} = U = uri_string:parse(Link),
+    #{scheme := Scheme,host := Host,path := Version,query := Q} = U = uri_string:parse(Link),
     true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
-        true = Scheme =:= <<"beamaudio">> orelse Scheme =:= <<"parvi">>,
-    true = map_size(U) =:= 4,[{<<"ticket">>,B64}] = uri_string:dissect_query(Q),Packet = base64:decode(B64),
+    true = Host =:= <<"session">> orelse Host =:= <<"swarm">>,
+    true = Version =:= <<"/v3">> orelse (Version =:= <<"/v4">> andalso Scheme =:= <<"beamaudio">> andalso Host =:= <<"session">>),
+    true = map_size(U) =:= 4,[{<<"ticket">>,B64}] = uri_string:dissect_query(Q),Packet = invitation_packet(Version,B64),
     E = decode(Packet),Body = decode(base64:decode(maps:get(<<"body">>,E))),Authority = maps:get(<<"authority">>,Body),
     Body = verify(Packet,Authority),
     exact(Body,[<<"v">>,<<"type">>,<<"swarm">>,<<"authority">>,<<"invite">>,<<"secret">>,<<"expires">>,<<"desks">>,<<"route">>,<<"name">>]),

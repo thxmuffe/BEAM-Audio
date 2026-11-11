@@ -56,7 +56,11 @@ def source(name, url, digest=None):
 
 def stage():
     lock = ROOT / 'src/control/transport/mix.lock'
-    digest = hashlib.sha256(lock.read_bytes()).hexdigest()
+    original_project = ROOT / 'src/control/transport'
+    # A project/application rename can leave mix.lock unchanged. Include the
+    # manifest so a cached parvi_transport cannot masquerade as ba_transport.
+    digest = hashlib.sha256(lock.read_bytes() + b'\0' +
+                            (original_project / 'mix.exs').read_bytes()).hexdigest()
     marker = WORK / 'beam.stamp'
     if marker.exists() and marker.read_text() == digest:
         return
@@ -74,7 +78,6 @@ def stage():
     crc.write_text(crc.read_text().replace('[:crc_nif] ++ ', ''))
     project = WORK / 'project'
     project.mkdir(parents=True, exist_ok=True)
-    original_project = ROOT / 'src/control/transport'
     manifest = (original_project / 'mix.exs').read_text()
     manifest = manifest.replace('../../../builds/intermediates/BeamTransportDeps', DEPS.as_posix())
     manifest = manifest.replace('../../../builds/intermediates/BeamTransport', BUILD.as_posix())
