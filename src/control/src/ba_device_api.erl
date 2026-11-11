@@ -11,7 +11,7 @@ request(Request) when is_map(Request) ->
     maps:merge(Reply,maps:with([<<"request_id">>],Request));
 request(_) -> request(#{}).
 printable(configuration_changed) -> <<"Settings changed in another client. Review the latest state and retry.">>;
-printable(invalid_swarm_config) -> <<"Invalid Buffee name, Reception address or invitation link.">>;
+printable(invalid_swarm_config) -> <<"Invalid Session name, Reception address or invitation link.">>;
 printable(R) when is_binary(R) -> R;
 printable(R) when is_atom(R) -> atom_to_binary(R);
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).

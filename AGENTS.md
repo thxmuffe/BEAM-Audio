@@ -1,3 +1,15 @@
+## UI vocabulary boundary — 2026-11-11
+
+Food analogies belong to core/backend terminology only. In the UI use **Session**,
+**Device**, **Group**, **Join**, **Leave** and **Destroy**. Buffee remains the
+intentional backend term. Guest/Chef and Manager must not become food-themed UI
+labels. Leave disconnects only this Device; Destroy requests ending the Session
+for all participants and is available only to an authorized authority. Existing
+signed-End delivery limitations still apply. Never relabel a local Leave as Destroy.
+This rule supersedes earlier recommendations to display Buffee in product UI.
+Connection status belongs in Settings, not repetitive page-footer prose. Omit
+chat-footer instructions telling users to create or join from Audio.
+
 # Repository Instructions
 
 These instructions apply throughout this repository. Keep shared design
