@@ -120,10 +120,10 @@ idempotent and no uncertain job is replayed automatically after return.
 
 ## Failure boundaries
 
-- Observed peer absence, Desk loss or session expiry closes the relevant session
+- Observed peer absence, Reception loss or session expiry closes the relevant session
   and stops its jobs. Membership is not revoked by that observation.
 - A peer/Director crash may be reported late by the relay. Until loss is observed,
-  the independently enforced receiver lease bounds work. The real-Desk loss test
+  the independently enforced receiver lease bounds work. The real-Reception loss test
   observed this lease-based cleanup; it does not establish immediate failure detection.
 - The Handler monitors its local control owner. Control death stops network jobs
   and clears their volatile records while unrelated local Workers continue.
@@ -145,13 +145,13 @@ rebar3 compile
 ```
 
 From the core root: `python3 tests/control/swarm-control-smoke.py` runs two
-disposable unnamed BEAM runtimes through the existing public Desk. It checks
+disposable unnamed BEAM runtimes through the existing public Reception. It checks
 offers, local Contract rejection, accepted/completed attempt identity, retry,
 cancellation, expiry, Worker crash and bounded cleanup after Director loss, plus
 the earlier status/capability/authentication checks. No product app, saved app
-state, private app identity, separate Desk, audio or GUI is used.
+state, private app identity, separate Reception, audio or GUI is used.
 
-[Passports, current policy/revocation on return and multi-Desk introductions](SWARM_MEMBERSHIP.md)
+[Passports, current policy/revocation on return and multi-Reception introductions](SWARM_MEMBERSHIP.md)
 are implemented in step 5. Audio subscriptions are step 6; applications remain step 9 in the
 macOS → Windows → iOS order. No app build/deployment is part of this increment.
 

@@ -94,7 +94,7 @@ signaling. Contracts are checked before provider creation. Before dispatch the
 receiver rechecks the current local control context and deadline, including when
 its own mailbox was delayed by other work. Actual session loss, expiry or policy
 invalidation stops live endpoints while retaining declarative intent. Losing one
-Desk does not itself cancel permission or media through healthy routes.
+Reception does not itself cancel permission or media through healthy routes.
 
 Step 8d's fresh two-way nonce proof renews eligible control authorization in place,
 retaining its session ID/replay sequence. The authenticated control owner passes
@@ -124,7 +124,7 @@ state, not a persistent monitoring/history service.
 
 The signed SDP carries the expected SHA-256 DTLS fingerprint; ExWebRTC performs
 the DTLS certificate checks. A dedicated data-channel label binds subscription
-and attempt. PCM travels directly through WebRTC/SCTP/DTLS, never through the Desk
+and attempt. PCM travels directly through WebRTC/SCTP/DTLS, never through the Reception
 or OTP distribution. The existing PCM packet codec carries the broadcaster's
 independent 64-bit playback target in **every** packet. The channel is unordered,
 with zero retransmissions. There is no new jitter buffer, loss concealment or
@@ -233,7 +233,7 @@ BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control
 
 The test uses OTP's direct launcher to preserve that local library path; it changes
 no downloaded/generated dependency files. Three disposable unnamed BEAM runtimes
-use a temporary instance of the existing Desk service for real signed signaling
+use a temporary instance of the existing Reception service for real signed signaling
 and real WebRTC media. A test-only shared clock and scheduled PCM sink verify
 mix values and per-packet targets, two simultaneous publishers, scoped pauses,
 receiver restart without restored permissions, source disappearance/new incarnation,

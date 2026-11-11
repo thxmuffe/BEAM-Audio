@@ -8,7 +8,7 @@ format/default. Compilation is verified; actual hardware acceptance is user-led.
 
 # Audio runtime and platform adapters
 
-Step 8a–8d now isolates Desk failures, preserves live media on unchanged Contract
+Step 8a–8d now isolates Reception failures, preserves live media on unchanged Contract
 installation and renews eligible authorization with fresh nonce proof without
 restarting Media Sessions/decoders or clearing queues. The Mixer admits bounded
 future audio but enforces the current permission on every output span. Bounded
@@ -301,7 +301,7 @@ last child of `ba_sup`; merely starting an app does not start capture or
 advertise audio. Existing startup profiles, app UIs and Windows capture are unchanged.
 
 The API requires BEAM Audio to be running. On a fresh VM, `ba_runtime:start(native_cluster)`
-starts the core without the desk unless explicitly configured. Native peer
+starts the core without the Reception unless explicitly configured. Native peer
 connections expose remote source PIDs through `pg`; the legacy WebSocket relay
 does not distribute process-group membership.
 

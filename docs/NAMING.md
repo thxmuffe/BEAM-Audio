@@ -1,5 +1,11 @@
 # Core names and migration
 
+The [Buffee terminology review](TERMINOLOGY.md) proposes product vocabulary;
+implementation awaits the user's “go.” Reception is now the documentation name
+for the introduction/routing service. Existing identifiers such as
+`ba_swarm_desks`, `BA_DESK_PORT`, `ReceptionDesk` and hosted URLs stay unchanged.
+The migration history below does not authorize a new code/protocol migration.
+
 Core-owned Erlang modules, registered processes, test modules and native exported
 functions use `ba_` (BEAM Audio). The OTP application is `ba_core`, the public
 runtime facade is `ba_runtime`, and the transport dependency application is
@@ -21,7 +27,7 @@ also clarify the component responsibility:
 | `parvi_audio_stream_handler_webrtc` | `ba_stream_handler_opus` | Opus handler; PCM also uses WebRTC. |
 | `parvi_cluster_auth/authority/desk/trust` | `ba_legacy_cluster_auth/authority/desk/trust` | Historical trusted Distributed Erlang stack. |
 | `parvi_connection` | `ba_legacy_connection` | Historical OTP-node/cookie connection string. |
-| `parvi_broker*` / `parvi_directory` | `ba_desk*` / `ba_desk_directory` | Historical HTTP Desk directory, separate from the Phoenix service. |
+| `parvi_broker*` / `parvi_directory` | `ba_desk*` / `ba_desk_directory` | Historical HTTP Reception directory, separate from the Phoenix service. |
 | `parvi_beam.c/.h`, `parvi_bridge_*` | `ba_beam.c/.h`, `ba_bridge_*` | Native runtime/UI bindings. |
 
 Use the [canonical terminology](TERMINOLOGY.md). A Source's stable key, its Stream
@@ -40,7 +46,7 @@ Change `PARVI_*` configuration to `BA_*`, retaining existing values. For example
 `BA_IDENTITY_SEED` and `BA_STATE_DIR` must point to the same identity/state as
 before. A missing seed on an ephemeral profile creates an ephemeral identity,
 just as before; renaming the variable does not migrate a launcher automatically.
-Desk host configuration is `BA_DESK_BIND` and `BA_DESK_PORT` (formerly
+Reception host configuration is `BA_DESK_BIND` and `BA_DESK_PORT` (formerly
 `PARVI_BROKER_BIND` / `PARVI_BROKER_PORT`); conventional `PORT` remains supported.
 Native GStreamer configuration is `BA_GSTREAMER_*`. Check the component READMEs
 and scripts for the complete configuration each consumer uses.

@@ -96,7 +96,7 @@ maps that ingress to UTC `t2` and maps its response construction time to UTC `t3
 The follower uses its ingress as `t4`. The existing four-timestamp measurement
 subtracts responder service time from RTT and estimates UTC-minus-local-monotonic.
 Queueing before send/after response construction remains part of the measurement;
-network asymmetry and Desk/TLS latency remain real uncertainty.
+network asymmetry and Reception/TLS latency remain real uncertainty.
 
 Production defaults retain 5-second sampling, a 20-observation median window,
 30-second correction checks, strict 2 ms correction deadband and at most 500 ppm
@@ -174,7 +174,7 @@ python3 tests/control/swarm-time-smoke.py --production-cadence
 BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time
 ```
 
-The first proof uses two independent temporary Desk services and three unnamed
+The first proof uses two independent temporary Reception services and three unnamed
 BEAM runtimes: signed sampling, explicit grants, forbidden/stale edits, competing
 compare-and-set, broadcasts, durable Offset, control-owner recovery and fresh
 filtering after reference restart. No app identity/state is loaded. The second
@@ -185,7 +185,7 @@ The production-cadence variant runs the real 20 × 5-second window across
 60-second control-session renewal. The test launcher library-path requirement is
 documented in [the stream guide](SWARM_STREAMS.md).
 
-These same-host, loopback-Desk checks do not establish Internet clock asymmetry,
+These same-host, loopback-Reception checks do not establish Internet clock asymmetry,
 external UTC accuracy, DAC timing or physical speaker alignment. Step 8 adds
 bounded binary queues covering 30-second Offset in virtual time, continuous
 1000 ms PCM scheduling and reference-restart capture rebind, plus real Opus

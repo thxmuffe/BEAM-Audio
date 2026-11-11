@@ -37,7 +37,7 @@ flowchart TD
   - Ensures transparency, auditability, and organic developer adoption across Linux, Raspberry Pi, macOS, Windows, and Android.
 - **OpenSound (Commercial Consumer & Pro Brand)**: 
   - Owns the polished native client applications in Apple App Store and Google Play Store.
-  - Operates the high-availability cloud signaling infrastructure (Reception Desk).
+  - Operates the high-availability cloud signaling infrastructure (Reception).
   - Sells cloud acoustic room tuning services, multi-room venue software, and turnkey pre-configured active speaker hardware.
 
 ---

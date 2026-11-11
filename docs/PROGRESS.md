@@ -1,5 +1,16 @@
 # Progress
 
+## 2026-11-11 — Buffee vocabulary prepared for review; no implementation
+
+Recorded the proposed Buffee / Guest / Chef / Manager / Response time vocabulary
+and Reception naming in [TERMINOLOGY.md](TERMINOLOGY.md). Guest resources remain
+locally consented; Chef adds music-broadcast permission, not control over other
+Devices. Captain authority replacement, elevation, moderation, Manager lifecycle
+and complete-shutdown return remain unresolved. Documentation only; implementation
+awaits the user's explicit “go.” Web app first, then wxErlang Windows following
+its appearance/behavior; Reception is also in scope. No code, runtime, identity,
+protocol, deployment or audio behavior is changed or verified by this entry.
+
 ## 2026-11-11 — Frozen authority, conditional Captain recovery, saved Devices
 
 Implemented the clarified model: no two-minute dissolution. Already admitted
@@ -13,7 +24,7 @@ Only explicit Captain End sends the end signal. Member Leave, Captain disconnect
 local Leave, CLI stop and native bridge closure no longer end everybody else.
 End is bound to each recipient's admission ID, so the same link can start fresh
 membership without an earlier admission's End applying to it. Delivery to
-partitioned peers remains best effort; no durable Desk tombstone is introduced.
+partitioned peers remains best effort; no durable Reception tombstone is introduced.
 
 A Captain now stores a private conditional recovery record atomically before
 publishing policy changes. It contains the current policy, invitations/revocation
@@ -40,7 +51,7 @@ still support at most 15 Devices. Contact labels allow the existing 256-byte
 Handler labels. Product wording now says Saved Devices/Devices rather than people.
 
 Validation: 69 relevant core tests and 11 shared Swift/WebKit tests pass. The
-local integration check uses actual independent BEAM processes and a Desk to
+local integration check uses actual independent BEAM processes and a Reception to
 verify frozen-grant peer sessions/jobs, Captain process restart with survivors,
 revocation retained across another recovery, explicit End, first-link reuse with
 fresh membership, no-peer history refusing recovery, and Device/group deduplication.
@@ -187,7 +198,7 @@ allows the exact name to be used for testing now.
 
 Validation: core compilation and 28 focused EUnit checks pass; 6 web state tests
 and 7 shared native model tests pass. A disposable two-VM integration check with
-a local Desk confirms both directions discover different Handler suffixes while
+a local Reception confirms both directions discover different Handler suffixes while
 using the same hardware name, and that app snapshots expose those labels.
 Static web assets were rebuilt. Native app bundles were not rebuilt or installed;
 no hardware audio test, joining-semantics change or playback fix is included.
@@ -267,7 +278,7 @@ performed for this fix. Details: product `builds/check-xcode-optional-web.log`.
 Implemented the user's revised invitation behavior in shared OTP code. Signature,
 schema, Swarm scope and current admission checks remain; numeric legacy expiry
 is ignored and new links use `expires: null`. Repeated Invite/contact delivery
-uses one link. An invitation first discovers live owners of its Desk mailbox; if
+uses one link. An invitation first discovers live owners of its Reception mailbox; if
 empty, a Device becomes Captain of a fresh gathering under the same Swarm ID and
 name. It advertises the reused address and accepts the original signed bearer
 ticket without restoring its issuer's authority. Membership IDs, policy, grants,
@@ -276,17 +287,17 @@ identity/settings/contacts are unchanged. Observer helpers wait for an actual
 Device rather than starting a gathering. No claim/election or split-brain
 prevention/convergence is implemented.
 
-Desk adds only authenticated, capability-scoped `lookup`/`found`, reporting up to
+Reception adds only authenticated, capability-scoped `lookup`/`found`, reporting up to
 16 live owners; several advertisements may coexist. Reauthentication clears old
 registrations before clients replay their desired mailboxes, avoiding a returning
-Captain discovering its stale advertisement. Lookup errors/offline Desk are not
+Captain discovering its stale advertisement. Lookup errors/offline Reception are not
 empty results. The product Join/Invite help explains reuse and no expiry.
 
-Validation: 23 focused Erlang unit checks and three Desk ExUnit checks pass.
+Validation: 23 focused Erlang unit checks and three Reception ExUnit checks pass.
 The new integration test checks a genuinely signed 1970-expiry ticket, live join,
 end/reuse by an unrelated Captain, unchanged Swarm ID/exact link, fresh membership,
 later joiners, current revocation, same-identity recreation and observer waiting.
-Existing two-Desk membership/failure/revocation and participant-reconnect smoke
+Existing two-Reception membership/failure/revocation and participant-reconnect smoke
 checks also pass. Tests use isolated identities and no hardware audio.
 Shared Render deployment `dep-dbpo28ajnfac73bsg0ug` is live on revision `f017376`.
 The existing service now builds BEAM-Audio/main using the current Dockerfile path;
@@ -348,9 +359,9 @@ No native app build, browser visual review, installation or deployment is includ
 ## 2026-11-10 — Core-owned Cowboy Device Web service
 
 Replaced OpenSound's Python HTTP/socket bridge with the optional BEAM Audio
-`ba_device_web` OTP application under `src/Services/DeviceWeb`. It uses the Desk's
+`ba_device_web` OTP application under `src/Services/DeviceWeb`. It uses the Reception's
 Cowboy/Ranch/patched Cowlib versions and an embedded supervised Ranch listener.
-No public Desk source, deployment or protocol was changed. Direct in-Device mode
+No public Reception source, deployment or protocol was changed. Direct in-Device mode
 calls `ba_device_api`; standalone attachment reuses `ba_cli_device:call/2` instead
 of duplicating the local socket protocol. The standalone launcher does not create
 a Device or start audio. OpenSound retains frontend assets, preview fixtures,
@@ -412,7 +423,7 @@ Menus/navigation do not wait for backend commands. Existing drafts and unchanged
 list markup survive polling. Polling is bounded, non-overlapping and pauses while
 hidden; core networking, identity, permissions and audio policy remain unchanged.
 
-Replaced the Desk HTTP proxy with a loopback-only host attaching to an existing
+Replaced the Reception HTTP proxy with a loopback-only host attaching to an existing
 CLI Device's instance-checked JSON-line socket. Host/Origin/session-token checks,
 command allowlisting, bounded bodies/timeouts and instance metadata redaction
 protect this local boundary. An explicit labelled preview mode supplies isolated
@@ -500,7 +511,7 @@ mtime 22:33:13 Helsinki, while its OS-name handoff source changed at 22:44:46.
 That bundle predates the change. The source reads the OS name on both Apple
 platforms; full user-assigned iPhone names still depend on Apple's entitlement.
 
-## 2026-11-09 — live glitch investigation and Desk deployment review (read-only)
+## 2026-11-09 — live glitch investigation and Reception deployment review (read-only)
 
 Read three extended diagnostic samples from the existing observer in the user's
 10WARNING Swarm. The broadcaster's blocks/frames advanced while its cumulative
@@ -519,12 +530,12 @@ refers to trusted Distributed Erlang inspection, which must not be used across
 the secure Swarm. Existing local counters need a bounded signed projection before
 remote playback glitches can be diagnosed. No cause or audio fix is claimed.
 
-Read Render deployment history: the Desk is live at original product commit
+Read Render deployment history: the Reception is live at original product commit
 `e5e002b80c3b7885b5f38d14153ff9219ff821e5` (2026-10-28). Compared its source from
 the retained product history with current core sources: mailbox routing is
 identical after module-prefix normalization; Phoenix host differences are landing
 page branding, and Docker changes cover paths/environment naming. The recent
-invitation/admission and monitor changes do not require a Desk protocol update.
+invitation/admission and monitor changes do not require a Reception protocol update.
 No deployment, restart, audio setting or remote runtime change was performed.
 
 ## 2026-11-09 — readable console monitor and Device names
@@ -572,13 +583,13 @@ explains that result without manufacturing a new gathering.
 
 Moved Apple runtime configuration into OTP application startup, before the
 supervisor starts, because the Mac release can start the application before its
-bridge entry point. Membership retries immediately when its primary Desk first
+bridge entry point. Membership retries immediately when its primary Reception first
 connects, without waiting for the five-second retry interval. macOS and iOS use
 the same OTP behavior and shared header UI for startup/rejoining progress, saved
 Swarm name and connection result. No per-platform restoration logic was added.
 
 Validation: control compilation, 13 focused app-session/lifecycle/passport/store
-EUnit checks, the existing two-Desk membership regression and six shared Swift
+EUnit checks, the existing two-Reception membership regression and six shared Swift
 model tests passed. A separate-process local restoration regression verifies
 same-Swarm/same-membership rejoining, protected checkpoint storage, rejection of
 a revoked saved Passport, explicit Leave forgetting and Captain restart on both
@@ -607,7 +618,7 @@ Device storage, identities and configuration paths are unchanged. Updated help,
 build output, CLI usage examples and regression entry points.
 
 Validation: control compilation and 32 focused protocol/passport/lifecycle EUnit
-checks passed. The local two-Desk regression passed shared-link admission,
+checks passed. The local two-Reception regression passed shared-link admission,
 leave/rejoin, revoked-identity denial and existing isolation/teardown checks.
 The local CLI Swarm/monitor regression passed with one shared invitation. Both
 command names produce identical help. No product app was launched, rebuilt or
@@ -618,7 +629,7 @@ These checks do not establish physical audio playback.
 
 Reproduced the user's blank monitor from the home directory with a real terminal.
 PATH resolution worked. The saved observer was idle; the saved Captain was absent
-from Desk presence during the attempted rejoin. The command was waiting for
+from Reception presence during the attempted rejoin. The command was waiting for
 admission before printing any header. Added an immediate connecting message,
 state-transition progress and clear errors for ended/denied admission and timeout.
 This does not revive old Swarms or fabricate access; the current Captain must be
@@ -652,9 +663,9 @@ Ctrl-C exits the console without stopping the member; stop device remains explic
 
 47 focused protocol/meter/Handler/audio regression checks pass, including new
 opt-in round-trip/range validation and absent-level reporting tests. The temporary
-Desk CLI integration checks observer membership, all-member reads and foreground
+Reception CLI integration checks observer membership, all-member reads and foreground
 interrupt while retaining membership. No test audio hardware or app was launched.
-The user's live Desk/Swarm was contacted only for the authorized observer join /
+The user's live Reception/Swarm was contacted only for the authorized observer join /
 reads, with audio off. User reports asymmetric iPhone joining, unclear Join UI,
 no audible audio yet, and confusing Device undo versus shared Offset; these remain
 open. Broadcast wording/icon is recorded as a deferred UI improvement.
@@ -731,7 +742,7 @@ shell/RPC, remote deployment, UI attachment, start-from-saved-config or undo.
 Moved current app Swarm commands into `ba_device_api`; app pipes and CLI share
 that allowlisted API. Added reusable explicit Device configuration and OTP
 readiness/progress predicates. JSON/scalar output is separated from errors/logs;
-waits expose membership, Desk, clock, capability and counter state. Admission is
+waits expose membership, Reception, clock, capability and counter state. Admission is
 separate from clock/capture readiness and sustained scheduled-output progress.
 The first Device never waits for a future peer during creation. Production clock
 math/default cadence, per-packet targets and expiry/revocation rules are retained.
@@ -754,8 +765,8 @@ supervised output-closure check preserving Mixer/receiver/other child PIDs. The
 real two-idle-VM CLI smoke passes identity/process isolation, duplicate-name and
 wrong-instance rejection, private socket/seed modes, timeout and stop/kill cleanup.
 A second CLI check passes create/invite/join, shared readiness and scoped peer
-inspection through a temporary loopback Desk with all audio disabled and an
-explicit shortened system-clock fixture. No shared Desk, app launch, microphone,
+inspection through a temporary loopback Reception with all audio disabled and an
+explicit shortened system-clock fixture. No shared Reception, app launch, microphone,
 speaker, OS permission prompt or actual audio capture/playback was used. Hardware
 flow, permissions, sustained media and physical timing remain user-led acceptance;
 earlier 8d maximum-Offset continuity remains open. No deployment or commit made.
@@ -786,7 +797,7 @@ Those receive targeted fixes/checks in CLI step 2. Membership/route changes also
 still reset control sessions; the CLI must expose that disruption separately
 from ordinary renewal, with selective invalidation deferred to a scoped follow-up.
 Several older review claims
-are superseded by implemented Desk/Contract/renewal/audio/app changes; physical
+are superseded by implemented Reception/Contract/renewal/audio/app changes; physical
 timing, clock availability and maximum-Offset limits remain unqualified. No clock
 redesign, cached permission extension or broad state-machine rewrite was accepted.
 
@@ -859,7 +870,7 @@ Renamed product packages, sources, Xcode projects/workspace and artifacts to
 OpenSound/OpenSoundKit or OS/BA prefixes. iOS/Windows changes are mechanical naming
 references only; their app migration/builds remain later. Stable identity-storage
 identifiers and core wire constants remain unchanged. Removed the four obsolete
-Mac files actually present: authority.term, policy.term, desk.term and
+Mac files actually present: authority.term, policy.term, Reception.term and
 clock_status.json; Keychain identity and contacts/groups were untouched. Startup
 also removes the known obsolete Swarm/subscription snapshot names.
 
@@ -892,13 +903,13 @@ membership supervision, gathering-owned ETS, local create/join/leave/end APIs
 and a JSON bridge. Contacts/groups remain on disk; old Swarm files are ignored.
 No durable membership registry, election or automatic gathering restoration.
 
-The commits did not supply the complete planned exit proof: the two-Desk test
+The commits did not supply the complete planned exit proof: the two-Reception test
 claimed Captain teardown while only closing member VMs, and group invitations
 were not exercised with audio. Added an explicit `--ephemeral --swarm-time`
-scenario to the existing media harness and corrected the two-Desk test. The
+scenario to the existing media harness and corrected the two-Reception test. The
 scenario proves saved-group invitations, voluntary join, local Contracts, real
 two-source WebRTC PCM mixed at original packet targets, member leave/rejoin,
-Captain-only end, complete process/ETS/Desk cleanup, contact/group persistence
+Captain-only end, complete process/ETS/Reception cleanup, contact/group persistence
 through a cold restart, fresh creation IDs and no old-gathering restoration.
 It kills the Captain membership actor and waits for the member's actual fresh
 60-second authorization bound to expire, confirming teardown without election.
@@ -911,9 +922,9 @@ Updated terminology, membership/stream contracts, API usage and roadmap to match
 the implemented volatile lifecycle instead of the old durable-Swarm model.
 
 Validation: warnings-as-errors compilation and all 123 focused backend EUnit
-checks pass. The new Ephemeral Swarm audio/lifecycle proof and corrected two-Desk
+checks pass. The new Ephemeral Swarm audio/lifecycle proof and corrected two-Reception
 permission/Job/isolation/revocation/teardown proof both pass. Invites use private
-URI transfer (QR-capable), not unsolicited Desk push. No product app, hardware
+URI transfer (QR-capable), not unsolicited Reception push. No product app, hardware
 output, platform packaging or deployment was used. Changes are uncommitted;
 OpenSound product sources remain unchanged. Step 9 is verified in the core;
 planned app work is step 10 (macOS → iOS → Windows). The earlier 8d maximum-Offset
@@ -934,15 +945,15 @@ Follow-ups 8a–8d are ready. Next implementation task: step 9.
 
 ## 2026-11-09 — Completed 8a–8c; implemented 8d with maximum-Offset qualification open
 
-Separated Desk connections/route ownership from the dependency-ordered runtime
+Separated Reception connections/route ownership from the dependency-ordered runtime
 supervisor. Temporary relay Workers reconcile from desired configuration once
 per second; repeated child crashes do not exhaust an automatic-restart budget or
 stop other connections. Socket failures keep the existing bounded relay backoff.
-Membership/control/Device/clock/audio owners do not restart on one Desk failure;
-primary-Desk loss preserves unexpired authorization. Sends try the advertised
-route then another configured Desk without duplicate fanout. Presence cleanup
+Membership/control/Device/clock/audio owners do not restart on one Reception failure;
+primary-Reception loss preserves unexpired authorization. Sends try the advertised
+route then another configured Reception without duplicate fanout. Presence cleanup
 checks other live connections. Runtime membership/control/clock failures still
-restart their own dependent branch in order. Desk child specifications load
+restart their own dependent branch in order. Reception child specifications load
 identity internally rather than containing a key that a supervisor report could log.
 
 Reinstalling the same Contract ID/revision is a no-op. Older revisions of that
@@ -974,8 +985,8 @@ are unchanged. The Opus marker now denotes the first sent packet, not a sequence
 counter wrap in a long-lived Media Session.
 
 Validation: warnings-as-errors compilation and 117 focused EUnit checks pass.
-The two-Desk proof preserves owner/session/accepted-Worker identities through
-three relay crashes and a Desk service crash, then passes rejoin/revocation.
+The two-Reception proof preserves owner/session/accepted-Worker identities through
+three relay crashes and a Reception service crash, then passes rejoin/revocation.
 Actual 60 s control/membership leases pass 125 s of two-source PCM at 1000 ms
 Offset: every expected frame, sample and target is accounted for, no gaps/drops
 and unchanged Media Sessions/publications while Contracts are reinstalled every
@@ -1023,7 +1034,7 @@ recovery remains step 10.
 
 ## 2026-11-09 — Architectural follow-ups scheduled before macOS integration
 
-Updated PLAN.md with the accepted preparation order: 8a Desk failure isolation,
+Updated PLAN.md with the accepted preparation order: 8a Reception failure isolation,
 8b idempotent Contract updates, 8c observable failures and 8d proactive seamless
 authorization renewal. These remain pending backend work, with headless exit
 checks and no product app launches. Renewal must preserve eligible Media Sessions,
@@ -1048,7 +1059,7 @@ app launched, platform built or service deployed. Next implementation task: 8a.
 Renamed core-owned Erlang modules/files, registered processes, OTP metadata,
 native exports and their script/test references from `parvi_*` to `ba_*`.
 The application is `ba_core`, facade `ba_runtime`, dependency application
-`ba_transport`, and configuration `BA_*` (`BA_DESK_*` for the Desk host).
+`ba_transport`, and configuration `BA_*` (`BA_DESK_*` for the Reception host).
 No old-name forwarding stack or configuration aliases were introduced.
 
 Clarified actual component names: `ba_swarm_clock*`, `ba_device_store`,
@@ -1064,11 +1075,11 @@ The user's 22 canonical components are defined in [TERMINOLOGY.md](TERMINOLOGY.m
 retained wire/identity spellings. Updated current guides, builders and repository
 instructions; preserved dated progress, historical decisions and product naming.
 Existing invitation schemes, cryptographic domains, media labels, Device Identity
-storage, checkpoint formats and public Desk address remain unchanged. Existing
+storage, checkpoint formats and public Reception address remain unchanged. Existing
 clock/filter/slew and Presentation Target arithmetic are preserved.
 
-Validation: warnings-as-errors core/Desk/transport compilation, 107 focused EUnit
-checks and 2 Phoenix Desk authentication/routing tests pass. Real headless two-Desk
+Validation: warnings-as-errors core/Reception/transport compilation, 107 focused EUnit
+checks and 2 Phoenix Reception authentication/routing tests pass. Real headless two-Reception
 Passport/revocation, public WSS Director/Job/failure, sustained PCM/clock-rebind
 and native Opus decode/mix proofs pass under the new namespace. Probe snapshots
 now reject any loaded old core module, preventing stale generated artifacts from
@@ -1124,7 +1135,7 @@ after master-clock restart. Real GStreamer-encoded/decoded Opus passes two-sourc
 mixing at packet targets and independent lifecycle/permission tests. Both use the
 authenticated production clock with a test-only output sink. The actual default
 20 × 5-second acquisition also passes across the 60-second session renewal.
-Two-Desk membership/revocation and the public WSS Director/job/Worker failure
+Two-Reception membership/revocation and the public WSS Director/job/Worker failure
 regressions pass. [Repeatable commands and evidence limits](../tests/control/README.md).
 
 Limits: these are headless same-host proofs, not Internet asymmetry, external UTC,
@@ -1173,13 +1184,13 @@ Validation: warnings-as-errors compilation and 95 focused EUnit checks pass,
 covering existing mapping/filter invariants, clock/Offset freshness, cached member
 rejoin without self-promotion, durable compare-and-set, source capture targets,
 strict wire/grant boundaries, safe session replacement and earlier job/media tests.
-The two-Desk/three-runtime proof passes signed timing, forbidden/stale Offset,
+The two-Reception/three-runtime proof passes signed timing, forbidden/stale Offset,
 competing edits, broadcasts, durable Offset, owner reconnect and fresh filtering
 after reference restart. The real WebRTC two-source proof also passes using the
 production capture-stamping path, authenticated clock and shared Offset, with
 only the output device replaced by a headless sink. Cadence/window are explicitly
 accelerated in test fixtures; all processes are unnamed and test state isolated.
-The existing two-Desk membership/revocation regression and public WSS status/job
+The existing two-Reception membership/revocation regression and public WSS status/job
 regression also pass. Public WSS initially failed before authentication; HTTPS,
 verified TLS, raw WebSocket upgrade and an isolated authenticated relay were then
 checked independently, and the full WSS proof passed on retry. The intermittent
@@ -1236,7 +1247,7 @@ stream_read and stream_subscribe are separate explicit grants. Both endpoints
 install local device/source Contracts. Reply/signaling dispatch matches peer,
 control session, source incarnation, subscription and fresh attempt, then rechecks
 current context/deadline before acting. ExWebRTC verifies signed-SDP DTLS
-fingerprints and carries PCM directly, without Desk audio or OTP distribution.
+fingerprints and carries PCM directly, without Reception audio or OTP distribution.
 The existing packet codec retains an independent target on every packet.
 
 Added an Erlang stereo mixer over independent bounded queues: PCM16/24/32/float32,
@@ -1253,10 +1264,10 @@ including retained collections, current Contract/fresh-clock restoration gates,
 independent targets/pause, mixed formats/channels, gain/limiting, mixer lease expiry, signed stream
 permissions/schema boundaries and existing job/membership/timing checks. Replaced
 obsolete singular receiver tests with collection/restore checks.
-The two-Desk membership/revocation regression also passes. The public WSS
+The two-Reception membership/revocation regression also passes. The public WSS
 status/capability/job regression passed after an initial pre-authentication
 connection failure and healthy HTTPS response; its network cause is not established.
-The headless three-device proof passes with real Desk signaling and ExWebRTC PCM:
+The headless three-device proof passes with real Reception signaling and ExWebRTC PCM:
 two publishers sum to the expected output at packet targets; receiver/source pause
 and resume, receiver restart without restored permissions, source disappearance
 and new incarnation, scoped unsubscribe and Contract revocation are independent.
@@ -1276,7 +1287,7 @@ Offset integration is step 7. No product app build, launch, installation or serv
 deployment was performed. [Usage, protocol and bounds](SWARM_STREAMS.md).
 
 
-## 2026-11-09 — Step 5: durable Passports and multi-Desk rejoin
+## 2026-11-09 — Step 5: durable Passports and multi-Reception rejoin
 
 Added one durable OTP membership authority, signed v3 invitations/Passports and
 fresh nonce-bound current policy grants. New membership has zero operation grants;
@@ -1290,31 +1301,31 @@ The profile requires stable seed/private state directory and replaces the former
 locally supplied peer-policy bootstrap, without a compatibility path.
 
 Added a bounded adapter over existing relay clients, with per-instance identity
-and URL state. Each device connects to the authority-permitted Desks. A signed
-directory selects recipient primary Desk/mailbox, permitting devices introduced
-through different independent Desks to communicate in the same Swarm. OTP
+and URL state. Each device connects to the authority-permitted Receptions. A signed
+directory selects recipient primary Reception/mailbox, permitting devices introduced
+through different independent Receptions to communicate in the same Swarm. OTP
 rest_for_one ordering resets dependent runtime branches after owner failure;
 ordinary relay reconnects retain declarative credentials and clear live sessions.
 
 Validation: warnings-as-errors compilation and 46 focused EUnit checks passed.
-The real public Desk WSS regression passed through actual Passport admission:
+The real public Reception WSS regression passed through actual Passport admission:
 status/capabilities, forged/replayed/forbidden messages, local Contract acceptance,
 job completion/retry/cancel/expiry, Worker crash and bounded Director-loss cleanup.
 Initial WSS attempts failed before authentication although HTTPS health worked;
 a later retry passed. No specific service/network cause is established.
-Two temporary instances of the existing Phoenix Desk service on loopback passed
-zero-grant admission, explicit permissions, cross-Desk status, alternate-Desk
+Two temporary instances of the existing Phoenix Reception service on loopback passed
+zero-grant admission, explicit permissions, cross-Reception status, alternate-Reception
 retained rejoin, active-job cleanup on revocation, authority restart and revoked
 Passport rejection after both authority and member restarts. All runtimes were
 unnamed, without OTP peers or product app/audio startup; test state/seeds isolated.
 
-Limits: one online authority, 16 members/4 Desks; no election, federation, shared
-Desk database or automatic route discovery. Fresh operation grants last at most
+Limits: one online authority, 16 members/4 Receptions; no election, federation, shared
+Reception database or automatic route discovery. Fresh operation grants last at most
 60 local monotonic seconds from request start and refresh with 30 seconds left;
 missed revocation notifications can leave existing authorized work alive until
 that bound, while returning/offline devices cannot authorize from cached Passport.
-Packets are signed rather than end-to-end encrypted. Multi-Desk evidence is local
-WS service routing, not two hosted Internet Desks. No app, audio, physical timing
+Packets are signed rather than end-to-end encrypted. Multi-Reception evidence is local
+WS service routing, not two hosted Internet Receptions. No app, audio, physical timing
 or deployment evidence is claimed. [Usage/limits](SWARM_MEMBERSHIP.md).
 Next: step 6, independent Streams/Subscriptions; app integration remains step 9.
 
@@ -1340,7 +1351,7 @@ exactly-once execution or automatic uncertain-job replay across restart.
 Verified offers reach the Handler through OTP asynchronous request collections,
 keeping control/session timers available. Control death stops its network jobs
 without cancelling unrelated local tasks; Handler replacement fences old sessions.
-Observed Desk/peer/session loss stops affected jobs. Real relay detection of a
+Observed Reception/peer/session loss stops affected jobs. Real relay detection of a
 killed Director was delayed; the receiver's independent lease stopped its Worker
 first. This is bounded lease cleanup, not instantaneous network-failure detection.
 
@@ -1348,13 +1359,13 @@ Validation: warnings-as-errors compilation and 40 focused EUnit checks pass,
 including job acceptance/retry/cancellation, Contract/consent rejection, unchanged
 retry deadlines, conflicting IDs, owner/Worker failure, cleanup and bounded cache,
 plus signed Director/grant/schema/expiry rejection and earlier lifecycle/control
-regressions. The expanded real-Desk WSS script passes two disposable unnamed
+regressions. The expanded real-Reception WSS script passes two disposable unnamed
 runtimes through offers, local Contract rejection, accepted/completed attempt
 identity, retries, cancellation, expiry, Worker crash and bounded Director-loss
 cleanup. An initial WSS attempt failed before authentication; GET /health then
-confirmed the existing Desk healthy. The final full job proof passed.
+confirmed the existing Reception healthy. The final full job proof passed.
 
-No product apps, saved app identities/state, separate Desk, new service deployment
+No product apps, saved app identities/state, separate Reception, new service deployment
 or audio path were used. No app build/install/launch, physical timing, automatic
 Director failover or full Passport/rejoin claim. [APIs, protocol and limits](SWARM_JOBS.md).
 Step 4 is complete for the approved non-audio proof; next is step 5. App integration
@@ -1381,7 +1392,7 @@ capability is added. Existing audio workers are not migrated or duplicated here.
 
 Validation: warnings-as-errors compilation and 29 focused EUnit checks pass,
 including nine local lifecycle/crash tests and capability permission/correlation
-regressions. The updated real-Desk WSS check passes authenticated bidirectional
+regressions. The updated real-Reception WSS check passes authenticated bidirectional
 status/capability reads and reflects a local consent change, then rejects a
 forbidden start, forged signer and replay. Both runtimes retain zero active
 Workers after those messages, no OTP peers and no old/audio branches. Network
@@ -1397,7 +1408,7 @@ remains step 9 in the agreed macOS → Windows → iOS order.
 ## 2026-11-08 — Step 2: restricted authenticated Swarm control
 
 Implemented `parvi_swarm_control_protocol` (pure validation/session transitions)
-and supervised `parvi_swarm_control` (Desk I/O, timers and waiting callers).
+and supervised `parvi_swarm_control` (Reception I/O, timers and waiting callers).
 `parvi:start(swarm_control)` uses an unnamed, non-distributed runtime and starts
 only control plus its linked existing relay. It never starts the old trust/OTP
 carrier, chat/clock/audio branches, Device Handler or job Workers. No new library,
@@ -1415,7 +1426,7 @@ Passport/admission/revocation implementation planned for step 5. WebRTC control,
 automatic renewal/reconnect and general commands remain unimplemented.
 
 At the user's request, shared store reads ignore old version-1 membership,
-authority, Desk routes and subscription intent; new writes use version 2.
+authority, Reception routes and subscription intent; new writes use version 2.
 Device identity keys are unaffected. Old files/bundles were not opened, erased,
 rebuilt or installed; new core code will not restore their old relationships.
 This is an intentional clean start, not revocation elsewhere in the Swarm.
@@ -1424,10 +1435,10 @@ Validation: component warnings-as-errors compilation and 35 focused EUnit checks
 pass, covering authentication/replay, permission/correlation/expiry, malformed and
 oversized input, duplicate keys, queue bounds, key redaction, old-state reset and
 relevant existing supervision/subscription/settings behavior. The new scripted
-real-Desk check passed bidirectional status between two disposable unnamed BEAM
+real-Reception check passed bidirectional status between two disposable unnamed BEAM
 runtimes over public WSS, then rejected a signed forbidden command, forged signer
 and stale sequence. Both reported no OTP peers and no old/audio branches. Initial
-connection attempts failed before authentication; after the existing Desk's GET
+connection attempts failed before authentication; after the existing Reception's GET
 /health was confirmed healthy, the exchange passed, including the authority-bound
 final protocol. Network checks required unsandboxed network access.
 
@@ -1458,7 +1469,7 @@ cannot establish fresh non-revocation. Those dependencies are explicitly mapped.
 Use one designated authority/Director arrangement initially, local OTP process
 ownership and fixed installed Workers. Step 2 proves signed, bounded status
 request/reply before jobs; steps 3–4 add local workers and job acceptance. Step 5
-adds full Passport/rejoin and multi-Desk behavior. Rich DSP, federation, generic
+adds full Passport/rejoin and multi-Reception behavior. Rich DSP, federation, generic
 RPC and a new messaging broker are not introduced by this contract.
 
 User clarification: temporary system/app/playback breakage during the migration
@@ -1487,7 +1498,7 @@ and removes already-implemented single-slot restoration from the future backlog.
 
 Resolved competing “current” instructions, trusted-OTP/VIP trust assumptions,
 anchor-based timing directions, backend reversals and future cinema/DSP/scaling
-prerequisites. Clarified identity before secure messaging, multi-Desk versus
+prerequisites. Clarified identity before secure messaging, multi-Reception versus
 federation, permission checks on restored intent, and the temporary trusted audio
 baseline before clock/control migration. Existing interface/decision records stay
 available as descriptions of code and history; they do not override the roadmap.
@@ -1526,7 +1537,7 @@ A small presentation module centralizes charcoal backgrounds, light text,
 teal chat accents and high-contrast errors, approximating the Apple app's dark
 system colours. Native fields remain selectable. Replaced the native status bar,
 whose text did not follow the dark palette, with a standard themed static footer
-showing desk/node/clock state. The bundled wxWidgets is 3.2.9 and the native
+showing Reception/node/clock state. The bundled wxWidgets is 3.2.9 and the native
 dark-mode probe retained white system colours; the app does not upgrade wx or
 change Windows theme settings. Some system-drawn controls/title chrome therefore
 retain platform styling. This is an approximate app palette, not identical native
@@ -1637,8 +1648,8 @@ iOS declares the audio background mode, reusing its existing AVAudioSession
 playback category. Erlang keeps healthy playing sessions across background and
 foreground, releases idle/paused sessions, and refreshes stale sessions/clock.
 NWPathMonitor sends subsequent usable network-path changes through the bridge.
-The desk coalesces notifications for 500 ms, cancels its old retry, disconnects
-old peer controllers, and reconnects the Reception Desk immediately with its
+The Reception coalesces notifications for 500 ms, cancels its old retry, disconnects
+old peer controllers, and reconnects the Reception immediately with its
 existing identity/mailboxes/watch list. Saved membership and subscription intent
 are untouched. The receiver replaces its old media session and requests fresh
 clock sampling before restoration. This is reconnect/recovery, not gapless
@@ -1972,7 +1983,7 @@ peer/status continuity. The installed bundle boots with native transport,
 GStreamer output helper, temporary identity and a standalone cluster. During a
 10-second idle interval after startup, its model issued zero snapshots and the
 UI process used zero reductions; Windows process CPU time recorded 0.00% of eight
-logical processors. This measurement excludes a connected desk/remote peers and
+logical processors. This measurement excludes a connected Reception/remote peers and
 child-helper CPU, so it does not establish connected-cluster idle cost. The probe
 closed cleanly without touching the user's identity/membership. User will launch
 the rebuilt app from Explorer and test idle CPU, connectivity and playback.
@@ -1988,7 +1999,7 @@ The connection failure came from different AppData views. Yesterday's policy
 and routes were under Codex's MSIX LocalCache/Local directory; the app launched
 from Explorer saw no policy at the same logical LocalAppData path. Credential
 Manager retained the same Windows identity. Verified the saved identity/node and
-cluster, backed up the destination desk record, and restored its original policy
+cluster, backed up the destination Reception record, and restored its original policy
 and routes. The user then confirmed Mac, iPhone and Windows Running. The offline
 inspectors were older remembered members; today's CLI inspector did not join.
 No networking redesign or iPhone edit was needed. Original state and identity
@@ -2011,7 +2022,7 @@ Core EUnit is 59/61; its two previously documented multi-node clock failures
 remain. Native OTP transport smoke passes RPC, binary transfer, ordering,
 links/monitors, ticks, disconnect detection and cookie rejection. Two disposable
 Windows nodes pass native invitation admission and cluster chat through public
-desk signaling. Public relay routing and a 50-second idle connection pass.
+Reception signaling. Public relay routing and a 50-second idle connection pass.
 WASAPI captures 48 kHz stereo and stops cleanly. The silent GStreamer scheduling
 proof renders 401 matched buffers without drops.
 
@@ -2315,7 +2326,7 @@ recovery checks remain open alongside it.
 
 The workspace now contains sibling BEAM-Audio and OpenSound checkouts. Completed
 local source extraction at the user's request: BEAM Audio owns reusable runtime,
-audio/OS adapters, Reception Desk and Render configuration, inspector, dependency
+audio/OS adapters, Reception and Render configuration, inspector, dependency
 preparation, checks and project documentation. OpenSound retains commercial UI,
 branding and app startup/packaging. Moved Apple identity storage, embedded iOS OTP
 host and Windows identity helper into core adapters; preserved their identifiers,
@@ -2344,7 +2355,7 @@ Validation on this Apple Silicon Mac:
   target-built static NIFs, moved native/Swift sources and bundled WebRTC.
 - Headless inspector: builds and `--help` runs; no identity/admission/playback
   commands were sent.
-- Reception Desk's current Phoenix service: compiles with warnings as errors
+- Reception's current Phoenix service: compiles with warnings as errors
   locally. WebApp static packaging also passes.
 - Windows Erlang UI modules: compile with `erlc -Werror`; PowerShell/native
   executable/WASAPI/GStreamer packaging remains unverified until run on Windows.
@@ -2407,7 +2418,7 @@ none was supplied or inferred, and no live remote session was attempted.
 
 Validation: shared warnings-as-errors build passes; checked command help/request
 correlation/malformed JSON, missing-transport preflight, isolated stable naming
-and dynamic native-carrier startup with no desk or peers. PowerShell parsing,
+and dynamic native-carrier startup with no Reception or peers. PowerShell parsing,
 piped/file UTF-8 forwarding, SSH path quoting (including spaces/apostrophes),
 environment-default isolation and DPAPI roundtrip pass using offline probes and
 a simulated SSH executable. No new automated tests were added. Mac Swift was
@@ -3244,7 +3255,7 @@ Local evidence is under ignored `builds/intermediates/iOS/clock-*.json`,
 `clock_status.json`; logo build logs are in the respective Apple intermediates.
 These checks establish restart/reference continuity, not UTC precision, physical
 speaker alignment, DAC resampling or sustained audio quality. No commits/pushes
-or Reception Desk changes were made in this increment.
+or Reception changes were made in this increment.
 
 Started plan step 3 with an isolated fixed L16 GStreamer experiment tool and
 usage instructions. The app still uses its legacy backend. Integer fixtures do
@@ -3335,7 +3346,7 @@ its configured reference repeatedly (METAS SNTP every 20 seconds by default),
 checks on a 10-second timer, and treats a mapping as stale after 60 seconds.
 Explicit `{node, Master}` sampling exists, but the reference configuration and
 master designation are not persisted/restored by native cluster rejoin. The
-checkpointed trust/desk records restore identity, membership and peer routes,
+checkpointed trust/Reception records restore identity, membership and peer routes,
 not a clock leader. Reconnection does not automatically create that role.
 
 Recorded the requested clock revision ahead of the GStreamer proof in PLAN.md.
@@ -3428,9 +3439,9 @@ obsolete README example of launching two instances sharing one installation.
 Updated the plan, decision 0005 and component guides with actual device evidence.
 The focused startup/rejoin increment is verified; next is the narrow native audio
 architecture decision. Both apps are left running and connected. No Reception
-Desk changes, new automated cases, commits or pushes were made. The earlier
+Reception changes, new automated cases, commits or pushes were made. The earlier
 automated trust script's outdated supervisor-count assertion remains unresolved.
-Simultaneous-start stress, revoked/stale membership, desk outages, prolonged
+Simultaneous-start stress, revoked/stale membership, Reception outages, prolonged
 suspension, network handover and audio/subscription/history restoration were not
 verified and are not claimed by this result. No measured reconnect-time guarantee.
 
@@ -3489,11 +3500,11 @@ The user clarified that remembered connections should survive offline periods:
 stable node identities and authorized peer relationships persist, while live
 transports are recreated. Updated the urgent plan to retain offline membership,
 retry discovery/connection and avoid duplicate peer records across restarts.
-Removed the premature requirement for a durable Reception Desk cluster registry;
+Removed the premature requirement for a durable Reception cluster registry;
 start with local persistence and existing discovery/signalling. Authority-dependent
 rejoin and stale membership/removal rules still need an explicit design; offline
 state cannot establish knowledge of unseen revocations. This clarification
-supersedes the earlier desk-coordination recommendation below. Documentation
+supersedes the earlier Reception-coordination recommendation below. Documentation
 only; no runtime behavior changed.
 
 ## 2026-11-01 — Prioritize persistent identity and automatic cluster rejoin
@@ -3510,7 +3521,7 @@ native signalling mailboxes and Mac OTP node names are also transient. Membershi
 and authority currently refer to runtime node names. OTP supervision/state
 machines/storage provide implementation mechanisms, but do not automatically
 restore this application state. The plan recommends evaluating a minimal durable
-cluster record at the existing desk for coordinated recovery, with stale-policy
+cluster record at the existing Reception for coordinated recovery, with stale-policy
 and simultaneous-start handling; actual hosted persistence remains to be checked.
 
 This moves cluster identity/membership restoration forward; full media-session
@@ -3585,7 +3596,7 @@ echo/delay was estimated by ear at roughly 100–300 ms. This is consistent with
 the source's provisional 250 ms presentation allowance, not a measured latency
 or acoustic-alignment result. The source-to-speaker path is now user-verified.
 
-A rejoin attempt initially failed: Mac Runtime details showed Reception Desk
+A rejoin attempt initially failed: Mac Runtime details showed Reception
 connected and `{channel_stopped,{shutdown,unauthorized}}`. Restarting both apps
 and using a fresh Mac cluster/invitation restored admission. This establishes a
 rejoin/trust issue to investigate when needed; it is not evidence of Render
@@ -3641,7 +3652,7 @@ or sustained-playback claim is made.
 Restored the documented local build tools under ignored `builds/`, built the
 Mac app and signed iPhone app, and installed/launched the latter on Paavo’s
 physical iPhone 12 mini. Both embedded/native runtimes start. Mac creates a
-native cluster through the existing Render Reception Desk. Actual Core Audio
+native cluster through the existing Render Reception. Actual Core Audio
 capture reports 48 kHz stereo and growing frame counts. A quiet 440 Hz PCM WAV
 played through the default output produces the expected −26 dBFS peak in the
 Erlang capture meter; the meter returns to −96 dBFS after playback. Clock
@@ -3940,7 +3951,7 @@ health polling or custom transport handshake was added.
 Validation: shared Erlang compilation passes with warnings as errors. An isolated
 unnamed local VM verified publish/discover/describe, acceptance and both endpoint
 ready states, explicit close/peer cleanup, invalid-profile/selector rejection and
-source-down cleanup. It started the native core without the desk and opened no
+source-down cleanup. It started the native core without the Reception and opened no
 network connection. No test files were added and no automated suite was run.
 
 Limits: only same-VM lifecycle behavior was checked; remote OTP/WebRTC and native
@@ -3975,7 +3986,7 @@ Documentation only; no application code, builds, tests or deployment changed.
 
 ## 2026-11-01 — Research Mac/iPhone publication and subscription ownership
 
-Inspected the current native supervisor/desk/channel/bridge and pinned ex_webrtc
+Inspected the current native supervisor/Reception/channel/bridge and pinned ex_webrtc
 0.17.0 sources, plus primary OTP/WebRTC documentation. Selected built-in `pg`
 for discovery, source `gen_server`s and dynamic local supervisors owning temporary
 `gen_statem` session endpoints. Peer/source/transport monitors bound the active
@@ -4204,7 +4215,7 @@ possible supporting increment, rather than replacing the stated product goal.
 
 Documentation only. No implementation, build, tests or deployment performed.
 
-## 2026-10-29 — Clear obsolete desk-disconnection error after reconnect
+## 2026-10-29 — Clear obsolete Reception-disconnection error after reconnect
 
 The live Render health endpoint returns HTTP 200, and a temporary client using
 the bundled Windows runtime authenticated over public WSS. Reading the existing
@@ -4236,13 +4247,13 @@ No tests were added or run and the live app was not restarted. One restart of
 an app using the old UI-only watcher is needed to install the expanded watcher.
 Native libraries, runtime and launch settings remain outside BEAM code reload.
 
-## 2026-10-29 — Correct local node status during desk disconnection
+## 2026-10-29 — Correct local node status during Reception disconnection
 
 The legacy relay snapshot incorrectly marked the local node down whenever it
-had neither a desk connection nor direct peers. The runtime producing the
+had neither a Reception connection nor direct peers. The runtime producing the
 snapshot is itself evidence that the local node is running. It now reports
-Running with `local_process` detail independently of desk connectivity; the
-sidebar continues to report desk reconnection. Remote status and graph edges
+Running with `local_process` detail independently of Reception connectivity; the
+sidebar continues to report Reception reconnection. Remote status and graph edges
 are unchanged. The shared worker compiles with warnings as errors and is staged
 in the Windows app's `ebin` for the next restart. No tests were added or run,
 and the running app was not restarted or reloaded.
@@ -4251,7 +4262,7 @@ and the running app was not restarted or reloaded.
 
 Reviewed the accepted OTP architecture, incremental implementation policy and
 recent Mac/iPhone integration. Windows now has explicit launch profiles. Native
-startup selects the shared WebRTC distribution carrier and native desk/runtime,
+startup selects the shared WebRTC distribution carrier and native Reception/runtime,
 disables EPMD and automatic/transitive distribution connections, and loads
 transport applications from `native_lib/`. The existing bridge already routes
 native commands to the shared runtime; no second membership/chat layer was added.
@@ -4259,7 +4270,7 @@ native commands to the shared runtime; no second membership/chat layer was added
 The Windows UI recognizes native snapshots, uses the actual OTP node identity,
 shows asynchronous submission notices and whole-VM trust, and confirms
 cluster-wide mutual removal. It disables voluntary leave and hides unsupported
-desk switching. Additional create/join actions are disabled while a native
+Reception switching. Additional create/join actions are disabled while a native
 cluster is selected. Existing swarm labels, graph implementation, UI/model
 ownership and the legacy multi-swarm path remain in place.
 
@@ -4284,7 +4295,7 @@ time headers in DTLS and POSIX shared memory/mapping in Shmex/Unifex. A Rust
 installation alone is not a demonstrated solution. Dependency sources were not
 edited, and no native bundle or cross-platform interoperability is claimed.
 Next Windows work is a supported Windows NIF build/port, followed by native app
-packaging and a focused invitation/chat check through the global Render desk.
+packaging and a focused invitation/chat check through the global Render Reception.
 
 ## 2026-10-29 — Native iPhone packaging and startup in source
 
@@ -4303,7 +4314,7 @@ settings select the expected archives, C/Swift flags and resource directory.
 The executable exports the OTP NIF API for Rustler's runtime lookup.
 
 The existing in-process DNS adapter also seeds configured STUN/TURN hostnames;
-desk resolution no longer clears unrelated cached hostnames. The phone declares
+Reception resolution no longer clears unrelated cached hostnames. The phone declares
 its local-network usage. Networking and trust stay in BEAM. Normal iOS startup
 now records `status=running` rather than automatically killing/restarting the
 chat worker; the earlier feasibility probe is opt-in via `PARVI_RUNTIME_PROBE=1`.
@@ -4316,7 +4327,7 @@ Device runtime resources and public TLS roots are prepared. The initial sandbox
 blocked certificate export and Swift package cache access; authorized execution
 completed those steps. No automated tests were added or run.
 
-No full app build, installation, on-device execution, Render connection or desk
+No full app build, installation, on-device execution, Render connection or Reception
 interruption was performed. Simulator native compilation remains unverified.
 Previously installed Mac/iPhone apps retain their earlier behavior; compile/link
 success does not establish a native Mac–iPhone connection. The one-cluster,
@@ -4327,7 +4338,7 @@ the new native apps when that work needs connection evidence.
 ## 2026-10-29 — Native Mac integration in source
 
 Moved the reusable WebRTC carrier, distribution controller, admission authority,
-trust worker and desk connector from the experiment into `src/control/src/`.
+trust worker and Reception connector from the experiment into `src/control/src/`.
 Probe drivers stay isolated; their existing compile helper follows the move.
 The Mac host now selects the native profile/carrier without EPMD or automatic
 transitive connections. Its supervisor starts shared `pg`/chat and the connector;
@@ -4354,7 +4365,7 @@ test, iPhone deployment or Render service change was performed. These checks
 do not establish a working connection through the new Mac app path.
 
 Limits: one native cluster per app session, represented by the existing swarm
-view. Additional independent swarms, desk/cluster switching, voluntary leave,
+view. Additional independent swarms, Reception/cluster switching, voluntary leave,
 connection mesh and automatic reconnect are not implemented. Failed joins need
 a restart. Quitting disconnects but does not revoke remote membership. Existing
 authority/publication recovery limits remain. Current iPhone/Windows builds and
@@ -4366,38 +4377,38 @@ use/check the updated Mac path when needed, without a separate testing phase.
 
 Removed the requirement to complete internet/recovery checks and broad failure
 handling before native app integration. Next is a small Mac integration of the
-existing carrier, trust worker, desk connector and shared OTP chat runtime, then
+existing carrier, trust worker, Reception connector and shared OTP chat runtime, then
 iPhone packaging. Connection checks support that work when needed; TURN and
 broader recovery remain follow-ups rather than prerequisites. Keep asking before
 adding automated tests or hardening.
 
-Removed the stale competing next-steps list, corrected the desk deployment
+Removed the stale competing next-steps list, corrected the Reception deployment
 status, and marked the original audio research milestones as reference rather
 than current development gates. Render CLI login and access to the single
-global desk are confirmed. This was a documentation revision; no app code,
+global Reception are confirmed. This was a documentation revision; no app code,
 connection test, deployment or service interruption was performed.
 
-## 2026-10-29 — Use the global Render desk for development
+## 2026-10-29 — Use the global Render Reception for development
 
 Clarified step 3b: development and connection checks use the single global
-Reception Desk at `wss://parvi-reception-desk.onrender.com/relay/v1`.
-No separate local/test desk is needed. The user confirmed that this is one
+Reception at `wss://parvi-reception-desk.onrender.com/relay/v1`.
+No separate local/test Reception is needed. The user confirmed that this is one
 shared development, testing and production environment and authorized changes
-regardless of risks, including hosted-desk interruption for the outage check.
+regardless of risks, including hosted-Reception interruption for the outage check.
 This update changes the plan only; no connection check or service change was
 performed. Step 3a remains compiled only, and step 3b remains pending.
 
-## 2026-10-29 — Step 3a Reception Desk introductions, compiled only
+## 2026-10-29 — Step 3a Reception introductions, compiled only
 
 Started step 3 with a small isolated connector. The user requested implementation,
 compilation and documentation only; no tests were added or run for this slice
-and no live desk was contacted.
+and no live Reception was contacted.
 
 `parvi_relay:start_link/1` can send mailbox envelopes to an explicit Erlang owner
 without the legacy swarm decoder. Existing defaults remain for current apps.
 `parvi_cluster_desk` uses it to introduce an inviter/joiner pair, exchange SDP/ICE,
 and hand admission/native setup to the existing trust worker and OTP carrier.
-Experimental v2 links wrap native v1 invitations with desk/mailbox addresses.
+Experimental v2 links wrap native v1 invitations with Reception/mailbox addresses.
 Cookies and native packets stay on the WebRTC DataChannel.
 
 The carrier accepts the third-party library's ICE-server configuration for
@@ -4413,7 +4424,7 @@ Next, when requested: connection proof (3b), then individual recovery behaviors
 
 Completed the interrupted foundation work before internet/recovery step 3.
 Behavior and reuse take priority; `parvi`/`swarm` names and UI labels remain for
-later cleanup. No Windows, graph, native UI or Reception Desk changes.
+later cleanup. No Windows, graph, native UI or Reception changes.
 
 Added opt-in `parvi:start(native_cluster)`. Its supervisor starts only the
 existing `parvi_pg` scope and shared chat `gen_server`. Custom swarm gossip,
@@ -4507,7 +4518,7 @@ cookies reject distribution after WebRTC has already connected.
 
 The parent passes only local SDP/ICE introductions and stops forwarding signals
 before the native handshake. There is no TCP distribution listener, EPMD,
-Reception Desk or application message router carrying native traffic. Names and
+Reception or application message router carrying native traffic. Names and
 cookies are temporary, and each node allows only its locally provisioned peer.
 This is not production invitation authentication or revocation. The accepted
 six-step direction and remaining admission, internet/recovery, mobile and DSP
@@ -4546,7 +4557,7 @@ already sends the reply and normally suppresses ping notifications.
 Twelve Erlang tests pass. Three local nodes stayed connected through the relay
 check's 50-second idle period. The first run then hit the helper's five-second
 deadline for Phoenix graceful shutdown; the remaining relay regression passed
-with deliberate crashes of the disposable test desk, covering reconnect,
+with deliberate crashes of the disposable test Reception, covering reconnect,
 admission, chat, overlapping swarms and mutual removal. No public service or
 installed app was changed.
 
@@ -4558,10 +4569,10 @@ process isolation, signalling, candidate handling and connection-state events.
 `parvi_direct` starts and communicates with that worker using ordinary Erlang
 calls. No custom Elixir transport modules remain; Mix still builds the upstream
 Elixir dependencies and their support modules remain required at runtime. The
-existing Phoenix Reception Desk was not rewritten or redeployed.
+existing Phoenix Reception was not rewritten or redeployed.
 
 All twelve Erlang tests pass. The integration check again verifies direct chat
-after shutting down a disposable local desk, independent swarms, retention of a
+after shutting down a disposable local Reception, independent swarms, retention of a
 connection shared by two swarms, and interoperability with a relay-only node.
 Native Mac/iPhone transport packaging remains unfinished; installed apps were
 not changed by this refactor.
@@ -4575,9 +4586,9 @@ The initial Swift WebRTC adapter experiment was removed following the user's
 architecture clarification. No WebRTC protocol implementation was written here.
 
 The isolated Mac experiment passes: two independent BEAM VMs establish a direct
-data channel, continue bidirectional chat after their local desk is killed,
+data channel, continue bidirectional chat after their local Reception is killed,
 retain independent swarms and a shared connection, then interoperate with a
-relay-only peer after desk recovery. The public Render service is unchanged.
+relay-only peer after Reception recovery. The public Render service is unchanged.
 The transport's native dependency packaging and physical iPhone test remain
 unfinished; installed apps continue using the working relay. See
 [the transport prototype](../src/control/transport/README.md).
@@ -4608,22 +4619,22 @@ two-way chat and departure, and its legacy local smoke check still passes.
 Installed and launched the signed iPhone build. Its OTP self-test passes and
 the connection receipt reports authenticated WSS to the shared Render default,
 with no error, matching live process 14698. The native Mac UI also shows the
-default desk connected and a v2 invitation. The user joined the Mac swarm from
+default Reception connected and a v2 invitation. The user joined the Mac swarm from
 the phone and exchanged “Hi” and “it works” in both directions. Native Mac
 inspection confirms both physical nodes in that swarm and both marked Running
 in Graph. Operation across separate access networks remains a further test;
 this exchange used the public Render relay regardless of local network layout.
 
-## 2026-10-28 - Shared default Reception Desk configuration
+## 2026-10-28 - Shared default Reception configuration
 
 The shared OTP settings in `src/control/src/parvi.app.src` now bundle the public
-desk URL once for Windows, macOS and iOS. Fresh native sessions connect without
+Reception URL once for Windows, macOS and iOS. Fresh native sessions connect without
 manual URL entry. `PARVI_RECEPTION_DESK_URL` overrides the default; an empty value
 selects local-only development. Explicit OTP/UI configuration takes precedence.
 Local test fixtures explicitly disable the public default to remain isolated.
 
 Rebuilt Windows and passed all 14 core/model tests. Two unnamed BEAM clients,
-started without any desk environment setting, passed the public WSS invitation,
+started without any Reception environment setting, passed the public WSS invitation,
 bidirectional chat, idle and departure test. The three-client local relay test
 also passed, including environment overrides and fresh-session configuration.
 Apple apps inherit the default when rebuilt; no Apple build was performed here.
@@ -4638,7 +4649,7 @@ the current build scripts; its startup was verified after relocation. Stopped
 the approved legacy Erlang process using the old runtime. The current Windows
 app stayed running. Removed the now-empty legacy source directories.
 
-## 2026-10-28 - Reception Desk deployed to Render
+## 2026-10-28 - Reception deployed to Render
 
 Deployed commit `e5e002b80c3b7885b5f38d14153ff9219ff821e5` as one Docker
 web service on Render's free plan in Frankfurt. Service
@@ -4656,7 +4667,7 @@ This verifies the public relay from this laptop, not separate physical networks.
 Rebuilt Mac/iPhone apps and cross-device testing remain pending. Free-plan
 inactivity can cause a cold start on the next connection.
 
-## 2026-10-28 - Persistent Reception Desk relay
+## 2026-10-28 - Persistent Reception relay
 
 Implemented a minimal Phoenix/Cowboy service around supervised Erlang routing
 workers, independent of the deferred browser app. Nodes authenticate ephemeral
@@ -4667,20 +4678,20 @@ admission/transport adapter, v2 invitations without Erlang cookies, reconnect,
 presence observations and membership resynchronization after service restart.
 Local developer distribution remains available separately.
 
-Windows has desk configuration/status and bundles Gun/Cowlib transport code.
+Windows has Reception configuration/status and bundles Gun/Cowlib transport code.
 Apple UI and iOS packaging sources have equivalent configuration and TLS trust
 resources; Mac/iPhone builds and device execution require Xcode and are not
 verified on this Windows machine. Existing apps need restarting/rebuilding.
 Deployment is prepared as one Render Docker service; nothing is published.
 The old directory launchers remain explicit legacy-only test paths.
 
-See [relay protocol](RELAY_PROTOCOL.md) and [desk guide](../src/Services/ReceptionDesk/README.md).
+See [relay protocol](RELAY_PROTOCOL.md) and [Reception guide](../src/Services/ReceptionDesk/README.md).
 
 Validation on Windows: 14 core/model EUnit checks, 13 workspace/legacy checks,
 and two Phoenix authorization tests pass. Three independent BEAM clients with
 distribution disabled pass scoped admission/chat, invitation revocation, mutual
-removal, creator-independent continuation, runtime desk configuration, a 50-second
-idle check and desk restart/reconnect. WSS chat passes; untrusted certificates
+removal, creator-independent continuation, runtime Reception configuration, a 50-second
+idle check and Reception restart/reconnect. WSS chat passes; untrusted certificates
 and wrong hostnames are rejected. Native relay graph/send/window rebuild and the
 existing local UI reload regression pass. The production release boots with
 runtime configuration and distribution disabled. Docker image execution and
@@ -4851,7 +4862,7 @@ was added.
 
 Bridge responses echo request IDs. The Apple model waits for acknowledgement,
 retains rejected drafts/invitations and preserves newer draft edits. The old
-separate node/cookie fields and Reception desk controls are removed from this UI.
+separate node/cookie fields and Reception controls are removed from this UI.
 The shared iPhone interface compiles with networking still disabled there.
 
 Validation: seven Erlang tests and four Swift model tests pass. The rebuilt
@@ -4969,7 +4980,7 @@ Replaced the Windows node/cookie copy buttons and inputs with **Copy connection
 string**, one masked input, and **Paste connection string**. The versioned
 `parvi://connect/v1?node=...&cookie=...` format is encoded and validated in shared
 Erlang code. The existing loopback policy and Mac request format are preserved.
-The Reception desk continues to list names without publishing credentials.
+The Reception continues to list names without publishing credentials.
 
 Validation: six core EUnit tests pass, including escaped-field round trips and
 invalid/duplicate/oversized input. The real Windows two-node integration test
@@ -4982,7 +4993,7 @@ Added `src/Apps/Windows/`: native wxErlang chat UI, Win32 C launcher, private pi
 test. Reuses the existing `parvi` workers and shared request/snapshot contract.
 The shared bridge accepts Windows app node names alongside Mac names while
 preserving the loopback restriction. Added `src/Apps/Web/run.ps1` for the unchanged
-Reception desk service. No audio or mobile/LAN transport was added.
+Reception service. No audio or mobile/LAN transport was added.
 
 Validation on Windows x64: warnings-as-errors Erlang compilation; all four core
 EUnit tests pass; the native app launches and sends through the wx composer;
@@ -5023,17 +5034,17 @@ under Settings → General → VPN & Device Management. Physical runtime executi
 remains unverified until that step and a successful launch.
 
 This build is foreground/local-only: it intentionally remains an unnamed node
-without EPMD, peer joins or Reception desk access. It proves the embedded-runtime
+without EPMD, peer joins or Reception access. It proves the embedded-runtime
 path in the simulator, not the final Mac–iPhone messaging milestone. Next: the
 signed physical-phone test, then private-LAN transport.
 
-## 2026-10-26 — Reception desk (local discovery)
+## 2026-10-26 — Reception (local discovery)
 
 Added `src/Apps/Web/`: supervised in-memory directory, OTP HTTP server on
 127.0.0.1:8765, JSON list/register API, join form and local QR generation. Duplicate
 names are deduplicated and all names are forgotten on restart. The directory
 stores names as binaries, caps resource usage and makes no liveness claims.
-The website and native connection sheet call it **Reception desk**. It runs in
+The website and native connection sheet call it **Reception**. It runs in
 Erlang, but does not join the registered nodes' cluster or store chat messages.
 
 Added a shared Erlang discovery client and a minimal **Register / Find nodes**

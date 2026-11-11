@@ -15,7 +15,7 @@ a missing renamed dependency.
 Run from the BEAM-Audio root unless noted. Every integration runtime is unnamed,
 uses a temporary state directory and fresh test identity, and exits at completion.
 No product app or audio device is opened. Local service/socket access is required.
-Use the existing compiled control, Reception Desk and BeamTransport dependencies;
+Use the existing compiled control, Reception and BeamTransport dependencies;
 do not launch an installed app to supply them.
 
 From `src/control`, compile and run the focused unit/protocol regression:
@@ -41,10 +41,10 @@ python3 tests/control/swarm-time-smoke.py --production-cadence
 BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --swarm-time --sustained
 ```
 
-The first uses the existing public WSS Desk for signed status/capabilities,
+The first uses the existing public WSS Reception for signed status/capabilities,
 Director jobs, local consent, retry, cancellation, expiry, Worker crash and
 Director-loss cleanup. Membership/time proofs start two temporary instances of
-the existing Desk service for cross-Desk admission, explicit permissions, revocation, Desk isolation,
+the existing Reception service for cross-Reception admission, explicit permissions, revocation, Reception isolation,
 clock/Offset writes, reference restart and control recovery.
 Production cadence takes about 100 seconds, exercising 20 observations at 5 s
 across the 60 s session boundary. Sustained PCM covers two mixed sources, 4 s of
@@ -63,24 +63,24 @@ BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control
 This passes the lifecycle exit: saved contacts/group generate recipient-bound
 invitation URIs; voluntary join and explicit Contracts allow two real WebRTC PCM
 Sources to mix at their packet targets. It verifies member leave/rejoin,
-Captain-only end, full process/ETS/Desk teardown on all participants, contacts
+Captain-only end, full process/ETS/Reception teardown on all participants, contacts
 surviving a cold restart, new gathering IDs and rejection of old-gathering tickets.
 It also kills the Captain membership actor and waits through the actual 60-second
 authorization bound for member teardown. No election or snapshot restoration.
 Storage contains only the Captain's `contacts.term`; other test Devices write no
-Swarm checkpoint files. The corrected two-Desk membership proof also explicitly
+Swarm checkpoint files. The corrected two-Reception membership proof also explicitly
 ends the Captain gathering before checking remote cleanup and retained contacts.
 
 Local APIs and limits: [Ephemeral Swarms](../../docs/SWARM_MEMBERSHIP.md).
 These are headless loopback proofs, not app, hardware or physical timing tests.
 The earlier 8d maximum-Offset continuity issue remains separate and open.
 
-## Desk isolation, idempotency, diagnostics and renewal — 8a–8d
+## Reception isolation, idempotency, diagnostics and renewal — 8a–8d
 
 The membership proof now crashes one relay Worker three times, then kills one
-Desk service, while another Desk carries status and an accepted Worker continues.
+Reception service, while another Reception carries status and an accepted Worker continues.
 It compares owner/session/Worker identities before and after failure, checks that
-supervisor child specs contain no private key, then restores the failed Desk and
+supervisor child specs contain no private key, then restores the failed Reception and
 continues the existing rejoin/revocation checks.
 
 Exact continuous PCM proofs, using actual 60 s control and membership leases:
@@ -117,7 +117,7 @@ That check passes: sessions stop and future queues disappear without output.
 There is no production renewal bypass or packet-filter API. New unit tests cover
 nonce/replay rejection, membership caps, unchanged/stale Contracts, output spans
 ending before permission expiry, distinct drop reasons, overload and PCM redaction.
-Counters/last-error codes are available in local control/Desk/Mixer snapshots and
+Counters/last-error codes are available in local control/Reception/Mixer snapshots and
 per-Subscription/provider transport diagnostics; they contain no PCM or keys.
 
 For the real native codec/handoff proof on the existing Mac GStreamer runtime:
@@ -167,9 +167,9 @@ python3 tests/control/cli-swarm-smoke.py
 ```
 
 These use temporary identities/state and local sockets. The first creates two
-idle real VMs with all audio disabled; the second adds a temporary loopback Desk,
+idle real VMs with all audio disabled; the second adds a temporary loopback Reception,
 explicit system clock reference and accelerated clock sampling for admission /
-scoped-inspection checks. Neither opens audio or contacts the shared Desk. They
+scoped-inspection checks. Neither opens audio or contacts the shared Reception. They
 are not production clock/audio timing evidence. `ba_cli_tests` adds readiness,
 child-environment secret removal and supervised native-output failure checks.
 See [CLI usage/limitations](../../src/Tools/CLI/README.md) for real user-led audio
@@ -181,7 +181,7 @@ commands and the explicitly deferred saved-configuration/undo work.
 python3 tests/control/frozen-authority-smoke.py
 ```
 
-Uses a local Desk and disposable Devices to verify Captain app closure freezes
+Uses a local Reception and disposable Devices to verify Captain app closure freezes
 existing grants; peers reauthenticate and run a consent/Contract-scoped job without
 a Director privilege; Captain process restart recovers only with a live admitted
 peer; revocation blocks survive recovery; explicit End tears down the gathering;

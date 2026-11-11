@@ -44,7 +44,7 @@ capabilities are enabled on a new identity. For an existing identity, omitting
 those settings as one history edit. An idle Device opens no hardware until work
 in a Swarm is eligible. You can
 start an idle Device by omitting both Swarm flags. Use `--desk ws://127.0.0.1:PORT/relay/v1`
-when deliberately using a local Desk; otherwise the existing shared Desk is used.
+when deliberately using a local Reception; otherwise the existing shared Reception is used.
 A Swarm ID identifies a gathering; its invitation is the admission credential.
 
 Mic permission is requested by the native binding when capture actually starts,
@@ -83,7 +83,7 @@ can satisfy streaming; counters never establish audible sound or physical
 speaker alignment. Readiness and progress predicates live in `ba_device_api`,
 shared with app bridges. Polling limits query load; it does not replace readiness
 with a guessed pause. Timeouts return nonzero status and bounded membership,
-Desk, clock, capability/error and progress details. A single local request is
+Reception, clock, capability/error and progress details. A single local request is
 bounded separately, so a busy/unresponsive endpoint can extend a short wait.
 
 Inspection is JSON; scalar `get` emits only its value (`--json` encodes it).
@@ -139,7 +139,7 @@ for old signed links. Using a link does not consume it. You can instead supply `
 files. The monitor verifies the ticket and uses an independent named
 `ba-monitor-SWARM_ID` identity. It never creates a Swarm as a fallback.
 
-This is an ordinary admitted, audio-disabled Device using the existing Desk,
+This is an ordinary admitted, audio-disabled Device using the existing Reception,
 signed control sessions and `capabilities_read` permission. It subscribes to no
 audio and accepts no audio Jobs; there is no app attachment or arbitrary RPC.
 `--all` means all members of this gathering, not every Device on the Internet.
@@ -280,9 +280,9 @@ python3 tests/control/cli-config-smoke.py
 
 The first checks two idle real VMs, identity isolation/reuse, protected endpoints,
 wrong-instance rejection, duplicate names, timeouts and stop/kill. The second uses
-a temporary loopback Desk, explicit system clock reference and shortened sample
+a temporary loopback Reception, explicit system clock reference and shortened sample
 window to check admission, invitations, shared readiness and scoped inspection.
-Both keep all audio disabled and clean up runtimes; neither uses the shared Desk.
+Both keep all audio disabled and clean up runtimes; neither uses the shared Reception.
 77 focused EUnit checks cover the shared API, freshness predicates, helper-secret
 removal, output-failure process preservation and existing audio/clock protocols.
 CLI/native helpers compile. Real mic/speaker/broadcast, OS permissions, sustained

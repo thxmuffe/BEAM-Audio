@@ -111,7 +111,7 @@ rebar3 compile
 ```
 
 From the core root: `python3 tests/control/swarm-control-smoke.py` explicitly
-starts two disposable headless runtimes through the existing public Desk. It
+starts two disposable headless runtimes through the existing public Reception. It
 checks capability reads/local consent changes and rejects forbidden commands,
 forgery and replay without creating Workers remotely. It launches no product app
 and uses no saved app identities, Swarms or subscriptions.

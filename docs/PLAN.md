@@ -1,5 +1,22 @@
 # Development plan
 
+## Buffee terminology review — 2026-11-11, implementation awaiting “go”
+
+Review the [proposed vocabulary and unresolved decisions](TERMINOLOGY.md): Buffee,
+Guest, Chef, Manager, Response time and Reception. This is documentation work
+only; do not implement the terminology or new behavior until the user says “go.”
+Reception replaces the former service name in documentation prose; existing code,
+paths, URLs, configuration and protocol names remain unchanged.
+
+After approval, update the primary web app first. Keep Windows in wxErlang,
+matching the web app's look and behavior as closely as possible. Authorized
+implementation scope is web app, Windows app and Reception, not Apple apps.
+Resolve Chef elevation, job permissions, Manager coordination, local exclusions
+versus shared bans and complete-shutdown return behavior before changing those
+semantics. The older Captain model below describes current behavior, not an
+approved implementation of the Buffee proposal. Audio timing/quality and existing
+maximum-Offset qualification remain separate open work.
+
 ## Accepted Captain/authority model — 2026-11-11
 
 This decision supersedes older roadmap wording that Captain disappearance or a
@@ -64,7 +81,7 @@ not implemented by recording this list.
    orientations and text sizes; verify real iPhone presentation and scanning.
 
 Acceptance: new/join/rejoin and repeated-link no-op cases; unavailable/delayed
-Desk; keyboard/IME with touch emulation and real phone keyboards; Share-to-join;
+Reception; keyboard/IME with touch emulation and real phone keyboards; Share-to-join;
 Auto-join on/off, repeated links and Captain jumps; square/scannable QR codes.
 All local navigation, menus and editing remain available while BEAM/network work
 is pending. The goal is friction-free testing without weakening admission or
@@ -165,15 +182,15 @@ remain user-led.
 
 Invitations currently have no time expiry, including previously signed links.
 The same link/Swarm ID can start fresh gatherings: a Device joins a live Captain
-advertised at its capability-addressed Desk mailbox, or becomes Captain when the
-Desk confirms no live owner. Membership, permissions and runtime state start
+advertised at its capability-addressed Reception mailbox, or becomes Captain when the
+Reception confirms no live owner. Membership, permissions and runtime state start
 fresh; old authority is never restored. This refines step 9: live gathering state
 is still ephemeral, while the invitation address can be reused. Repeated Invite
 and contact/group sharing use the same link. Observer helpers never start an
 empty gathering. There is deliberately no simultaneous-Captain prevention or
 convergence mechanism. See [membership semantics](SWARM_MEMBERSHIP.md).
 
-Implementation, local integration and public Desk reuse checks pass. Render is
+Implementation, local integration and public Reception reuse checks pass. Render is
 live on core revision `f017376`; its source now points to BEAM-Audio/main with the
 current Dockerfile path. Restart the web Device to load the compiled local code.
 Native applications need rebuilding/restarting for these invitation semantics.
@@ -207,7 +224,7 @@ and [component catalogue](../../OpenSound/docs/COMPONENT_CATALOG.md) adopt exist
 platform/accessibility guidance by reference, retaining only product decisions,
 commercial constraints and measurable responsiveness budgets. The responsive web
 reference is implemented with native HTML/JS. Its backend now belongs to BEAM
-Audio's optional `DeviceWeb` OTP application, using Cowboy like the Desk's HTTP
+Audio's optional `DeviceWeb` OTP application, using Cowboy like the Reception's HTTP
 stack. It calls the Device API directly when loaded inside the Device, or reuses
 the CLI client to attach to an existing Device socket. OpenSound supplies only
 frontend assets and launchers. Explicit design preview supports Windows review
@@ -252,7 +269,7 @@ PROGRESS.md; rebuilt app/observer acceptance and actual glitch diagnosis remain
 pending. Native underrun measurement and RTP loss statistics are not established. Do not infer glitch causes from meters or the
 observer's clock, and do not use legacy Distributed Erlang inspection on Swarm
 Devices. Render's deployed routing logic already handles the current envelopes;
-no Desk update is required for these recent client/core changes.
+no Reception update is required for these recent client/core changes.
 
 ### Current monitor presentation work (2026-11-09)
 
@@ -381,7 +398,7 @@ require implementing the independent review's entire proposed redesign.
    scoped reads, capability changes, get, stop/kill and shared readiness/counter
    waits are implemented. Two isolated CLI checks pass: idle VM/identity/socket /
    timeout/cleanup behavior, and create/join/readiness/scoped reads through a
-   temporary loopback Desk. The latter explicitly uses a system-reference/short
+   temporary loopback Reception. The latter explicitly uses a system-reference/short
    clock fixture and disables all audio; it is not production-clock/media evidence.
    77 focused EUnit checks pass. Helpers no longer inherit the signing seed.
    Native output closure/write errors are now handled without restarting Mixer,
@@ -492,7 +509,7 @@ inform the CLI milestone:
   evidence and an explicit decision, not incidental CLI changes. The existing
   8d maximum-Offset issue remains a tracked reproduction, not a CLI prerequisite
   silently declared fixed. Same-host tests cannot qualify separate speakers.
-- **Outdated/mixed:** Desk failure isolation, idempotent Contract installation,
+- **Outdated/mixed:** Reception failure isolation, idempotent Contract installation,
   authorization renewal, audio capabilities/automatic connections, Mac output
   and app migration have since been implemented to their documented limits.
   Captain loss ending a Swarm is now intentional; durable policy gossip,
@@ -517,7 +534,7 @@ The refreshing table/JSON reports state plus opt-in bounded capture/receive
 meters. Old app builds remain inspectable but show N/A for levels until rebuilt;
 normal capability reply shapes remain unchanged unless metrics are requested.
 Receive metering is maximum per-Source input, not actual mixed/native speaker
-measurement. Tests use synthetic samples and a temporary Desk. Live admission
+measurement. Tests use synthetic samples and a temporary Reception. Live admission
 and existing app state reads have been checked with the user's test invitation;
 no observer microphone/speaker/broadcast was enabled.
 
@@ -558,7 +575,7 @@ trusted-cluster code; it is not the current Swarm boundary.
    **Exit:** a small design contract and migration map grounded in current code.
 
 2. **Secure Swarm messaging, before jobs or new workers.** Extend the existing
-   authenticated Desk/WebRTC control path to carry versioned, allowlisted
+   authenticated Reception/WebRTC control path to carry versioned, allowlisted
    messages with sender authentication, replay protection, size bounds and
    per-operation authorization. No arbitrary OTP RPC, executable terms,
    remote process spawn or shared Erlang cookie across untrusted Devices.
@@ -582,17 +599,17 @@ trusted-cluster code; it is not the current Swarm boundary.
    **Exit:** a Director offers a non-audio test job, another Device's Handler
    accepts it, a Worker completes it, and an unauthorized job is rejected.
 
-5. **Desks, Passports and rejoin.** Extend existing persistent Ed25519 device
+5. **Receptions, Passports and rejoin.** Extend existing persistent Ed25519 device
    identity, stored membership and challenge/response. Separate durable Passport
    from ephemeral sessions and initial invitations; enforce revocation/epoch
-   updates on return. Make several ephemeral Desks introduce devices to the
-   *same* Swarm, with explicit cross-desk discovery/routing or introduction;
+   updates on return. Make several ephemeral Receptions introduce devices to the
+   *same* Swarm, with explicit cross-Reception discovery/routing or introduction;
    merely starting isolated replicas does not suffice.
-   **Exit:** two Desks admit/reconnect devices to one Swarm; a previously admitted
+   **Exit:** two Receptions admit/reconnect devices to one Swarm; a previously admitted
    device rejoins without a new invitation, while a revoked device cannot.
    **Complete:** [membership implementation and limits](SWARM_MEMBERSHIP.md);
-   two independent temporary Desk services share one durable authority and route
-   devices across Desks. Authority/member restarts and revoked return are verified.
+   two independent temporary Reception services share one durable authority and route
+   devices across Receptions. Authority/member restarts and revoked return are verified.
 
 6. **Independent Streams and Subscriptions.** Refactor the current receiver's
    **single** receive slot and stored intent into a collection keyed by
@@ -619,14 +636,14 @@ trusted-cluster code; it is not the current Swarm boundary.
    recover after reconnect, and reject stale/unauthorized updates; separate
    software scheduling from physical-speaker alignment claims.
    **Implemented:** [Time/Offset](SWARM_TIME.md), retaining existing timestamp
-   measurement, median and slew policy. Two-Desk authority/reconnect checks and
+   measurement, median and slew policy. Two-Reception authority/reconnect checks and
    real WebRTC PCM with production capture stamping pass using a headless output
    sink. Step 8 subsequently verifies sustained buffering, capture recovery and
    production-cadence acquisition across control-session renewal. Native platform
    output qualification remains step 10.
 
-8. **Backend end-to-end verification and migration.** Run two-device/one-Desk and
-   multi-Desk tests: join, retained membership, revoked Passport, Director/job
+8. **Backend end-to-end verification and migration.** Run two-device/one-Reception and
+   multi-Reception tests: join, retained membership, revoked Passport, Director/job
    failure, worker crash, reconnect, independent streams, pause/resume,
    clock/Offset updates and backend scheduling boundaries. Use headless runtimes;
    app launches and physical listening/output evidence belong to step 10.
@@ -643,19 +660,19 @@ trusted-cluster code; it is not the current Swarm boundary.
 
    **Approved backend follow-ups before step 9 — 8a–8c verified; 8d qualification open:**
 
-   **8a. Isolate Desk failures.** Supervise each Desk connection independently,
+   **8a. Isolate Reception failures.** Supervise each Reception connection independently,
    using established OTP supervision. A connection crash or disconnect must not
    restart membership, Device Handlers/Workers, control or the Swarm Clock, or
-   reset sessions routed through healthy Desks. Remove both restart cascades and
+   reset sessions routed through healthy Receptions. Remove both restart cascades and
    global disconnect handling; making the child supervisor `one_for_one` alone
-   is insufficient. Bound failed-Desk recovery and scope availability changes to
-   affected routes. Desk loss itself is not revocation; authorization freshness
-   and expiry still apply. **Exit:** with two Desks and active work, disconnect
+   is insufficient. Bound failed-Reception recovery and scope availability changes to
+   affected routes. Reception loss itself is not revocation; authorization freshness
+   and expiry still apply. **Exit:** with two Receptions and active work, disconnect
    and crash either connection; unaffected process/session identities and work
    survive, and the failed connection can recover independently.
    **Complete:** independent temporary relay Workers, bounded desired-connection
-   reconciliation, isolated runtime supervision and alternate-Desk routing. The
-   two-Desk proof preserves core/session/Worker identities through three relay
+   reconciliation, isolated runtime supervision and alternate-Reception routing. The
+   two-Reception proof preserves core/session/Worker identities through three relay
    crashes and one service crash, then recovers and continues rejoin/revocation.
 
    **8b. Make Contract installation idempotent.** Reinstalling the unchanged
@@ -733,10 +750,10 @@ trusted-cluster code; it is not the current Swarm boundary.
      process teardown on end without persistent Swarm snapshots or durable
      registry.
    - Voluntary join, leave, subscribe under local Device Handler control.
-   - Invitation dispatch to saved contacts or groups via Desk mailbox (or QR/URI).
+   - Invitation dispatch to saved contacts or groups via Reception mailbox (or QR/URI).
    **Exit — verified:** the [core proof](../tests/control/README.md) uses saved-group
    invitation URIs, voluntary admission, real two-source PCM, leave/rejoin and
-   Captain end. It checks full process/ETS/Desk teardown, contacts surviving cold
+   Captain end. It checks full process/ETS/Reception teardown, contacts surviving cold
    restart, fresh creation IDs, and Captain crash followed by actual lease expiry.
    [Lifecycle/API details](SWARM_MEMBERSHIP.md). Contacts never grant permission;
    automatic unsolicited invitation delivery is outside this URI-based proof.
@@ -884,16 +901,16 @@ trusted-cluster code; it is not the current Swarm boundary.
 
 - Step 1 specifies the minimum identity, session and permission rules needed by
   step 2. Step 2 reuses existing Ed25519 identity and fresh challenge/response;
-  the complete Passport/rejoin and multi-Desk behavior is implemented in step 5.
+  the complete Passport/rejoin and multi-Reception behavior is implemented in step 5.
   Membership proof authenticates a relationship; it never grants all operations.
 - Steps 2–4 establish a small proof between independent runtimes with no
   cross-device Distributed Erlang connection. No parallel compatibility path is
   required. Step 3 uses predefined local test
   workers; mentioning DSP Workers does not require a DSP engine or algorithm.
-- Step 5 connects multiple Desks to **one** Swarm. Federation of different Swarms
-  and automatic Director failover are outside this roadmap. A Desk introduces
+- Step 5 connects multiple Receptions to **one** Swarm. Federation of different Swarms
+  and automatic Director failover are outside this roadmap. A Reception introduces
   devices; membership/revocation policy belongs to the explicit Swarm authority
-  defined in step 1, independently of where a Desk is hosted.
+  defined in step 1, independently of where a Reception is hosted.
 - Steps 6–8 implement the PCM/Opus collection, authenticated clock/Offset path,
   decoded-audio handoff, bounded sustained buffering and capture recovery.
   Product apps still require step-10 integration. The migration is not ready for untrusted devices while any required

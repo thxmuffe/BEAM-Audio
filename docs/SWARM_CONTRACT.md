@@ -38,7 +38,7 @@ assumes connected distribution peers and loaded code are fully trusted.
 | Worker/session | One local task and its native resources; reports completion/failure to its Handler. |
 | Subscription owner | Receive/playback intent retained within the live Swarm, keyed by Swarm, publisher Device and source identity; separate live media execution per subscription. |
 | Erlang clock/presentation code | Shared reference identity/quality, local mapping, packet targets and permitted corrections. The publisher assigns targets; receivers execute them or report failure. |
-| Desk | Authenticated socket routes, mailbox capabilities and introductions; neither membership authority nor audio transport. |
+| Reception | Authenticated socket routes, mailbox capabilities and introductions; neither membership authority nor audio transport. |
 | UI/platform host | Local user commands, consent/OS permissions, secure key storage and state display. No remote authorization or scheduling decisions. |
 
 An authority's absence does not elect a replacement. New admissions, grants and
@@ -51,7 +51,7 @@ gathering at its authorization deadline. No federation or consensus service is r
 
 - Device ID is the existing Ed25519 public key (64 uppercase hexadecimal
   characters). Keep its private seed in platform secure storage and preserve
-  installation identity. OTP node names, Desk URLs and runtime PIDs are not IDs.
+  installation identity. OTP node names, Reception URLs and runtime PIDs are not IDs.
 - Swarm ID is fresh per creation (128-bit/32-hex), stable only during that gathering.
   An invitation pins the expected authority/introducer and identifies a Swarm;
   a mailbox capability grants delivery only. Neither is an operational grant.
@@ -75,11 +75,11 @@ gathering at its authorization deadline. No federation or consensus service is r
 For the step-2 proof, configure two existing Device keys and an explicit shared
 Swarm policy fixture with a pinned authority and only status permission. That
 fixture is not open admission or Passport implementation. Full invitations,
-Passport issuance/revocation/rejoin and multiple Desks are step 5.
+Passport issuance/revocation/rejoin and multiple Receptions are step 5.
 
 ## Message authorization and session contract
 
-Reuse the authenticated Desk client and existing WebRTC/Ed25519 building blocks.
+Reuse the authenticated Reception client and existing WebRTC/Ed25519 building blocks.
 Use a separate versioned Swarm application protocol; do not extend the opaque
 OTP packet format or invoke its admission-to-distribution transition.
 
@@ -93,10 +93,10 @@ OTP packet format or invoke its admission-to-distribution transition.
    distinct `parvi-swarm-control/v1:` signature domain, not the old OTP-admission
    domain. The signed body includes version, sender, recipient, Swarm/session,
    sequence, policy epoch/revision, operation, request/reply correlation and payload.
-3. The transport's peer/from binding must match the verified signer. A Desk's
+3. The transport's peer/from binding must match the verified signer. A Reception's
    sender stamp alone is insufficient for end-to-end peer authentication.
-   Signed control through a Desk is not a promise of payload confidentiality
-   from that Desk. Private keys, old Erlang cookies and microphone/audio bodies
+   Signed control through a Reception is not a promise of payload confidentiality
+   from that Reception. Private keys, old Erlang cookies and microphone/audio bodies
    are never application control payloads.
 4. Establish a fresh, finite session authorization against the current policy.
    Step 2 uses a 10-second handshake timeout and a maximum 60-second proof
@@ -231,9 +231,9 @@ dependencies must be removed from the Swarm path before step 8 qualifies it.
 | Existing code and dependency | Keep / replace | Step |
 | --- | --- | --- |
 | [`ba_device_store`](../src/control/src/ba_device_store.erl): `identity`, `load/save`, `node_name` | Keep secure seed input and local checkpoint mechanism; replace network identity based on OTP names with Device IDs. No VM snapshot/store rewrite. | 2, 5 |
-| [`ba_relay`](../src/control/src/ba_relay.erl): raw delivery, signed Desk hello, `send/open/watch`; [`ba_reception_sessions`](../src/Services/ReceptionDesk/relay_src/ba_reception_sessions.erl): sender-stamped scoped routes | Reuse WSS/mailbox introduction. Add end-to-end application validation/authorization; presence is not membership. Cross-Desk routing is missing. | 2, 5 |
+| [`ba_relay`](../src/control/src/ba_relay.erl): raw delivery, signed Reception hello, `send/open/watch`; [`ba_reception_sessions`](../src/Services/ReceptionDesk/relay_src/ba_reception_sessions.erl): sender-stamped scoped routes | Reuse WSS/mailbox introduction. Add end-to-end application validation/authorization; presence is not membership. Cross-Reception routing is missing. | 2, 5 |
 | [`ba_legacy_cluster_auth`](../src/control/src/ba_legacy_cluster_auth.erl): Ed25519 envelopes, nonces and DTLS binding | Reuse OTP crypto/patterns with a separate protocol/signature domain. Invitation parsing is not operational permission. | 2, 5 |
-| [`ba_legacy_cluster_desk`](../src/control/src/ba_legacy_cluster_desk.erl): `channel`, trust `authorized` event, `net_kernel:connect_node`, node monitoring, same-URL `parse_link` | Replace admission-to-distribution transition with Swarm sessions; retain useful route/retry handling. Step 5 removes the one-Desk constraint. | 2, 5 |
+| [`ba_legacy_cluster_desk`](../src/control/src/ba_legacy_cluster_desk.erl): `channel`, trust `authorized` event, `net_kernel:connect_node`, node monitoring, same-URL `parse_link` | Replace admission-to-distribution transition with Swarm sessions; retain useful route/retry handling. Step 5 removes the one-Reception constraint. | 2, 5 |
 | [`ba_dist_channel`](../src/control/src/ba_dist_channel.erl) and [`ba_webrtc_dist`](../src/control/src/ba_webrtc_dist.erl): opaque native frames, `dist_ctrl_*`, OTP handshake | Swarm path must never instantiate these as an authorization shortcut. Reuse WebRTC library primitives, not an OTP carrier with its dangerous frame type hidden. | 2; retire old path by 8 |
 | [`ba_legacy_cluster_trust`](../src/control/src/ba_legacy_cluster_trust.erl): `grant` creates node/cookie atoms and routes distribution; `authority` calls a remote registered server; `reconcile_member` accepts same-epoch additive cached policy | Replace grants with scoped sessions and authority-verified policy freshness. Existing stale peer checkpoints cannot prove non-revocation. | 2, 5 |
 | [`ba_legacy_cluster_authority`](../src/control/src/ba_legacy_cluster_authority.erl): caller identity from `node(Pid)`, `publish/retire/take_over` via erpc, Offset writer | Retain serialized local policy ownership. Authenticate Device IDs at ingress; replace remote calls with scoped messages. Authority transfer/failover is deferred. | 5, 7 |
@@ -256,14 +256,14 @@ Preserve stored identity and the final packet timing semantics. Obsolete code ca
 be removed when its replacement is verified, no later than step 8's final checks.
 
 Step 2 now supplies the bounded signed control protocol and two independent
-runtimes exchanging authorized status messages through the existing Desk/mailbox
+runtimes exchanging authorized status messages through the existing Reception/mailbox
 path. Its checks cover allowed request/reply, forbidden operations,
 forged signer/recipient, stale session/sequence replay, expiry and oversize input;
-none may create an OTP connection or job/audio worker. The real-Desk proof and
+none may create an OTP connection or job/audio worker. The real-Reception proof and
 focused tests pass; WebRTC control is not integrated. Step 3 adds the local
 Handler/test Worker and authenticated capability queries, retaining the ban on
 arbitrary remote Worker start. Step 4 implements the scoped offer/acceptance and
-non-audio Worker result proof. Next is step 5's Passport/rejoin and multi-Desk
+non-audio Worker result proof. Next is step 5's Passport/rejoin and multi-Reception
 work, keeping membership separate from resource permission. Product apps and
 their device/listening checks are step 10, macOS then iOS then Windows.
 
@@ -272,4 +272,4 @@ OTP references checked 2026-11-08: [security](https://www.erlang.org/doc/system/
 [gen_statem](https://www.erlang.org/doc/system/statem.html), and
 [pg scope/liveness semantics](https://www.erlang.org/doc/apps/kernel/pg.html).
 These support the local OTP design; the grants/lifecycles above are project
-decisions, not features automatically supplied by OTP or the Desk.
+decisions, not features automatically supplied by OTP or the Reception.

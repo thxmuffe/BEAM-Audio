@@ -61,8 +61,8 @@ still needs its per-packet executor before end-to-end playback can be verified.
 iOS declares background audio and retains a healthy playing session on background
 and foreground transitions. Idle/paused sessions are released. Stale foreground
 sessions are recreated with clock refresh and fresh targets. An iOS NWPathMonitor
-binding sends usable path changes to Erlang. The existing desk coalesces events,
-closes stale peer transports, immediately reconnects the Reception Desk and lets
+binding sends usable path changes to Erlang. The existing Reception coalesces events,
+closes stale peer transports, immediately reconnects the Reception and lets
 existing membership/source discovery restore the saved subscription. Identity,
 membership and subscription intent are retained; no VM restart or new protocol.
 
@@ -369,7 +369,7 @@ Proposed boundary, informed by BUSINESS_MODEL.md: public BEAM Audio contains the
 reusable OTP runtime/control, clock, stream contracts/handlers, platform audio
 adapters, headless inspection/reference tooling and reproducible test fixtures.
 Private OpenSound contains product apps/branding, managed-service/product wiring
-and commercial material. Review the exact shared UI, inspector host, trust/desk
+and commercial material. Review the exact shared UI, inspector host, trust/Reception
 client versus hosted service placement before moving files; this proposal does
 not finalize every directory's visibility.
 
@@ -854,7 +854,7 @@ by the current prototype.
 **Implemented and device-checked, 2026-11-01:** [decision 0005](../decisions/0005-persistent-identity-and-cluster-rejoin.md)
 records the architecture. Apple hosts now load a Keychain identity and supply a
 stable node name/state directory. Trust, authority and connector checkpoint their
-durable records; the existing desk's presence events trigger fresh authenticated
+durable records; the existing Reception's presence events trigger fresh authenticated
 WebRTC setup, followed by OTP connection/monitoring. Offline permission survives
 transport failure. Known-member reconnect uses local membership, while new
 admission remains authority-controlled. The UI has local Forget cluster and
@@ -873,7 +873,7 @@ reconciliation across different membership epochs remain deferred. Upgrade both
 apps and create/join once to establish the first persistent membership. Focused
 real-device checks now pass; no broader recovery/testing phase is required
 before returning to the audio plan. Simultaneous-start stress, revoked/stale
-membership, desk outage and background/interface-handover checks remain unverified.
+membership, Reception outage and background/interface-handover checks remain unverified.
 
 **Required experience:** after an app restart, return to the previously selected
 cluster without copying another invitation. If every app was closed, the first
@@ -900,7 +900,7 @@ Authority loss when another member remains online also needs explicit handling.
 1. **Define durable identity, membership and recovery ownership.**
    Record a focused architecture decision before changing trust behavior. Give
    each installation a persistent cryptographic identity and retain the selected
-   cluster ID, desk configuration and versioned membership information. Separate
+   cluster ID, Reception configuration and versioned membership information. Separate
    stable device identity from runtime incarnation and endpoint addresses; either
    retain suitable OTP names or authenticate updated bindings. Keep private keys
    in platform secure storage and ordinary metadata in app data storage, outside
@@ -915,7 +915,7 @@ Authority loss when another member remains online also needs explicit handling.
    transitions with OTP state-machine mechanisms where appropriate. Discover
    current endpoints and prove remembered membership with fresh authentication;
    do not reuse old PIDs, cookies, sockets, DTLS sessions or invitation secrets.
-   Resume discovery after network/desk availability changes without requiring an
+   Resume discovery after network/Reception availability changes without requiring an
    app restart. Show the saved cluster immediately with truthful connection state.
    No saved membership means the ordinary create/join flow remains available.
    **Done when:** restarting either Mac or iPhone reconnects to the remaining
@@ -926,8 +926,8 @@ Authority loss when another member remains online also needs explicit handling.
    runtime processes and re-register endpoints when an authorized member starts;
    do not create a fresh cluster ID or infer deletion from an empty online list.
    Start with local durable identity, membership and remembered peer records;
-   the existing desk supplies endpoint discovery/signalling. Do not require a
-   new durable desk registry or cluster-recovery leader just to reconnect known
+   the existing Reception supplies endpoint discovery/signalling. Do not require a
+   new durable Reception registry or cluster-recovery leader just to reconnect known
    peers. While alone, restore the same local cluster view with peers offline;
    authenticate and reconcile when peers become available. Adapt the current
    authority-dependent member handshake so an absent authority does not make
@@ -938,11 +938,11 @@ Authority loss when another member remains online also needs explicit handling.
    before enabling affected operations, and document partition limits; do not
    claim globally current revocation from offline state. If stronger membership
    guarantees require coordination, justify that as a separate decision rather
-   than a prerequisite inferred from an empty online list. When the desk is
+   than a prerequisite inferred from an empty online list. When the Reception is
    unavailable, retain remembered relationships and retry visibly.
    **Done when:** both apps can stop and start in either order, or together,
    returning to one logical cluster without duplicate peer identities; restarting
-   the desk does not erase locally saved membership, and peers re-register their
+   the Reception does not erase locally saved membership, and peers re-register their
    endpoints. Known removals survive restart and stale-policy handling is
    explicit. An explicit local
    Forget action clears automatic rejoin without pretending to delete the cluster
@@ -951,7 +951,7 @@ Authority loss when another member remains online also needs explicit handling.
 4. **Verify the restart flow on the actual Mac and iPhone.**
    Use the user's Wi-Fi deployment path for focused checks when needed. Cover
    Mac-only restart, iPhone-only restart, both closed, opposite startup order,
-   simultaneous startup, temporary desk/network unavailability and revoked
+   simultaneous startup, temporary Reception/network unavailability and revoked
    membership. Check force termination as well as ordinary closure so persistence
    does not depend on graceful shutdown. Keep this a focused device check; ask
    before adding automated suites or broader recovery hardening.
@@ -1226,8 +1226,8 @@ behavior when a change needs evidence, something seems wrong, or the next
 implementation decision depends on it. Follow global testing preferences; routine
 builds, deployments and repeated regression runs are not default tasks. Record what is implemented and what remains unverified.
 
-Use the single Render-hosted Reception Desk for development, testing and
-production. Service changes and interruptions are authorized; no separate desk
+Use the single Render-hosted Reception for development, testing and
+production. Service changes and interruptions are authorized; no separate Reception
 or environment is required.
 
 ### Current implementation order — agreed 2026-11-01
@@ -1346,14 +1346,14 @@ when needed; ask before adding automated tests or broader hardening. No app code
 was implemented by agreeing this order.
 
 **Working app path:** on 2026-10-29 the user demonstrated Windows–iPhone swarm
-admission and chat through the Render Reception Desk, with Windows on a school
+admission and chat through the Render Reception, with Windows on a school
 network and iPhone on mobile data. Screenshots show the same two-member swarm
 and the phone's message received on Windows. This is user-observed relay
 interoperability across separate networks, not a native OTP/WebRTC or audio
 timing result. The user also confirmed the Windows status fix took effect.
 
 **Separate native implementation:** Mac and iPhone sources now integrate the native
-carrier, trust worker and desk connector with the shared OTP chat runtime and
+carrier, trust worker and Reception connector with the shared OTP chat runtime and
 existing UI. Erlang compilation, Swift checks, Mac dependency packaging and
 iPhone device static compilation/linkage pass. Neither new app has been fully
 rebuilt, launched or connection-tested. This increment represents one
@@ -1572,19 +1572,19 @@ DTLS/Unifex/Shmex sources also depend on POSIX facilities. Keep the legacy relay
 build available until those dependencies have a supported Windows build/port.
 When Windows native distribution is needed: finish that dependency increment,
 build the native app, then check invitation/admission/chat through the global
-Render desk as needed. The existing Windows relay path already works with the
+Render Reception as needed. The existing Windows relay path already works with the
 installed iPhone app across separate networks, as recorded above.
 Do not describe this source integration as runnable native Windows support.
 
 Windows status correction: the legacy relay snapshot now reports the local
-runtime as Running independently of desk connectivity. The existing reload loop
+runtime as Running independently of Reception connectivity. The existing reload loop
 now unconditionally reloads changed project BEAM modules, including backend and
 model, using OTP code-loading functions. No environment mode or state migration.
 An app running the previous UI-only watcher needs one restart to install the
-expanded watcher; subsequent backend changes reload automatically. Desk
+expanded watcher; subsequent backend changes reload automatically. Reception
 reachability remains a separate status.
 The Windows model also clears an obsolete disconnected-action error when a
-later snapshot confirms the desk connection; failed messages still need manual
+later snapshot confirms the Reception connection; failed messages still need manual
 retry. Live health and WSS authentication pass; the earlier outage cause is unknown.
 
 ### Architecture decision: BEAM/OTP on server and in browser
@@ -1599,14 +1599,14 @@ Update 2026-10-28: prefer Erlang for our own implementation. The direct peer
 worker now calls `ex_webrtc` from Erlang; the custom Elixir peer module was
 removed. Upstream Elixir libraries and the existing Phoenix service remain
 dependencies, so this is not a plan to reimplement WebRTC or rewrite the working
-Reception Desk merely to remove a source language. The browser experiment
+Reception merely to remove a source language. The browser experiment
 remains deferred.
 
 - `src/Services/ReceptionDesk`: independent service for rendezvous, permission-checked
   mailboxes and relay mechanisms. Its Erlang workers can run inside the
   Phoenix/Cowboy BEAM application without another server-language runtime.
 - `src/Apps/WebApp`: a browser-local node, using Popcorn's WebAssembly BEAM runtime
-  and LocalLiveView for rendering and events. The Reception Desk does not own
+  and LocalLiveView for rendering and events. The Reception does not own
   browser nodes or swarms. Both components may share hosting without merging
   their responsibilities.
 - `src/control/`: shared Erlang/OTP swarm and chat logic. Reuse compatible modules
@@ -1615,10 +1615,10 @@ remains deferred.
 - Communication: an explicit, versioned WebSocket message protocol usable by
   browser and native nodes. Browser BEAM is not ordinary distributed Erlang;
   browser sockets, filesystem and native extensions have different constraints.
-- Direct connections are preferred; the Reception Desk introduces nodes and
+- Direct connections are preferred; the Reception introduces nodes and
   relays only when required. For native apps, networking and negotiation belong
   in BEAM, using third-party `ex_webrtc`/`ex_sctp`, not Swift UI/runtime transport
-  code. An isolated Mac prototype survives desk shutdown; integrate Mac first
+  code. An isolated Mac prototype survives Reception shutdown; integrate Mac first
   and address iPhone packaging in its own increment.
 - Keep UI behavior direct and simple. Runtime code validates invitations and
   operations; ordinary editing, selection, copy and paste remain available.
@@ -1690,27 +1690,27 @@ secure cluster admission and removal are explicit implementation work.
    remain for compatibility but must not be dependencies of the native runtime.
    No Windows or graph edits; no broad UI/source renaming in this step.
 3. **Internet connection support (develop alongside app integration):** reuse
-   rendezvous/relay facilities rather than rebuilding them. The desk connector
+   rendezvous/relay facilities rather than rebuilding them. The Reception connector
    is implemented; move it into a usable app path next. Separate-network access,
-   TURN, desk outages and recovery are targeted follow-up work when needed,
+   TURN, Reception outages and recovery are targeted follow-up work when needed,
    not a mandatory test matrix before step 4. Step 2 currently fails closed on
    authority outage; crash/partition recovery, cancelled-join cleanup, partial
    policy publication and revocation receipts remain known limitations.
-   - **3a — Reception Desk introductions (implemented, compilation only,
+   - **3a — Reception introductions (implemented, compilation only,
      2026-10-29):** reuse the authenticated WebSocket/mailbox client with an
      explicit envelope recipient. An isolated Erlang connector exchanges SDP/ICE,
      then uses the existing trust handshake and native carrier. Accept STUN/TURN
      configuration through the third-party library. This slice did not change
-     apps or the public desk; compilation does not prove connectivity.
+     apps or the public Reception; compilation does not prove connectivity.
    - **3b — Connection checks (as needed during integration):** use the global
-     Reception Desk on Render (`wss://parvi-reception-desk.onrender.com/relay/v1`) for
-     development and connection checks; do not start a separate test desk.
+     Reception on Render (`wss://parvi-reception-desk.onrender.com/relay/v1`) for
+     development and connection checks; do not start a separate test Reception.
      Check the invitation/join/chat path as it becomes usable. Check separate
-     access networks, configure TURN or interrupt the desk when the work needs
-     that evidence. Reception Desk signalling and TURN data forwarding are
+     access networks, configure TURN or interrupt the Reception when the work needs
+     that evidence. Reception signalling and TURN data forwarding are
      different roles. OpenSound currently uses one shared
      development, testing and production environment; the user authorizes
-     changes to the Render desk, including interruption for this check.
+     changes to the Render Reception, including interruption for this check.
    - **3c — Recovery (deferred until needed):** fix failures encountered during
      development; discuss broader hardening before adding it. Possible work:
      failed/cancelled joins, reconnect and simultaneous attempts,
@@ -1718,7 +1718,7 @@ secure cluster admission and removal are explicit implementation work.
      Do not add a second membership system alongside OTP.
 4. **Native Mac/iPhone integration (sources implemented; execution unverified):**
    Mac build/host sources now package the libraries, carrier, trust worker and
-   desk connector, reuse the shared native OTP chat runtime and expose
+   Reception connector, reuse the shared native OTP chat runtime and expose
    invitation/join/chat through the existing UI. App execution is unverified.
    Keep the change focused; no Windows, graph or broad naming cleanup.
    iPhone now has static dependency builds, NIF registration and named-node
@@ -1735,7 +1735,7 @@ secure cluster admission and removal are explicit implementation work.
    using device capacity, network delay and processing deadlines. OTP remote
    execution is not an automatic DSP load balancer.
 
-The reusable carrier, trust and desk modules now live in `src/control/src/` and
+The reusable carrier, trust and Reception modules now live in `src/control/src/` and
 compile with the shared core. Probe/harness code remains experimental in
 `src/control/transport/experiments/otp_dist`. Mac packages the runtime dependencies;
 iPhone builds them statically. Both retain explicit invitation-based admission.
@@ -1745,7 +1745,7 @@ iPhone builds them statically. Both retain explicit invitation-based admission.
 The browser BEAM/full WebApp experiment is deferred. The first native relay is
 implemented in `src/Services/ReceptionDesk`, with Windows integration and shared Apple
 configuration/packaging sources. See [protocol](../RELAY_PROTOCOL.md) for the actual
-wire contract and limits. The global desk is deployed on Render; public-WSS
+wire contract and limits. The global Reception is deployed on Render; public-WSS
 checks and physical Mac–iPhone chat are recorded in the progress log. On
 2026-10-29 the user also demonstrated Windows–iPhone relay chat between a school
 network and mobile data. This closes that relay-connectivity observation; native
@@ -1754,7 +1754,7 @@ distribution, sustained audio and synchronised playback remain separate work.
 ### Code reuse audit 2026-10-28
 
 First pass covers the shared Erlang core, Mac/iPhone hosts and shared SwiftUI,
-Windows UI and graph, WebApp, Reception Desk, build scripts and smoke helpers.
+Windows UI and graph, WebApp, Reception, build scripts and smoke helpers.
 Prefer existing OTP/platform facilities before adding dependencies. Count
 vendored third-party source separately from Parvi logic.
 
@@ -1795,7 +1795,7 @@ text/base64 chat messages or assume reliable ordered delivery is appropriate for
 live audio. Evaluate the third-party WebRTC library's RTP/media facilities as
 well as binary data channels against synchronization and DSP requirements.
 
-WebApp and ReceptionDesk are already separate, and the global desk is hosted.
+WebApp and ReceptionDesk are already separate, and the global Reception is hosted.
 Browser BEAM/LocalLiveView work remains deferred; it does not precede native
 integration. When resumed, start with one supervised worker and a small view,
 checking shared-core compatibility and ordinary input behavior as needed.

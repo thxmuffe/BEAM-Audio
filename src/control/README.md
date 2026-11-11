@@ -23,17 +23,17 @@ Captain loss ends members when fresh authorization expires. No election or resto
 Reusable signed v3 invitations currently have no time expiry. Their Swarm ID/name
 can be reused to start a fresh gathering with a new Captain and fresh membership;
 the old authority/grants are not restored. Lookup is capability-scoped at the
-Desk, without simultaneous-Captain coordination. See the membership guide above.
+Reception, without simultaneous-Captain coordination. See the membership guide above.
 The local JSON bridge exposes lifecycle/address-book commands. UI integration
 is step 10, macOS → iOS → Windows; no product app was launched for this work.
 
-Follow-ups 8a–8d are implemented: independently supervised Desk connections and
+Follow-ups 8a–8d are implemented: independently supervised Reception connections and
 route fallback, unchanged Contract no-ops, bounded failure diagnostics and fresh
 nonce-based authorization renewal retaining eligible media. The root supervisor
-isolates Desk ownership from `ba_swarm_runtime_sup`'s dependency-ordered runtime;
+isolates Reception ownership from `ba_swarm_runtime_sup`'s dependency-ordered runtime;
 ordinary route loss is not revocation. Exact current policy and expiry remain
 enforced. See [control/renewal](../../docs/SWARM_CONTROL_PROTOCOL.md),
-[Desk ownership](../../docs/SWARM_MEMBERSHIP.md) and [checks](../../tests/control/README.md).
+[Reception ownership](../../docs/SWARM_MEMBERSHIP.md) and [checks](../../tests/control/README.md).
 The 8d maximum-Offset continuity qualification remains open.
 
 Core entry point: `ba_runtime`; OTP application: `ba_core`; configuration: `BA_*`.
@@ -96,8 +96,8 @@ interfaces; step 3 now implements a [local Handler/test Worker lifecycle](../../
 Step 4 now adds the [Director/Contract/job proof](../../docs/SWARM_JOBS.md), with
 local acceptance, leases, idempotent retry and correlated outcomes. Step 2's
 [restricted status protocol](../../docs/SWARM_CONTROL_PROTOCOL.md) is implemented
-and verified between independent runtimes through the real Desk without OTP
-connectivity. Step 5 introduced [Passports, current permissions and multi-Desk routing](../../docs/SWARM_MEMBERSHIP.md).
+and verified between independent runtimes through the real Reception without OTP
+connectivity. Step 5 introduced [Passports, current permissions and multi-Reception routing](../../docs/SWARM_MEMBERSHIP.md).
 Step 9 now starts that runtime idle; use `ba_swarm` for explicit create/join. The guides give limits and headless check commands.
 New builds ignore old version-1 membership/route/subscription records while
 retaining device keys. Step 3 adds scoped `capabilities.read` queries with their
@@ -137,7 +137,7 @@ authority invitation hashes and connector/mailbox routes outside the app bundle.
 Without these variables the existing probe/command-line profiles stay ephemeral.
 
 After both updated apps create/join once, they retain the same node/cluster
-identity and known peer routes across restart. The connector watches desk
+identity and known peer routes across restart. The connector watches Reception
 presence, creates fresh authenticated WebRTC channels and then calls OTP
 connection APIs. `dist_auto_connect=never` remains deliberate. Offline permission
 is not a live transport; failed sessions are released without deleting peers.
@@ -153,7 +153,7 @@ builds and physical Mac/iPhone checks pass for either app restarting, both apps
 stopped and restarted in either order, unchanged cluster/device identities and
 automatic native reconnection. An absent member stays Offline. No fresh
 invitation was used after the one initial enrollment. Cross-epoch revocation,
-desk-outage, simultaneous-start stress and background/interface recovery remain
+Reception-outage, simultaneous-start stress and background/interface recovery remain
 unverified.
 
 ## Original prototype guide
@@ -470,20 +470,20 @@ See [the iOS investigation](../../docs/decisions/0001-chat-first-and-ios-feasibi
 and [progress log](../../docs/PROGRESS.md) for the next hardware gate.
 
 
-## Reception Desk transport
+## Reception transport
 
 `ba_relay` now provides an outbound Gun WebSocket adapter with authenticated
 binary node identities, scoped mailboxes, verified WSS and reconnect. The shared
 OTP settings in `src/ba_core.app.src` provide `default_reception_desk_url`, bundled
 with every native app. Override with `BA_RECEPTION_DESK_URL` at startup (an
 empty value selects local-only transport), or issue bridge `configure_desk` with `url`
-to explicitly start a fresh session. Swarm v2 invitations route through that desk;
+to explicitly start a fresh session. Swarm v2 invitations route through that Reception;
 local v1 invitations remain the separate developer transport.
 
 `ba_swarm_wire` defines the validated JSON schema. `ba_swarms` owns admission,
 membership, bounded histories and revocation for either transport. Its relay
 admission path is asynchronous. `ba_network` reports relay connection presence
-without inventing direct distribution edges. The desk never receives Erlang
+without inventing direct distribution edges. The Reception never receives Erlang
 cookies or executable terms. See [protocol](../../docs/RELAY_PROTOCOL.md) and
 [launch/deployment guide](../Services/ReceptionDesk/README.md).
 

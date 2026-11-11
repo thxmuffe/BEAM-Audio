@@ -85,7 +85,7 @@ At the reviewed revision:
 
 The current subscription code filters at the sender before encoding selected packets. The current output code converts PCM into planar floats and rejects late/out-of-order buffers; this is not a reorder/recovery buffer. These are source-code observations, not proof of the cause of reported glitches. [R3-R9]
 
-The first refactor must not alter the existing packet format, trust/admission protocol, default playback-delay behavior or Reception Desk. Preserve native invitations, source discovery, subscription setup, playback controls and source-stop cleanup.
+The first refactor must not alter the existing packet format, trust/admission protocol, default playback-delay behavior or Reception. Preserve native invitations, source discovery, subscription setup, playback controls and source-stop cleanup.
 
 ## 3. Vocabulary and ownership
 
@@ -424,7 +424,7 @@ Implement one small, reviewable milestone at a time. Preserve unrelated work. Do
 
 ### Milestone 0 - Align the plan
 
-Read current instructions and source, compare with the reviewed commit, and record the architecture decision plus any narrow instruction amendments. Update `docs/PLAN.md` with the new sequence. Identify library build/licensing gates. Do not modify the Reception Desk.
+Read current instructions and source, compare with the reviewed commit, and record the architecture decision plus any narrow instruction amendments. Update `docs/PLAN.md` with the new sequence. Identify library build/licensing gates. Do not modify the Reception.
 
 **Exit:** source changes required by this plan and scope conflicts are explicit; no unsupported feature is described as implemented.
 

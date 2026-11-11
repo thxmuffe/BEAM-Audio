@@ -32,7 +32,7 @@ when richer historical selection is wanted; no Git dependency or integration now
   implementing these systems.
 - Federation, recursive groups, Director failover and large-event routing/time
   distribution: [coordination discussion](audio-system-trust-and-coordination.md).
-  Several Desks for one Swarm remain in current step 5.
+  Several Receptions for one Swarm remain in current step 5.
 - Additional native backends, lossless formats, general capability negotiation,
   AES67/PTP interoperability, browser work and new platforms:
   [earlier provider proposal](../discarded-ideas/BEAM_Audio_Codex_Implementation_Spec.md)

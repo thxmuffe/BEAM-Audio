@@ -4,14 +4,14 @@ Implemented 2026-11-08 under the [Swarm plan](PLAN.md) and
 [boundary contract](SWARM_CONTRACT.md). This implements authenticated status
 and capability reads plus the [bounded test-job flow](SWARM_JOBS.md).
 [Admission/Passports](SWARM_MEMBERSHIP.md) and [scoped stream signaling](SWARM_STREAMS.md)
-are implemented separately; media does not travel through this Desk protocol.
+are implemented separately; media does not travel through this Reception protocol.
 
 ## Runtime and local configuration
 
 `ba_runtime:start(swarm_control)` now uses the [step-5 membership configuration](SWARM_MEMBERSHIP.md).
 The earlier locally provisioned peer-policy fixture has been replaced by
 nonce-bound authority admission and signed current policy. `ba_swarm_desks`
-owns desired Desk routes; independently supervised relay Workers own connections.
+owns desired Reception routes; independently supervised relay Workers own connections.
 The membership owner installs policy/routes
 into control. The local Device branch owns the Handler and its initially empty
 Worker supervisor. This profile starts the Swarm Clock, not old chat or the
@@ -33,13 +33,13 @@ when the peer has the separate capability grant; reading never enables Workers.
 
 ## Wire, authentication and dispatch
 
-The existing Desk v1 transport routes exactly this payload shape:
+The existing Reception v1 transport routes exactly this payload shape:
 
 ```json
 {"type":"swarm_control","swarm":"SWARM_ID","packet":"ENCODED_ENVELOPE_JSON"}
 ```
 
-`packet` contains UTF-8 JSON bytes, at most 32768 bytes excluding the Desk wrapper.
+`packet` contains UTF-8 JSON bytes, at most 32768 bytes excluding the Reception wrapper.
 Its fields are exactly `body` (base64 JSON bytes) and `signature` (128 uppercase
 hex Ed25519 signature characters). Sign the exact decoded body bytes prefixed
 with `parvi-swarm-control/v1:`. The body has these exact fields:
@@ -47,7 +47,7 @@ with `parvi-swarm-control/v1:`. The body has these exact fields:
 | Fields | Meaning |
 | --- | --- |
 | `v` | Integer 1. |
-| `from`, `to`, `swarm` | Sender, intended recipient, Swarm. Desk `from` must match the signer; recipient must be local. |
+| `from`, `to`, `swarm` | Sender, intended recipient, Swarm. Reception `from` must match the signer; recipient must be local. |
 | `authority`, `director`, `epoch`, `revision` | Pinned authority/Director Device IDs and exact locally installed policy version. |
 | `session` | Fresh 128-bit/32-hex session ID. |
 | `seq` | Nonnegative integer up to 9007199254740991; strictly increasing per application-message direction. |
@@ -91,7 +91,7 @@ or audio are accepted. The separate bounded test job is fixed data, not a module
 function invocation; its Worker is selected by the local Handler. OTP-admission
 signatures use a different domain.
 
-Transport is currently ordered Desk WSS with verified public TLS. The Desk can
+Transport is currently ordered Reception WSS with verified public TLS. The Reception can
 observe payloads; signing does not supply end-to-end encryption. WebRTC control
 and its DTLS fingerprint binding are not implemented or claimed by this step.
 
@@ -109,23 +109,23 @@ eligible media retains its transport and buffers on ordinary renewal.
 One status or capability request per peer may be outstanding,
 with a 5-second response deadline. Local monotonic deadlines are checked on
 receive/request and on a 250 ms cleanup tick. Expiry or policy invalidation drops
-affected sessions and completes waiting callers with an error. Desk loss alone
+affected sessions and completes waiting callers with an error. Reception loss alone
 does not reset authorization or healthy sessions. Routes can use another configured
-Desk; lack of timely fresh authorization still enforces expiry. Presence cleanup
-checks other live Desks before declaring a peer unavailable. Duplicate/lower
+Reception; lack of timely fresh authorization still enforces expiry. Presence cleanup
+checks other live Receptions before declaring a peer unavailable. Duplicate/lower
 sequences and replies without a live correlation are rejected. The clock reconnects
 to its authority if a session is actually lost. A bounded parallel challenge permits
 a fresh proof to replace a surviving remote session after owner restart; a hello
 alone never tears it down. General simultaneous-open resolution is not implemented.
 
 Relay deliveries are dropped when the control owner's mailbox already has 64
-messages; outgoing traffic retains existing relay queue/frame bounds. The Desk
+messages; outgoing traffic retains existing relay queue/frame bounds. The Reception
 retains its own limits. Local send acceptance is not remote receipt; overload/drop
 may produce a request timeout. Bounded diagnostics identify owner overload and
 transport failures; local media renewal/fencing notifications are not silently
 dropped behind PCM traffic. This is bounded prototype behavior, not a public
 capacity claim. The pure protocol module owns validation/transitions; the control
-process owns timers, waiting local callers, Director job records and Desk I/O.
+process owns timers, waiting local callers, Director job records and Reception I/O.
 Verified job offers/cancels use bounded OTP asynchronous Handler requests, not a
 blocking remote/local execution wait. An authorized capability
 request triggers a bounded 100 ms local Handler read; failure produces unavailable.
@@ -139,7 +139,7 @@ and termination formatting redact private keys and internal message/log content.
 ## Previous membership and subscription state
 
 At the user's request, new builds ignore version-1 `ba_device_store` records:
-policy, authority, remembered Desk routes and subscription intent. New saves use
+policy, authority, remembered Reception routes and subscription intent. New saves use
 version 2; other unsupported formats fail visibly. Secure device identity keys
 are separate and unchanged. This is an intentional clean start, not a migration
 of old permissions or revocation of other Devices. Old files remain until
@@ -155,14 +155,14 @@ rebar3 compile
 rebar3 eunit --module=ba_swarm_job_tests,ba_device_handler_tests,ba_swarm_control_protocol_tests,ba_relay_tests,ba_native_tests
 ```
 
-From the core root, explicitly run the real-Desk check:
+From the core root, explicitly run the real-Reception check:
 
 ```sh
 python3 tests/control/swarm-control-smoke.py
 ```
 
 This starts two disposable `erl -noshell` runtimes without names/cookies, with
-fresh test seeds and isolated temporary state directories. It uses the existing public Desk,
+fresh test seeds and isolated temporary state directories. It uses the existing public Reception,
 not another service or a GUI. It checks status/capability reads, local Contract
 acceptance/rejection, test-job completion/retry/cancel/expiry, Worker failure and
 lease-bounded Director-loss cleanup. Forbidden raw start, forged signer and replay

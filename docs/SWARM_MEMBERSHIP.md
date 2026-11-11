@@ -1,4 +1,4 @@
-# Ephemeral Swarms, Passports and multiple Desks — step 9
+# Ephemeral Swarms, Passports and multiple Receptions — step 9
 
 ## Current lifetime model — 2026-11-11
 
@@ -13,7 +13,7 @@ Only the Captain may explicitly **End Swarm**. A member may Leave; app closure o
 transport loss is not End, including on the Captain. An explicit Captain Leave
 also disconnects locally without ending everybody else. A signed End received by
 members tears down their gathering. A disconnected peer that misses End cannot
-learn that fact automatically; there is no durable Desk tombstone or consensus.
+learn that fact automatically; there is no durable Reception tombstone or consensus.
 
 A restarted Captain may recover the same gathering only after a fresh signed
 challenge response from a surviving admitted Device. Its private saved recovery
@@ -61,7 +61,7 @@ duplicates. No approval, reciprocal friendship or synchronization is involved.
 `ba_contacts:list/0`, `delete/1`, `delete_group/1` and `resolve/1` provide management.
 `ba_swarm:invite([DeviceId],TTL)` selects individual contacts. It returns signed,
 forwardable invitation URIs for private transfer or QR rendering. Automatic
-unsolicited Desk invitation delivery is not implemented; URI transfer is the
+unsolicited Reception invitation delivery is not implemented; URI transfer is the
 accepted step-9 path. The recipient explicitly chooses to join:
 
 ```erlang
@@ -98,7 +98,7 @@ offer jobs with `job_offer`, recipient consent and an explicitly matching local
 Contract. Director is a programmed coordinator, not a source of extra rights. Captain status never
 permits arbitrary remote process execution or access to microphones.
 
-Signed v3 invitations identify a Swarm name/ID, issuing identity, permitted Desks
+Signed v3 invitations identify a Swarm name/ID, issuing identity, permitted Receptions
 and capability-addressed mailbox. The signature remains verified, including on
 old links, but expiry is disabled for now. Repeated Invite and contact/group
 delivery use the same shared link. Anyone possessing it can join the current
@@ -115,13 +115,13 @@ Captain. Credentials must be transferred privately and never logged.
 
 ## Reusing a link
 
-The Device asks the invitation's Desk for live owners advertising its mailbox
+The Device asks the invitation's Reception for live owners advertising its mailbox
 capability and Swarm ID. If an owner is found, the Device authenticates admission
-against that current Captain using the signed bearer ticket. If the Desk confirms
+against that current Captain using the signed bearer ticket. If the Reception confirms
 an empty result, the Device creates fresh policy/membership under its own identity
 and advertises the old mailbox alongside its new local mailbox. The old signature
 identifies the invitation issuer; it does not restore that issuer's authority.
-Repeated Invite returns the exact reused link. Desk failure/unsupported lookup
+Repeated Invite returns the exact reused link. Reception failure/unsupported lookup
 does not count as an empty result. Monitor observers wait for a Device to start
 the gathering; they do not become Captains.
 
@@ -132,19 +132,19 @@ or Captain handover mechanism. A fresh gathering resets permissions, Passports,
 revocations, jobs, clock, subscriptions and buffers, retaining only the address,
 name and each Device's own persistent settings/contacts.
 
-Build the updated runtime and Desk, then run:
+Build the updated runtime and Reception, then run:
 
 ```sh
 python3 tests/control/reusable-invitation-smoke.py
 ```
 
-This uses isolated local Devices and a real temporary Desk to check old signed
+This uses isolated local Devices and a real temporary Reception to check old signed
 timestamps, later joiners, fresh Captain/membership, exact link reuse, revocation,
 same-identity recreation and observer-only waiting. Physical audio is separate.
 
 ## Lifecycle and storage
 
-`ba_sup` keeps contacts, Desk ownership and the local lifecycle owner independent.
+`ba_sup` keeps contacts, Reception ownership and the local lifecycle owner independent.
 `ba_swarm` dynamically starts one temporary `ba_swarm_runtime_sup`. Its
 `rest_for_one` order is membership → Device supervisor → control → Swarm Clock →
 on-demand audio. Membership is a significant temporary child: its death shuts
@@ -154,7 +154,7 @@ within a live gathering retains its existing scoped semantics.
 The branch owns `ba_swarm_state` ETS. Policy, invitation claims, Passport,
 mailboxes/routes, Offset and Subscription intent use that volatile storage.
 Ending the branch deletes it and terminates Workers, Sources, Media Sessions,
-Mixers and clock processes. Desk connections close and their mailbox rotates.
+Mixers and clock processes. Reception connections close and their mailbox rotates.
 Old on-disk Swarm records are ignored; they cannot restore membership. `contacts.term` and `swarm_connection.term` use private atomic file writes.
 The latter holds reconnect intent and a Captain's conditional recovery snapshot;
 no saved authority activates without a fresh response from a surviving member. Device keys remain in platform secure storage. Subscription intent
@@ -168,14 +168,14 @@ known newer policy. Missing delivery cannot make a partition learn a new policy.
 Already submitted
 native output cannot be selectively retracted.
 
-## Desks, bounds and verification
+## Receptions, bounds and verification
 
-Each Device opens the same scoped mailbox on up to four configured Desks. Sends
+Each Device opens the same scoped mailbox on up to four configured Receptions. Sends
 try the advertised route, then a configured alternate, without duplicate fanout.
-Temporary relay Workers reconcile once per second; repeated failures of one Desk
-do not restart runtime owners or healthy connections. Desks introduce and route;
+Temporary relay Workers reconcile once per second; repeated failures of one Reception
+do not restart runtime owners or healthy connections. Receptions introduce and route;
 they do not own membership or carry audio. Remote URLs require verified WSS;
-WS is loopback-only. Signed messages are not end-to-end encrypted against the Desk.
+WS is loopback-only. Signed messages are not end-to-end encrypted against the Reception.
 
 Bounds remain 16 members, 16 pending challenges, 32 live invitation records,
 32 KiB signed packets and bounded queues/JSON. Expired invitations are pruned

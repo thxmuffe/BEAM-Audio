@@ -55,7 +55,7 @@ affects only that membership, not the node's lifetime or transport connections.
 The Windows invitation uses a read-only native text field and ordinary OS copy
 commands. Apple controls follow their native layout. Invitations contain private
 credentials. Transport is a separate concern: local development invitations and
-the [Reception Desk relay](RELAY_PROTOCOL.md) use different credentials. The new
+the [Reception relay](RELAY_PROTOCOL.md) use different credentials. The new
 relay still needs rebuilt Apple apps and physical-device interoperability checks.
 
 ## Ownership

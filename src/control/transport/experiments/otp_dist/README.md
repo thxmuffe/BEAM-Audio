@@ -2,7 +2,7 @@
 
 Steps 1, 2 and 2a of the trusted-cluster plan: independent OTP **29.1.2 / ERTS 17.1.1**
 VMs use a reliable, ordered binary WebRTC DataChannel as their native Erlang
-distribution carrier. The reusable carrier, admission and desk modules have
+distribution carrier. The reusable carrier, admission and Reception modules have
 moved to `src/control/src/` for Mac app integration. This directory retains the
 isolated probe drivers. See [Mac usage](../../../../../docs/apps/macOS/README.md) for the
 new app path, which has not yet been connection-tested.
@@ -22,7 +22,7 @@ under `builds/intermediates/OTPWebRTCProbe`. The trust script also compiles and
 loads the shared `control` application. Both check the installed OTP version.
 It uses the same local Elixir library paths and Mac OpenSSL 3 search path as the
 existing direct-transport experiment. Per-VM logs are in that build directory.
-It does not launch, install or modify any BEAM Audio app or Reception Desk.
+It does not launch, install or modify any BEAM Audio app or Reception.
 
 ## Shared OTP foundation (step 2a)
 
@@ -42,37 +42,37 @@ local, transient and best effort; this adds no delivery acknowledgment or replay
 
 The local harness explicitly establishes the tested native links. Automated
 connection topology, internet recovery and mobile packaging remain later steps.
-Mac and iPhone sources now select the native profile with a supervised desk
+Mac and iPhone sources now select the native profile with a supervised Reception
 connector; Windows retains the compatibility runtime. New Apple app execution
 remains unverified, and previously installed apps are unchanged. Names and UI labels are
 deliberately unchanged, except the native cluster's display name.
 
-## Reception Desk introductions (step 3a, compiled only)
+## Reception introductions (step 3a, compiled only)
 
 `ba_legacy_cluster_desk` replaces the local probe parent's SDP/ICE forwarding for
-an initial pair of nodes. It reuses `ba_relay` and the existing desk protocol;
+an initial pair of nodes. It reuses `ba_relay` and the existing Reception protocol;
 the public service and working apps are unchanged. The relay client now accepts
 an explicit Erlang owner and raw-envelope delivery. Its default still decodes
 swarm messages for current apps.
 
 The inviter creates a cluster and opens a mailbox. Its link wraps the existing
-native invitation with the desk URL, relay identity and mailbox capability:
+native invitation with the Reception URL, relay identity and mailbox capability:
 
 ```text
 parvi://cluster/v2?desk=URL&node=RELAY_ID&mailbox=CAP&invitation=NATIVE_V1_INVITATION
 ```
 
 All values are percent encoded. This is an experimental link, not a shipping
-app link. Both endpoints must already use the same configured desk URL, from
-the existing default/override settings. The relay key addresses a desk socket;
+app link. Both endpoints must already use the same configured Reception URL, from
+the existing default/override settings. The relay key addresses a Reception socket;
 the separate native key pinned by the inner invitation authorizes VM trust.
 
 The joiner opens a reply mailbox and requests a connection. SDP/ICE goes through
-the desk. Once the library opens the DataChannel, the existing signed,
+the Reception. Once the library opens the DataChannel, the existing signed,
 DTLS-bound handshake validates admission and installs the native route/cookie.
 The inviter admits the controller and the joiner calls `net_kernel:connect_node/1`.
 OTP then handles process messaging, RPC, `pg` and failure detection. Native
-packets, admission proofs and cookies travel through the DataChannel. The desk
+packets, admission proofs and cookies travel through the DataChannel. The Reception
 carries introductions only; the connector does not route chat or decode terms.
 
 Compile from the repository root (after the existing transport build):
@@ -109,11 +109,11 @@ automatic mesh or additional membership registry.
 `ba_transport`'s `native_ice_servers` setting is passed to the library's
 `ice_servers` option. Its default uses `ba_core.direct_stun_urls`. Explicit maps
 can include TURN `urls`, `username` and `credential`. No TURN service or
-credentials are provisioned here. Reception Desk is not TURN and does not carry
+credentials are provisioned here. Reception is not TURN and does not carry
 native-distribution fallback traffic.
 
 **Validation: compilation only, as requested.** The connector flow, separate
-Internet networks, TURN and operation during desk outage remain unverified.
+Internet networks, TURN and operation during Reception outage remain unverified.
 Reconnection/arbitration, cancelled joins, authority recovery and backpressure
 are still later parts of step 3. No new tests or deployment in this slice.
 
@@ -180,7 +180,7 @@ old cookies or OTP allow-list entries alone cannot enable a new connection.
 OTP's cookie list is not a revocation mechanism; the explicit carrier gate is.
 
 `ba_legacy_cluster_authority` is a serialized OTP actor inside the cluster, not a
-public Reception Desk or a permanently assigned machine. Any active node can
+public Reception or a permanently assigned machine. Any active node can
 request invitations. The authority stores hashes of live capabilities and the
 current membership snapshot. On removal of its own host, it transfers the policy
 and retained capability records to a survivor, which completes publication.

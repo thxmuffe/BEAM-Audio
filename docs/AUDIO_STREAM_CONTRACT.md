@@ -428,7 +428,7 @@ these. A missed deadline must not silently shift the agreed timeline.
 - [NMOS](https://www.amwa.tv/nmos-getting-started) demonstrates separation of
   sources/flows/senders/receivers and connection management. Reuse those distinctions
   where helpful; no NMOS registry, REST stack or replacement for OTP supervision
-  and the existing Reception Desk is proposed.
+  and the existing Reception is proposed.
 
 Dolby Atmos is a conceptual object-audio reference, not a selected codec,
 wire format or compatibility target. Ordinary captured stereo does not recover

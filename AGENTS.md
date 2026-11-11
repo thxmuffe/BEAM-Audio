@@ -76,7 +76,7 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 ### Repository split
 
 Use **Swarm** for logical, mutually untrusted device collaboration,
-**Desk** for public admission/introductions, and **Offset** for the shared playback
+**Reception** for public admission/introductions, and **Offset** for the shared playback
 target setting in new user-facing design. **BEAM Audio** is the open-source
 technology; **OpenSound App** names only the commercial user interface. Use the
 canonical component terminology in docs/TERMINOLOGY.md. Core-owned Erlang modules,

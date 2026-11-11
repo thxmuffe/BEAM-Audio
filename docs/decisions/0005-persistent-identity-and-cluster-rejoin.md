@@ -11,7 +11,7 @@ Date: 2026-11-01. Status: accepted; implemented; focused Mac/iPhone restart chec
 ## Problem
 
 Native Mac/iPhone launch previously generated new node names, trust keys and
-Reception Desk identities. Joining again needed another invitation. A lost
+Reception identities. Joining again needed another invitation. A lost
 transport effectively discarded the application's route to a known member.
 
 ## Decision
@@ -25,21 +25,21 @@ The shared Apple platform helper stores an Ed25519 seed in Keychain, accessible
 after first unlock and restricted to this device. It supplies the seed and an
 Application Support state directory to the local runtime. BEAM derives the public
 identity; the Mac host derives the same public key for its stable OTP node name.
-Trust and native desk authentication use this installation identity with their
+Trust and native Reception authentication use this installation identity with their
 existing, distinct signature-domain prefixes. Legacy relay profiles remain
 ephemeral. Keys are never included in diagnostic snapshots or checkpoint files.
 
 `parvi_cluster_store` writes small versioned term records via synced temporary
 files and rename, with mode 0600. Each existing worker owns its record: trust
 owns membership policy, the admission authority owns invitation hashes and
-policy, and the desk connector owns its mailbox and remembered peer routes.
+policy, and the Reception connector owns its mailbox and remembered peer routes.
 Accepted changes are saved during operation, without relying on graceful exit.
-The fixed desk URL remains application configuration; this increment adds no
-desk switching UI or saved arbitrary desk settings. Missing files mean first
+The fixed Reception URL remains application configuration; this increment adds no
+Reception switching UI or saved arbitrary Reception settings. Missing files mean first
 launch; unreadable, incompatible or identity-mismatched state fails visibly.
 
 On startup the existing workers restore their records, re-register the local
-mailbox and watch known peer identities through the existing desk. Presence
+mailbox and watch known peer identities through the existing Reception. Presence
 notifications trigger fresh WebRTC setup. The higher relay identity initiates
 reconnection, avoiding both ends repeatedly dialing each other. Failed sessions
 release resources and use one bounded retry timer with backoff up to ten seconds;
@@ -97,7 +97,7 @@ change removal/epoch fencing or create new peer routes.
   stopped with either startup order, stable identities/cluster ID, native peer
   reconnection and offline-member retention. No repeated invitation was needed
   after initial enrollment. Simultaneous-start stress, known-revocation/epoch
-  changes, desk outages and background/interface handover remain unverified.
+  changes, Reception outages and background/interface handover remain unverified.
 
 ## Primary references
 

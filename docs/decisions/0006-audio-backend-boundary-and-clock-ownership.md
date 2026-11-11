@@ -146,7 +146,7 @@ reachability does not establish native RTP reachability.
   advisory and deployment guide identify library/plugin/linking considerations;
   this decision does not settle them or change OpenSound's license.
 - Keep generated SDKs and experiment artifacts under ignored `builds/`. Do not
-  modify the running Reception Desk or default app media path for the fixture.
+  modify the running Reception or default app media path for the fixture.
 - Configure media security explicitly before app use; no silent downgrade from
   authenticated/encrypted WebRTC. RAVENNAKIT/AES67 remains deferred.
 

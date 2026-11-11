@@ -69,7 +69,7 @@ not this Mac-only head-to-head fixture.
 `schedule_proof.py` runs a finite, isolated native sender/receiver pair. Its
 default uses GStreamer webrtcbin on both sides, with local ICE and DTLS-SRTP,
 Opus at 48 kHz stereo/192 kb/s, and a clock-synchronized fakesink. No Reception
-Desk, saved identity, live cluster, app setting or user audio input is involved.
+Reception, saved identity, live cluster, app setting or user audio input is involved.
 It generates synthetic audio; fakesink is silent. This is a media/control
 prerequisite, not a claim of simultaneous physical output.
 

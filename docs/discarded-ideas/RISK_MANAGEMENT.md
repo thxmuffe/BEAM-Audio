@@ -45,7 +45,7 @@ This document establishes the threat model and defines a **Two-Tier Architecture
 - **Vulnerability**: Users sharing commercial audiovisual media (Blu-ray, DVD, streaming services, pay-per-view) across WAN to unauthorized audiences.
 - **Legal Context**:
   - *Software vs. Service*: Distributing open-source software with substantial non-infringing uses is protected under the *Sony Betamax* doctrine.
-  - *Signaling Operator Liability*: Operators hosting the central rendezvous/signaling service (e.g. the Render-hosted Reception Desk or BitTorrent trackers) are subject to contributory copyright infringement claims (e.g. *MGM v. Grokster*) if they fail to address infringing swarms or lack Safe Harbor (DMCA §512 / EU Copyright Directive) compliance.
+  - *Signaling Operator Liability*: Operators hosting the central rendezvous/signaling service (e.g. the Render-hosted Reception or BitTorrent trackers) are subject to contributory copyright infringement claims (e.g. *MGM v. Grokster*) if they fail to address infringing swarms or lack Safe Harbor (DMCA §512 / EU Copyright Directive) compliance.
   - *DRM Circumvention*: Decrypting protected media (AACS on Blu-ray, CSS on DVD, HDCP on HDMI) to capture audio violates anti-circumvention laws (DMCA §1201).
 - **Mitigation**: Hard subscriber quotas on personal swarms, non-transferable invitations, and decentralization of signaling.
 
@@ -116,7 +116,7 @@ flowchart TD
 ## 5. Implementation Roadmap
 
 1. **Local mDNS Discovery for VIPs**:
-   - Implement local multicast discovery in Erlang so VIP nodes find the cluster authority without the cloud Reception Desk.
+   - Implement local multicast discovery in Erlang so VIP nodes find the cluster authority without the cloud Reception.
 2. **Strict Carrier-Level Handshake Gate**:
    - Update `parvi_webrtc_dist` to verify that an incoming connection holds a valid, non-revoked VIP certificate before initiating the BEAM distribution handshake.
 3. **Restricted Leaf Stream Handler**:

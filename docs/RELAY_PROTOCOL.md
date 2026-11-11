@@ -1,6 +1,6 @@
-# Reception Desk protocol v1
+# Reception protocol v1
 
-The desk relays messages over persistent outbound WebSockets. Native actors own
+The Reception relays messages over persistent outbound WebSockets. Native actors own
 swarm memberships and chats; the service owns only authenticated socket routes,
 scoped mailbox registrations and connection observations. This protocol carries
 chat/control traffic, not audio, Distributed Erlang, ETF terms or arbitrary RPC.
@@ -10,7 +10,7 @@ chat/control traffic, not audio, Distributed Erlang, ETF terms or arbitrary RPC.
 Connect to `wss://HOST/relay/v1`. Unencrypted `ws://` is accepted by the native
 adapter only for localhost development. Public TLS chains and hostnames are
 verified. A private test CA can be supplied explicitly; verification is never
-disabled. One desk instance is supported in this milestone.
+disabled. One Reception instance is supported in this milestone.
 
 Each client generates a fresh Ed25519 key pair in memory when its relay worker
 starts. Its node ID is the 32-byte public key encoded as 64 uppercase hex
@@ -76,7 +76,7 @@ An internet invitation is:
 `swarm`, `mailbox` and `token` are 32 uppercase hex characters. The token is the
 inviter's current local admission credential; it is separate from mailbox
 delivery permission. All query values are URI-encoded. Duplicates, extra fields,
-userinfo, fragments, insecure public desk URLs and malformed IDs are rejected.
+userinfo, fragments, insecure public Reception URLs and malformed IDs are rejected.
 Erlang cookies never appear in v2 invitations. Existing v1 invitations remain
 the separate same-computer development transport.
 
@@ -106,7 +106,7 @@ session semantics, not a claim of complete partition/concurrency reconciliation.
 
 `op=watch` with `nodes` requests connection observations. `op=presence` returns
 `online` node IDs. Connected means the node has an authenticated socket to this
-desk; it does not prove that all its application workers are healthy. A missing
+Reception; it does not prove that all its application workers are healthy. A missing
 connection is not proof of VM death. Relay mode does not invent direct peer edges
 in the graph; it shows swarm members and their observed relay connection status.
 
@@ -118,7 +118,7 @@ reopen local mailboxes, restore watches and share current membership state.
 
 Server restart loses routes and watches. Client keys, memberships, invitation
 tokens and chat histories survive as long as their local actors survive. A client
-restart creates a new session. Changing desks explicitly starts a fresh local
+restart creates a new session. Changing Receptions explicitly starts a fresh local
 session rather than mixing memberships from unrelated routing authorities.
 
 Delivery is live and best effort. Acceptance into a local socket queue is not a
@@ -137,7 +137,7 @@ and 8 MiB per second. A slow recipient's application queue is limited to 256
 messages before further delivery is rejected. Disconnected routing records expire
 after five minutes; the native node can re-register them after reconnecting.
 
-TLS protects each hop. The desk can see payloads; this is not end-to-end
+TLS protects each hop. The Reception can see payloads; this is not end-to-end
 encryption. Invitations are bearer credentials and should be shared deliberately.
 Resource bounds and authentication do not constitute a full public-service abuse
 or availability guarantee. Do not expose Distributed Erlang or the legacy

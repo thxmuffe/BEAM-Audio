@@ -4,7 +4,7 @@ Nov 9, 2026 · @Paavo Penttilä · repo `thxmuffe/beam-audio` @ `c84ad55` ("step
 
 ## Verdict
 
-The cores are good: a pure, bounded, signed control protocol; absolute per-packet targets enforced end to end; declarative subscription intent kept apart from disposable transports; a mixer whose global sample-index grid makes 'time over speed' mechanically true at the scheduling layer. The shells around them are not idiomatic OTP, swarm liveness is silently tied to one authority, one Desk socket and one NTP query, a single output error can kill publishing and every transport, and nothing yet measures whether speakers are aligned. The repo says the last part itself. The main risk is not a wrong idea; it is building step 9 (three apps) on a backend whose failure behaviour has not been designed.
+The cores are good: a pure, bounded, signed control protocol; absolute per-packet targets enforced end to end; declarative subscription intent kept apart from disposable transports; a mixer whose global sample-index grid makes 'time over speed' mechanically true at the scheduling layer. The shells around them are not idiomatic OTP, swarm liveness is silently tied to one authority, one Reception socket and one NTP query, a single output error can kill publishing and every transport, and nothing yet measures whether speakers are aligned. The repo says the last part itself. The main risk is not a wrong idea; it is building step 9 (three apps) on a backend whose failure behaviour has not been designed.
 
 ## Method and evidence labels
 
@@ -18,7 +18,7 @@ No Erlang toolchain exists in my sandbox, so I compiled and ran nothing.
 
 ## Implemented vs planned
 
-**Implemented (headless `swarm_control` profile):** signed control sessions through the Desk; Passport, membership, revocation, multi-Desk; Device Handler with exactly one capability (`test`); Director test jobs; PCM and Opus subscriptions into a scheduled mixer; Time/Offset over control; subscription intent persistence.
+**Implemented (headless `swarm_control` profile):** signed control sessions through the Reception; Passport, membership, revocation, multi-Reception; Device Handler with exactly one capability (`test`); Director test jobs; PCM and Opus subscriptions into a scheduled mixer; Time/Offset over control; subscription intent persistence.
 
 **Not implemented or only planned:** apps (step 9); real audio workers under the Handler; automatic peer-to-peer session start (only `parvi_clock` calls `parvi_swarm_control:connect/1`, toward the authority; the test probe calls it for peers); mixer output adapters for macOS and Windows (only `parvi_ios_audio` and a test sink implement `write/4`); device exclusions; multichannel above 2; drift servo; calibrated output latency; any DSP or spatial rendering; return to an abandoned swarm (step 10). README: 'Current audio playback is not synchronized across devices.'
 
@@ -26,13 +26,13 @@ No Erlang toolchain exists in my sandbox, so I compiled and ran nothing.
 
 ### P0 — undermines a stated principle or will cause outages
 
-**1. Swarm liveness hangs on the authority, the Desk and an external NTP server.** \[V\]
+**1. Swarm liveness hangs on the authority, the Reception and an external NTP server.** \[V\]
 
 - Membership lease: `parvi_swarm_membership` (`incoming/3`, grant) sets `until := Deadline+50000`, about 60 s; `client_tick/1` renews roughly 30 s before expiry. `parvi_swarm_control_protocol:receive_packet/4` and `active/3` reject everything after `membership_deadline`; session deadline is `min(Now+60000, membership_deadline)`.
 - Media inherits it: `parvi_audio_subscription` arms `lease_expired` from that deadline; `parvi_audio_mixer:expire_inputs/1` drops inputs at `authorization_deadline`.
 - Clock: master readiness needs `confirmed => true` (`parvi_clock:ready/1`). Only a successful upstream query sets it (`apply_upstream/2`); `fail/2` and `resync` clear it, and `parvi_audio_receiver:network_changed/0` and `resume/0` call `resync`. Default reference is `{ntp,"ntp.metas.ch"}`. After one failed query the retry backoff is 60 s (`upstream_failed/1`). While not ready the authority answers `sample.request` with `unavailable`, followers lose readiness, and the mixer's `clock()` fails, so every packet is dropped and queues flushed.
 
-Consequence: about a minute of authority or Desk outage, or one lost SNTP datagram after a network change, silences every device, although audio flows peer to peer and the agreed timeline does not need UTC. That contradicts ephemeral swarms, device autonomy and the claimed Control/Stream separation.
+Consequence: about a minute of authority or Reception outage, or one lost SNTP datagram after a network change, silences every device, although audio flows peer to peer and the agreed timeline does not need UTC. That contradicts ephemeral swarms, device autonomy and the claimed Control/Stream separation.
 
 Recommend:
 
@@ -47,7 +47,7 @@ Recommend:
 - `parvi_ios_audio:write/4` is a synchronous `gen_tcp:send` with `{send_timeout,1000}` inside the 2 ms render loop: a stalled native side blocks the mixer up to 1 s, then closes the socket and takes the whole subtree down.
 - Above that, the root is `rest_for_one` with `parvi_swarm_desks` first, which stops on any relay `EXIT`, restarting membership, handler, control, clock and audio.
 
-Recommend: separate failure domains. Output (adapter owner process doing async writes; mixer discards when no output exists instead of crashing), mixer, a `simple_one_for_one` for sessions and another for sources, each independently supervised. Keep Desk-connection trouble local to the Desk process.
+Recommend: separate failure domains. Output (adapter owner process doing async writes; mixer discards when no output exists instead of crashing), mixer, a `simple_one_for_one` for sessions and another for sources, each independently supervised. Keep Reception-connection trouble local to the Reception process.
 
 **3. The control process is a serialized choke point on the timing path.** \[V chain, effect H\]
 
@@ -81,13 +81,13 @@ Recommend: make audio publish and receive the first real capability. The Handler
 
 Recommend: a signed policy is self-authenticating and monotonic. Let any peer present the newest one in the handshake and accept `>=`; scope sessions by whether the peer's permission for that operation still holds, not by exact revision, so a join does not kill unrelated sessions; persist the last signed policy on every member. Payoffs: revocation reaches peers without the authority online (needed for finding 1), ordinary-member-first return (plan step 10) largely falls out, and the `Floor` logic shrinks.
 
-**7. A hand-built control transport duplicates what WebRTC already provides, and routes timing and plaintext through the Desk.** \[V; benefit H\]
+**7. A hand-built control transport duplicates what WebRTC already provides, and routes timing and plaintext through the Reception.** \[V; benefit H\]
 
 - `parvi_swarm_control_protocol` (344 lines) implements handshake, session ids, replay counters and rekeying by hand. `parvi_swarm_passport` and legacy `parvi_cluster_auth` are two more signed-envelope implementations.
-- The Desk carries control, SDP/ICE (host IPs) and policy, signed but not encrypted; each `grant` contains the whole member and route table.
+- The Reception carries control, SDP/ICE (host IPs) and policy, signed but not encrypted; each `grant` contains the whole member and route table.
 - Each subscription builds its own PeerConnection (`parvi_audio_subscription:init/1`): N sources × M listeners means N×M ICE/DTLS/SCTP setups, all closed at session renewal.
 
-Recommend (spike, then decide): one PeerConnection per peer pair, SDP fingerprint signed once by the Ed25519 key (already how media is authenticated), data channels for control (reliable), clock (unordered) and audio. DTLS then supplies authentication, confidentiality and replay protection; the Desk shrinks to introduction, as your philosophy says; clock samples avoid websocket head-of-line blocking. Cost: when direct connectivity fails you need TURN. Measure RTT jitter of Desk-relayed versus data-channel clock samples first. If you keep the protocol, use one `parvi_signed` module for all envelopes, or Noise (the `enoise` library) instead of the hand-rolled handshake.
+Recommend (spike, then decide): one PeerConnection per peer pair, SDP fingerprint signed once by the Ed25519 key (already how media is authenticated), data channels for control (reliable), clock (unordered) and audio. DTLS then supplies authentication, confidentiality and replay protection; the Reception shrinks to introduction, as your philosophy says; clock samples avoid websocket head-of-line blocking. Cost: when direct connectivity fails you need TURN. Measure RTT jitter of Reception-relayed versus data-channel clock samples first. If you keep the protocol, use one `parvi_signed` module for all envelopes, or Noise (the `enoise` library) instead of the hand-rolled handshake.
 
 **8. The legacy trusted-OTP stack is still the default and about as large as the new control path.** \[V\]
 
@@ -120,11 +120,11 @@ Recommend: libopus inside the VM (NIF if each 20 ms frame stays near 1 ms; other
 **13. Trust boundary: member-versus-member is good; the edges are weaker.** \[V\]
 
 - Good: no atoms from the wire, exact-key validation, 32 KiB bounds, domain-separated signatures, invitation secrets hashed and compared with `hash_equals`, the `nonode@nohost` guard in `parvi_swarm_control:init/1`.
-- Desk admission is Sybil-able: `parvi_reception_sessions` caps attached identities at 4096 globally, any fresh key counts, and one process serializes all routing and presence fan-out, so filling a public Desk is trivial.
+- Reception admission is Sybil-able: `parvi_reception_sessions` caps attached identities at 4096 globally, any fresh key counts, and one process serializes all routing and presence fan-out, so filling a public Reception is trivial.
 - One authority key signs all policy; there is no rotation or rollover path; the seed lives in an environment variable and the private key sits in the state of `parvi_swarm_membership` and the control protocol (visible to `sys:get_state` and crash dumps). Put signing in a tiny signer process that exposes `sign/2` only.
 - 'Devices are untrusted' and 'the authority decides each device's permissions' are in tension; state plainly that the authority is the fully trusted root and the device's own consent is local.
 
-**14. Tests cover pure modules well and stateful processes not at all.** \[V\] No eunit for `parvi_swarm_membership`, `parvi_swarm_desks`, `parvi_swarm_control`, `parvi_audio_receiver`, `parvi_audio_mixer`, `parvi_audio_subscription` or `parvi_audio_source`. The integration scripts need the public Render-hosted Desk and macOS-specific library paths. There are 4 `-spec`s in `src/` and no dialyzer or xref in `rebar.config`. Add state-machine tests for receiver and control with a fake Desk, and enable dialyzer plus xref in CI (xref also enforces the layering in finding 8).
+**14. Tests cover pure modules well and stateful processes not at all.** \[V\] No eunit for `parvi_swarm_membership`, `parvi_swarm_desks`, `parvi_swarm_control`, `parvi_audio_receiver`, `parvi_audio_mixer`, `parvi_audio_subscription` or `parvi_audio_source`. The integration scripts need the public Render-hosted Reception and macOS-specific library paths. There are 4 `-spec`s in `src/` and no dialyzer or xref in `rebar.config`. Add state-machine tests for receiver and control with a fake Reception, and enable dialyzer plus xref in CI (xref also enforces the layering in finding 8).
 
 ### P3 — hygiene
 
@@ -135,9 +135,9 @@ Recommend: libopus inside the VM (NIF if each 20 ms frame stays near 1 ms; other
 1. **Simplest and most elegant?** Cores yes; shells no (findings 5, 7, 8, 9).
 2. **Redundant or reinventing?** Handshake and envelopes (7), legacy stack (8), per-entity state in maps and polling (9), GStreamer decode and jitter buffer (10), duplicated helpers (15).
 3. **Process boundaries, supervision, ownership, concurrency?** Findings 2, 3, 5, 9, 11.
-4. **Trust and autonomy boundaries?** Sound between members; weak at Desk, authority key and environment (13, 10); Handler ownership incomplete (5).
+4. **Trust and autonomy boundaries?** Sound between members; weak at Reception, authority key and environment (13, 10); Handler ownership incomplete (5).
 5. **Hidden bottlenecks, cascades, timing, scaling?** 1, 2, 3, 4, 6, 12; at the stated cap of 16 members and 16 streams, scaling is not the problem, availability is.
-6. **Control and Stream separation?** Partial. Audio bytes never touch the Desk, which is good. But control outage kills media (1), media errors kill publishing (2), data packets flow through the policy process (11), and control hard-codes audio clients (8).
+6. **Control and Stream separation?** Partial. Audio bytes never touch the Reception, which is good. But control outage kills media (1), media errors kill publishing (2), data packets flow through the policy process (11), and control hard-codes audio clients (8).
 7. **Redesign, simplify, remove:** delete legacy; decouple readiness from NTP and from the authority lease; split failure domains; per-entity `gen_statem`; Handler-owned audio workers with signed grants; policy gossip; libopus in-VM; spike one PeerConnection per peer pair.
 8. **Overlooked opportunities:** below.
 
@@ -166,4 +166,4 @@ The pure cores (`parvi_swarm_control_protocol` validation, `parvi_audio_mix`, `p
 
 ## Limits of this review
 
-Nothing was compiled or run. I did not read the Elixir Reception Desk, the native adapters (iOS Swift/Objective-C, macOS, Windows), `parvi_audio_packet`, `parvi_audio_input`, `parvi_sntp`, the clock filter, mapping and sync modules, or PROGRESS.md beyond searching it. Every \[H\] item needs measurement before it drives a decision.
+Nothing was compiled or run. I did not read the Elixir Reception, the native adapters (iOS Swift/Objective-C, macOS, Windows), `parvi_audio_packet`, `parvi_audio_input`, `parvi_sntp`, the clock filter, mapping and sync modules, or PROGRESS.md beyond searching it. Every \[H\] item needs measurement before it drives a decision.

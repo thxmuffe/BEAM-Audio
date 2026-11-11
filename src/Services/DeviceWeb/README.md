@@ -3,8 +3,8 @@
 Optional owner-local HTTP service for a Device's existing `ba_device_api`.
 This is an Apache-2.0 BEAM Audio component; it contains no product UI or branding.
 Cowboy handles HTTP, Ranch owns connections, and an OTP supervision tree owns the
-listener. It uses the same Cowboy, Ranch and patched Cowlib versions as the Desk.
-The public Desk remains a separate Phoenix application with a different trust
+listener. It uses the same Cowboy, Ranch and patched Cowlib versions as the Reception.
+The public Reception remains a separate Phoenix application with a different trust
 boundary and protocol; there is no duplicate custom HTTP server to maintain.
 
 ## Run with a supplied frontend
@@ -29,7 +29,7 @@ browser after the listener starts. Keep the terminal open; Control-C stops the
 VM (if Erlang shows its break menu, type `a` then Enter).
 
 Preview only reports `mode: "preview"`; a frontend supplies its own UI fixtures.
-Commands return 409 and never invoke the Device. No Device, identity, Desk
+Commands return 409 and never invoke the Device. No Device, identity, Reception
 connection or audio is created by this launcher.
 
 ### Attach to an existing Device
@@ -99,7 +99,7 @@ defence against other programs already running as that OS user.
 
 All Device policy, consent, permissions, networking and audio timing remain in
 the runtime. The browser receives state and submits commands; neither HTTP nor
-the frontend carries audio. Do not publish this endpoint through the Desk.
+the frontend carries audio. Do not publish this endpoint through the Reception.
 
 ## Checks
 
@@ -111,6 +111,6 @@ EUnit exercises HTTP/session/asset boundaries, malformed and oversized requests
 (including chunked bodies), preview isolation, the real CLI client against a
 temporary socket, credential redaction, direct commands against an isolated
 idle OTP Device, and listener shutdown/token renewal. Fixtures do not require
-OpenSound or contact a Desk. Tests need permission to bind local TCP/Unix sockets.
+OpenSound or contact a Reception. Tests need permission to bind local TCP/Unix sockets.
 Physical audio, live Swarm admission, Windows execution and browser acceptance
 remain separate checks.

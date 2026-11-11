@@ -116,7 +116,7 @@ in OpenSound/builds. The Windows build must be run on Windows.
 
 ## Ownership and checks
 
-BEAM Audio contains project documentation, Reception Desk and its Render/Docker
+BEAM Audio contains project documentation, Reception and its Render/Docker
 configuration, tools and checks. Product code and app packaging remain in
 OpenSound/src/Apps. App platform guides are under `../OpenSound/docs/`; their
 older command examples describe the monorepo unless updated here. Existing UI

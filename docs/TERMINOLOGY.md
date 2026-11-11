@@ -1,6 +1,46 @@
 # BEAM Audio terminology
 
-These are the canonical component names for the core and the OpenSound App.
+## Buffee vocabulary — review draft, 2026-11-11
+
+The following product vocabulary is ready for user review. Documentation changes
+only: app, runtime, protocol and service implementation must wait for the user's
+explicit “go.” This draft supersedes older product wording below; the technical
+table records existing implementation names, not completed migration.
+
+| Previous term / concept | Proposed product term | Meaning |
+| --- | --- | --- |
+| Swarm | **Buffee** | An active pool of voluntarily participating Devices and offered work. Devices come and go; remembering an invitation should make returning easy. The spelling connects buffet with audio buffer. |
+| Ordinary participating Device | **Guest** | May provide speaker output, consented microphone access and computing capacity. Cannot broadcast music as a Chef. |
+| Broadcasting permission / active player | **Chef** | A Device with Guest capabilities plus permission to broadcast music. Guest and Chef are the two proposed Device statuses. |
+| Director / coordinator | **Manager** | Coordinates work and offers Jobs. A coordination role, separate from Guest/Chef status; it grants no ownership or override of Device consent. |
+| Available computing capacity | **Hunger** | The buffet metaphor for voluntarily offered computing capacity. Keep “computing capacity” available as the precise description; no new scheduler is implied. |
+| Swarm Offset / Playback Offset | **Response time** | The configured shared delay before scheduled playback. Renaming does not change timing, units, packet targets or scheduling policy. |
+| Former `Desk` / `Reception desk` | **Reception** | Authenticates Devices, introduces participants and routes control messages. It does not own the Buffee, choose its Manager or carry audio. |
+
+Use **Reception** throughout prose and future UI. Do not introduce “Maître d’” as
+another role. Existing module names, directories, URLs, commands, environment
+variables and signed/wire fields remain unchanged until an explicit migration.
+
+Chef permission extends what that Device may contribute; it cannot enable another
+Device's microphone, speaker or computing resources without local consent. An
+enabled microphone is available for consented requests, not unconditional remote
+access. Guest microphone contribution must remain distinct from Chef music
+broadcasting; the exact permission mapping is not implemented by this draft.
+
+Unresolved before behavior implementation: who may elevate a Guest to Chef,
+who may coordinate/publish which Jobs, Manager startup/replacement, whether shared
+kick/ban authority is needed beyond local exclusions, and how all Devices return
+after a complete shutdown. Existing Captain authority has no automatic new name
+or replacement in this proposal. Do not silently equate Captain with Chef or Manager.
+
+The web app is the primary app and must be updated first after approval. Windows
+remains wxErlang and should match the web app's appearance and behavior as closely
+as platform requirements allow. Current authorized platform scope is web app,
+Windows app and Reception; Apple app implementation is not included.
+
+## Existing technical components
+
+These are the existing technical component names for the core and OpenSound App.
 Names describe responsibilities, not a promise that every component has a
 separate module/process or that every platform implementation is complete.
 
@@ -8,7 +48,7 @@ separate module/process or that every platform implementation is complete.
 | --- | --- | --- |
 | Swarm | Temporary gathering of cooperating Devices. | Fresh ID per creation; creator is Captain/authority/Director for its lifetime. End removes its state; no election or restoration. |
 | Device | Autonomous participant with its own Erlang runtime and resources. | Local supervision and resource ownership; membership grants no arbitrary remote execution. |
-| Desk | Authentication, introduction and message routing. | Phoenix/WebSockets, `ba_reception_sessions`, `ba_swarm_desks`, `ba_relay`. A Desk is not the Swarm authority and does not carry audio. |
+| Reception | Authentication, introduction and message routing. | Phoenix/WebSockets, `ba_reception_sessions`, `ba_swarm_desks`, `ba_relay`. A Reception is not the Swarm authority and does not carry audio. |
 | Device Identity | Permanent cryptographic identity. | Ed25519; platform secure storage and `ba_device_store:identity/0`. Not an OTP node name or a Passport. |
 | Passport | Membership credential for a live Swarm. | `ba_swarm_passport`, `ba_swarm_membership`; memory-only, with fresh authorization/revocation checks. |
 | Contract | Permissions, responsibilities and resource boundaries. | Locally checked grants, consent and resource limits; not connection liveness. |

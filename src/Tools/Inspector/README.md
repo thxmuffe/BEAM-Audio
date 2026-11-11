@@ -19,7 +19,7 @@ JSON command interface. The Mac host must be rebuilt to pick up this entry point
 
 November 4 verification: Windows native transport preparation and inspector
 preflight now pass. An actual CLI join using the user's invitation authenticates
-with the public desk, but six attempts return peer_unavailable and add no
+with the public Reception, but six attempts return peer_unavailable and add no
 membership. The app later reconnects after recovering its existing state from
 redirected AppData; the CLI failures did not establish a transport defect.
 Older missing-NIF/untested notes below describe earlier checkpoints.

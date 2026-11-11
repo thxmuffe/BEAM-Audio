@@ -33,7 +33,7 @@ Software timestamps and a successful compile do not prove simultaneous sound.
 ## Current checkpoint
 
 Source extraction/build repair is implemented. Core, native transport, Mac,
-signed physical-iPhone, inspector and Reception Desk builds pass on this Mac.
+signed physical-iPhone, inspector and Reception builds pass on this Mac.
 The existing isolated Mac runtime check passes. The rebuilt iPhone rejoins and
 returns remote diagnostics; the user confirms Mac-to-iPhone audio plays normally
 and approved the inspector Keychain prompt. Actual Windows packaging/playback
@@ -50,7 +50,7 @@ unproved; the app engine capabilities are still unsupported.
 ## 1. Restore compilation after the repository move — Mac/iPhone baseline confirmed
 
 - BEAM Audio owns core runtime, networking/trust/clock, media handlers, native
-  audio/runtime adapters, Reception Desk service, inspector, tooling, tests and
+  audio/runtime adapters, Reception service, inspector, tooling, tests and
   project documentation. OpenSound owns commercial UI/branding and the minimal
   app startup/packaging integration. Existing application and module names stay
   stable so this extraction does not alter saved identities or protocols.

@@ -2,7 +2,7 @@
 
 The [native OTP carrier](experiments/otp_dist/README.md) now lives in
 `src/control/src/` and is integrated into the Mac app sources and build. The Mac
-native bridge reuses the shared OTP chat worker and the global Render desk for
+native bridge reuses the shared OTP chat worker and the global Render Reception for
 introductions. See [Mac usage and limitations](../../../docs/apps/macOS/README.md).
 Probe drivers remain experimental. The older application transport below is
 retained for the current iPhone/Windows path and existing regression helpers.
@@ -18,26 +18,26 @@ Elixir is still needed to build the upstream libraries, and their compiled
 Elixir support modules must be packaged alongside them. `mix.exs` is the build
 manifest for those dependencies; this project contains no Elixir application
 modules. Eliminating that dependency too would require replacing `ex_webrtc`.
-The existing Phoenix Reception Desk is a separate Elixir application and has
+The existing Phoenix Reception is a separate Elixir application and has
 not been rewritten or redeployed as part of this transport change.
 
 All networking, signalling, connection selection and payload handling run in
 BEAM. Swift receives status snapshots and submits user commands. There is no
 Swift WebRTC engine or network-event command interface.
 
-Direct links are preferred. The existing Reception Desk introduces admitted
+Direct links are preferred. The existing Reception introduces admitted
 nodes and provides relay fallback when direct links are unavailable. SDP and
 ICE candidates travel through authenticated, swarm-scoped mailbox messages.
 The remote DTLS certificate fingerprint comes from that authenticated signalling.
-The desk remains a trusted introducer, as it is in the existing relay design.
+The Reception remains a trusted introducer, as it is in the existing relay design.
 
 ## Verified experiment
 
 On 2026-10-28, `tests/transport/smoke.py` passed using two independent BEAM VMs and the
 third-party WebRTC library. After admission and direct-channel establishment,
-the test killed its disposable local Reception Desk. Bidirectional chat,
+the test killed its disposable local Reception. Bidirectional chat,
 independent swarm histories and leaving one of two shared swarms continued over
-the direct channel. It then restarted the desk and admitted a relay-only peer,
+the direct channel. It then restarted the Reception and admitted a relay-only peer,
 verifying interoperability without forcing that peer to implement WebRTC.
 The public Render service was not stopped or changed.
 

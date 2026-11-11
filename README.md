@@ -4,7 +4,7 @@
 
 Open source Erlang/OTP audio runtime: Swarm messaging and admission, Swarm Clock
 and Presentation Target policy, replaceable Stream Handlers and Audio Engines,
-native platform adapters, headless tools and Desk. The OpenSound App consumes
+native platform adapters, headless tools and Reception. The OpenSound App consumes
 this checkout; the core builds without product UI sources.
 
 - [Canonical terminology](docs/TERMINOLOGY.md) and [core naming/migration](docs/NAMING.md)
