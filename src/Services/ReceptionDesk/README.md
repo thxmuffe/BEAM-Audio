@@ -1,23 +1,25 @@
 # BEAM Audio Reception
 
-Product labels now use **Buffee**, **Reception** and **Response time**. Existing
-API fields, commands, module names and hosted URLs retain their established
-spellings. Guest/Chef permissions and Manager succession remain separate work.
+Core terminology uses **Buffee**, **Reception** and **Response time**; user
+interfaces call a Buffee a **Session**. Existing API fields, commands and module
+names retain their versioned spellings. Guest/Chef permissions and Manager succession remain separate work.
 
 A **Reception** provides authentication, introduction and message routing for Devices.
 The current Phoenix/WebSocket service uses `ba_reception_sessions`; core Reception
 configuration is `BA_DESK_BIND` / `BA_DESK_PORT` (or conventional `PORT`). Existing
-signed protocol domains and the hosted service address remain unchanged.
+signed protocol domains and versioned wire fields remain unchanged. The current
+public service is `wss://buffee-reception.onrender.com/relay/v1`.
 See [naming/migration](../../../docs/NAMING.md) and
 [canonical terminology](../../../docs/TERMINOLOGY.md).
 
 The separate [Device Web service](../DeviceWeb/README.md) uses the same Cowboy,
 Ranch and patched Cowlib versions for an owner-local HTTP command API. It serves
 frontend assets supplied by an app; the Reception remains public authentication and
-routing infrastructure. Neither service needs a Python bridge. There is no
-change to the public service URL. The v3 reusable-invitation extension adds
+routing infrastructure. Neither service needs a Python bridge. The public
+Reception address changed on 2026-11-11; previously issued invitations using
+the retired hostname require replacement. The reusable-invitation extension adds
 capability-scoped live mailbox lookup; it does not elect Captains, claim names,
-restore authority, store Swarms or prevent simultaneous starters. See
+restore authority, store Buffees or prevent simultaneous starters. See
 [membership semantics](../../../docs/SWARM_MEMBERSHIP.md).
 
 The remaining profile notes describe historical app integrations; step 9 has not
@@ -76,23 +78,21 @@ customizes DNS resolution only.
 
 `render.yaml` defines a **single** Docker web service, a generated
 `SECRET_KEY_BASE` and `/health` check. The Dockerfile builds a Phoenix release.
-The existing Render service now builds `thxmuffe/BEAM-Audio` on `main`, using
-`src/Services/ReceptionDesk/Dockerfile` and repository-root Docker context. Its
-service ID and public URL are retained; automatic deploys remain disabled.
+The Reception Dockerfile is `src/Services/ReceptionDesk/Dockerfile`, with the
+repository root as build context. The public service was replaced on 2026-11-11;
+see the current URL and deployment status below.
 Deploy that Blueprint from this repository, then use
 `wss://YOUR-SERVICE.onrender.com/relay/v1` in every native app. Render terminates
 TLS at its ingress; the container listens on `0.0.0.0:$PORT`. Other hosting can
 use an equivalent HTTPS reverse proxy with WebSocket upgrades enabled.
 
-The test Reception was deployed on 2026-10-28 in Frankfurt on Render's free plan:
-https://buffee-reception.onrender.com. Enter
-`wss://buffee-reception.onrender.com/relay/v1` in each native app.
-The service ID is `srv-dbgvjfui0phs73ablggg`; automatic deploys are disabled.
-Deploy a committed/pushed revision with the authorized Render CLI:
-
-```powershell
-render deploys create srv-dbgvjfui0phs73ablggg --wait
-```
+The current public Reception is https://buffee-reception.onrender.com, with
+WebSocket endpoint `wss://buffee-reception.onrender.com/relay/v1`. The
+replacement Render service ID is `srv-dbq59cmgekts73anho5g`. The previous
+`parvi-reception-desk.onrender.com` endpoint was retired on 2026-11-11, so
+invitations containing that address will no longer connect. Restart or rebuild
+clients using the new default and create new invitations. Verify service status
+and authorize any deployment before changing the hosted environment.
 
 Free instances can sleep after 15 minutes without inbound HTTP/WebSocket traffic;
 the next connection wakes them, which can take about a minute. See
