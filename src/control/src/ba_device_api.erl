@@ -10,6 +10,7 @@ request(Request) when is_map(Request) ->
     catch _:_ -> (ba_app_session:snapshot())#{<<"error">> => <<"Invalid request or unavailable worker.">>} end,
     maps:merge(Reply,maps:with([<<"request_id">>],Request));
 request(_) -> request(#{}).
+printable(owner_or_valid_invitation_required) -> <<"Rejoin using an invitation to recover the shareable link.">>;
 printable(configuration_changed) -> <<"Settings changed in another client. Review the latest state and retry.">>;
 printable(invalid_buffee_config) -> <<"Invalid Session name, Reception address or invitation link.">>;
 printable(R) when is_binary(R) -> R;

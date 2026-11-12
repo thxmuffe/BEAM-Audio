@@ -55,7 +55,7 @@ boot(#{mode := join,invitation := Link} = Config,S) ->
     Saved = ba_device_store:load(buffee_member,undefined),
     case Saved of
         #{id := Id,buffee := Buffee} when Id =:= map_get(id,S),Buffee =:= map_get(<<"buffee">>,I) ->
-            boot_saved(Config,Saved,S#{name => maps:get(<<"name">>,I)});
+            boot_saved(Config,Saved,S#{name => maps:get(<<"name">>,I),reusable_link => Link});
         undefined ->
             URLs = maps:get(<<"desks">>,I),Primary = maps:get(desk,Config,hd(URLs)),
             Buffee=maps:get(<<"buffee">>,I),
@@ -73,7 +73,7 @@ boot_saved(Config,#{id := Id,passport := Passport,authority := Authority,buffee 
     Envelope=ba_buffee_passport:decode(Passport),
     Body=ba_buffee_passport:decode(base64:decode(maps:get(<<"body">>,Envelope))),
     _ = ba_buffee_passport:passport(Passport,maps:get(<<"authority">>,Body),Id,Buffee),
-    client(Passport,Authority,Buffee,URLs,maps:get(desk,Config,OldPrimary),R,maps:get(floor,Saved,#{}),S).
+    client(Passport,Authority,Buffee,URLs,maps:get(desk,Config,OldPrimary),R,maps:get(floor,Saved,#{}),maps:merge(S,maps:with([reusable_link],Saved))).
 client(Credential,Authority,Buffee,URLs,Primary,AuthorityRoute,Floor,S) ->
     ok = ba_buffee_passport:urls(URLs),true = lists:member(Primary,URLs),
     %% The authority registers the same identity/mailbox at every permitted Desk.
@@ -95,7 +95,7 @@ handle_call(status,_,S) ->
 handle_call(current,_,#{state := authorized} = S) ->
     {reply,{ok,view(S)},S};
 handle_call(current,_,S) -> {reply,{error,maps:get(state,S)},S};
-handle_call({invite,_},_,#{role := authority,reusable_link := Link}=S) ->
+handle_call({invite,_},_,#{state := authorized,reusable_link := Link}=S) ->
     {reply,{ok,compact_link(Link)},S};
 handle_call({invite,TTL},_,S) ->
     case invitations([undefined],TTL,S) of
@@ -312,8 +312,8 @@ incoming(Authority,#{<<"type">> := <<"grant">>,<<"request">> := Req,<<"payload">
     true = lists:all(fun(D) -> maps:is_key(D,maps:get(<<"members">>,P)) end,maps:keys(Routes)),
     maps:foreach(fun(_,R) -> ba_buffee_passport:route(R,maps:get(urls,S)) end,Routes),
     NewFloor = #{epoch => Epoch,revision => maps:get(<<"revision">>,P)},
-    Saved = #{id => maps:get(id,S),passport => Passport,authority => Authority,buffee => Buffee,
-        desks => maps:get(urls,S),primary => maps:get(primary,S),authority_route => maps:get(authority_route,S),floor => NewFloor},
+    Saved = maps:merge(maps:with([reusable_link],S),#{id => maps:get(id,S),passport => Passport,authority => Authority,buffee => Buffee,
+        desks => maps:get(urls,S),primary => maps:get(primary,S),authority_route => maps:get(authority_route,S),floor => NewFloor}),
     ok = save(buffee_member,Saved),
     ba_buffee:remember(self(),maps:get(name,S),Saved),
     ok = ba_buffee_desks:configure(Buffee,maps:get(urls,S),maps:get(primary,S),Routes),

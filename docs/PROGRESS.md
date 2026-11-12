@@ -91,3 +91,9 @@ passed. Device-type label checks: 2 pass; HTTP boundary and tab command checks:
 or listening/timing qualification was performed. Concurrent physical audio and
 manual UI acceptance remain unverified. Native hosts retain their existing single
 Session bridge; this tab shell is web-only.
+
+Invite toolbox fix: any authorized participant may display and forward its
+existing reusable invitation; ownership is not required to share an existing
+link. Newly saved memberships preserve that link across rejoining. Old saved
+Guest memberships without a link need an invitation-based rejoin to recover it.
+Owner-only administration and targeted readmission remain unchanged.
