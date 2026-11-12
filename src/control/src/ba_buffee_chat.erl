@@ -3,13 +3,13 @@
 -behaviour(gen_server).
 -export([start_link/0,send/1,history/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
-send(Text) -> gen_server:call(?MODULE,{send,Text}).
-history() -> gen_server:call(?MODULE,history).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
+send(Text) -> gen_server:call(ba_session_scope:ref(?MODULE),{send,Text}).
+history() -> gen_server:call(ba_session_scope:ref(?MODULE),history).
 init([]) ->
     process_flag(trap_exit,true),
-    %% Replace a stale handler after an untrappable chat-process failure.
-    logger:remove_handler(ba_buffee_chat),
+    %% One shared handler dispatches notices to the reporting Session.
+
     logger:add_handler(ba_buffee_chat,ba_buffee_log_h,#{level => error,config => #{recipient => self()}}),
     {ok,[]}.
 handle_call(history,_,S) -> {reply,lists:reverse(S),S};
@@ -28,7 +28,12 @@ handle_info({buffee_chat,#{peer := Peer,session := Session},Id,Text},S) ->
         _ -> {noreply,S}
     end;
 handle_info(_,S) -> {noreply,S}.
-terminate(_,_) -> logger:remove_handler(ba_buffee_chat),ok.
+terminate(_,_) ->
+    Other=[P || {ba_session,_,ba_buffee_chat}=Name <- global:registered_names(),
+        P <- [global:whereis_name(Name)],is_pid(P),P=/=self()],
+    Default=erlang:whereis(ba_buffee_chat),
+    case Other=:=[] andalso (Default=:=undefined orelse Default=:=self()) of
+        true -> logger:remove_handler(ba_buffee_chat);false -> ok end,ok.
 
 publish(Text,S) ->
     Id=binary:encode_hex(crypto:strong_rand_bytes(16)),

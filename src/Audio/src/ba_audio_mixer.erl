@@ -3,14 +3,14 @@
 -behaviour(gen_server).
 -export([start_link/0,add/3,remove/1,enable/2,gain/2,push/4,renew/2,status/0,clock/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
-add(Id,D,G) -> gen_server:call(?MODULE,{add,Id,D,G}).
-remove(Id) -> gen_server:call(?MODULE,{remove,Id}).
-enable(Id,B) -> gen_server:call(?MODULE,{enable,Id,B}).
-gain(Id,G) -> gen_server:call(?MODULE,{gain,Id,G}).
-renew(Id,Until) -> gen_server:call(?MODULE,{renew,Id,Until}).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
+add(Id,D,G) -> gen_server:call(ba_session_scope:ref(?MODULE),{add,Id,D,G}).
+remove(Id) -> gen_server:call(ba_session_scope:ref(?MODULE),{remove,Id}).
+enable(Id,B) -> gen_server:call(ba_session_scope:ref(?MODULE),{enable,Id,B}).
+gain(Id,G) -> gen_server:call(ba_session_scope:ref(?MODULE),{gain,Id,G}).
+renew(Id,Until) -> gen_server:call(ba_session_scope:ref(?MODULE),{renew,Id,Until}).
 push(Id,D,H,PCM) ->
-    case whereis(?MODULE) of
+    case ba_session_scope:whereis(?MODULE) of
         P when is_pid(P) ->
             case process_info(P,message_queue_len) of
                 {message_queue_len,N} when N<64 -> gen_server:cast(P,{packet,Id,D,H,PCM});
@@ -18,7 +18,7 @@ push(Id,D,H,PCM) ->
             end;
         _ -> {error,mixer_unavailable}
     end.
-status() -> gen_server:call(?MODULE,status).
+status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 clock() ->
     Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
     try {ok,Module:id(),Module:now()} catch _:_ -> {error,clock_unavailable} end.

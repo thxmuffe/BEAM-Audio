@@ -6,7 +6,7 @@
          presentation/1,status/0,set_reference/1,resync/0,offset/0,offset_status/0,set_offset/1,set_offset/2,
          reference_sample/0,peer_sample/2,seed_sample/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 id() -> maps:get(timeline,snapshot(),undefined).
 now() -> from_monotonic(mono()).
 filtered_utc_time() -> now().
@@ -33,10 +33,10 @@ presentation(Times) ->
 offset() -> D = snapshot(),case offset_ready(D) of
     true -> {ok,maps:get(<<"offset_ms">>,maps:get(offset,D))};false -> {error,offset_unavailable} end.
 offset_status() -> offset_view(snapshot()).
-set_offset(Value) -> gen_server:call(?MODULE,{offset,Value,current},6000).
-set_offset(Value,Revision) -> gen_server:call(?MODULE,{offset,Value,Revision},6000).
-set_reference(Mode) -> gen_server:call(?MODULE,{reference,Mode}).
-resync() -> gen_server:call(?MODULE,resync).
+set_offset(Value) -> gen_server:call(ba_session_scope:ref(?MODULE),{offset,Value,current},6000).
+set_offset(Value,Revision) -> gen_server:call(ba_session_scope:ref(?MODULE),{offset,Value,Revision},6000).
+set_reference(Mode) -> gen_server:call(ba_session_scope:ref(?MODULE),{reference,Mode}).
+resync() -> gen_server:call(ba_session_scope:ref(?MODULE),resync).
 reference_sample() -> {error,use_authenticated_buffee_control}.
 peer_sample(_,_) -> {error,use_authenticated_buffee_control}.
 seed_sample(_) -> {error,use_authenticated_buffee_control}.
@@ -54,7 +54,7 @@ status() ->
           offset_ns => ba_buffee_clock_mapping:offset(M,Now),remaining_correction_ns => ba_buffee_clock_mapping:remaining(M,Now)} end,
     (maps:merge(Base,Extra))#{state => State,age_ns => age(maps:get(last_sync,D,undefined),Now),
         offset_policy => offset_view(D),uncertainty_ns => unknown,holdover_drift_ppm => unknown}.
-snapshot() -> try ets:lookup(?MODULE,clock) of [{clock,D}] -> D;_ -> #{} catch error:badarg -> #{} end.
+snapshot() -> try ets:lookup(ba_session_scope:table(?MODULE),clock) of [{clock,D}] -> D;_ -> #{} catch error:badarg -> #{} end.
 ready(#{role := Role,mapping := M,confirmed := true,authorization_until := Until,last_sync := Last,
         filter_ready := Filter,sample_interval_ms := I}=D) when is_map(M),is_integer(Last) ->
     live(Until) andalso (Role=:=master orelse (Role=:=follower andalso Filter andalso
@@ -68,7 +68,7 @@ offset_view(D) ->
     #{revision => maps:get(<<"revision">>,P,null),offset_ms => maps:get(<<"offset_ms">>,P,null),ready => offset_ready(D)}.
 
 init([]) ->
-    ets:new(?MODULE,[named_table,protected,{read_concurrency,true}]),
+    ba_session_scope:new_table(?MODULE,[named_table,protected,{read_concurrency,true}]),
     Interval = application:get_env(ba_core,clock_sample_interval_ms,5000),
     Count = application:get_env(ba_core,clock_filter_samples,20),
     Phase = application:get_env(ba_core,clock_interval_ms,30000),PPM = application:get_env(ba_core,clock_slew_ppm,500),
@@ -92,12 +92,13 @@ init([]) ->
         born => now_ms(),filter_last_slot => undefined,sample_due => now_ms(),offset_due => now_ms(),connect_due => now_ms(),phase_due => now_ms()+Phase},
     erlang:send_after(100,self(),tick),{ok,save(S)}.
 handle_call({offset,Value,Expected},From,S) when is_integer(Value),Value>=5,Value=<30000 ->
-    case {maps:get(role,S),revision(Expected,S)} of
-        {waiting,_} -> {reply,{error,membership_unavailable},S};
-        {_,{error,R}} -> {reply,{error,R},S};
-        {authority,Revision} ->
+    case {maps:get(role,S),ba_buffee_roles:can_edit_settings(maps:get(local_permissions,maps:get(view,S,#{}),[])),revision(Expected,S)} of
+        {waiting,_,_} -> {reply,{error,membership_unavailable},S};
+        {_,false,_} -> {reply,{error,forbidden},S};
+        {_,_,{error,R}} -> {reply,{error,R},S};
+        {authority,true,Revision} ->
             {Result,Next} = commit(Value,Revision,S),{reply,Result,save(Next)};
-        {member,Revision} ->
+        {member,true,Revision} ->
             P = #{<<"kind">> => <<"offset.set">>,<<"revision">> => Revision,<<"offset_ms">> => Value},
             case request(P,#{caller => From},S) of
                 {ok,Next} -> {noreply,save(Next)};
@@ -177,7 +178,7 @@ membership(S) ->
     end.
 scope({Buffee,Authority}=Scope,Role,S) ->
     Name = case Role of authority -> buffee_time_policy;member -> buffee_time_cache end,
-    Default = case Role of authority -> #{<<"revision">> => 1,<<"offset_ms">> => 1000};member -> undefined end,
+    Default = case Role of authority -> #{<<"revision">> => 1,<<"offset_ms">> => 300};member -> undefined end,
     Saved = ba_device_store:load(Name,undefined),
     P = case Saved of #{buffee := Buffee,authority := Authority,policy := Policy} -> ba_buffee_time_protocol:state(Policy),Policy;_ -> Default end,
     case Role of authority -> checkpoint(Name,Scope,P);member -> ok end,
@@ -313,7 +314,7 @@ upstream(#{upstream := undefined}=S) ->
         false -> S;
         true ->
             Owner = self(),R = maps:get(reference,S),
-            {Pid,Ref} = spawn_monitor(fun() -> Result = try measure(R) catch _:_ -> {error,upstream_failed} end,
+            {Pid,Ref} = ba_session_scope:spawn_monitor(fun() -> Result = try measure(R) catch _:_ -> {error,upstream_failed} end,
                 Owner ! {upstream_result,self(),Result} end),
             S#{upstream := #{pid => Pid,monitor => Ref,deadline => now_ms()+4000},last_external_start := now_ms(),next_external := infinity,
                 clock := D#{last_error := null}}
@@ -385,7 +386,7 @@ fail(Reason,#{clock := D}=S) -> S#{clock := D#{confirmed := false,last_error := 
 cancel_upstream(#{upstream := undefined}=S) -> S;
 cancel_upstream(#{upstream := #{pid := Pid,monitor := Ref}}=S) -> demonitor(Ref,[flush]),exit(Pid,kill),S#{upstream := undefined}.
 freshness(#{clock := D}) -> 2*maps:get(sample_interval_ms,D).
-save(#{clock := D}=S) -> ets:insert(?MODULE,{clock,D}),S.
+save(#{clock := D}=S) -> ets:insert(ba_session_scope:table(?MODULE),{clock,D}),S.
 valid_reference(system) -> true;
 valid_reference({ntp,H}) -> valid_host(H);
 valid_reference({ntp,H,P}) -> valid_host(H) andalso is_integer(P) andalso P>0 andalso P<65536;

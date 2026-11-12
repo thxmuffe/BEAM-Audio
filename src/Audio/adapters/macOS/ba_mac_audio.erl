@@ -15,7 +15,7 @@ start() -> start(broadcast).
 start(Kind) ->
     case ba_audio_sup:ensure_started() of
         ok ->
-            case supervisor:start_child(ba_audio_sup,
+            case supervisor:start_child(ba_session_scope:ref(ba_audio_sup),
                     #{id => name(Kind), start => {?MODULE, start_link, [Kind]}, restart => temporary}) of
                 {ok, Pid} -> gen_server:call(Pid, start);
                 {error, {already_started, Pid}} -> gen_server:call(Pid, start);
@@ -24,15 +24,15 @@ start(Kind) ->
         Error -> Error
     end.
 stop() -> stop(broadcast).
-stop(Kind) -> case whereis(name(Kind)) of undefined -> ok; Pid -> gen_server:call(Pid, stop) end.
+stop(Kind) -> case ba_session_scope:whereis(name(Kind)) of undefined -> ok; Pid -> gen_server:call(Pid, stop) end.
 status() -> status(broadcast).
 status(Kind) ->
-    case whereis(name(Kind)) of
+    case ba_session_scope:whereis(name(Kind)) of
         undefined -> #{state => stopped, available => helper(Kind)=/=false};
         Pid -> gen_server:call(Pid, status)
     end.
 start_link() -> start_link(broadcast).
-start_link(Kind) -> gen_server:start_link({local,name(Kind)},?MODULE,Kind,[]).
+start_link(Kind) -> gen_server:start_link(ba_session_scope:registration(name(Kind)),?MODULE,Kind,[]).
 init(Kind) -> process_flag(trap_exit, true), {ok, initial(Kind)}.
 initial(Kind) -> #{kind => Kind,port => undefined, input => ba_audio_input:new(), dropped_callbacks => 0}.
 

@@ -82,10 +82,20 @@ No durable public end registry or offline-owner ceremony is introduced. A Device
 that was disconnected cannot receive an End while absent; removal of a returning
 troublesome Device remains an explicit Owner action.
 
+## Chef approval requests
+
+`ba_buffee_membership:request_chef/0` sends a fresh signed request to known
+Owners. Only admitted identities can request; only an Owner can grant Chef via
+`set_role/2`. Owner snapshots expose pending Device IDs in `chef_requests`, and
+the local app snapshot exposes `chef_requested` per Device. Requests do not change
+consent or grant permission. They are live runtime state, not an offline queue.
+Turning local consent off does not cancel a request; turning it on again sends
+another. A Chef grant hides the pending request. Reception remains unchanged.
+
 ## Device API
 
 The shared local JSON API accepts `create_buffee`, `join_buffee`, `leave_buffee`,
-`end_buffee`, `set_role` (`device`, `role`), and `remove_device` (`device`). Role
+`end_buffee`, `set_role` (`device`, `role`), `request_chef`, and `remove_device` (`device`). Role
 values are `chef`, `guest`, `owner`, and `remove_owner`. Web controls call this API;
 frontends do not own authorization or stored ownership.
 

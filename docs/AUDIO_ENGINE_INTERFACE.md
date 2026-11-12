@@ -1,17 +1,6 @@
 # Audio Engine interface
 
-Current component names follow [TERMINOLOGY.md](TERMINOLOGY.md). Step 8's secure
-PCM/Opus path is documented in [BUFFEE_STREAMS.md](BUFFEE_STREAMS.md): the Media
-Session decodes through the local GStreamer binding, then the Erlang Mixer
-executes per-packet Presentation Targets. The native platform-engine bindings
-and experiments described below still require step-9 app qualification. Their
-historical transport/session APIs do not override the new Buffee boundary.
 
-Implemented 2026-11-03 as step 2 of the simultaneous-playback plan. The
-2026-11-04 contract correction replaces anchor-derived playback timing with
-independent per-packet targets. iPhone GStreamer implements the new executor;
-Windows GStreamer and libwebrtc reject scheduled subscription until their
-executors exist. Physical speaker synchronization remains unqualified.
 
 ## Authoritative per-packet target
 
@@ -50,6 +39,8 @@ emission. `calibrated_output_latency_ns=null` means uncalibrated, not zero.
 Counter evidence distinguishes receipt, decode, probe acceptance and sink
 submission; none alone proves sound came out at the requested instant.
 
+
+
 ## Ownership
 
 | Layer | Responsibility |
@@ -73,6 +64,8 @@ session lifetime; source/peer/consumer monitoring and SDP/ICE routing remain in
 Erlang. There is no additional forwarding process, registry or OTP application.
 This follows the standard [OTP behaviour/worker separation](https://www.erlang.org/doc/system/design_principles.html).
 
+
+
 ## Implementations and selection
 
 - `ba_audio_engine_libwebrtc`: current iPhone libwebrtc/NetEq and signed
@@ -93,6 +86,8 @@ Selecting an adapter requires the matching native service to be started by its
 platform binding: the environment setting does not install or load a different
 native library into an existing app. No remote descriptor can name an Erlang
 module. Live engine switching and general plugin discovery remain deferred.
+
+
 
 ## Behaviour callbacks
 
@@ -116,6 +111,8 @@ handler's `output_control/2`. Existing app/inspector APIs, including
 `minimum_playout_delay/1`, keep their entry points. The legacy PCM handler returns
 `unsupported_output_control` for these new native controls; its existing
 per-buffer scheduling is preserved.
+
+
 
 ## Commands and acknowledgements
 
@@ -162,6 +159,8 @@ it. The public UI keeps cluster synchronization unverified. Automatic iOS jitter
 latency is 100 ms; other backends retain their existing defaults. Unsupported
 platforms reject schedule/rate commands before sending native bytes.
 
+
+
 ## Common output report
 
 Existing native statistics and timing fields are retained. Receiver statistics
@@ -187,21 +186,3 @@ buffers, report timing/validity at the selected execution boundary, execute the
 Erlang deadline, without silently replacing packet targets. Calibration must be
 accounted for once. A GStreamer library feature alone does not prove that the
 current Windows pipeline executes this contract.
-
-## Validation and limits
-
-The focused `ba_audio_engine_tests` exercise both real Erlang adapters against
-an isolated loopback native-protocol endpoint: command encoding, repeated
-active-once events, endpoint closure, session pinning, rejected scheduling/rate
-commands sending no bytes, unknown selection and unavailable services, and
-source-anchor/output-report separation. They do not run native media engines or
-physical devices. Run with the existing timing regressions:
-
-```sh
-rebar3 eunit --module=ba_audio_engine_tests,ba_webrtc_audio_timing_tests
-```
-
-Socket tests need local loopback permission. Root Erlang compilation, the Windows
-packaging source set and unsigned iPhone compilation pass. No new app has been
-installed, and device playback after this refactor is not yet verified. The user
-confirmed the preceding Mac/iPhone baseline before these source changes.

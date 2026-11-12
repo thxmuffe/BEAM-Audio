@@ -2,20 +2,21 @@
 %% remain separate. Ownership survives leaving and application shutdown.
 -module(ba_buffee_membership).
 -behaviour(gen_server).
--export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,set_role/2]).
+-export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,set_role/2,request_chef/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
-status() -> gen_server:call(?MODULE,status).
-current() -> gen_server:call(?MODULE,current).
-invite(TTL) -> gen_server:call(?MODULE,{invite,TTL}).
-depart() -> gen_server:call(?MODULE,depart).
-invite_devices(Ids,TTL) -> gen_server:call(?MODULE,{invite_devices,Ids,TTL}).
-grant(Device,Permissions) -> gen_server:call(?MODULE,{grant,Device,Permissions}).
-revoke(Device) -> gen_server:call(?MODULE,{revoke,Device}).
-set_role(Device,Role) -> gen_server:call(?MODULE,{set_role,Device,Role}).
+request_chef() -> gen_server:call(ba_session_scope:ref(?MODULE),request_chef).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
+status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
+current() -> gen_server:call(ba_session_scope:ref(?MODULE),current).
+invite(TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite,TTL}).
+depart() -> gen_server:call(ba_session_scope:ref(?MODULE),depart).
+invite_devices(Ids,TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite_devices,Ids,TTL}).
+grant(Device,Permissions) -> gen_server:call(ba_session_scope:ref(?MODULE),{grant,Device,Permissions}).
+revoke(Device) -> gen_server:call(ba_session_scope:ref(?MODULE),{revoke,Device}).
+set_role(Device,Role) -> gen_server:call(ba_session_scope:ref(?MODULE),{set_role,Device,Role}).
 init([]) ->
     {Pub,Private} = ba_device_store:identity(),Id = binary:encode_hex(Pub),
-    {ok,Config} = application:get_env(ba_core,buffee_membership),
+    {ok,Config} = ba_session_scope:get_env(buffee_membership),
     Base = #{id => Id,private => Private,pending => #{},request => undefined,
              state => waiting,until => 0,rejected => 0,last_attempt => now_ms()-5000},
     S = boot(Config,Base),erlang:send_after(250,self(),tick),{ok,S}.
@@ -85,6 +86,7 @@ handle_call(status,_,S) ->
     P = maps:get(policy,S),
     {reply,#{id => maps:get(id,S),buffee => maps:get(buffee,S),role => public_role(S),roles => public_roles(S),owners => owners(P),
         name => maps:get(name,S),owner => maps:get(authority,S),
+        chef_requests => maps:keys(maps:filter(fun(D,_) -> not ba_buffee_roles:chef(D,P) end,maps:get(chef_requests,S,#{}))),
         state => maps:get(state,S),owner_present => owner_present(S),epoch => value(<<"epoch">>,P),revision => value(<<"revision">>,P),
         members => case P of undefined -> [];_ -> maps:keys(maps:get(<<"members">>,P)) end,
         membership => case P of undefined -> null;_ ->
@@ -124,11 +126,18 @@ handle_call(depart,_,#{role := member}=S) ->
             send(maps:get(authority,S),maps:get(authority_route,S),<<"leave">>,fresh(16),
                 #{<<"membership">> => maps:get(<<"membership">>,M)},S)
     end,{reply,ok,S};
+handle_call(request_chef,_,#{state := authorized,policy := P,routes := Routes}=S) ->
+    [case maps:find(Id,Routes) of
+        {ok,R} -> send(Id,R,<<"chef_request">>,fresh(16),#{},S);
+        error -> ok
+     end || Id <- owners(P)],
+    {reply,ok,S};
 handle_call({set_role,Device,Role},_,#{role := authority,policy := P}=S) ->
     case ba_buffee_roles:change(maps:get(id,S),Device,Role,P) of
         {ok,Updated} ->
             NewP=bump(Updated,false),
-            Next=owned_update(NewP,S),checkpoint_authority(Next),
+            Next0=owned_update(NewP,S),
+            Next=case Role of chef -> Next0#{chef_requests => maps:remove(Device,maps:get(chef_requests,Next0,#{}))};_ -> Next0 end,checkpoint_authority(Next),
             changed(Next,maps:get(routes,S)),{reply,ok,Next};
         Error -> {reply,Error,S}
     end;
@@ -210,6 +219,16 @@ client_refresh(S) ->
                 #{<<"nonce">> => Nonce,<<"credential">> => maps:get(credential,Next),<<"route">> => R},Next),
             Next#{request := #{id => Req,nonce => Nonce,deadline => Now+10000},last_attempt := Now}
     end.
+incoming(Peer,#{<<"type">> := <<"offline">>,<<"payload">> := Data},#{policy := P,routes := Routes}=S) when is_map(P) ->
+    ba_buffee_passport:exact(Data,[<<"route">>]),
+    true=maps:is_key(Peer,maps:get(<<"members">>,P)),
+    R=maps:get(<<"route">>,Data),R=maps:get(Peer,Routes),
+    Next=S#{routes := maps:remove(Peer,Routes)},
+    ok=ba_buffee_desks:configure(maps:get(buffee,S),maps:get(urls,S),maps:get(primary,S),maps:get(routes,Next)),
+    publish(Next),Next;
+incoming(Peer,#{<<"type">> := <<"chef_request">>,<<"payload">> := Data},#{role := authority,policy := P}=S) ->
+    ba_buffee_passport:exact(Data,[]),true=maps:is_key(Peer,maps:get(<<"members">>,P)),
+    S#{chef_requests => (maps:get(chef_requests,S,#{}))#{Peer => true}};
 incoming(Peer,#{<<"type">> := <<"presence">>,<<"payload">> := Data},#{policy := P,routes := Routes}=S) when is_map(P) ->
     true=maps:is_key(Peer,maps:get(<<"members">>,P)),
     ba_buffee_passport:exact(Data,[<<"route">>]),R=maps:get(<<"route">>,Data),
@@ -385,7 +404,7 @@ publish(S) ->
     ba_contacts:observe(maps:get(buffee,S),maps:get(name,S),maps:keys(maps:remove(maps:get(id,S),maps:get(<<"members">>,P)))),
     notify({membership_authorized,view(S)}).
 invalidate() -> notify(membership_invalidated).
-notify(Event) -> case whereis(ba_buffee_control) of undefined -> ok;Pid -> Pid ! Event end.
+notify(Event) -> case ba_session_scope:whereis(ba_buffee_control) of undefined -> ok;Pid -> Pid ! Event end.
 send(To,R,Type,Request,Payload,S) ->
     Body = #{<<"v">> => 1,<<"type">> => Type,<<"from">> => maps:get(id,S),<<"to">> => To,
              <<"buffee">> => maps:get(buffee,S),<<"request">> => Request,<<"payload">> => Payload},

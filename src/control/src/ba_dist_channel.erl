@@ -105,7 +105,7 @@ handle_info({ex_webrtc, PC, {ice_candidate, C}}, #{pc := PC} = S) ->
 handle_info({ex_webrtc, PC, {data_channel, #{label := <<"beamaudio-otp-dist/v1">>, ref := Ref}}},
         #{pc := PC} = S) -> {noreply, S#{channel := Ref}};
 handle_info({ex_webrtc, PC, {data_channel_state_change, Ref, open}}, #{pc := PC, channel := Ref} = S) ->
-    case whereis(ba_legacy_cluster_trust) of
+    case ba_session_scope:whereis(ba_legacy_cluster_trust) of
         undefined -> ok;
         Trust -> Trust ! {secure_ready, self(), ba_legacy_cluster_auth:binding(PC)}
     end,
@@ -163,7 +163,7 @@ receive_packets(Buffer, S) -> S#{buffer := Buffer}.
 deliver(1, Packet, #{hold_auth := true} = S) when byte_size(Packet) =< 32768 ->
     S#{last_received => json:decode(Packet)}; %% Local replay/unauthorized-carrier test.
 deliver(1, Packet, S) when byte_size(Packet) =< 32768 ->
-    whereis(ba_legacy_cluster_trust) ! {secure_packet, self(), json:decode(Packet)}, S;
+    ba_session_scope:whereis(ba_legacy_cluster_trust) ! {secure_packet, self(), json:decode(Packet)}, S;
 deliver(0, Packet, #{received := Count, received_bytes := Bytes} = S) ->
     Next = S#{received := Count + 1, received_bytes := Bytes + byte_size(Packet)},
     case maps:get(handle, S) of

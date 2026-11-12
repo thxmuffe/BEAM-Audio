@@ -107,4 +107,4 @@ printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
 terminate(_,_) ->
     Adapter=application:get_env(ba_core,audio_capture_adapter,ba_mac_audio),
     [try Adapter:stop(K) catch exit:_ -> ok end || K <- [microphone,broadcast]],
-    case whereis(ba_audio_receiver) of undefined -> ok;_ -> try ba_audio_receiver:stop() catch exit:_ -> ok end end,ok.
+    case ba_session_scope:whereis(ba_audio_receiver) of undefined -> ok;_ -> try ba_audio_receiver:stop() catch exit:_ -> ok end end,ok.

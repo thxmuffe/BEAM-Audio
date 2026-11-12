@@ -35,7 +35,7 @@ unroute(Node, Ctrl) ->
     end.
 admit(Ctrl) ->
     case authorized(Ctrl, any) of
-        {ok, _} -> ba_webrtc_accept ! {channel, Ctrl}, ok;
+        {ok, _} -> ba_session_scope:whereis(ba_webrtc_accept) ! {channel, Ctrl}, ok;
         _ -> {error, unauthorized}
     end.
 authorized(Ctrl, Expected) ->
@@ -44,7 +44,7 @@ authorized(Ctrl, Expected) ->
 
 accept(ba_webrtc) ->
     Kernel = self(),
-    spawn_link(fun() -> register(ba_webrtc_accept, self()), accept_loop(Kernel) end).
+    ba_session_scope:spawn_link(fun() -> register(ba_webrtc_accept, self()), accept_loop(Kernel) end).
 accept_loop(Kernel) ->
     receive
         {channel, Ctrl} ->
@@ -100,4 +100,4 @@ hs_data(Ctrl) ->
 
 close(Ctrl) when is_pid(Ctrl) -> gen_server:stop(Ctrl);
 close(ba_webrtc) ->
-    case whereis(ba_webrtc_accept) of undefined -> ok; P -> exit(P, shutdown) end.
+    case ba_session_scope:whereis(ba_webrtc_accept) of undefined -> ok; P -> exit(P, shutdown) end.

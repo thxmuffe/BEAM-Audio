@@ -5,15 +5,15 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 start() ->
     ok = ba_audio_sup:ensure_started(),
-    case supervisor:start_child(ba_audio_sup, #{id => ?MODULE,
+    case supervisor:start_child(ba_session_scope:ref(ba_audio_sup), #{id => ?MODULE,
         start => {?MODULE, start_link, []}, restart => temporary}) of
         {ok, Pid} -> gen_server:call(Pid, start);
         {error, {already_started, Pid}} -> gen_server:call(Pid, start);
         Error -> Error
     end.
-stop() -> case whereis(?MODULE) of undefined -> ok; Pid -> gen_server:stop(Pid) end.
-status() -> case whereis(?MODULE) of undefined -> #{state => stopped}; Pid -> gen_server:call(Pid, status) end.
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+stop() -> case ba_session_scope:whereis(?MODULE) of undefined -> ok; Pid -> gen_server:stop(Pid) end.
+status() -> case ba_session_scope:whereis(?MODULE) of undefined -> #{state => stopped}; Pid -> gen_server:call(Pid, status) end.
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE), ?MODULE, [], []).
 init([]) -> {ok, #{state => stopped, frames => 0, blocks => 0, dropped_callbacks => 0, capture_timing => #{},
     presentation_state => #{stream_id => binary:encode_hex(crypto:strong_rand_bytes(16))},
     presentation_delay_ns => undefined,

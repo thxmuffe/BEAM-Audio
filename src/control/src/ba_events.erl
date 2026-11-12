@@ -5,7 +5,7 @@
 
 subscribe() ->
     try
-        Pg = whereis(ba_pg), true = is_pid(Pg),
+        Pg = ba_session_scope:whereis(ba_pg), true = is_pid(Pg),
         ok = pg:join(ba_pg, ?GROUP, self()), {ok, Pg}
     catch _:_ -> {error, not_started} end.
 

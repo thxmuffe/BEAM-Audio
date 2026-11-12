@@ -8,14 +8,14 @@ name(microphone) -> ba_ios_microphone;
 name(broadcast) -> ba_ios_broadcast.
 start(K) ->
     ok=ba_audio_sup:ensure_started(),
-    case supervisor:start_child(ba_audio_sup,#{id => name(K),start => {?MODULE,start_link,[K]},restart => temporary}) of
+    case supervisor:start_child(ba_session_scope:ref(ba_audio_sup),#{id => name(K),start => {?MODULE,start_link,[K]},restart => temporary}) of
         {ok,P} -> gen_server:call(P,start);
         {error,{already_started,P}} -> gen_server:call(P,start);
         E -> E
     end.
-stop(K) -> case whereis(name(K)) of undefined -> ok;P -> gen_server:call(P,stop) end.
-status(K) -> case whereis(name(K)) of undefined -> #{state => stopped};P -> gen_server:call(P,status) end.
-start_link(K) -> gen_server:start_link({local,name(K)},?MODULE,K,[]).
+stop(K) -> case ba_session_scope:whereis(name(K)) of undefined -> ok;P -> gen_server:call(P,stop) end.
+status(K) -> case ba_session_scope:whereis(name(K)) of undefined -> #{state => stopped};P -> gen_server:call(P,status) end.
+start_link(K) -> gen_server:start_link(ba_session_scope:registration(name(K)),?MODULE,K,[]).
 init(K) -> {ok,initial(K)}.
 initial(K) -> #{kind => K,socket => undefined,input => ba_audio_input:new(),dropped_callbacks => 0}.
 handle_call(start,_,#{socket := undefined,kind := K}=S) ->

@@ -5,26 +5,26 @@
 -export([offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,chat_message/3,audio_context/1,time_message/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 
-chat_message(Peer,Id,Text) -> gen_server:call(?MODULE,{chat_message,Peer,Id,Text}).
-time_message(Peer,Id,Payload) -> gen_server:call(?MODULE,{time_message,Peer,Id,Payload}).
-audio_message(Peer,Id,Payload) -> gen_server:call(?MODULE,{audio_message,Peer,Id,Payload}).
-audio_context(Peer) -> gen_server:call(?MODULE,{audio_context,Peer}).
+chat_message(Peer,Id,Text) -> gen_server:call(ba_session_scope:ref(?MODULE),{chat_message,Peer,Id,Text}).
+time_message(Peer,Id,Payload) -> gen_server:call(ba_session_scope:ref(?MODULE),{time_message,Peer,Id,Payload}).
+audio_message(Peer,Id,Payload) -> gen_server:call(ba_session_scope:ref(?MODULE),{audio_message,Peer,Id,Payload}).
+audio_context(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{audio_context,Peer}).
 
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
-snapshot() -> gen_server:call(?MODULE,snapshot).
-exclude(Peer) -> gen_server:call(?MODULE,{exclude,Peer}).
-connect(Peer) -> gen_server:call(?MODULE,{connect,Peer}).
-read_status(Peer) -> gen_server:call(?MODULE,{read_status,Peer},7000).
-read_capabilities(Peer) -> gen_server:call(?MODULE,{read_capabilities,Peer},7000).
-read_capabilities(Peer,Metrics) -> gen_server:call(?MODULE,{read_capabilities,Peer,Metrics},7000).
-offer_job(Peer,Offer) -> gen_server:call(?MODULE,{offer_job,Peer,Offer}).
-retry_job(Id) -> gen_server:call(?MODULE,{job_command,retry,Id}).
-cancel_job(Id) -> gen_server:call(?MODULE,{job_command,cancel,Id}).
-job_status(Id) -> gen_server:call(?MODULE,{job_status,Id}).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
+snapshot() -> gen_server:call(ba_session_scope:ref(?MODULE),snapshot).
+exclude(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{exclude,Peer}).
+connect(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{connect,Peer}).
+read_status(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{read_status,Peer},7000).
+read_capabilities(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{read_capabilities,Peer},7000).
+read_capabilities(Peer,Metrics) -> gen_server:call(ba_session_scope:ref(?MODULE),{read_capabilities,Peer,Metrics},7000).
+offer_job(Peer,Offer) -> gen_server:call(ba_session_scope:ref(?MODULE),{offer_job,Peer,Offer}).
+retry_job(Id) -> gen_server:call(ba_session_scope:ref(?MODULE),{job_command,retry,Id}).
+cancel_job(Id) -> gen_server:call(ba_session_scope:ref(?MODULE),{job_command,cancel,Id}).
+job_status(Id) -> gen_server:call(ba_session_scope:ref(?MODULE),{job_status,Id}).
 
 init([]) ->
     %% This profile must be run without -name/-sname or a prestarted net_kernel.
-    nonode@nohost = node(), undefined = whereis(net_kernel),
+    nonode@nohost = node(), undefined = ba_session_scope:whereis(net_kernel),
     process_flag(trap_exit,true),
     Identity = {Pub,_} = ba_device_store:identity(),
     Id = binary:encode_hex(Pub),
@@ -39,19 +39,19 @@ init([]) ->
         membership_deadline => maps:get(until,View),lease_ms => application:get_env(ba_core,control_session_lease_ms,60000)},
     erlang:send_after(250,self(),expire),
     {ok,#{protocol => Protocol,config => Config,callers => #{},peer_names => #{},jobs => #{},
-          handler_requests => gen_server:reqids_new(),handler_monitor => monitor(process,whereis(ba_device_handler)),
+          handler_requests => gen_server:reqids_new(),handler_monitor => monitor(process,ba_session_scope:whereis(ba_device_handler)),
           rejected => 0,last_rejection => null}}.
 
 handle_call(snapshot,_,S) ->
     Public = ba_buffee_control_protocol:snapshot(maps:get(protocol,S)),
-    {reply,Public#{peer_names => maps:with(maps:keys(maps:get(sessions,Public)),maps:get(peer_names,S)),relay => ba_buffee_desks:status(),membership => ba_buffee_membership:status(),rejected => maps:get(rejected,S),
+    {reply,Public#{peer_errors => maps:with(maps:keys(maps:get(sessions,Public)),maps:get(peer_errors,S,#{})),peer_names => maps:with(maps:keys(maps:get(sessions,Public)),maps:get(peer_names,S)),relay => ba_buffee_desks:status(),membership => ba_buffee_membership:status(),rejected => maps:get(rejected,S),
         last_rejection => maps:get(last_rejection,S),diagnostics => ba_diagnostics:view(S),jobs => maps:map(fun(_,J) -> public_job(J) end,maps:get(jobs,S))},S};
 handle_call({exclude,Peer},_,#{protocol := P}=S) ->
     case maps:find(Peer,maps:get(sessions,P)) of {ok,Session} -> drop_session(Peer,maps:get(id,Session));error -> ok end,
     Next=fence_peer_jobs(Peer,reply(Peer,{error,peer_excluded},S)),
     {reply,ok,Next#{protocol := P#{sessions := maps:remove(Peer,maps:get(sessions,P))}}};
 handle_call({chat_message,Peer,Id,Text},{Owner,_},S) ->
-    case Owner=:=whereis(ba_buffee_chat) of
+    case Owner=:=ba_session_scope:whereis(ba_buffee_chat) of
         false -> {reply,{error,not_chat_owner},S};
         true ->
             case ba_buffee_control_protocol:chat_message(Peer,Id,Text,now_ms(),maps:get(protocol,S)) of
@@ -64,7 +64,7 @@ handle_call({audio_context,Peer},_,S) ->
         catch _:_ -> {error,no_authorized_session} end,
     {reply,Result,S};
 handle_call({time_message,Peer,Id,Payload},{Owner,_},S) ->
-    case Owner=:=whereis(ba_buffee_clock) of
+    case Owner=:=ba_session_scope:whereis(ba_buffee_clock) of
         false -> {reply,{error,not_clock_owner},S};
         true ->
             case ba_buffee_control_protocol:time_message(Peer,Id,Payload,now_ms(),maps:get(protocol,S)) of
@@ -77,7 +77,7 @@ handle_call({time_message,Peer,Id,Payload},{Owner,_},S) ->
             end
     end;
 handle_call({audio_message,Peer,Id,Payload},{Owner,_},S) ->
-    case Owner =:= whereis(ba_audio_receiver) of
+    case Owner =:= ba_session_scope:whereis(ba_audio_receiver) of
         false -> {reply,{error,not_audio_owner},S};
         true ->
             case ba_buffee_control_protocol:audio_message(Peer,Id,Payload,now_ms(),maps:get(protocol,S)) of
@@ -218,7 +218,7 @@ handle_info(expire,S) ->
 handle_info({'DOWN',Ref,process,_,_},#{handler_monitor := Ref} = S) ->
     {noreply,reset(handler_restarted,S#{handler_monitor := undefined})};
 handle_info({job_report,Handler,Context,Id,Report},S) ->
-    case Handler =:= whereis(ba_device_handler) of
+    case Handler =:= ba_session_scope:whereis(ba_device_handler) of
         true -> {noreply,send_job_report(Context,Id,Report,S)};
         false -> {noreply,S}
     end;
@@ -246,10 +246,13 @@ event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
 event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->
     Names=maps:get(peer_names,S),
     Next=case maps:find(<<"device_name">>,Value) of
-        {ok,Name} -> ba_contacts:observe_name(Peer,Name),gen_server:cast(ba_buffee,{peer_name,Peer,Name}),S#{peer_names := Names#{Peer => Name}};
+        {ok,Name} -> ba_contacts:observe_name(Peer,Name),gen_server:cast(ba_session_scope:ref(ba_buffee),{peer_name,Peer,Name}),S#{peer_names := Names#{Peer => Name}};
         error -> S#{peer_names := maps:remove(Peer,Names)}
     end,
-    reply(Peer,{ok,Value},Next);
+    HasError=lists:any(fun(E) -> maps:get(<<"state">>,E,<<>>)=:=<<"error">> end,
+        maps:values(maps:get(<<"audio">>,Value,#{}))),
+    Errors=maps:get(peer_errors,Next,#{}),
+    reply(Peer,{ok,Value},Next#{peer_errors => Errors#{Peer => HasError}});
 event(Peer,{reply,<<"capabilities.error">>,#{<<"reason">> := Reason}},S) ->
     Error = case Reason of <<"forbidden">> -> forbidden; <<"unavailable">> -> unavailable end,
     reply(Peer,{error,Error},S);
@@ -265,7 +268,7 @@ event(Peer,{capabilities_read,Request,Metrics},S) ->
         {error,_,_} -> reset(capability_reply_failed,S)
     end;
 event(_,{chat,Id,Text,Context},S) ->
-    case whereis(ba_buffee_chat) of
+    case ba_session_scope:whereis(ba_buffee_chat) of
         undefined -> S;
         P -> case process_info(P,message_queue_len) of
             {message_queue_len,N} when N<64 -> P ! {buffee_chat,Context,Id,Text},S;
@@ -290,7 +293,7 @@ event(_,{job,Operation,Id,Payload,Context},#{handler_requests := Requests} = S) 
                 <<"job.offer">> -> {accept_job,Context,Id,Payload};
                 <<"job.cancel">> -> {cancel_job,Context,Id}
             end,
-            Ref = gen_server:send_request(ba_device_handler,Request),
+            Ref = gen_server:send_request(ba_session_scope:ref(ba_device_handler),Request),
             S#{handler_requests := gen_server:reqids_add(Ref,{Context,Id},Requests)}
     end;
 event(_,{job_report,Id,Report,Context},S) -> receive_job_report(Context,Id,Report,S);
@@ -331,7 +334,7 @@ reset(Reason,#{callers := Callers,protocol := Protocol} = S) ->
     lists:foreach(fun({Ref,_}) -> try gen_server:receive_response(Ref,0) catch _:_ -> ok end end,
                   gen_server:reqids_to_list(maps:get(handler_requests,S))),
     Jobs = maps:map(fun(_,J) -> fence_job(J) end,maps:get(jobs,S)),
-    S#{callers := #{},peer_names := #{},protocol := ba_buffee_control_protocol:reset(Protocol),
+    S#{callers := #{},peer_names := #{},peer_errors => #{},protocol := ba_buffee_control_protocol:reset(Protocol),
        handler_requests := gen_server:reqids_new(),jobs := Jobs}.
 rejected(Reason,S) -> ba_diagnostics:count(Reason,S#{rejected := maps:get(rejected,S)+1,last_rejection := Reason}).
 now_ms() -> erlang:monotonic_time(millisecond).
@@ -403,10 +406,10 @@ close_peer(Peer,Reason,#{protocol := Protocol} = S) ->
 drop_session(Peer,Session) ->
     time_notify({time_session_down,Peer,Session}),
     audio_notify({audio_session_down,Peer,Session}),
-    Ref = gen_server:send_request(ba_device_handler,{session_down,Peer,Session}),
+    Ref = gen_server:send_request(ba_session_scope:ref(ba_device_handler),{session_down,Peer,Session}),
     try gen_server:receive_response(Ref,0) catch _:_ -> ok end, ok.
 ensure_handler_monitor(#{handler_monitor := undefined} = S) ->
-    case whereis(ba_device_handler) of
+    case ba_session_scope:whereis(ba_device_handler) of
         undefined -> S;
         Pid -> S#{handler_monitor := monitor(process,Pid)}
     end;
@@ -425,7 +428,7 @@ expire_jobs(#{jobs := Jobs} = S) ->
 audio_notify({audio_session_down,_,_}=Event) -> critical_audio_notify(Event);
 audio_notify({audio_session_renewed,_}=Event) -> critical_audio_notify(Event);
 audio_notify(Event) ->
-    case whereis(ba_audio_receiver) of
+    case ba_session_scope:whereis(ba_audio_receiver) of
         undefined -> ok;
         Pid -> case process_info(Pid,message_queue_len) of
             {message_queue_len,N} when N < 64 -> Pid ! Event,ok;
@@ -434,7 +437,7 @@ audio_notify(Event) ->
     end.
 
 time_notify(Event) ->
-    case whereis(ba_buffee_clock) of
+    case ba_session_scope:whereis(ba_buffee_clock) of
         undefined -> ok;
         Pid ->
             case Event of
@@ -447,7 +450,7 @@ time_notify(Event) ->
     end.
 
 critical_audio_notify(Event) ->
-    case whereis(ba_audio_receiver) of undefined -> ok;P -> P ! Event,ok end.
+    case ba_session_scope:whereis(ba_audio_receiver) of undefined -> ok;P -> P ! Event,ok end.
 
 connect_peer(Peer,S) ->
     case ba_buffee_control_protocol:connect(Peer,now_ms(),maps:get(protocol,S)) of

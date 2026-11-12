@@ -17,6 +17,7 @@ offset_compare_and_set_and_restart_test() ->
     with_clock(authority,fun(_) ->
         await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),
         Timeline = ba_buffee_clock:id(),
+        ?assertEqual({ok,300},ba_buffee_clock:offset()),
         ?assertEqual(ok,ba_buffee_clock:set_offset(250,1)),
         ?assertEqual({error,conflict},ba_buffee_clock:set_offset(500,1)),
         ?assertEqual({ok,250},ba_buffee_clock:offset()),
@@ -65,7 +66,7 @@ with_clock(Role,Fun) ->
     Self = binary:encode_hex(Pub),{Other,_} = crypto:generate_key(eddsa,ed25519),
     Authority = case Role of authority -> Self;member -> binary:encode_hex(Other) end,
     Buffee = binary:encode_hex(crypto:strong_rand_bytes(16)),
-    View = #{policy => #{buffee => Buffee,authority => Authority,peers => #{}},until => infinity,local_permissions => []},
+    View = #{policy => #{buffee => Buffee,authority => Authority,peers => #{}},until => infinity,local_permissions => [<<"owner">>]},
     Member = spawn(fun Loop() -> receive {'$gen_call',From,current} -> gen_server:reply(From,{ok,View}),Loop() end end),
     true = register(ba_buffee_membership,Member),
     Dir = filename:join("/tmp","ba_core-time-"++integer_to_list(erlang:unique_integer([positive]))),
@@ -136,4 +137,13 @@ session_renewal_retains_filter_but_invalidates_readiness_test() ->
             ?assertEqual(false,maps:get(confirmed,maps:get(clock,Next))),Next
         end),
         ?assertEqual({error,clock_unavailable},ba_buffee_clock:now())
+    end).
+
+settings_permission_is_independent_of_clock_hosting_test() ->
+    with_clock(authority,fun(_) ->
+        await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),
+        sys:replace_state(ba_buffee_clock,fun(S) -> S#{view := (maps:get(view,S))#{local_permissions => [<<"offset_write">>]}} end),
+        ?assertEqual({error,forbidden},ba_buffee_clock:set_offset(500)),
+        sys:replace_state(ba_buffee_clock,fun(S) -> S#{view := (maps:get(view,S))#{local_permissions => [<<"stream_publish">>]}} end),
+        ?assertEqual(ok,ba_buffee_clock:set_offset(500))
     end).

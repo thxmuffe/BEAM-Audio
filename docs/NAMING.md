@@ -2,7 +2,7 @@
 
 The 2026-11-11 migration applies the Buffee terminology to project-owned sources,
 file/directory names, test fixtures, APIs, protocol fields and current documents.
-Historical proposals and implementation records remain historical documentation.
+Git retains historical proposals and implementation records; the checkout keeps current documentation.
 Generated builds, downloaded dependencies and Git history are not project sources
 and are not rewritten by a source migration.
 

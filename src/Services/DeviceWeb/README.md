@@ -130,3 +130,9 @@ The standalone Web launcher starts the real shared control runtime. It currently
 does not configure a Windows audio Worker or package native capture/output. Its
 audio consent switches therefore do not establish streaming or playback. Windows
 audio integration is the next concrete work item, separate from web control.
+
+The web shell uses `list_sessions`, `new_session` and `close_session`. Existing
+commands carry `session` to select a local runtime tree; closing invokes Leave.
+`session.html` may be framed only by this same loopback origin. No third-party
+framing is permitted. Session workers share one Device identity and Reception
+connection per URL; the service still owns no audio/membership policy.

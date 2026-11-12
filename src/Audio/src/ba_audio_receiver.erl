@@ -5,7 +5,7 @@
          playback/1,playback/2,gain/2,set_contract/5,clear_contract/3,register_source/1,
          suspend/0,resume/0,network_changed/0,minimum_playout_delay/1,control_output/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 snapshot() -> call(snapshot).
 refresh() -> call(refresh).
 refresh(Peer) -> call({refresh,Peer}).
@@ -22,15 +22,15 @@ clear_contract(Direction,Peer,Source) -> call({clear_contract,Direction,Peer,Sou
 register_source(Pid) -> call({register,Pid}).
 suspend() -> call(suspend).
 resume() -> call(resume).
-network_changed() -> gen_server:cast(?MODULE,network_changed).
+network_changed() -> gen_server:cast(ba_session_scope:ref(?MODULE),network_changed).
 minimum_playout_delay(_) -> {error,unsupported_mixer_output_control}.
 control_output(_) -> {error,unsupported_mixer_output_control}.
 call(Request) ->
-    case ba_audio_sup:ensure_started() of ok -> gen_server:call(?MODULE,Request,10000);Error -> Error end.
+    case ba_audio_sup:ensure_started() of ok -> gen_server:call(ba_session_scope:ref(?MODULE),Request,10000);Error -> Error end.
 init([]) ->
     Items = ba_subscription:load(),
     erlang:send_after(250,self(),tick),
-    Control = whereis(ba_buffee_control),true = is_pid(Control),monitor(process,Control),
+    Control = ba_session_scope:whereis(ba_buffee_control),true = is_pid(Control),monitor(process,Control),
     {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
           providers => #{},catalogs => #{},contracts => #{},control => Control,
           suspended => false,resume_after => undefined,rejected => 0,poll_at => now_ms()}}.
@@ -141,7 +141,7 @@ handle_info(tick,S) ->
     end,
     {noreply,Recovered};
 handle_info({audio_output_failed,Mixer,Reason},S) ->
-    case Mixer=:=whereis(ba_audio_mixer) of
+    case Mixer=:=ba_session_scope:whereis(ba_audio_mixer) of
         true ->
             Items=maps:map(fun(_,R) -> R#{mix_ready => false,error => Reason} end,maps:get(subscriptions,S)),
             {noreply,ba_diagnostics:count(Reason,S#{subscriptions := Items})};

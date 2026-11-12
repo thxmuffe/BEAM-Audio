@@ -5,7 +5,7 @@
 snapshot(#{metrics := Metrics,plain := Plain}) when is_boolean(Metrics),is_list(Plain),length(Plain)=<32 ->
     Local=ba_app_session:snapshot(),Buffee=maps:get(buffee,Local),Self=maps:get(device,Local),
     Peers=lists:usort([Self|maps:get(members,Buffee,[])]),Parent=self(),Ref=make_ref(),
-    Workers=[{Peer,spawn_monitor(fun() -> Parent ! {Ref,Peer,read(Peer,Self,Metrics andalso not lists:member(Peer,Plain))} end)} || Peer <- Peers],
+    Workers=[{Peer,ba_session_scope:spawn_monitor(fun() -> Parent ! {Ref,Peer,read(Peer,Self,Metrics andalso not lists:member(Peer,Plain))} end)} || Peer <- Peers],
     Rows=collect(Workers,Ref,erlang:monotonic_time(millisecond)+6500,[]),
     #{buffee => Buffee,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(contacts,Local)) || Row <- Rows],
       state => maps:get(state,Buffee),observed_at_ms => erlang:system_time(millisecond)}.
@@ -15,7 +15,7 @@ named(#{id := Id}=Row,#{contacts := Contacts}) ->
         <<>> -> Row;Name -> Row#{name => Name}
     end.
 read(Self,Self,Metrics) ->
-    case whereis(ba_device_handler) of
+    case ba_session_scope:whereis(ba_device_handler) of
         undefined ->
             %% An idle Device has no Buffee audio Handler. Report that honestly,
             %% so a local monitor can stay open across Create/Join/Leave.

@@ -4,12 +4,12 @@
 -behaviour(gen_server).
 -export([start_link/0, sync/1, incoming/2, send/3, snapshot/0, peers/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-sync(Routes) -> gen_server:cast(?MODULE, {sync, Routes}).
-incoming(Peer, Signal) -> gen_server:cast(?MODULE, {incoming, Peer, Signal}).
-send(Peer, _Cap, Payload) -> gen_server:call(?MODULE, {send, Peer, Payload}).
-snapshot() -> gen_server:call(?MODULE, snapshot).
-peers() -> gen_server:call(?MODULE, peers).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE), ?MODULE, [], []).
+sync(Routes) -> gen_server:cast(ba_session_scope:ref(?MODULE), {sync, Routes}).
+incoming(Peer, Signal) -> gen_server:cast(ba_session_scope:ref(?MODULE), {incoming, Peer, Signal}).
+send(Peer, _Cap, Payload) -> gen_server:call(ba_session_scope:ref(?MODULE), {send, Peer, Payload}).
+snapshot() -> gen_server:call(ba_session_scope:ref(?MODULE), snapshot).
+peers() -> gen_server:call(ba_session_scope:ref(?MODULE), peers).
 init([]) ->
     process_flag(trap_exit, true),
     Enabled = case code:ensure_loaded('Elixir.ExWebRTC.PeerConnection') of
@@ -82,7 +82,7 @@ event(Peer, {packet, Data}, #{ready := Ready} = S) when byte_size(Data) =< 13107
         true = lists:member(Peer, Ready),
         case ba_buffee_wire:decode(json:decode(Data)) of
             {ok, _, {rtc, _, _, _}} -> ok;
-            {ok, _, Event} -> whereis(ba_buffees) ! {relay, {delivery, Peer, Event}};
+            {ok, _, Event} -> ba_session_scope:whereis(ba_buffees) ! {relay, {delivery, Peer, Event}};
             _ -> ok
         end
     catch _:_ -> ok end, S;

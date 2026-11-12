@@ -3,16 +3,16 @@
 -behaviour(gen_server).
 -export([start_link/0,reset/0,configure/4,route/0,advertise/1,lookup/2,send/3,send_route/4,status/0,peer_online/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
-reset() -> gen_server:call(?MODULE,reset).
-configure(Buffee,URLs,Primary,Routes) -> gen_server:call(?MODULE,{configure,Buffee,URLs,Primary,Routes}).
-route() -> gen_server:call(?MODULE,route).
-advertise(Cap) -> gen_server:call(?MODULE,{advertise,Cap}).
-lookup(URL,Cap) -> gen_server:call(?MODULE,{lookup,URL,Cap},4500).
-send(To,Type,Packet) -> gen_server:call(?MODULE,{send,To,Type,Packet},3000).
-send_route(To,Route,Type,Packet) -> gen_server:call(?MODULE,{send_route,To,Route,Type,Packet},3000).
-status() -> gen_server:call(?MODULE,status).
-peer_online(Peer) -> gen_server:call(?MODULE,{peer_online,Peer}).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
+reset() -> gen_server:call(ba_session_scope:ref(?MODULE),reset).
+configure(Buffee,URLs,Primary,Routes) -> gen_server:call(ba_session_scope:ref(?MODULE),{configure,Buffee,URLs,Primary,Routes}).
+route() -> gen_server:call(ba_session_scope:ref(?MODULE),route).
+advertise(Cap) -> gen_server:call(ba_session_scope:ref(?MODULE),{advertise,Cap}).
+lookup(URL,Cap) -> gen_server:call(ba_session_scope:ref(?MODULE),{lookup,URL,Cap},4500).
+send(To,Type,Packet) -> gen_server:call(ba_session_scope:ref(?MODULE),{send,To,Type,Packet},3000).
+send_route(To,Route,Type,Packet) -> gen_server:call(ba_session_scope:ref(?MODULE),{send_route,To,Route,Type,Packet},3000).
+status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
+peer_online(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{peer_online,Peer}).
 init([]) ->
     true = os:getenv("BA_IDENTITY_SEED") =/= false,
     true = os:getenv("BA_STATE_DIR") =/= false,
@@ -24,7 +24,8 @@ init([]) ->
           primary => maps:get(primary,Saved,undefined),urls => maps:get(urls,Saved,[]),
           routes => maps:get(routes,Saved,#{}),aliases => [],bound => #{},rejected => 0}}.
 handle_call(reset,_,S) ->
-    [ba_desk_connections_sup:stop(URL) || URL <- maps:keys(ba_desk_connections_sup:connections())],
+    offline(S),
+    [gen_server:cast(P,{detach,self()}) || P <- maps:values(ba_desk_connections_sup:connections())],
     {reply,ok,S#{mailbox := fresh(),buffee := undefined,primary := undefined,
         urls := [],routes := #{},aliases := [],bound := #{}}};
 handle_call({advertise,Cap},_,S) ->
@@ -40,7 +41,7 @@ handle_call({lookup,URL,Cap},_,S) ->
 handle_call(route,_,S) -> {reply,#{<<"desk">> => maps:get(primary,S),<<"mailbox">> => maps:get(mailbox,S)},S};
 handle_call({peer_online,Peer},_,S) ->
     Connections = ba_desk_connections_sup:connections(),
-    Online = lists:any(fun(URL) ->
+    Online = maps:is_key(Peer,maps:get(routes,S)) andalso lists:any(fun(URL) ->
         V = connection_status(URL,maps:get(URL,Connections,undefined)),
         maps:get(connected,V,false) andalso lists:member(Peer,maps:get(online,V,[]))
     end,maps:get(urls,S)),{reply,Online,S};
@@ -98,7 +99,7 @@ handle_info(_,S) -> {noreply,S}.
 valid_route(#{<<"desk">> := URL,<<"mailbox">> := Cap} = R,URLs) ->
     true = map_size(R) =:= 2,true = lists:member(URL,URLs),true = ba_buffee_job:hex(Cap,32),ok.
 notify(Name,Event) ->
-    case whereis(Name) of
+    case ba_session_scope:whereis(Name) of
         undefined -> ok;
         Pid -> case process_info(Pid,message_queue_len) of
             {message_queue_len,N} when N < 64 -> Pid ! Event;
@@ -106,23 +107,24 @@ notify(Name,Event) ->
         end
     end.
 fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
-terminate(_,_) -> ok.
+terminate(_,_) ->
+    [gen_server:cast(P,{detach,self()}) || P <- maps:values(ba_desk_connections_sup:connections())],ok.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([id,buffee,primary],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
 repair(#{buffee := undefined}=S) -> S;
 repair(#{urls := URLs}=S) ->
     Existing = ba_desk_connections_sup:connections(),
-    [ba_desk_connections_sup:stop(URL) || URL <- maps:keys(Existing),not lists:member(URL,URLs)],
+    [gen_server:cast(P,{detach,self()}) || {URL,P} <- maps:to_list(Existing),not lists:member(URL,URLs)],
     Bound = maps:from_list([begin
         P = case maps:find(URL,Existing) of
             {ok,Pid} -> Pid;
-            error -> ba_desk_connections_sup:ensure(URL,#{owner => ?MODULE,delivery => raw,register => false,
+            error -> ba_desk_connections_sup:ensure(URL,#{owner => self(),delivery => raw,register => false,
                 url => URL,tag => URL,max_owner_queue => 64})
         end,
         case is_pid(P) andalso maps:get(URL,maps:get(bound,S),undefined)=/=P of
-            true -> gen_server:cast(P,{open,maps:get(buffee,S),maps:get(mailbox,S)}),
-                    [gen_server:cast(P,{open,maps:get(buffee,S),Cap}) || Cap <- maps:get(aliases,S)],
-                    gen_server:cast(P,{watch,maps:keys(maps:get(routes,S))});
+            true -> gen_server:cast(P,{open,maps:get(buffee,S),maps:get(mailbox,S),self()}),
+                    [gen_server:cast(P,{open,maps:get(buffee,S),Cap,self()}) || Cap <- maps:get(aliases,S)],
+                    gen_server:cast(P,{watch,maps:keys(maps:get(routes,S)),self()});
             false -> ok
         end,{URL,P}
     end || URL <- URLs]),S#{bound := Bound}.
@@ -146,3 +148,16 @@ delivery(URL,From,Payload,Buffee,S) ->
     end,
     Next = case Delivery of {error,R} -> ba_diagnostics:count(R,S);_ -> S end,
     {noreply,Next}.
+
+%% Leaving one Session must not require disconnecting this Device's shared socket.
+offline(#{buffee := undefined}) -> ok;
+offline(#{id := Id,buffee := Buffee,routes := Routes,urls := URLs,primary := Primary,mailbox := Mailbox}) ->
+    {_,Private}=ba_device_store:identity(),
+    OwnRoute=#{<<"desk">> => Primary,<<"mailbox">> => Mailbox},
+    maps:foreach(fun(Peer,R) -> case Peer=:=Id of true -> ok;false ->
+        B=#{<<"v">> => 1,<<"type">> => <<"offline">>,<<"from">> => Id,<<"to">> => Peer,
+            <<"buffee">> => Buffee,<<"request">> => fresh(),<<"payload">> => #{<<"route">> => OwnRoute}},
+        Packet=ba_buffee_passport:sign(B,Private),
+        Body=#{<<"type">> => <<"membership">>,<<"buffee">> => Buffee,<<"packet">> => Packet},
+        send_available(URLs,ba_desk_connections_sup:connections(),Peer,maps:get(<<"mailbox">>,R),Body),ok
+    end end,Routes),ok.

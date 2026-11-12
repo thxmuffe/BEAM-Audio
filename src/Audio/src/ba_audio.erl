@@ -25,8 +25,8 @@ unpublish(Source) when node(Source)=:=node() -> gen_server:stop(Source).
 rebind(Source,Clock) when node(Source)=:=node() -> gen_server:call(Source,{rebind,Clock}).
 pause(Source,B) when node(Source)=:=node(),is_boolean(B) -> gen_server:call(Source,{pause,B}).
 sources() ->
-    case whereis(ba_audio_sup) of undefined -> [];_ ->
-        [P || {{source,_},P,_,_} <- supervisor:which_children(ba_audio_sup),is_pid(P)] end.
+    case ba_session_scope:whereis(ba_audio_sup) of undefined -> [];_ ->
+        [P || {{source,_},P,_,_} <- supervisor:which_children(ba_session_scope:ref(ba_audio_sup)),is_pid(P)] end.
 describe(Source) when is_pid(Source),node(Source)=:=node() -> gen_server:call(Source,describe).
 watch_sources() -> {error,use_buffee_catalogue}.
 sessions() -> ba_audio_sup:sessions().

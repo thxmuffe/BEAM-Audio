@@ -1,4 +1,4 @@
-# Buffee Clock and Playback Offset — step 7
+# Buffee Clock and Playback Offset
 
 The clock provider is independent of ownership. The original reference is
 preferred while present; otherwise an online Chef is selected deterministically.
@@ -15,16 +15,18 @@ The implementation state `authority` below denotes the current time-service writ
 not the Device's Owner role. Device clock drift and physical output alignment remain
 unqualified; software handover is not proof of acoustic synchronization.
 
+
+
 ## Configuration and API
 
-Use the [membership configuration](BUFFEE_MEMBERSHIP.md). Explicitly grant members
-`time_read` to sample the reference/read Offset, and `offset_write` to propose an
-Offset edit. Neither Passport membership, status access nor an audio grant implies
-these permissions. On the authority, for example:
+Use the [membership configuration](BUFFEE_MEMBERSHIP.md). `time_read` permits
+sampling the reference and reading Response time. Only Chefs and Owners can
+change Session-wide Response time; an old `offset_write` flag alone grants no
+such permission. Hosting the clock process also grants no editing privilege.
+For example, an Owner can authorize a Chef:
 
 ```erlang
-ok = ba_buffee_membership:grant(DeviceId,
-    [<<"offset_write">>,<<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>]).
+ok = ba_buffee_membership:set_role(DeviceId,chef).
 ```
 
 Lists must be sorted and unique. A member with `time_read` automatically establishes
@@ -50,7 +52,7 @@ ok = ba_buffee_clock:set_offset(300,3).
 {ok,LocalDeadline} = ba_buffee_clock:to_monotonic(UTC).
 ```
 
-Offset remains 5–30000 ms, initially 1000 ms. A local authority edit and an authorized
+Offset remains 5–30000 ms, initially 300 ms. A local authority edit and an authorized
 remote edit go through the same serialized writer. A stale expected revision
 returns `conflict`; simultaneous edits against one revision cannot both commit.
 Unchanged values do not create another revision. The writer checkpoints the
@@ -65,6 +67,8 @@ or changed publication clock ID prevents stamping; it does not substitute arriva
 time. Existing packets keep their targets when Offset changes. A decrease may
 make packet intervals overlap; bounded receivers explicitly reject those packets
 rather than silently retiming already assigned audio.
+
+
 
 ## Signed wire and timestamp measurement
 
@@ -108,16 +112,9 @@ quality requirements. Upstream acquisition happens once at startup or explicit
 resync, not on every follower request. SNTP retains request spacing, bounded
 failure backoff and kiss-of-death blocking until explicit operator resync/change.
 
-## Freshness, changes and recovery
 
-The timeline ID includes Buffee and a fresh authority clock incarnation. Every
-reply carries its reference revision; changing either resets the follower filter.
-A lower revision for the same incarnation is rejected. Authority clock restart
-creates a new timeline; followers cannot use samples or mappings from the old one.
-A same-timeline reference refresh resets the filter while preserving bounded
-mapping continuity. Old publication descriptors remain fenced until rebound to a
-new incarnation with the new clock ID; step 8's PCM recovery proof verifies that
-automatic path. Native capture/output qualification remains step 9.
+
+## Freshness, changes and recovery
 
 Mapping reads check membership authorization, sample-session authorization, filter
 readiness and a last-sample age of at most two sampling periods synchronously.
@@ -127,21 +124,6 @@ monotonic values can be negative). Stale mappings remain diagnostic holdover;
 they do not authorize new scheduling. Public status keeps measurement uncertainty,
 RTT, age, reference identity/revision and filter counts, while current absolute
 uncertainty and unmeasured oscillator drift remain unknown.
-
-On control-owner restart, a new authenticated hello can prepare one bounded fresh
-challenge beside the old session. Only a valid new proof replaces the old session
-and fences its jobs/media; replaying a hello alone cannot tear down active work.
-Candidates expire after 10 seconds. The clock reconnects to its pinned authority,
-fetches current Offset and requires a fresh sample. Step 8d now renews ordinary
-authorization in place using fresh two-way nonce proof: the session ID, live clock
-mapping and observations remain, and subsequent signed samples carry the new
-bounded deadline. If a session is actually lost, readiness is invalidated until
-fresh evidence returns; same-reference fresh observations may be retained.
-Resetting the entire window on every 60-second renewal would prevent the default
-20 × 5-second acquisition.
-Changed scope/reference, stale observations and explicit resync still clear the
-window; clock restart restores no observations. Simultaneous-open resolution for
-general peers is still outside this prototype.
 
 Explicit clock resync invalidates readiness until fresh evidence returns. Audio
 resume/handover asks for resync and requires a sample after its resume barrier.
@@ -156,6 +138,8 @@ restore freshness. Storage failure terminates the owner rather than reporting an
 uncheckpointed edit as committed. Epoch/permission changes still fence control
 sessions independently of Offset revision. No clock mapping, timestamp exchange,
 nonce, process identity or monotonic deadline is persisted.
+
+
 
 ## Evidence and remaining limits
 
@@ -184,21 +168,6 @@ It exercises two-source mixing, pauses, restoration, unsubscribe and Contracts.
 The production-cadence variant runs the real 20 × 5-second window across
 60-second control-session renewal. The test launcher library-path requirement is
 documented in [the stream guide](BUFFEE_STREAMS.md).
-
-These same-host, loopback-Reception checks do not establish Internet clock asymmetry,
-external UTC accuracy, DAC timing or physical speaker alignment. Step 8 adds
-bounded binary queues covering 30-second Offset in virtual time, continuous
-1000 ms PCM scheduling and reference-restart capture rebind, plus real Opus
-decoded-audio mixing/handoff. Existing timestamp, median, slew and independent
-packet-target calculations remain unchanged. Actual platform capture/output,
-native decoder packaging and physical listening/timing remain step-9 gates;
-small configured Offsets may still be below a particular device/network's needs.
-No product app, native audio device, deployment or physical listening was used.
-
-Buffee identity and retained credentials already survive process shutdown, but an
-ordinary member cannot replace an absent authority from cached policy. Returning
-to a completely abandoned Buffee, including member-first recovery, is separately
-planned as step 10; this clock increment does not invent authority succession.
 
 Underlying mechanisms reuse [OTP monotonic-time facilities](https://www.erlang.org/doc/apps/erts/time_correction.html)
 and [atomic ETS objects](https://www.erlang.org/doc/apps/stdlib/ets.html), with the

@@ -8,12 +8,12 @@
 -define(MAX_BYTES, 4096).
 -define(HISTORY_LIMIT, 200).
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE), ?MODULE, [], []).
 system(Event, Text, Details) when is_atom(Event), is_map(Details) ->
     system(info, Event, Text, Details).
 system(Level, Event, Text, Details) when is_atom(Event), is_map(Details),
         (Level =:= trace orelse Level =:= info orelse Level =:= warning orelse Level =:= error) ->
-    gen_server:call(?MODULE, {system, Level, Event, Text, Details}).
+    gen_server:call(ba_session_scope:ref(?MODULE), {system, Level, Event, Text, Details}).
 
 init([]) ->
     ok = net_kernel:monitor_nodes(true),

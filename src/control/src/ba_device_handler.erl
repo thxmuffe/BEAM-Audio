@@ -7,20 +7,20 @@
 -define(CAPACITY,2).
 -define(HISTORY,16).
 
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
-audio_changed() -> gen_server:cast(?MODULE,audio_changed),ok.
-capabilities() -> gen_server:call(?MODULE,capabilities,100).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
+audio_changed() -> gen_server:cast(ba_session_scope:ref(?MODULE),audio_changed),ok.
+capabilities() -> gen_server:call(ba_session_scope:ref(?MODULE),capabilities,100).
 capabilities(false) -> capabilities();
-capabilities(true) -> gen_server:call(?MODULE,capability_metrics,100).
-status() -> gen_server:call(?MODULE,status).
-enable_test(Enabled) -> gen_server:call(?MODULE,{enable_test,Enabled}).
-start(Capability,Args) -> gen_server:call(?MODULE,{start,Capability,Args}).
-cancel(Id) -> gen_server:call(?MODULE,{cancel,Id}).
-set_test_contract(Manager,Id,Revision) -> gen_server:call(?MODULE,{test_contract,Manager,Id,Revision}).
-clear_test_contract() -> gen_server:call(?MODULE,clear_test_contract).
-accept_job(Context,Id,Offer) -> gen_server:call(?MODULE,{accept_job,Context,Id,Offer}).
-cancel_job(Context,Id) -> gen_server:call(?MODULE,{cancel_job,Context,Id}).
-session_down(Peer,Session) -> gen_server:call(?MODULE,{session_down,Peer,Session}).
+capabilities(true) -> gen_server:call(ba_session_scope:ref(?MODULE),capability_metrics,100).
+status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
+enable_test(Enabled) -> gen_server:call(ba_session_scope:ref(?MODULE),{enable_test,Enabled}).
+start(Capability,Args) -> gen_server:call(ba_session_scope:ref(?MODULE),{start,Capability,Args}).
+cancel(Id) -> gen_server:call(ba_session_scope:ref(?MODULE),{cancel,Id}).
+set_test_contract(Manager,Id,Revision) -> gen_server:call(ba_session_scope:ref(?MODULE),{test_contract,Manager,Id,Revision}).
+clear_test_contract() -> gen_server:call(ba_session_scope:ref(?MODULE),clear_test_contract).
+accept_job(Context,Id,Offer) -> gen_server:call(ba_session_scope:ref(?MODULE),{accept_job,Context,Id,Offer}).
+cancel_job(Context,Id) -> gen_server:call(ba_session_scope:ref(?MODULE),{cancel_job,Context,Id}).
+session_down(Peer,Session) -> gen_server:call(ba_session_scope:ref(?MODULE),{session_down,Peer,Session}).
 init([]) ->
     case application:get_env(ba_core,audio_automation,false) of true -> self() ! audio_worker;false -> ok end,
     {ok,#{instance => fresh(),revision => 0,enabled => false,active => #{},history => [],
@@ -47,17 +47,17 @@ handle_call({test_contract,Manager,Id,Revision},_,S) ->
 handle_call(clear_test_contract,_,S) ->
     {reply,ok,changed((stop_jobs(fun(_) -> true end,contract_revoked,S))#{contract := undefined})};
 handle_call({accept_job,Context,Id,Offer},{Caller,_},S) ->
-    case Caller =:= whereis(ba_buffee_control) of
+    case Caller =:= ba_session_scope:whereis(ba_buffee_control) of
         true -> evaluate_job(Context,Id,Offer,watch_control(Caller,S));
         false -> {reply,{error,not_control},S}
     end;
 handle_call({cancel_job,Context,Id},{Caller,_},S) ->
-    case Caller =:= whereis(ba_buffee_control) of
+    case Caller =:= ba_session_scope:whereis(ba_buffee_control) of
         true -> cancel_network_job(Context,Id,watch_control(Caller,S));
         false -> {reply,{error,not_control},S}
     end;
 handle_call({session_down,Peer,Session},{Caller,_},S) ->
-    case Caller =:= whereis(ba_buffee_control) of
+    case Caller =:= ba_session_scope:whereis(ba_buffee_control) of
         true ->
             Match = fun(#{context := C}) -> maps:get(peer,C) =:= Peer andalso maps:get(session,C) =:= Session end,
             Next = stop_jobs(Match,session_lost,S),
@@ -89,10 +89,10 @@ handle_cast(audio_changed,#{audio_worker := P}=S) -> ba_device_audio:changed(P),
 handle_cast(_,S) -> {noreply,S}.
 
 handle_info(audio_worker,S) ->
-    case whereis(ba_device_worker_sup) of
+    case ba_session_scope:whereis(ba_device_worker_sup) of
         undefined -> erlang:send_after(50,self(),audio_worker),{noreply,S};
         _ ->
-            case supervisor:start_child(ba_device_worker_sup,#{id => audio,start => {ba_device_audio,start_link,[self()]},restart => temporary}) of
+            case supervisor:start_child(ba_session_scope:ref(ba_device_worker_sup),#{id => audio,start => {ba_device_audio,start_link,[self()]},restart => temporary}) of
                 {ok,P} -> monitor(process,P),{noreply,S#{audio_worker => P}};
                 {error,{already_started,P}} -> {noreply,S#{audio_worker => P}};
                 _ -> erlang:send_after(250,self(),audio_worker),{noreply,S}
@@ -138,7 +138,7 @@ handle_info(_,S) -> {noreply,S}.
 start_test(Duration,#{active := Active} = S) ->
     Id = fresh(), Attempt = fresh(),
     Spec = #{owner => self(),id => Id,attempt => Attempt,duration_ms => Duration},
-    Result = try supervisor:start_child(ba_device_worker_sup,
+    Result = try supervisor:start_child(ba_session_scope:ref(ba_device_worker_sup),
         #{id => Id,start => {ba_device_test_worker,start_link,[Spec]},
           restart => temporary,shutdown => 1000})
         catch exit:_ -> {error,worker_supervisor_unavailable} end,
@@ -153,7 +153,7 @@ stop(Id,Outcome,#{active := Active} = S) ->
         error -> S;
         {ok,#{monitor := Ref}} ->
             %% The supervisor waits for shutdown before returning the slot.
-            case supervisor:terminate_child(ba_device_worker_sup,Id) of
+            case supervisor:terminate_child(ba_session_scope:ref(ba_device_worker_sup),Id) of
                 ok -> ok;
                 {error,not_found} -> ok
             end,
@@ -169,7 +169,7 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
     Count = map_size(Active),
     Base=#{<<"device_name">> => ba_device_label:local(Instance),<<"instance">> => Instance,<<"revision">> => Revision,<<"test">> => #{
         <<"supported">> => true,<<"available">> => Enabled andalso Count < ?CAPACITY andalso
-            is_pid(whereis(ba_device_worker_sup)),
+            is_pid(ba_session_scope:whereis(ba_device_worker_sup)),
         <<"requires_consent">> => true,<<"consent">> => Enabled,
         <<"capacity">> => ?CAPACITY,<<"active">> => Count,<<"max_duration_ms">> => 10000}},
     case application:get_env(ba_core,audio_automation,false) of

@@ -21,14 +21,14 @@ command(#{<<"method">> := <<"readiness">>}=R) ->
     {ok,readiness(ba_app_session:snapshot(),maps:get(<<"previous">>,R,#{}))};
 command(#{<<"method">> := <<"audio_lifecycle">>,<<"active">> := Active}) when is_boolean(Active) ->
     application:set_env(ba_core,audio_suspended,not Active),
-    case whereis(ba_audio_receiver) of
+    case ba_session_scope:whereis(ba_audio_receiver) of
         undefined -> ok;
         _ when Active -> ba_audio_receiver:resume();
         _ -> ba_audio_receiver:suspend()
     end,
-    case whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end;
+    case ba_session_scope:whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end;
 command(#{<<"method">> := <<"network_changed">>}) ->
-    case whereis(ba_audio_receiver) of undefined -> ok;_ -> ba_audio_receiver:network_changed(),ok end;
+    case ba_session_scope:whereis(ba_audio_receiver) of undefined -> ok;_ -> ba_audio_receiver:network_changed(),ok end;
 command(#{<<"method">> := <<"undo">>}=R) -> ba_device_config:undo(config_options(R));
 command(#{<<"method">> := <<"redo">>}=R) -> ba_device_config:redo(config_options(R));
 command(#{<<"method">> := <<"configuration">>}) -> {ok,ba_device_config:snapshot()};
@@ -38,6 +38,7 @@ command(#{<<"method">> := <<"capabilities">>,<<"consent">> := Values}=R) ->
 command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}=R) ->
     ba_device_config:change(#{capability_key(K) => B},config_options(R));
 command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);
+command(#{<<"method">> := <<"request_chef">>}) -> ba_buffee_membership:request_chef();
 command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_buffee_chat:send(Text);
 command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_buffee_clock:set_offset(Offset);
 command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->

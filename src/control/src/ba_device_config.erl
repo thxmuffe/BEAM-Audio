@@ -5,12 +5,12 @@
 -export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 -define(LIMIT,100).
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
-consent() -> gen_server:call(?MODULE,consent).
-snapshot() -> gen_server:call(?MODULE,snapshot).
-change(Patch,Options) -> gen_server:call(?MODULE,{edit,Patch,Options}).
-undo(Options) -> gen_server:call(?MODULE,{undo,Options}).
-redo(Options) -> gen_server:call(?MODULE,{redo,Options}).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
+consent() -> gen_server:call(ba_session_scope:ref(?MODULE),consent).
+snapshot() -> gen_server:call(ba_session_scope:ref(?MODULE),snapshot).
+change(Patch,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{edit,Patch,Options}).
+undo(Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{undo,Options}).
+redo(Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{redo,Options}).
 init([]) ->
     Default=application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false}),
     Initial=#{format => 1,revision => 0,cursor => 0,seen => [],
@@ -88,7 +88,7 @@ apply_command({redo,_},#{cursor := C,states := States}) when C+1>=length(States)
 apply_command({redo,_},#{cursor := C}=S) -> S#{cursor := C+1}.
 persist(S) -> try ba_device_store:save(device_configuration,S) of ok -> ok;_ -> {error,configuration_save_failed}
               catch _:_ -> {error,configuration_save_failed} end.
-changed() -> case whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end.
+changed() -> case ba_session_scope:whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end.
 handle_cast(_,S) -> {noreply,S}.
 handle_info(_,S) -> {noreply,S}.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([revision,cursor],S);(log,_) -> [];(_,_) -> redacted end,Status).

@@ -78,6 +78,7 @@ command(#{<<"op">> := <<"invite_expired">>},_,_) ->
     result({ok,ba_buffee_passport:invitation(ba_buffee_passport:sign(Body#{<<"expires">> := 1},Key))});
 command(#{<<"op">> := <<"grant">>,<<"peer">> := Peer,<<"permissions">> := Ps},_,_) ->
     result(ba_buffee_membership:grant(Peer,Ps));
+command(#{<<"op">> := <<"request_chef">>},_,_) -> result(ba_buffee_membership:request_chef());
 command(#{<<"op">> := <<"set_role">>,<<"peer">> := Peer,<<"role">> := Role},_,_) ->
     Action=case Role of <<"owner">> -> owner;<<"chef">> -> chef;<<"guest">> -> guest;<<"remove_owner">> -> remove_owner end,
     result(ba_buffee_membership:set_role(Peer,Action));

@@ -20,7 +20,7 @@ local_request(Req) ->
                  [<<"same-origin">>,<<"none">>]).
 
 route(<<"GET">>,<<"/api/session">>,Req,#{mode := Mode}) ->
-    reply(200,#{mode => Mode,token => ba_device_web_sup:token()},Req);
+    reply(200,#{mode => Mode,device_name => ba_device_label:display(unicode:characters_to_binary(ba_device_label:os_name())),token => ba_device_web_sup:token()},Req);
 route(<<"POST">>,<<"/api/command">>,Req,State) ->
     Token=ba_device_web_sup:token(),
     Given=cowboy_req:header(<<"x-beam-audio-token">>,Req,<<>>),
@@ -70,9 +70,10 @@ read_chunk(Req,State,Acc,Deadline,Remaining) ->
 
 allowed(#{<<"method">> := Method}=Command) ->
     not maps:is_key(<<"instance">>,Command) andalso lists:member(Method,
-        [<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
+        [<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
          <<"end_buffee">>,<<"capability">>,<<"undo">>,<<"redo">>,<<"send">>,
          <<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
+         <<"request_chef">>,<<"set_role">>,<<"remove_device">>,<<"exclude">>,
          <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>]);
 allowed(_) -> false.
 
@@ -103,7 +104,7 @@ device_request(Command,#{record := Path}) ->
 device_request(Command,_) ->
     %% The service is optional: it never creates a Device or enables audio.
     true=is_pid(whereis(ba_sup)),
-    ba_device_api:request(Command).
+    ba_sessions:request(Command).
 
 asset(Path,Req,#{assets := Root}) ->
     %% Only direct children; never serve credentials or arbitrary host files.
@@ -137,4 +138,4 @@ respond(Status,Type,Body,Req) ->
         <<"cache-control">> => <<"no-store">>,
         <<"x-content-type-options">> => <<"nosniff">>,
         <<"referrer-policy">> => <<"no-referrer">>,
-        <<"content-security-policy">> => <<"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'">>},Body,Req).
+        <<"content-security-policy">> => <<"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'">>},Body,Req).

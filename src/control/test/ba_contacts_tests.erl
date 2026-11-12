@@ -40,6 +40,8 @@ crud_and_validation() ->
     ?assertMatch({error, _}, ba_contacts:put(Id1, <<>>)).
 
 groups_and_resolve() ->
+    ?assertEqual(ok,ba_contacts:group(<<"Empty">>,[])),
+    ?assertEqual([],maps:get(<<"Empty">>,maps:get(groups,ba_contacts:list()))),
     Id1 = binary:copy(<<"1">>, 64),
     Id2 = binary:copy(<<"2">>, 64),
     UnknownId = binary:copy(<<"f">>, 64),

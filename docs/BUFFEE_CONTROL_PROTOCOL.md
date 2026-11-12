@@ -1,22 +1,8 @@
 # Buffee control protocol v1 — steps 2–8d
 
-Implemented 2026-11-08 under the [Buffee plan](PLAN.md) and
-[boundary contract](BUFFEE_CONTRACT.md). This implements authenticated status
-and capability reads plus the [bounded test-job flow](BUFFEE_JOBS.md).
-[Admission/Passports](BUFFEE_MEMBERSHIP.md) and [scoped stream signaling](BUFFEE_STREAMS.md)
-are implemented separately; media does not travel through this Reception protocol.
+
 
 ## Runtime and local configuration
-
-`ba_runtime:start(buffee_control)` now uses the [step-5 membership configuration](BUFFEE_MEMBERSHIP.md).
-The earlier locally provisioned peer-policy fixture has been replaced by
-nonce-bound authority admission and signed current policy. `ba_buffee_desks`
-owns desired Reception routes; independently supervised relay Workers own connections.
-The membership owner installs policy/routes
-into control. The local Device branch owns the Handler and its initially empty
-Worker supervisor. This profile starts the Buffee Clock, not old chat or the
-trust/distribution carrier; audio starts on local demand. Both stable identity seed and private state directory
-are required. Product app integration remains step 9.
 
 Current runtime policy pins Buffee, authority, Manager, epoch/revision and per-sender
 operation grants. Membership alone grants no operations. `job_offer` additionally
@@ -30,6 +16,8 @@ call `read_status(PeerId)`. Successful replies contain only
 `read_capabilities(PeerId)` returns the Handler's bounded test capability snapshot
 when the peer has the separate capability grant; reading never enables Workers.
 `ba_runtime:connect/1` is the old OTP API and is not used by this profile.
+
+
 
 ## Wire, authentication and dispatch
 
@@ -95,6 +83,8 @@ Transport is currently ordered Reception WSS with verified public TLS. The Recep
 observe payloads; signing does not supply end-to-end encryption. WebRTC control
 and its DTLS fingerprint binding are not implemented or claimed by this step.
 
+
+
 ## Limits and failure behavior
 
 Initial handshake expiry is 10 seconds; authorization lasts at most 60 seconds
@@ -136,43 +126,6 @@ identity, session stages/deadlines/renewal counts, relay status, bounded diagnos
 counters and rejection summaries, without keys or nonce state. OTP status
 and termination formatting redact private keys and internal message/log content.
 
+
+
 ## Previous membership and subscription state
-
-At the user's request, new builds ignore version-1 `ba_device_store` records:
-policy, authority, remembered Reception routes and subscription intent. New saves use
-version 2; other unsupported formats fail visibly. Secure device identity keys
-are separate and unchanged. This is an intentional clean start, not a migration
-of old permissions or revocation of other Devices. Old files remain until
-replaced; they are not imported. Installed old bundles were not launched or
-altered and still contain their old code. App integration/launch is step 9.
-
-## Validation
-
-From `src/control`:
-
-```sh
-rebar3 compile
-rebar3 eunit --module=ba_buffee_job_tests,ba_device_handler_tests,ba_buffee_control_protocol_tests,ba_relay_tests,ba_native_tests
-```
-
-From the core root, explicitly run the real-Reception check:
-
-```sh
-python3 tests/control/buffee-control-smoke.py
-```
-
-This starts two disposable `erl -noshell` runtimes without names/cookies, with
-fresh test seeds and isolated temporary state directories. It uses the existing public Reception,
-not another service or a GUI. It checks status/capability reads, local Contract
-acceptance/rejection, test-job completion/retry/cancel/expiry, Worker failure and
-lease-bounded Manager-loss cleanup. Forbidden raw start, forged signer and replay
-checks remain; no arbitrary spawn, old/audio processes or OTP connections are
-allowed. EUnit additionally covers local lifecycle, Contract/grant/role boundaries,
-unchanged retry deadlines, bounded caches and malformed/oversize input. The earlier
-state-reset check remains in `ba_device_store_tests`; that storage path is
-unchanged by steps 3–4. See [the job guide](BUFFEE_JOBS.md) for failure limits.
-No app build, installation, listening or physical timing claim follows.
-
-Uses OTP's [JSON decoder callbacks](https://www.erlang.org/doc/apps/stdlib/json.html)
-and [Ed25519 signing/verification](https://www.erlang.org/doc/apps/crypto/crypto.html),
-with no added dependency or bespoke encryption.

@@ -1,5 +1,7 @@
 # WebRTC source-to-output timing
 
+
+
 ## Current result
 
 RemoteIO callback host/sample timestamps are device-verified and map into the
@@ -11,6 +13,8 @@ Inspection used the exact framework revision pinned by
 `2a990ce0ccd00a3ad449f2201a8e5c2dad53177d` (M156).
 Read-only upstream excerpts are cached under ignored
 `builds/diagnostics/webrtc-timing-source/`.
+
+
 
 ## Where the information is lost
 
@@ -34,6 +38,8 @@ stretch/compress/conceal audio. Pairing the latest packet timestamp with an
 arbitrary callback, or counting output frames against nominal RTP time, would
 create misleading precision. A decoded-frame start timestamp also does not prove
 an exact linear correspondence for every sample inside a time-stretched frame.
+
+
 
 ## Recheck — a source rebuild is not yet justified
 
@@ -71,34 +77,7 @@ precision/control cannot be obtained through existing interfaces. It is not an
 accepted prerequisite or a necessary fix for the sound-quality/volume reports.
 No WebRTC rebuild or dependency replacement was performed.
 
-## Conditional source-extension outline (not the immediate next step)
 
-If existing interfaces prove insufficient, keep Opus/NetEq and Erlang policy.
-Consider a reproducible source build of the
-**same pinned WebRTC revision**, isolated behind the existing stream handler,
-then make a narrow metadata extension:
-
-1. Preserve decoded-frame RTP timestamp, SSRC, sample rate/frame count and
-   validity alongside the decoded PCM. Verify timestamp meaning during startup,
-   concealment and acceleration/deceleration before using it for correction.
-2. Carry this metadata through the native PCM handoff and any retained-buffer
-   offsets to the RemoteIO callback. Do not assume 480-frame callbacks or one
-   decoder invocation per callback. Begin with the existing single receiver;
-   source-specific timing through a mixed output needs explicit semantics.
-3. Report the source/output association with validity, age, resolution and
-   uncompensated delays through the existing Erlang/inspector path. Clear it on
-   reset, pause/restart or unavailable metadata. Preserve useful callback timing
-   independently when source correspondence is unavailable.
-4. Verify the native association on the device before implementing common
-   presentation scheduling. Add focused checks only after asking the user, in
-   accordance with repository preferences. Physical output alignment still
-   requires measurement; this metadata alone cannot establish acoustic accuracy.
-
-A source-built framework is a packaging/build change, not a different audio
-engine. Keep the current prebuilt playback baseline usable until the extension
-compiles and its actual timing behavior is verified. Do not modify downloaded
-headers/binaries, guess private object layouts or add a second jitter algorithm.
-The source build and extension have not been prepared or compiled in this increment.
 
 ## Primary sources
 
@@ -111,6 +90,8 @@ The source build and extension have not been prepared or compiled in this increm
 - [Pinned audio/video synchronizer and metric limitation](https://webrtc.googlesource.com/src/+/2a990ce0ccd00a3ad449f2201a8e5c2dad53177d/video/rtp_streams_synchronizer2.cc)
 - [W3C estimatedPlayoutTimestamp semantics](https://www.w3.org/TR/webrtc-stats/#dom-rtcinboundrtpstreamstats-estimatedplayouttimestamp)
 
+
+
 ## Device observation
 
 After deployment, six live inspector snapshots during audible audio-only playback
@@ -119,6 +100,8 @@ playoutId were absent; output callback timing and packet counts advanced normall
 This metric is unavailable in this observed session. Assess remaining native
 metadata/factory interfaces next; this alone does not prove a source rebuild is
 required. The user reports the current playback sounds good.
+
+
 
 ## Native injection recheck
 

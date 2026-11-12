@@ -1,6 +1,6 @@
 %% Ownership is trusted administration, independent of participation and placement.
 -module(ba_buffee_roles).
--export([owner/2,chef/2,roles/2,change/4,initial/1,may_publish/2]).
+-export([owner/2,chef/2,roles/2,change/4,initial/1,may_publish/2,can_edit_settings/1]).
 
 owner(Id,P) -> lists:member(<<"owner">>,permissions(Id,P)).
 chef(Id,P) -> lists:member(<<"stream_publish">>,permissions(Id,P)).
@@ -29,3 +29,6 @@ update(guest,P) -> lists:delete(<<"stream_publish">>,P);
 update(owner,P) -> [<<"owner">>|P];
 update(remove_owner,P) -> lists:delete(<<"owner">>,P);
 update(_,_) -> {error,invalid_role}.
+
+can_edit_settings(Permissions) ->
+    lists:member(<<"owner">>,Permissions) orelse lists:member(<<"stream_publish">>,Permissions).

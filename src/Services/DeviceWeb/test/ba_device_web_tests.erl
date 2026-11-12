@@ -15,7 +15,7 @@ web_test_() ->
 setup() ->
     %% Tests use their own assets/state; no OpenSound checkout, Desk or hardware.
     Root=filename:absname("../../.."),
-    true=code:add_patha(filename:join(Root,"builds/intermediates/control/default/lib/ba_core/ebin")),
+    [true=code:add_patha(Path) || Path <- filelib:wildcard(filename:join(Root,"builds/intermediates/control/default/lib/*/ebin"))],
     {ok,_}=application:ensure_all_started(inets),
     {ok,_}=application:ensure_all_started(cowboy),
     Dir=filename:join([Root,"builds/intermediates/DeviceWeb",
@@ -59,7 +59,7 @@ session_and_assets(C) ->
     {200,Headers,_}=get(URL,"/state.mjs"),
     ?assertEqual("application/javascript",proplists:get_value("content-type",Headers)),
     ?assertEqual("no-store",proplists:get_value("cache-control",Headers)),
-    ?assert(string:find(proplists:get_value("content-security-policy",Headers),"frame-ancestors 'none'")=/=nomatch),
+    ?assert(string:find(proplists:get_value("content-security-policy",Headers),"frame-ancestors 'self'")=/=nomatch),
     lists:foreach(fun(Path) -> ?assertEqual(404,status(get(URL,Path))) end,
         ["/private.json","/../private.json","/%2e%2e/private.json","/.hidden.js","/api/nodes","/nested/state.mjs"]),
     ?assertEqual(503,status(post(URL,#{method => snapshot}))).
@@ -146,6 +146,9 @@ direct_device(#{dir := Dir}=C) ->
         URL=start(C,#{}),
         {200,_,Body}=post(URL,#{method => snapshot}),
         Snapshot=json:decode(Body),
+        [?assertEqual(200,status(post(URL,Command))) || Command <-
+            [#{method => request_chef},#{method => set_role,device => <<"unknown">>,role => chef},
+             #{method => remove_device,device => <<"unknown">>}]],
         ?assertEqual(<<"idle">>,maps:get(<<"state">>,maps:get(<<"buffee">>,Snapshot))),
         ?assertNot(maps:is_key(<<"managed">>,Snapshot)),
         {200,_,Changed}=post(URL,#{method => capability,capability => microphone,enabled => true}),
@@ -155,7 +158,16 @@ direct_device(#{dir := Dir}=C) ->
         Monitor=ba_buffee_monitor:snapshot(#{metrics => false,plain => []}),
         ?assertMatch([#{local := true,state := idle}],maps:get(devices,Monitor)),
         {200,_,Undone}=post(URL,#{method => undo}),
-        ?assertEqual(false,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Undone))))
+        ?assertEqual(false,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Undone)))),
+        {200,_,Added}=post(URL,#{method => new_session}),
+        Tab=maps:get(<<"session_id">>,json:decode(Added)),
+        {200,_,Listing}=post(URL,#{method => list_sessions}),
+        ?assertEqual(2,length(maps:get(<<"sessions">>,json:decode(Listing)))),
+        {200,_,Scoped}=post(URL,#{method => capability,session => Tab,capability => microphone,enabled => true}),
+        ?assertEqual(true,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Scoped)))),
+        ?assertEqual(false,maps:get(microphone,ba_device_config:consent())),
+        {200,_,Closed}=post(URL,#{method => close_session,session => Tab}),
+        ?assertEqual(1,length(maps:get(<<"sessions">>,json:decode(Closed))))
     after
         application:stop(ba_core),
         lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old)

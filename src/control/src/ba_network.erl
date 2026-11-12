@@ -5,7 +5,7 @@
 -export([start_link/0, snapshot/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE), ?MODULE, [], []).
 snapshot() ->
     case ba_relay:enabled() of
         true -> relay_snapshot();
@@ -27,7 +27,7 @@ relay_snapshot() ->
                 end} || N <- Members],
       edges => [[Id, N] || N <- Direct, lists:member(N, Members)]}.
 direct_snapshot() ->
-    try gen_server:call(?MODULE, snapshot, 250) of
+    try gen_server:call(ba_session_scope:ref(?MODULE), snapshot, 250) of
         Snapshot -> Snapshot
     catch exit:_ -> #{nodes => [], edges => []} end.
 
@@ -81,7 +81,7 @@ probe(Node, #{pending := Pending} = S) ->
         true -> S;
         false ->
             Parent = self(), Ref = make_ref(),
-            spawn(fun() ->
+            ba_session_scope:spawn(fun() ->
                 Status = try gen_server:call({ba_buffees, Node}, health, 1500) of
                     #{node := Node} -> {running, responsive};
                     _ -> {unresponsive, unexpected_reply}

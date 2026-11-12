@@ -44,7 +44,7 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 - Avoid reinventing functionality already provided by OTP or established libraries.
 - Implement audio interpretation, metering, processing and timing/buffering
   policy in Erlang first on the default path. Isolated third-party native media
-  backends are permitted under the accepted audio plan and decision 0006; replace
+  backends are permitted under the accepted audio plan and the current audio architecture; replace
   the default path only after relevant playback/recovery/timing evidence. Erlang
   owns the shared clock reference, presentation schedule and correction policy;
   native engines execute approved transport, buffering and audio operations and

@@ -49,9 +49,18 @@ def main():
                 d.request('clock_prepare',interval_ms=1000,samples=2)
                 assert d.request('join', invitation=invitation, desk=url)['ok']
                 role(d, 'guest')
+            assert b.request('request_chef')['ok']
+            control.wait(a,lambda s: b.identity['id'] in s['membership']['chef_requests'])
+            assert a.request('set_role',peer=b.identity['id'],role='chef')['ok']
+            role(b,'chef')
+            assert a.request('set_role',peer=b.identity['id'],role='guest')['ok']
+            role(b,'guest')
+            assert b.identity['id'] not in a.request('snapshot')['membership']['chef_requests']
+            assert b.request('request_chef')['ok']
             assert a.request('grant',peer=b.identity['id'],permissions=['stream_publish','time_read'])['ok']
             assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
             role(b, 'chef')
+            assert b.request('end_buffee')=={'error':'owner_only'}
             assert b.request('set_role', peer=c.identity['id'], role='chef') == {'error': 'owner_only'}
             assert a.request('set_role', peer=b.identity['id'], role='owner')['ok']
             assert role(b, 'owner')['membership']['roles'] == ['owner', 'chef']

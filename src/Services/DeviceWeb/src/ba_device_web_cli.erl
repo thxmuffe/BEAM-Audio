@@ -21,6 +21,7 @@ main() ->
                         ok=filelib:ensure_dir(filename:join(Dir,"state")),os:putenv("BA_STATE_DIR",Dir),
                         os:putenv("BA_IDENTITY_SEED",binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(32))))
                 end,
+                os:putenv("BA_DEVICE_NAME",os:getenv("BA_DEVICE_NAME",ba_device_label:os_name())),
                 application:load(ba_core),
                 application:set_env(ba_core,restore_buffee_on_start,true),
                 application:set_env(ba_core,buffee_default_permissions,ba_app_session:permissions()),

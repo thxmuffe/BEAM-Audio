@@ -6,15 +6,15 @@
 
 start() ->
     ok = ba_audio_sup:ensure_started(),
-    case supervisor:start_child(ba_audio_sup,
+    case supervisor:start_child(ba_session_scope:ref(ba_audio_sup),
             #{id => audio_input, start => {?MODULE, start_link, []},restart => temporary}) of
-        {ok, _} -> gen_server:call(?MODULE, start);
-        {error, {already_started, _}} -> gen_server:call(?MODULE, start);
+        {ok, _} -> gen_server:call(ba_session_scope:ref(?MODULE), start);
+        {error, {already_started, _}} -> gen_server:call(ba_session_scope:ref(?MODULE), start);
         Error -> Error
     end.
-stop() -> gen_server:call(?MODULE, stop).
-status() -> case whereis(?MODULE) of undefined -> #{state => stopped}; _ -> gen_server:call(?MODULE, status) end.
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+stop() -> gen_server:call(ba_session_scope:ref(?MODULE), stop).
+status() -> case ba_session_scope:whereis(?MODULE) of undefined -> #{state => stopped}; _ -> gen_server:call(ba_session_scope:ref(?MODULE), status) end.
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE), ?MODULE, [], []).
 init([]) -> {ok, #{state => stopped, port => undefined}}.
 handle_call(Request,From,S) ->
     {reply,Reply,Next}=input_call(Request,From,S),

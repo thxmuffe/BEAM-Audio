@@ -5,21 +5,21 @@
 -export([start_link/0, snapshot/0, create/1, join/3, send/2, leave/1, remove_both/2, join_relay/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE), ?MODULE, [], []).
 snapshot() ->
-    try gen_server:call(?MODULE, snapshot)
+    try gen_server:call(ba_session_scope:ref(?MODULE), snapshot)
     catch exit:_ -> [] end.
-create(Name) -> gen_server:call(?MODULE, {create, Name}).
-join(Node, Id, Token) -> gen_server:call(?MODULE, {join, Node, Id, Token}, 6000).
+create(Name) -> gen_server:call(ba_session_scope:ref(?MODULE), {create, Name}).
+join(Node, Id, Token) -> gen_server:call(ba_session_scope:ref(?MODULE), {join, Node, Id, Token}, 6000).
 send(Id, Text) -> connected_call({send, Id, Text}).
 leave(Id) -> connected_call({leave, Id}).
 remove_both(Id, Target) -> connected_call({remove_both, Id, Target}).
-join_relay(Invitation) -> gen_server:call(?MODULE, {join_relay, Invitation}, 8000).
+join_relay(Invitation) -> gen_server:call(ba_session_scope:ref(?MODULE), {join_relay, Invitation}, 8000).
 connected_call(Command) ->
     case ba_relay:enabled() andalso not maps:get(connected, ba_relay:status())
          andalso ba_direct:peers() =:= [] of
         true -> {error, <<"Reception disconnected. Wait for reconnection.">>};
-        false -> gen_server:call(?MODULE, Command)
+        false -> gen_server:call(ba_session_scope:ref(?MODULE), Command)
     end.
 
 init([]) ->

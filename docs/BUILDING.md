@@ -1,10 +1,8 @@
 # Building after the repository split
 
-Core module/application/configuration names now use `ba_*` / `ba_core` / `BA_*`.
-See [NAMING.md](NAMING.md) before rebuilding consumers. The OpenSound repository
-has not been migrated to those entry points; its app integration remains step 9.
-Old generated artifacts are not renamed in place, and no product app is needed
-for core compilation or the headless backend checks.
+Core uses `ba_*` / `ba_core` / `BA_*`. OpenSound resolves the sibling core through
+`BEAM_AUDIO_ROOT`. Product sources are not needed for core compilation. Generated
+artifacts live under each repository's `builds/` directory.
 
 ## Root build commands
 
@@ -138,7 +136,7 @@ are introduced by the split. No service deployment is needed for local repairs.
 The Mac and unsigned device builds pass. On Windows, core/native compilation,
 packaging and isolated native app startup were verified on November 4; saved
 rejoin and real cross-platform playback still need your manual check. See the
-[Windows verification record](apps/Windows/README.md). Keep the existing presentation expectation:
+[Windows verification record](../../OpenSound/docs/Windows/README.md). Keep the existing presentation expectation:
 these builds preserve adaptive playback and do not yet synchronize the speakers.
 The moved Render configuration is ready for the core repository layout; the live
 service's repository selection/deployment has not been changed.

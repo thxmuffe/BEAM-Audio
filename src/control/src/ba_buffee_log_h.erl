@@ -5,11 +5,12 @@
 -export([log/2]).
 
 log(Event,#{config := #{recipient := Pid}}) ->
+    Target=case ba_session_scope:whereis(ba_buffee_chat) of undefined -> Pid;P -> P end,
     case notice(Event) of
         none -> ok;
         Text ->
-            case process_info(Pid,message_queue_len) of
-                {message_queue_len,N} when N<16 -> Pid ! {ba_crash_notice,Text};
+            case process_info(Target,message_queue_len) of
+                {message_queue_len,N} when N<16 -> Target ! {ba_crash_notice,Text};
                 _ -> ok
             end
     end,
@@ -33,6 +34,7 @@ notice(#{msg := {report,#{label := {supervisor,child_terminated},report := Repor
     end;
 notice(_) -> none.
 
+own_supervisor({global,{ba_session,_,Name}}) -> own_name(Name);
 own_supervisor({_,Name}) -> own_name(Name);
 own_supervisor(Name) -> own_name(Name).
 own_name(Name) when is_atom(Name) -> lists:prefix("ba_",atom_to_list(Name));

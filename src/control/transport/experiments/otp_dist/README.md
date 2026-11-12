@@ -4,7 +4,7 @@ Steps 1, 2 and 2a of the trusted-cluster plan: independent OTP **29.1.2 / ERTS 1
 VMs use a reliable, ordered binary WebRTC DataChannel as their native Erlang
 distribution carrier. The reusable carrier, admission and Reception modules have
 moved to `src/control/src/` for Mac app integration. This directory retains the
-isolated probe drivers. See [Mac usage](../../../../../docs/apps/macOS/README.md) for the
+isolated probe drivers. See [Mac usage](../../../../../../OpenSound/docs/MACOS_APP.md) for the
 new app path, which has not yet been connection-tested.
 
 ## Run

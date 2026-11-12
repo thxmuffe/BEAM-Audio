@@ -200,7 +200,10 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
         <<"time.message">> ->
             Grant = ba_buffee_time_protocol:permission(maps:get(<<"kind">>,Payload)),
             Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
-            case Grant=:=none orelse lists:member(Grant,Permissions) of
+            Allowed=case maps:get(<<"kind">>,Payload) of
+                <<"offset.set">> -> ba_buffee_roles:can_edit_settings([atom_to_binary(P) || P <- Permissions]);
+                _ -> Grant=:=none orelse lists:member(Grant,Permissions) end,
+            case Allowed of
                 true -> {ok,[],[{time,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
                 false ->
                     Error = #{<<"kind">> => <<"error">>,<<"operation">> => maps:get(<<"kind">>,Payload),<<"reason">> => <<"forbidden">>},

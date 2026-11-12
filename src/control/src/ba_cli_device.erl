@@ -19,7 +19,8 @@ boot() ->
         Seed=ba_cli_store:identity(Dir),os:putenv("BA_IDENTITY_SEED",binary_to_list(Seed)),os:putenv("BA_STATE_DIR",Dir),
         os:putenv("BA_APP_PID",os:getpid()),
         os:putenv("BA_DEVICE_NAME",case maps:get(<<"observer">>,C,false) of
-            true -> "Buffee monitor";false -> binary_to_list(maps:get(<<"name">>,C)) end),
+            true -> "Buffee monitor";false -> case maps:is_key(<<"web">>,C) of
+                true -> ba_device_label:os_name();false -> binary_to_list(maps:get(<<"name">>,C)) end end),
         os:putenv("BA_MAC_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_audio_input"])),
         os:putenv("BA_MAC_DEVICE_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_device_audio"])),
         ok=application:load(ba_core),
@@ -98,7 +99,7 @@ handle_call({request,#{<<"instance">> := I}=R},_,#{<<"instance">> := I}=S) ->
     Reply=case Method of
         <<"stop">> -> #{error => null};
         <<"kill">> -> #{error => null};
-        _ -> ba_device_api:request(maps:remove(<<"instance">>,R))
+        _ -> ba_sessions:request(maps:remove(<<"instance">>,R))
     end,
     %% The optional service publishes its endpoint; native core releases must
     %% not import modules from a web application they do not package.

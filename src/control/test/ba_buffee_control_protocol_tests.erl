@@ -242,7 +242,12 @@ time_permission_is_not_implied_by_status_or_membership_test() ->
     P = #{<<"kind">> => <<"offset.set">>,<<"revision">> => 1,<<"offset_ms">> => 250},
     {ok,Packet,_} = p(time_message,[B,Id,P,5,SA]),
     ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Packet,6,SB])),
-    Policy = maps:get(policy,SB),Granted = SB#{policy := Policy#{peers := #{A => [offset_write]}}},
+    Policy = maps:get(policy,SB),
+    GuestWithOldFlag = SB#{policy := Policy#{peers := #{A => [offset_write]}}},
+    ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Packet,6,GuestWithOldFlag])),
+    Owner = SB#{policy := Policy#{peers := #{A => [owner]}}},
+    ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Owner])),
+    Granted = SB#{policy := Policy#{peers := #{A => [stream_publish]}}},
     ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Granted])).
 
 new_handshake_after_expiry_discards_an_older_candidate_test() ->

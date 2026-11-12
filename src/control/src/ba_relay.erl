@@ -80,6 +80,19 @@ handle_call({lookup,Buffee,Cap},From,#{ready := true,lookups := Pending}=S) when
         Error -> {reply,Error,S}
     end;
 handle_call({lookup,_,_},_,S) -> {reply,{error,disconnected},S}.
+handle_cast({open,Buffee,Cap,Owner},S) when is_pid(Owner) ->
+    Owners=maps:get(mailbox_owners,S,#{}),
+    case lists:member(Owner,maps:values(Owners)) of false -> monitor(process,Owner);true -> ok end,
+    handle_cast({open,Buffee,Cap},S#{mailbox_owners => Owners#{Cap => Owner}});
+handle_cast({watch,Nodes,Owner},S) when is_pid(Owner) ->
+    Watches=(maps:get(owner_watches,S,#{}))#{Owner => Nodes},
+    handle_cast({watch,lists:usort(lists:append(maps:values(Watches)))},S#{owner_watches => Watches});
+handle_cast({detach,Owner},S) ->
+    Owners=maps:get(mailbox_owners,S,#{}),Caps=[Cap || {Cap,P} <- maps:to_list(Owners),P=:=Owner],
+    Next=lists:foldl(fun(Cap,Acc) -> {noreply,N}=handle_cast({close,Cap},Acc),N end,S,Caps),
+    Watches=maps:remove(Owner,maps:get(owner_watches,S,#{})),
+    handle_cast({watch,lists:usort(lists:append(maps:values(Watches)))},
+        Next#{mailbox_owners => maps:without(Caps,Owners),owner_watches => Watches});
 handle_cast({open, Buffee, Cap}, #{boxes := Boxes} = S) ->
     Next = S#{boxes := Boxes#{Cap => Buffee}}, maybe_ws(#{op => <<"open">>, buffee => Buffee, mailbox => Cap}, Next), {noreply, Next};
 handle_cast({close, Cap}, #{boxes := Boxes} = S) ->
@@ -123,6 +136,7 @@ handle_info_event({gun_ws, Pid, Stream, {text, Text}}, #{conn := Pid, stream := 
     try {noreply, incoming(json:decode(Text), S)} catch _:_ -> {noreply, retry(invalid_desk_message,S)} end;
 handle_info_event({gun_down, Pid, _, Reason, _}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
 handle_info_event({'DOWN', _, process, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(connection_closed,S)};
+handle_info_event({'DOWN',_,process,Owner,_},S) -> handle_cast({detach,Owner},S);
 handle_info_event({handshake_timeout, Pid}, #{conn := Pid, ready := false} = S) -> {noreply, retry(handshake_timeout,S)};
 handle_info_event({gun_error, Pid, _, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
 handle_info_event({gun_error, Pid, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
@@ -189,15 +203,28 @@ ws(Msg, #{conn := Pid, stream := Stream}) ->
             end;
         false -> {error, too_large}
     end.
-notify({delivery,_,_,_} = Event, #{owner := Owner} = S) when is_pid(Owner) ->
+notify({delivery,_,Cap,_}=Event,#{mailbox_owners := Owners}=S) ->
+    case maps:find(Cap,Owners) of
+        {ok,P} -> deliver(P,Event,S);
+        error -> notify_default(Event,S)
+    end;
+notify(Event,#{mailbox_owners := Owners}=S) ->
+    [deliver(P,Event,S) || P <- lists:usort(maps:values(Owners))],ok;
+notify(Event,S) -> notify_default(Event,S).
+deliver(P,Event,S) ->
+    case process_info(P,message_queue_len) of
+        {message_queue_len,N} when N<64 -> P ! owner_message(Event,S),ok;
+        _ -> {error,overloaded}
+    end.
+notify_default({delivery,_,_,_} = Event, #{owner := Owner} = S) when is_pid(Owner) ->
     Limit = maps:get(max_owner_queue,S,infinity),
     case process_info(Owner,message_queue_len) of
         {message_queue_len,N} when N < Limit -> Owner ! owner_message(Event,S);
         _ -> {error,overloaded}
     end;
-notify(Event,#{owner := Owner} = S) when is_pid(Owner) -> Owner ! owner_message(Event,S);
-notify(Event,#{owner := Name} = S) ->
-    case whereis(Name) of undefined -> {error,unavailable}; Pid -> notify(Event,S#{owner := Pid}) end.
+notify_default(Event,#{owner := Owner} = S) when is_pid(Owner) -> Owner ! owner_message(Event,S);
+notify_default(Event,#{owner := Name} = S) ->
+    case whereis(Name) of undefined -> {error,unavailable}; Pid -> notify_default(Event,S#{owner := Pid}) end.
 owner_message(Event,S) ->
     case maps:get(tag,S,undefined) of undefined -> {relay,Event}; Tag -> {relay,Tag,Event} end.
 name(N) when is_atom(N) -> atom_to_binary(N);

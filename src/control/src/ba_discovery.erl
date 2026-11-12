@@ -3,9 +3,9 @@
 -behaviour(gen_server).
 -export([start_link/0, discover/1, nodes/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-discover(URL) -> gen_server:call(?MODULE, {discover, URL}, 5000).
-nodes() -> gen_server:call(?MODULE, nodes).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE), ?MODULE, [], []).
+discover(URL) -> gen_server:call(ba_session_scope:ref(?MODULE), {discover, URL}, 5000).
+nodes() -> gen_server:call(ba_session_scope:ref(?MODULE), nodes).
 init([]) -> {ok, []}.
 handle_call(nodes, _From, Nodes) -> {reply, Nodes, Nodes};
 handle_call({discover, URL}, _From, Nodes) ->

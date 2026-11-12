@@ -10,7 +10,7 @@ init({#{source_key := Key} = Offer,Owner}) when is_pid(Owner),node(Owner)=:=node
 handle_call(describe,_,#{offer := Offer,source_key := Key,incarnation := Inc} = S) ->
     {reply,Offer#{source_key => Key,incarnation => Inc},S};
 handle_call({attach,Pid},{Receiver,_},#{sessions := Sessions} = S) ->
-    case Receiver=:=whereis(ba_audio_receiver) andalso map_size(Sessions)<16 andalso node(Pid)=:=node() of
+    case Receiver=:=ba_session_scope:whereis(ba_audio_receiver) andalso map_size(Sessions)<16 andalso node(Pid)=:=node() of
         true -> Ref = monitor(process,Pid),{reply,ok,S#{sessions := Sessions#{Ref => Pid}}};
         false -> {reply,{error,unauthorized_or_full},S}
     end;
@@ -20,10 +20,10 @@ handle_call({rebind,Clock},{Owner,_},#{owner := Owner,offer := #{profiles := #{c
     maps:foreach(fun(Ref,_) -> demonitor(Ref,[flush]) end,Sessions),
     Inc = binary:encode_hex(crypto:strong_rand_bytes(16)),
     Next = Offer#{profiles := #{channel => D#{clock := Clock}}},
-    ba_audio_receiver ! {publication_rebound,self(),Next#{source_key => maps:get(source_key,S),incarnation => Inc}},
+    ba_session_scope:whereis(ba_audio_receiver) ! {publication_rebound,self(),Next#{source_key => maps:get(source_key,S),incarnation => Inc}},
     {reply,ok,S#{offer := Next,incarnation := Inc,sessions := #{}}};
 handle_call({pause,B},{Owner,_},#{owner := Owner,offer := Offer} = S) when is_boolean(B) ->
-    ba_audio_receiver ! {publication_state,self(),B},
+    ba_session_scope:whereis(ba_audio_receiver) ! {publication_state,self(),B},
     {reply,ok,S#{offer := Offer#{paused := B}}};
 handle_call({push_encoded,Timing,Packet},{Owner,_},
             #{owner := Owner,offer := #{paused := false,profiles := #{channel := #{encoding := opus}}},sessions := Sessions}=S)

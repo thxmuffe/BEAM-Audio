@@ -49,7 +49,7 @@ def main():
             assert r.request('join',invitation=a.request('invite')['value'],desk=urls[i])['ok']
             control.wait(r,lambda s:s['membership']['state']=='authorized')
             assert r.request('clock_snapshot')['state']!='synchronized','membership must not imply time access'
-        assert a.request('grant',peer=b.identity['id'],permissions=['offset_write','time_read'])['ok']
+        assert a.request('grant',peer=b.identity['id'],permissions=['stream_publish','time_read'])['ok']
         assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
         if args.production_cadence:
             start=time.monotonic()
@@ -63,7 +63,7 @@ def main():
             return
         states=[ready(r) for r in runtimes]
         timeline=states[0]['timeline'];assert all(s['timeline']==timeline for s in states)
-        assert all(s['offset_policy']['offset_ms']==1000 for s in states)
+        assert all(s['offset_policy']['offset_ms']==300 for s in states)
         assert b.request('clock_reference')=={'error':'authority_reference_only'}
         assert c.request('offset_set',offset_ms=1200,revision=1)=={'error':'forbidden'}
         assert a.request('clock_snapshot')['offset_policy']['revision']==1

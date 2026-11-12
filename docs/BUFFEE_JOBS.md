@@ -1,9 +1,9 @@
-# Contracts and Jobs — step 4
-
 Implemented for ordinary granted coordinators (updated 2026-11-11) and the predefined
 non-audio test Worker. This extends the [control protocol](BUFFEE_CONTROL_PROTOCOL.md)
 and [local Handler](DEVICE_HANDLER.md) under the [active roadmap](PLAN.md).
 It is not a generic remote execution API, audio assignment system or scheduler.
+
+
 
 ## Roles and permission
 
@@ -41,6 +41,8 @@ for the same Contract is rejected. `clear_test_contract()` revokes network test
 work without stopping unrelated locally started Workers. Disabling test consent
 stops both local and network test work. Grants are not persisted or restored after
 Handler restart. Contract revisions are distinct from the outer Buffee policy revision.
+
+
 
 ## Offer, acknowledgement and result
 
@@ -84,6 +86,8 @@ from the assignee; they do not prove physical work or speaker output. The Manage
 checks assignee/session/Job ID/attempt and fences conflicting or stale results.
 Acknowledgement and completion are separate protocol steps.
 
+
+
 ## Lease, cancellation and retry
 
 The receiver's finite lease starts at first local acceptance and is clipped to
@@ -118,6 +122,8 @@ is evicted to make space. Reaching a limit rejects new work. There is no durable
 exactly-once guarantee across session/process/VM restart. The first task is
 idempotent and no uncertain job is replayed automatically after return.
 
+
+
 ## Failure boundaries
 
 - Observed peer absence, Reception loss or session expiry closes the relevant session
@@ -134,28 +140,3 @@ idempotent and no uncertain job is replayed automatically after return.
 
 All expiry/stop decisions are Erlang-owned prototype lifecycle behavior. They
 are not real-time native/audio deadline qualification or a new correction policy.
-
-## Checks and next increment
-
-From `src/control`:
-
-```sh
-rebar3 eunit --module=ba_buffee_job_tests,ba_device_handler_tests,ba_buffee_control_protocol_tests,ba_relay_tests,ba_native_tests
-rebar3 compile
-```
-
-From the core root: `python3 tests/control/buffee-control-smoke.py` runs two
-disposable unnamed BEAM runtimes through the existing public Reception. It checks
-offers, local Contract rejection, accepted/completed attempt identity, retry,
-cancellation, expiry, Worker crash and bounded cleanup after Manager loss, plus
-the earlier status/capability/authentication checks. No product app, saved app
-state, private app identity, separate Reception, audio or GUI is used.
-
-[Passports, current policy/revocation on return and multi-Reception introductions](BUFFEE_MEMBERSHIP.md)
-are implemented in step 5. Audio subscriptions are step 6; applications remain step 9 in the
-macOS → Windows → iOS order. No app build/deployment is part of this increment.
-
-Primary references: [OTP asynchronous requests](https://www.erlang.org/doc/apps/stdlib/gen_server.html#send_request/2)
-and [OTP local supervision](https://www.erlang.org/doc/system/sup_princ.html).
-Their process/request mechanisms are reused; Contract and Job semantics are
-explicit project behavior.

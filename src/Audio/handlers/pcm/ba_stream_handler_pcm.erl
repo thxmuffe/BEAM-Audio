@@ -36,7 +36,7 @@ output_available() -> ba_audio_output:available().
 start_output(Owner, Descriptor) ->
     case application:get_env(ba_core, audio_output_adapter) of
         {ok, Adapter} ->
-            supervisor:start_child(ba_audio_sup,
+            supervisor:start_child(ba_session_scope:ref(ba_audio_sup),
                 #{id => {output, make_ref()},
                   start => {ba_audio_output, start_link, [Owner, Descriptor, Adapter]},
                   restart => temporary});

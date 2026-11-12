@@ -4,13 +4,13 @@
 -export([start/0, start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 start() ->
-    case supervisor:start_child(ba_sup, #{id => windows_playback,
+    case supervisor:start_child(ba_session_scope:ref(ba_sup), #{id => windows_playback,
             start => {?MODULE,start_link,[]}}) of
         {ok,_} -> ok;
         {error,{already_started,_}} -> ok;
         Error -> Error
     end.
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 init([]) ->
     Root = filename:dirname(filename:dirname(code:which(?MODULE))),
     Port = open_port({spawn_executable,filename:join([Root,"audio-runtime","python.exe"])},

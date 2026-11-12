@@ -20,7 +20,7 @@ node_name(Platform) ->
 load(Name, Default) ->
     case transient(Name) of
         true ->
-            try ets:lookup(ba_buffee_state,Name) of [{_,Data}] -> Data;[] -> Default
+            try ets:lookup(ba_session_scope:table(ba_buffee_state),Name) of [{_,Data}] -> Data;[] -> Default
             catch error:badarg -> Default end;
         false -> load_file(Name,Default)
     end.
@@ -44,7 +44,7 @@ load_file(Name,Default) ->
 
 save(Name, Data) ->
     case transient(Name) of
-        true -> ets:insert(ba_buffee_state,{Name,Data}),ok;
+        true -> ets:insert(ba_session_scope:table(ba_buffee_state),{Name,Data}),ok;
         false -> save_file(Name,Data)
     end.
 save_file(Name,Data) ->
@@ -65,7 +65,7 @@ save_file(Name,Data) ->
     end.
 
 path(Name) ->
-    case os:getenv("BA_STATE_DIR") of
+    case ba_session_scope:state_directory(Name) of
         false -> undefined; % Existing command-line/probe profiles remain ephemeral.
         Directory ->
             %% Never persist membership under an identity that cannot be restored.

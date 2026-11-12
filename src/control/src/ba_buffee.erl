@@ -1,21 +1,23 @@
-%% One active Buffee per runtime. Ownership survives leaving or app shutdown.
+%% One active Buffee per local Session scope. Ownership survives leaving or app shutdown.
 -module(ba_buffee).
 -behaviour(gen_server).
 -export([start_link/0,create/2,join/1,start/1,status/0,connection/0,disconnect/0,remember/3,remember_authority/2,leave/0,end_buffee/0,invite/2,ended/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
-start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
-create(Name,Desks) -> start(#{mode => create,name => Name,desks => Desks}).
+start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
+create(Name,Desks) ->
+    Config=#{mode => create,name => Name,desks => Desks},
+    start(case ba_session_scope:current() of undefined -> Config;Id -> Config#{buffee => Id} end).
 join(Link) -> start(#{mode => join,invitation => Link}).
-start(Config) -> gen_server:call(?MODULE,{start,Config},15000).
-status() -> gen_server:call(?MODULE,status).
-connection() -> gen_server:call(?MODULE,connection).
-disconnect() -> gen_server:call(?MODULE,disconnect,15000).
-remember_authority(Pid,Saved) -> gen_server:cast(?MODULE,{remember_authority,Pid,Saved}).
-remember(Pid,Name,Member) -> gen_server:cast(?MODULE,{remember,Pid,Name,Member}).
-leave() -> gen_server:call(?MODULE,leave,15000).
-end_buffee() -> gen_server:call(?MODULE,end_buffee,15000).
-invite(Selection,TTL) -> gen_server:call(?MODULE,{invite,Selection,TTL}).
-ended(Membership) -> gen_server:cast(?MODULE,{ended,Membership}).
+start(Config) -> gen_server:call(ba_session_scope:ref(?MODULE),{start,Config},15000).
+status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
+connection() -> gen_server:call(ba_session_scope:ref(?MODULE),connection).
+disconnect() -> gen_server:call(ba_session_scope:ref(?MODULE),disconnect,15000).
+remember_authority(Pid,Saved) -> gen_server:cast(ba_session_scope:ref(?MODULE),{remember_authority,Pid,Saved}).
+remember(Pid,Name,Member) -> gen_server:cast(ba_session_scope:ref(?MODULE),{remember,Pid,Name,Member}).
+leave() -> gen_server:call(ba_session_scope:ref(?MODULE),leave,15000).
+end_buffee() -> gen_server:call(ba_session_scope:ref(?MODULE),end_buffee,15000).
+invite(Selection,TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite,Selection,TTL}).
+ended(Membership) -> gen_server:cast(ba_session_scope:ref(?MODULE),{ended,Membership}).
 init([]) ->
     %% Load the record schema's atoms before binary_to_term(...,[safe]).
     {module,ba_buffee_membership}=code:ensure_loaded(ba_buffee_membership),
@@ -83,9 +85,9 @@ handle_cast({remember,Membership,Name,Member},#{membership := Membership}=S) ->
 handle_cast(_,S) -> {noreply,S}.
 handle_info(cleanup,S) ->
     %% Recreate local workers before restoring saved participation or ownership.
-    application:unset_env(ba_core,buffee_membership),
+    ba_session_scope:unset_env(buffee_membership),
     Next=stop(S),
-    case application:get_env(ba_core,restore_buffee_on_start,false) of
+    case restore_enabled() of
         true -> self() ! restore;
         false -> ok
     end,
@@ -102,18 +104,18 @@ handle_info({'DOWN',Ref,process,_,_},#{monitor := Ref}=S) -> {noreply,stop(S)};
 handle_info(_,S) -> {noreply,S}.
 stop(S) ->
     case maps:find(monitor,S) of {ok,Ref} -> demonitor(Ref,[flush]);error -> ok end,
-    supervisor:terminate_child(ba_sup,ba_buffee_runtime_sup),
-    supervisor:delete_child(ba_sup,ba_buffee_runtime_sup),
+    supervisor:terminate_child(ba_session_scope:ref(ba_sup),ba_buffee_runtime_sup),
+    supervisor:delete_child(ba_session_scope:ref(ba_sup),ba_buffee_runtime_sup),
     ba_buffee_desks:reset(),(maps:with([remembered],S))#{state => idle,connection_state => unavailable}.
 activate(Config,S) ->
-    application:set_env(ba_core,buffee_membership,Config),
-    Result=supervisor:start_child(ba_sup,#{id => ba_buffee_runtime_sup,
+    ba_session_scope:set_env(buffee_membership,Config),
+    Result=supervisor:start_child(ba_session_scope:ref(ba_sup),#{id => ba_buffee_runtime_sup,
         start => {ba_buffee_runtime_sup,start_link,[]},restart => temporary,
         type => supervisor,shutdown => infinity}),
-    application:unset_env(ba_core,buffee_membership),
+    ba_session_scope:unset_env(buffee_membership),
     case Result of
         {ok,Pid} -> {ok,S#{state := active,pid => Pid,monitor => monitor(process,Pid),
-            membership => whereis(ba_buffee_membership),connection_state := rejoining}};
+            membership => ba_session_scope:whereis(ba_buffee_membership),connection_state := rejoining}};
         {error,_} -> ba_buffee_desks:reset(),
             {{error,buffee_start_failed},S#{connection_state := failed}}
     end.
@@ -185,3 +187,8 @@ rejoin_config(#{mode := join,invitation := Link}=Config,
         case maps:get(<<"buffee">>,Invitation)=:=Id of true -> Recovery;false -> Config end
     catch _:_ -> Config end;
 rejoin_config(Config,_) -> Config.
+
+restore_enabled() ->
+    ba_session_scope:get_env(restore_buffee_on_start,false) andalso
+    (ba_session_scope:current()=/=undefined orelse lists:any(fun(D) -> maps:get(id,D)=:=<<"default">> end,
+        ba_device_store:load(web_sessions,[#{id => <<"default">>}]))).

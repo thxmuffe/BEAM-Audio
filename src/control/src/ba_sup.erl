@@ -7,12 +7,14 @@ start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 init([]) ->
     case application:get_env(ba_core,runtime_profile,legacy_apps) of
         buffee_control ->
+            ok=ba_session_scope:init(),
             {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
                  [#{id => ba_device_config,start => {ba_device_config,start_link,[]}},
                   #{id => ba_contacts,start => {ba_contacts,start_link,[]}},
                   #{id => ba_desk_connections_sup,start => {ba_desk_connections_sup,start_link,[]},type => supervisor,shutdown => infinity},
                   #{id => ba_buffee_desks,start => {ba_buffee_desks,start_link,[]}},
-                  #{id => ba_buffee,start => {ba_buffee,start_link,[]}}]}};
+                  #{id => ba_buffee,start => {ba_buffee,start_link,[]}},
+                  #{id => ba_sessions,start => {ba_sessions,start_link,[]}}]}};
         _ -> existing_profile()
     end.
 

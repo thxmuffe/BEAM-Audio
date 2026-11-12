@@ -1,6 +1,6 @@
-# Audio networking and adapters — deferred research
+# Audio networking research
 
-Recorded 2026-11-11. These are bookmarks, not selected dependencies or current
+These are bookmarks, not selected dependencies or current
 implementation work. Restore working audio and the ownership model first.
 
 ## Product direction

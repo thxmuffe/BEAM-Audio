@@ -3,7 +3,7 @@
 The [native OTP carrier](experiments/otp_dist/README.md) now lives in
 `src/control/src/` and is integrated into the Mac app sources and build. The Mac
 native bridge reuses the shared OTP chat worker and the global Render Reception for
-introductions. See [Mac usage and limitations](../../../docs/apps/macOS/README.md).
+introductions. See [Mac usage and limitations](../../../../OpenSound/docs/MACOS_APP.md).
 Probe drivers remain experimental. The older application transport below is
 retained for the current iPhone/Windows path and existing regression helpers.
 
@@ -76,7 +76,7 @@ library search path without changing OS trust or system library locations.
 
 Mac and iPhone sources now package the native carrier and dependencies. Neither
 new app path has been verified running. iPhone uses target-built static NIFs;
-see [its preparation guide](../../../docs/apps/iOS/README.md). Device compilation/linkage
+see [its preparation guide](../../../../OpenSound/docs/iOS/README.md). Device compilation/linkage
 passes; simulator native compilation and on-device connection remain unverified.
 In the older runtime profile, `ba_direct` remains optional and the existing
 relay continues to work without those libraries.
