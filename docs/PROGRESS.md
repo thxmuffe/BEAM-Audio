@@ -235,3 +235,84 @@ spawn that desktop command. Name lookup now uses the supplied BA_DEVICE_NAME
 first and an iPhone fallback on iOS, avoiding desktop OS queries. Three focused
 label tests pass, including supplied/missing iOS device names. A real iPhone
 creation check remains manual after installing the rebuilt app.
+
+iOS scaling correction: replaced WKWebView.pageZoom with a host-supplied
+--ui-scale and relative component measurements in the shared stylesheet. iOS
+remains 120%, Mac/Web 100%; viewport sizes and media breakpoints do not scale.
+Pinch zoom remains unrestricted. Manual iPhone sizing/reflow check is pending.
+
+The focused native WebKit regression check now also applies 120% component scale
+at phone width and verifies that neither home nor the nested Session document
+has horizontal overflow; it passes. This is macOS WebKit with a stub runtime,
+not a real iPhone layout/keyboard acceptance test.
+
+## Device consent security — first implementation slice
+
+The agreed plan now prioritizes Device-owned enforcement before choppy playback
+repair, with OS-isolation feasibility separate and no terminology refactor.
+
+`ba_device_config` now has one Device-wide owner, shared by Session trees and
+stored only at the Device root. Playback/Record/Calibrate/delegated-DSP grants
+start OFF on startup or owner-process restart; previous saved grants/history are
+not restored. History cannot re-enable a revoked permission; that requires an
+explicit local change. Current-profile defaults no longer enable Playback.
+Changes notify all Session Handlers. Join no longer copies configuration between
+Session scopes. System-audio broadcast intent is held separately by each Session
+and resets on its Leave/shutdown, rather than becoming a Device-wide switch.
+
+Validation: seven existing configuration tests pass; one new focused multi-Session
+security test passes shared-owner identity, cross-Session grant/revocation
+visibility, separate broadcast intent, close independence, history protection and
+fail-closed permission-owner restart. This verifies state semantics only. The
+existing legacy profile preserves its established persisted configuration behavior.
+
+NOT COMPLETE / NOT DEPLOYED: existing media reconciliation is still asynchronous;
+no synchronous stop/flush acknowledgement, complete native execution gate, DSP-job
+gate or OS isolation has been added. Device grants are a ceiling in the target
+architecture; audit and separate per-Session operation initiation before claiming
+that enabling a grant does not itself start work across Sessions. Local grant API
+caller authorization also remains to be audited. Do not claim consent security is
+complete or deploy this slice as a verified security boundary. No native app build,
+installation, Reception deployment or live Session mutation was performed here.
+
+## Execution-path audit and first execution gates
+
+Added docs/CONSENT_ENFORCEMENT.md with resource paths, covered checks and explicit
+remaining bypass/race/acknowledgement work. The Device owner publishes a protected,
+read-only permission view; missing owner/view denies. Added current-profile gates
+at Mac/iOS PCM open/write, mixer enable/render, native engine open/play/schedule,
+Mac/iOS capture startup/callbacks/shared publication, Opus comparison startup/data,
+Windows capture startup, and delegated test-worker admission/startup. Existing
+legacy-profile behavior is intentionally not a security guarantee.
+
+18 focused tests pass, covering Device-wide state, history/restart safety, denied
+resource calls before side effects, late capture blocks and worker admission.
+Compilation and diff checks pass. No native rebuild/deployment or live Session
+was changed. Synchronous native stop/flush, queued-work fencing and independent
+native/OS enforcement are STILL INCOMPLETE; do not describe the settings reply as
+proof that all hardware/delegated work has stopped. The next implementation is
+that acknowledged revocation barrier, not playback-quality tuning.
+
+
+## Default audio revocation barrier — resume checkpoint
+
+Implemented generation fencing and a Device-wide OTP pg executor registry. OFF
+publishes denial first, waits for registered executors, and requires native stop
+ACKs for default Mac/iOS PCM playback and microphone capture. Timeout/failed ACK
+keeps permission OFF with pending confirmation and blocks regrant; losing a failed
+executor is not success. Queued PCM and capture callbacks cannot regain validity
+after OFF/ON. Registry replacement invalidates old grants/handles. The installed
+test worker acknowledges termination; real delegated DSP is not implemented.
+Autonomous native playback is blocked in the current profile pending its stop
+protocol. UI snapshots show OFF/pending even when the command reports failure.
+
+Validation: 26 focused Erlang tests and 14 frontend state tests pass. Mac Swift
+output, Objective-C++ capture and iOS Swift audio sources pass source checks. No
+app build/install, live Session mutation, Reception deployment or real hardware
+stop/tail validation. Matching native helpers need rebuilding before use. Earlier
+entries describe preceding slices; this entry supersedes their no-ACK status.
+
+Next: per-Session broadcast OFF/role-loss acknowledgements, native crash/restart
+recovery, remaining local grant caller audit and optional backend paths. Security
+is still incomplete; OS isolation and physical stop guarantees are not proven.
+See CONSENT_ENFORCEMENT.md. Manual additions at the end of PLAN.md are preserved.

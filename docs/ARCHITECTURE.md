@@ -41,3 +41,13 @@ combining presence watches. Closing a Session detaches only its mailboxes and
 sends a scoped signed offline announcement. It never closes another Session’s
 connection or revokes ownership. The web shell keeps independent same-origin
 Session documents alive; UI navigation does not own audio process lifetime.
+
+## Device consent (implementation in progress)
+
+Permission settings belong to one Device-owned `ba_device_config`, not Session
+supervision trees. Every Session resolves that shared owner. Session broadcast
+intent stays in its own `ba_buffee` process. Session leave/rejoin has no authority
+to copy or grant Device permissions. The current-profile permission owner starts
+with all grants OFF and refuses history changes that would grant a permission.
+Final resource enforcement and acknowledged revocation are planned, not complete;
+see PLAN.md and the latest security entry in PROGRESS.md.

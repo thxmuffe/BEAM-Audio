@@ -46,11 +46,13 @@ final class IOSAudioInput {
         var session: UUID?
         var stopBroadcast: (() -> Void)?
         var observers: [NSObjectProtocol] = []
-        defer {
-            observers.forEach(NotificationCenter.default.removeObserver)
-            engine?.inputNode.removeTap(onBus: 0); engine?.stop()
-            stopBroadcast?(); IOSAudioSession.shared.release(session)
+        func cleanup() {
+            observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
+            engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
+            stopBroadcast?(); stopBroadcast = nil
+            IOSAudioSession.shared.release(session); session = nil
         }
+        defer { cleanup() }
         do {
             let config = try IOSCaptureWire.read(fd)
             guard config.count == 2, config[0] == 1 else { throw CaptureFailure("Invalid capture request.") }
@@ -94,7 +96,13 @@ final class IOSAudioInput {
             var metadata = Data([1]); IOSCaptureWire.append(UInt32(rate), to: &metadata); IOSCaptureWire.append(UInt16(channels), to: &metadata)
             try IOSCaptureWire.write(fd, metadata)
             while true {
-                guard try IOSCaptureWire.read(fd) == Data([114]) else { throw CaptureFailure("Invalid capture credit.") }
+                let command = try IOSCaptureWire.read(fd)
+                if command == Data([115]) {
+                    // Broadcast shutdown is asynchronous today; never claim its completion.
+                    guard stopBroadcast == nil else { throw CaptureFailure("Broadcast stop acknowledgement is not implemented.") }
+                    cleanup(); try IOSCaptureWire.write(fd, Data([6])); return
+                }
+                guard command == Data([114]) else { throw CaptureFailure("Invalid capture credit.") }
                 var clock = Data([5]); IOSCaptureWire.append(IOSCaptureWire.hostNS(), to: &clock)
                 try IOSCaptureWire.write(fd, clock)
                 let batch = capture.drain()

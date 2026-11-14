@@ -11,6 +11,8 @@ request(Request) when is_map(Request) ->
     maps:merge(Reply,maps:with([<<"request_id">>],Request));
 request(_) -> request(#{}).
 printable(owner_or_valid_invitation_required) -> <<"Rejoin using an invitation to recover the shareable link.">>;
+printable(revocation_incomplete) -> <<"Permission is OFF, but stopping has not been confirmed. New grants are blocked; retry OFF or restart the app.">>;
+printable(local_approval_required) -> <<"Enable this permission explicitly in My Device; history cannot grant access.">>;
 printable(configuration_changed) -> <<"Settings changed in another client. Review the latest state and retry.">>;
 printable(invalid_buffee_config) -> <<"Invalid Session name, Reception address or invitation link.">>;
 printable(R) when is_binary(R) -> R;
@@ -36,6 +38,7 @@ command(#{<<"method">> := <<"configuration">>}) -> {ok,ba_device_config:snapshot
 command(#{<<"method">> := <<"capabilities">>,<<"consent">> := Values}=R) ->
     Patch=maps:from_list([{capability_key(K),B} || {K,B} <- maps:to_list(Values)]),
     ba_device_config:change(Patch,config_options(R));
+command(#{<<"method">> := <<"capability">>,<<"capability">> := <<"broadcast">>,<<"enabled">> := B}) -> ba_app_session:capability(broadcast,B);
 command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}=R) ->
     ba_device_config:change(#{capability_key(K) => B},config_options(R));
 command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);

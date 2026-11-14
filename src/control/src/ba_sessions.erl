@@ -97,12 +97,6 @@ prepare(Id,#{<<"method">> := <<"join_buffee">>,<<"invitation">> := Link},#{tabs 
                 Default=default_saved(Target,Tabs),
                 Selected=case Default of true -> <<"default">>;false -> Target end,
                 case Default of true -> ok;false -> ok=start(Selected) end,
-                %% Preserve explicit choices made in the blank tab before Join.
-                case in(Id,fun ba_device_config:snapshot/0) of
-                    #{revision := Revision,consent := Consent} when Revision>0 ->
-                        ok=in(Selected,fun() -> ba_device_config:change(Consent,#{}) end);
-                    _ -> ok
-                end,
                 stop(Id),Next=save(S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{id := Selected};false -> D end || D <- Tabs]}),
                 {Selected,Next}
         end

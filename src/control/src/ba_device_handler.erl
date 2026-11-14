@@ -73,7 +73,7 @@ handle_call({enable_test,Enabled},_,S) when is_boolean(Enabled) ->
     {reply,ok,changed(Next#{enabled := Enabled})};
 handle_call({start,test,#{duration_ms := Duration} = Args},_,S)
         when map_size(Args) =:= 1,is_integer(Duration),Duration >= 20,Duration =< 10000 ->
-    case {maps:get(enabled,S),map_size(maps:get(active,S)) < ?CAPACITY} of
+    case {maps:get(enabled,S) andalso ba_device_permission:allowed(dsp),map_size(maps:get(active,S)) < ?CAPACITY} of
         {false,_} -> {reply,{error,consent_required},S};
         {true,false} -> {reply,{error,capacity_exceeded},S};
         {true,true} -> start_test(Duration,S)
@@ -237,7 +237,7 @@ job_permission(#{peer := Peer,deadline := Deadline},Offer,S) ->
         true = erlang:monotonic_time(millisecond) < Deadline,
         #{manager := Peer,id := Contract,revision := Revision} = maps:get(contract,S),
         Contract = maps:get(<<"contract">>,Offer), Revision = maps:get(<<"contract_revision">>,Offer),
-        case {maps:get(enabled,S),map_size(maps:get(active,S)) < ?CAPACITY} of
+        case {maps:get(enabled,S) andalso ba_device_permission:allowed(dsp),map_size(maps:get(active,S)) < ?CAPACITY} of
             {false,_} -> consent_required;
             {true,false} -> capacity_exceeded;
             _ -> ok

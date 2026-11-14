@@ -13,6 +13,9 @@ init({Owner, D, Adapter}) ->
     monitor(process, Owner), self() ! open,
     {ok, #{owner => Owner, descriptor => D, adapter => Adapter, device => undefined,
            scheduled => 0, dropped => 0, last_end => undefined, last_summary => undefined}}.
+handle_call({revoke_permissions,_},_,#{adapter := A,device := D}=S) ->
+    Result=case D of undefined -> ok;_ -> try A:close(D) catch _:_ -> {error,native_stop_unconfirmed} end end,
+    {stop,normal,Result,S#{device := undefined}};
 handle_call(_, _, S) -> {reply, {error, unsupported_request}, S}.
 handle_info(open, #{adapter := A, descriptor := D} = S) ->
     case maps:get(clock, D) =:= ba_buffee_clock:id() of

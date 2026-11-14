@@ -13,7 +13,8 @@ push(Id,D,H,PCM) ->
     case ba_session_scope:whereis(?MODULE) of
         P when is_pid(P) ->
             case process_info(P,message_queue_len) of
-                {message_queue_len,N} when N<64 -> gen_server:cast(P,{packet,Id,D,H,PCM});
+                {message_queue_len,N} when N<64 ->
+                    case ba_device_config:token(speaker) of {ok,T} -> gen_server:cast(P,{packet,Id,D,H,PCM,T});_ -> {error,consent_required} end;
                 _ -> {error,mixer_mailbox_overloaded}
             end;
         _ -> {error,mixer_unavailable}
@@ -26,6 +27,10 @@ init([]) ->
     process_flag(trap_exit,true),
     erlang:send_after(2,self(),render),
     {ok,#{mix => undefined,descriptors => #{},device => undefined,dropped => 0,rendered => 0,last_error => null}}.
+handle_call({revoke_permissions,_},_,S) ->
+    {Result,Next}=close_confirmed(S),
+    case maps:find(owner,S) of {ok,P} -> P ! {audio_output_failed,self(),consent_revoked};error -> ok end,
+    {reply,Result,Next#{mix := undefined,descriptors := #{}}};
 handle_call({renew,Id,Until},{Owner,_},#{owner := Owner,descriptors := Ds}=S) ->
     case maps:find(Id,Ds) of
         {ok,#{authorization_deadline := Old}=D} when Until>Old ->
@@ -69,7 +74,12 @@ handle_call(status,_,S) ->
     View = case maps:get(mix,S) of undefined -> #{streams => 0,queued_blocks => 0,clipped_frames => 0};M -> ba_audio_mix:snapshot(M) end,
     {reply,View#{dropped => maps:get(dropped,S),rendered => maps:get(rendered,S),last_error => maps:get(last_error,S),diagnostics => ba_diagnostics:view(S)},S};
 handle_call(_,_,S) -> {reply,ok,S}.
+handle_cast({packet,Id,D,H,PCM,T},S) ->
+    case ba_device_permission:valid(playback,T) of true -> accept_packet(Id,D,H,PCM,S);false -> {noreply,drop(stale_permission,S)} end;
 handle_cast({packet,Id,D,H,PCM},S) ->
+    case application:get_env(ba_core,runtime_profile,legacy_apps) of buffee_control -> {noreply,drop(stale_permission,S)};_ -> accept_packet(Id,D,H,PCM,S) end;
+handle_cast(_,S) -> {noreply,S}.
+accept_packet(Id,D,H,PCM,S) ->
     case {clock(),maps:get(mix,S)} of
         {{ok,_,{ok,Now}},Mix} when Mix=/=undefined ->
             case packet_authorized(Id,H,S) of
@@ -81,25 +91,30 @@ handle_cast({packet,Id,D,H,PCM},S) ->
                 false -> {noreply,drop(authorization_deadline,S)}
             end;
         _ -> {noreply,drop(clock_unavailable,S)}
-    end;
-handle_cast(_,S) -> {noreply,S}.
+    end.
 handle_info(render,S) ->
     Next = render(S),erlang:send_after(2,self(),render),{noreply,Next};
 handle_info({'DOWN',Ref,process,_,_},#{owner_monitor := Ref} = S) ->
     {noreply,(maps:without([owner,owner_monitor],close(S)))#{mix := undefined,descriptors := #{}}};
 handle_info({tcp_closed,Socket},#{device := {_,#{socket := Socket}}}=S) -> {noreply,output_failed(output_closed,S)};
 handle_info({tcp_error,Socket,_},#{device := {_,#{socket := Socket}}}=S) -> {noreply,output_failed(output_error,S)};
+handle_info({'EXIT',Pid,normal},#{device := {ba_mac_output,#{pid := Pid}}}=S) -> {noreply,output_failed(output_closed,S#{device := undefined})};
 handle_info({'EXIT',Pid,_},#{device := {_,#{pid := Pid}}}=S) -> {noreply,output_failed(output_closed,S)};
 handle_info(_,S) -> {noreply,S}.
-open(#{device := undefined,mix := Mix} = S) ->
+open(S) -> case ba_device_permission:allowed(playback) of
+    true -> open_permitted(S);false -> {error,consent_required} end.
+open_permitted(#{device := undefined,mix := Mix} = S) ->
     case {clock(),application:get_env(ba_core,audio_output_adapter)} of
         {{ok,Clock,{ok,_}},{ok,A}} when Clock=:=map_get(clock,Mix) ->
             D = #{sample_rate => maps:get(rate,Mix),channel_count => 2,sample_format => float32_le,clock => Clock},
             case A:open(D) of {ok,Device} -> {ok,S#{device := {A,Device}}};Error -> Error end;
         _ -> {error,output_or_clock_unavailable}
     end;
-open(S) -> {ok,S}.
-render(S) -> render_live(expire_inputs(S)).
+open_permitted(S) -> {ok,S}.
+render(S) -> case ba_device_permission:allowed(playback) of
+    true -> render_live(expire_inputs(S));
+    false -> (close(S))#{mix := undefined,descriptors := #{}}
+end.
 render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
     Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
     case {ba_audio_mix:next_time(Mix),clock()} of
@@ -176,9 +191,14 @@ flush(#{mix := undefined}=S) -> S;
 flush(#{mix := Mix} = S) ->
     Next = maps:fold(fun(Id,I,Acc) -> ba_audio_mix:enable(Id,maps:get(enabled,I),Acc) end,Mix,maps:get(streams,Mix)),S#{mix := Next}.
 drop(R,S) -> ba_diagnostics:count(R,S#{dropped := maps:get(dropped,S)+1,last_error := R}).
-close(#{device := {A,D}} = S) -> try A:close(D) catch exit:_ -> ok end,S#{device := undefined};
+close(#{device := {_,_}} = S) -> {_,Next}=close_confirmed(S),Next;
 close(S) -> S.
 terminate(_,S) -> close(S),ok.
 format_status(Status) ->
     maps:map(fun(state,S) -> (maps:with([dropped,rendered,last_error],S))#{diagnostics => ba_diagnostics:view(S)};
         (log,_) -> [];(_,_) -> redacted end,Status).
+
+close_confirmed(#{device := {A,D}}=S) ->
+    Result=try A:close(D) of ok -> ok;_ -> {error,native_stop_unconfirmed} catch _:_ -> {error,native_stop_unconfirmed} end,
+    case Result of ok -> {ok,S#{device := undefined}};_ -> {Result,S} end;
+close_confirmed(S) -> {ok,S}.

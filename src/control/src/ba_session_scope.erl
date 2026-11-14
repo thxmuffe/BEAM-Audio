@@ -24,7 +24,7 @@ ancestor(Name) when is_atom(Name) -> erlang:whereis(Name);
 ancestor(Pid) -> Pid.
 run(Scope,F) -> Old=get(ba_session_scope),put(ba_session_scope,Scope),
     try F() after put(ba_session_scope,Old) end.
-shared(N) -> lists:member(N,[ba_contacts,ba_relay,ba_desk_connections_sup,ba_sessions,
+shared(N) -> lists:member(N,[ba_permission_pg,ba_device_config,ba_contacts,ba_relay,ba_desk_connections_sup,ba_sessions,
                             ba_cli_device,ba_device_web_sup,ba_device_web]).
 scoped(N) when is_atom(N) -> lists:prefix("ba_",atom_to_list(N)) andalso not shared(N);
 scoped(_) -> false.
@@ -43,6 +43,7 @@ table(Name) -> case current() of undefined -> Name;Scope ->
 state_directory(Name) ->
     case {os:getenv("BA_STATE_DIR"),current(),Name} of
         {false,_,_} -> false;
+        {Root,_,device_configuration} -> Root;
         {Root,_,contacts} -> Root;
         {Root,_,web_sessions} -> Root;
         {Root,undefined,_} -> Root;

@@ -18,38 +18,34 @@ status(K) -> case ba_session_scope:whereis(name(K)) of undefined -> #{state => s
 start_link(K) -> gen_server:start_link(ba_session_scope:registration(name(K)),?MODULE,K,[]).
 init(K) -> {ok,initial(K)}.
 initial(K) -> #{kind => K,socket => undefined,input => ba_audio_input:new(),dropped_callbacks => 0}.
-handle_call(start,_,#{socket := undefined,kind := K}=S) ->
-    case ba_audio_input:ready() of
-        ok ->
-            case gen_tcp:connect({127,0,0,1},list_to_integer(os:getenv("BA_AUDIO_INPUT_PORT")),
-                    [binary,{packet,4},{packet_size,131072},{active,once}],2000) of
-                {ok,Socket} ->
-                    Mode=case K of microphone -> 1;broadcast -> 2 end,
-                    ok=gen_tcp:send(Socket,<<1,Mode>>),
-                    {reply,ok,S#{socket := Socket,input := (ba_audio_input:new())#{state := starting}}};
-                {error,R} -> {reply,{error,R},S}
-            end;
-        _ -> {reply,{error,waiting_for_clock},S}
+handle_call({revoke_permissions,_},_,S) -> {Result,Next}=stop_confirmed(S),{reply,Result,Next};
+handle_call(start,From,#{kind := Kind}=S) ->
+    case ba_device_permission:allowed(Kind) of
+        true -> case ba_device_permission:enter(Kind) of {ok,T} -> capture_start(From,S#{permission_token => T});E -> {reply,E,S} end;false -> {reply,{error,consent_required},S}
     end;
-handle_call(start,_,S) -> {reply,ok,S};
-handle_call(stop,_,S) -> close(S),ba_audio_input:stop(maps:get(input,S)),{reply,ok,initial(maps:get(kind,S))};
+handle_call(stop,_,S) -> {Result,Next}=stop_confirmed(S),{reply,Result,Next};
 handle_call(status,_,S) -> {reply,(ba_audio_input:status(maps:get(input,S)))#{dropped_callbacks => maps:get(dropped_callbacks,S)},S};
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(_,S) -> {noreply,S}.
-handle_info({tcp,Socket,Packet},#{socket := Socket}=S) ->
+handle_info(Message,S) ->
+    case maps:get(socket,S,undefined)=/=undefined andalso not ba_device_permission:valid(maps:get(kind,S),maps:get(permission_token,S,legacy)) of
+        true -> case maps:get(stop_result,S,undefined) of undefined -> {_,Next}=stop_confirmed(S),{noreply,Next};_ -> {noreply,S} end;
+        false -> input_info(Message,S)
+    end.
+input_info({tcp,Socket,Packet},#{socket := Socket}=S) ->
     try packet(Packet,S) of
         Next ->
             case maps:get(socket,Next) of undefined -> ok;_ -> inet:setopts(Socket,[{active,once}]) end,
             {noreply,Next}
     catch _:_ -> {noreply,fail(<<"Invalid iOS capture format or timestamp.">>,S)} end;
-handle_info({tcp_closed,Socket},#{socket := Socket}=S) -> {noreply,fail(<<"iOS capture closed; toggle the capability to retry.">>,S)};
-handle_info({tcp_error,Socket,_},#{socket := Socket}=S) -> {noreply,fail(<<"iOS capture connection failed.">>,S)};
-handle_info({read,Socket},#{socket := Socket}=S) -> {noreply,read(S)};
-handle_info({'DOWN',Ref,process,_,_},S) ->
+input_info({tcp_closed,Socket},#{socket := Socket}=S) -> {noreply,fail(<<"iOS capture closed; toggle the capability to retry.">>,S)};
+input_info({tcp_error,Socket,_},#{socket := Socket}=S) -> {noreply,fail(<<"iOS capture connection failed.">>,S)};
+input_info({read,Socket},#{socket := Socket}=S) -> {noreply,read(S)};
+input_info({'DOWN',Ref,process,_,_},S) ->
     case ba_audio_input:source_monitor(Ref,maps:get(input,S)) of
         true -> {noreply,fail(<<"Audio publication closed.">>,S)};false -> {noreply,S}
     end;
-handle_info(_,S) -> {noreply,S}.
+input_info(_,S) -> {noreply,S}.
 packet(<<1,Rate:32,Channels:16>>,S) when Rate>=8000,Rate=<192000,Channels>=1,Channels=<2 ->
     K=maps:get(kind,S),{Name,Key}=case K of microphone -> {<<"iPhone microphone">>,<<"microphone">>};broadcast -> {<<"iPhone system audio">>,<<"default-output">>} end,
     Input=ba_audio_input:open(Name,#{encoding => pcm,sample_format => float32_le,sample_rate => Rate,channel_count => Channels},Key),
@@ -77,3 +73,26 @@ close(#{socket := undefined}) -> ok;
 close(#{socket := Socket}) -> gen_tcp:close(Socket).
 terminate(_,S) -> close(S),ba_audio_input:close(maps:get(input,S)).
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([kind,dropped_callbacks],S);(log,_) -> [];(_,_) -> redacted end,Status).
+
+capture_start(_,#{socket := undefined,kind := K}=S) ->
+    case ba_audio_input:ready() of
+        ok ->
+            case gen_tcp:connect({127,0,0,1},list_to_integer(os:getenv("BA_AUDIO_INPUT_PORT")),
+                    [binary,{packet,4},{packet_size,131072},{active,once}],2000) of
+                {ok,Socket} ->
+                    Mode=case K of microphone -> 1;broadcast -> 2 end,
+                    ok=gen_tcp:send(Socket,<<1,Mode>>),
+                    {reply,ok,S#{socket := Socket,input := (ba_audio_input:new())#{state := starting}}};
+                {error,R} -> {reply,{error,R},S}
+            end;
+        _ -> {reply,{error,waiting_for_clock},S}
+    end;
+capture_start(_,S) -> {reply,ok,S}.
+
+stop_confirmed(#{socket := undefined}=S) -> {maps:get(stop_result,S,ok),S};
+stop_confirmed(#{socket := Resource}=S) ->
+    Result=ba_native_stop:socket(Resource,<<$s>>,<<6>>),
+    case Result of
+        ok -> close(S),ba_audio_input:stop(maps:get(input,S)),{ok,(initial(maps:get(kind,S)))#{stop_result => ok}};
+        _ -> {Result,S#{stop_result => Result}}
+    end.

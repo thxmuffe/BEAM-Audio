@@ -149,7 +149,7 @@ public:
         if (!microphone && device != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(device);
         if (tap != kAudioObjectUnknown) AudioHardwareDestroyProcessTap(tap);
     }
-    void run(bool mic = false) {
+    bool run(bool mic = false) {
         microphone = mic;
         if (microphone) {
             microphonePermission();
@@ -198,6 +198,7 @@ public:
         Slot scratch;
         uint8_t command[5];
         while (fread(command, 1, sizeof(command), stdin) == sizeof(command)) {
+            if (!memcmp(command, "\0\0\0\1s", 5)) return true;
             if (memcmp(command, "\0\0\0\1r", 5)) throw Failure{-1, "Invalid capture command"};
             if (changed.load()) throw Failure{-1, "Default audio device or capture format changed; toggle capture off and on"};
             if (!microphone && processesChanged.exchange(false)) {
@@ -221,6 +222,7 @@ public:
             }
             packet(4, nullptr, 0); fflush(stdout);
         }
+        return false;
     }
 };
 
@@ -229,7 +231,8 @@ int main(int argc, const char **argv) {
     @autoreleasepool {
         try {
             if (@available(macOS 14.2, *)) {
-                auto capture = std::make_unique<Capture>(); capture->run(argc > 1 && strcmp(argv[1], "mic") == 0); return 0;
+                auto capture = std::make_unique<Capture>(); bool stopped = capture->run(argc > 1 && strcmp(argv[1], "mic") == 0); capture.reset();
+                if (stopped) { packet(6, nullptr, 0); fflush(stdout); } return 0;
             }
             throw Failure{-1, "System audio capture requires macOS 14.2 or newer"};
         } catch (Failure failure) {

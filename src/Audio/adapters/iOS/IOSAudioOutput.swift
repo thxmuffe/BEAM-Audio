@@ -73,6 +73,9 @@ final class IOSAudioOutput {
             while true {
                 let packet = try readPacket(fd)
                 switch packet.first {
+                case 4:
+                    player.stop(); engine.stop()
+                    try writePacket(fd, Data([4])); return
                 case 3:
                     let host = UInt64(AVAudioTime.seconds(forHostTime: mach_absolute_time()) * 1_000_000_000)
                     let latency = UInt64(max(0, player.outputPresentationLatency) * 1_000_000_000)

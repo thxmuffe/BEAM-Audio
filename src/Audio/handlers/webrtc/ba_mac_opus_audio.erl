@@ -18,18 +18,16 @@ init([]) -> {ok, #{state => stopped, frames => 0, blocks => 0, dropped_callbacks
     presentation_state => #{stream_id => binary:encode_hex(crypto:strong_rand_bytes(16))},
     presentation_delay_ns => undefined,
     skipped_frames => 0, send_errors => 0, available => os:getenv("BA_MAC_OPUS_HELPER") =/= false}}.
-handle_call(start, _, #{state := stopped} = S) ->
-    case os:getenv("BA_MAC_OPUS_HELPER") of
-        false -> {reply, {error, <<"Rebuild the Mac app with the Opus comparison helper.">>}, S};
-        Helper ->
-            Port = open_port({spawn_executable, Helper}, [binary, {packet,4}, exit_status, use_stdio,{env,ba_native_env:without_secrets()}]),
-            {reply, ok, S#{port => Port, state := starting}}
-    end;
-handle_call(start, _, S) -> {reply, ok, S};
+handle_call(start,From,S) -> case ba_device_permission:allowed(broadcast) of
+    true -> capture_start(From,S);false -> {reply,{error,consent_required},S} end;
 handle_call(status, _, S) -> {reply, maps:without([port, source, source_monitor], S), S};
 handle_call(_, _, S) -> {reply, {error, unsupported_request}, S}.
 handle_cast(_, S) -> {noreply, S}.
-handle_info({Port, {data, <<1, Metadata/binary>>}}, #{port := Port} = S) ->
+handle_info(Message,S) ->
+    case maps:get(port,S,undefined)=/=undefined andalso not ba_device_permission:allowed(broadcast) of
+        true -> {stop,normal,S};false -> input_info(Message,S)
+    end.
+input_info({Port, {data, <<1, Metadata/binary>>}}, #{port := Port} = S) ->
     Format = ba_core_audio:format(Metadata),
     Descriptor = #{encoding => opus, sample_format => opus, sample_rate => 48000,
         channel_count => 2, clock => ba_buffee_clock:id(),
@@ -40,7 +38,7 @@ handle_info({Port, {data, <<1, Metadata/binary>>}}, #{port := Port} = S) ->
         profiles => #{channel => Descriptor}}, self()),
     {noreply, read(S#{state := running, source => Source, source_monitor => monitor(process, Source),
         source_clock => ba_buffee_clock:id(),capture_format => Format, format => #{rate => 48000, channels => 2}, handler => <<"webrtc_audio_opus">>})};
-handle_info({Port, {data, <<8, Host:64/little, Position:64/little-float,
+input_info({Port, {data, <<8, Host:64/little, Position:64/little-float,
                           Dropped:64/little, Flags:32/little, _Buffers:32/little, Frames:32/little, OutputPosition:64/little>>}},
             #{port := Port, capture_format := Format, capture_timing := Timing} = S) ->
     Observation = #{valid => Flags band 3 =:= 3, position => Position, frames => Frames,
@@ -48,7 +46,7 @@ handle_info({Port, {data, <<8, Host:64/little, Position:64/little-float,
         output_position => OutputPosition},
     {noreply,S#{capture_timing := ba_webrtc_audio_timing:observe(Observation,Timing),
                dropped_callbacks := Dropped}};
-handle_info({Port, {data, <<7, PCM/binary>>}}, #{port := Port} = S) ->
+input_info({Port, {data, <<7, PCM/binary>>}}, #{port := Port} = S) ->
     Now = erlang:monotonic_time(millisecond),
     {Acc0, Started} = maps:get(meter_window, S, {ba_audio_meter:new(), Now}),
     Acc = ba_audio_meter:accumulate(float32_le, PCM, Acc0),
@@ -58,7 +56,7 @@ handle_info({Port, {data, <<7, PCM/binary>>}}, #{port := Port} = S) ->
         false -> S#{meter_window => {Acc, Started}}
     end,
     {noreply, Next};
-handle_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
+input_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
                           Leading:32/little, Trailing:32/little, Packet/binary>>}},
             #{port := Port, source := Source, capture_timing := Timing} = S) ->
     CaptureHeader = ba_webrtc_audio_timing:capture(Position,
@@ -77,10 +75,10 @@ handle_info({Port, {data, <<6, Position:64/little, Lookahead:32/little,
     Errors = length([ok || {_,{error,_}} <- Replies]),
     {noreply, S#{send_errors := maps:get(send_errors,S)+Errors,source_clock := NewClock,frames := maps:get(frames,S)+960, blocks := maps:get(blocks,S)+1,
                 timeline => Header, presentation_state := Presentation}};
-handle_info({Port, {data, <<4>>}}, #{port := Port} = S) ->
+input_info({Port, {data, <<4>>}}, #{port := Port} = S) ->
     erlang:send_after(10,self(),read), {noreply,S};
-handle_info(read, S) -> {noreply,read(S)};
-handle_info({Port, {data, <<5, Host:64/little>>}},
+input_info(read, S) -> {noreply,read(S)};
+input_info({Port, {data, <<5, Host:64/little>>}},
             #{port := Port, request_sent := Sent, capture_format := Format} = S) ->
     Now = erlang:monotonic_time(nanosecond), RTT = Now-Sent,
     Next = case RTT < maps:get(best_round_trip,S,RTT+1) of
@@ -90,15 +88,24 @@ handle_info({Port, {data, <<5, Host:64/little>>}},
         false -> S
     end,
     {noreply,Next};
-handle_info({Port, {data, <<3, _Code:32/little-signed, Text/binary>>}}, #{port := Port} = S) ->
+input_info({Port, {data, <<3, _Code:32/little-signed, Text/binary>>}}, #{port := Port} = S) ->
     logger:error("Opus capture failed: ~ts",[Text],#{domain => [ba_core,audio]}),
     ba_events:notify(audio_input),
     {stop, {capture_failed, Text}, S};
-handle_info({Port, {exit_status, Code}}, #{port := Port} = S) -> {stop, {capture_exit, Code}, S};
-handle_info({'DOWN', Ref, process, _, _}, #{source_monitor := Ref} = S) -> {stop, normal, S};
-handle_info(_, S) -> {noreply,S}.
+input_info({Port, {exit_status, Code}}, #{port := Port} = S) -> {stop, {capture_exit, Code}, S};
+input_info({'DOWN', Ref, process, _, _}, #{source_monitor := Ref} = S) -> {stop, normal, S};
+input_info(_, S) -> {noreply,S}.
 read(#{port := Port} = S) ->
     Sent = erlang:monotonic_time(nanosecond), true = port_command(Port, <<$r>>), S#{request_sent => Sent}.
 terminate(_, S) ->
     case maps:find(port,S) of {ok,P} -> try port_close(P) catch error:badarg -> ok end; _ -> ok end,
     case maps:find(source,S) of {ok,Source} -> try ba_audio:unpublish(Source) catch exit:_ -> ok end; _ -> ok end.
+
+capture_start( _, #{state := stopped} = S) ->
+    case os:getenv("BA_MAC_OPUS_HELPER") of
+        false -> {reply, {error, <<"Rebuild the Mac app with the Opus comparison helper.">>}, S};
+        Helper ->
+            Port = open_port({spawn_executable, Helper}, [binary, {packet,4}, exit_status, use_stdio,{env,ba_native_env:without_secrets()}]),
+            {reply, ok, S#{port => Port, state := starting}}
+    end;
+capture_start( _, S) -> {reply, ok, S}.

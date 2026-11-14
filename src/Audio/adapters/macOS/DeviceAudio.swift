@@ -44,7 +44,11 @@ final class Output {
         try packet(1)
         defer { player.stop(); engine.stop() }
         while let command = try readPacket() {
-            if command == Data([3]) {
+            if command == Data([4]) {
+                player.stop(); engine.stop()
+                lock.lock(); pending = 0; lock.unlock()
+                try packet(4); return
+            } else if command == Data([3]) {
                 var data = Data(); append(hostNS().bigEndian, to: &data)
                 append(UInt64(max(0,engine.outputNode.presentationLatency) * 1_000_000_000).bigEndian, to: &data)
                 try packet(3,data)
@@ -64,7 +68,7 @@ final class Output {
                 }
                 let time = AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: Double(target) / 1_000_000_000))
                 player.scheduleBuffer(buffer, at: time, options: []) { [weak self] in
-                    guard let self else { return }; self.lock.lock(); self.pending -= 1; self.lock.unlock()
+                    guard let self else { return }; self.lock.lock(); self.pending = max(0, self.pending - 1); self.lock.unlock()
                 }
             }
         }

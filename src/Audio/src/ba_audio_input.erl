@@ -23,10 +23,17 @@ open(Name, Descriptor0, Key) ->
     Ref = monitor(process, Source),
     event(audio_started, <<"[Audio] ", Name/binary, " is available for subscription.">>),
     (new())#{state := running, source := Source, source_monitor => Ref,
-             handler => Handler,name => Name, descriptor => Descriptor}.
+             handler => Handler,name => Name, descriptor => Descriptor,
+             permission => case Key of <<"microphone">> -> record;<<"default-output">> -> broadcast;_ -> legacy_capture end}.
 
-captured(<<>>, _, S) -> S;
-captured(PCM, Mono, #{descriptor := #{sample_format := Encoding} = Descriptor, handler := Handler} = S) ->
+captured(PCM,Mono,S) ->
+    case ba_device_permission:allowed(maps:get(permission,S,legacy_capture)) of
+        true -> captured_allowed(PCM,Mono,S);
+        false -> stop(S)
+    end.
+
+captured_allowed(<<>>, _, S) -> S;
+captured_allowed(PCM, Mono, #{descriptor := #{sample_format := Encoding} = Descriptor, handler := Handler} = S) ->
     Frame = Handler:frame_bytes(Descriptor),
     true = byte_size(PCM) rem Frame =:= 0,
     Frames = byte_size(PCM) div Frame,

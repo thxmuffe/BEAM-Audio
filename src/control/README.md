@@ -34,9 +34,17 @@ include `session_id` and `sessions`. Omitting the field targets the first open
 Session. Native hosts continue to use the default single-Session API.
 
 Additional Session trees share identity, contacts and Reception sockets, with
-separate membership, clock, chat and audio state. Closed Owner Sessions can be
+separate membership, clock, chat and media state. Closed Owner Sessions can be
 reopened with their invitation. The open-tab manifest restores after shutdown.
 
 After compiling the core at repository root, run the focused disposable test:
 `python3 tests/control/parallel-sessions-smoke.py`. It starts a local Reception
 service using the existing compiled Phoenix artifacts; it never loads app keys.
+
+Device permissions are shared across Sessions in the current profile. They start
+OFF after Device/permission-owner restart and cannot be enabled by history replay.
+System-audio broadcast intent remains per Session. Default Mac/iOS PCM playback and microphone capture use generation fencing and
+acknowledged native stops. A failed stop keeps consent OFF and blocks regrant.
+Matching native helpers must be rebuilt before testing. System-audio role-loss,
+optional backends and crash recovery remain incomplete; see
+`../../docs/CONSENT_ENFORCEMENT.md`.

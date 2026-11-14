@@ -1,7 +1,7 @@
 %% One active Buffee per local Session scope. Ownership survives leaving or app shutdown.
 -module(ba_buffee).
 -behaviour(gen_server).
--export([start_link/0,create/2,join/1,start/1,status/0,connection/0,disconnect/0,remember/3,remember_authority/2,leave/0,end_buffee/0,invite/2,ended/1]).
+-export([start_link/0,create/2,join/1,start/1,status/0,connection/0,disconnect/0,remember/3,remember_authority/2,leave/0,end_buffee/0,invite/2,ended/1,broadcast/0,broadcast/1,broadcast_token/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 create(Name,Desks) ->
@@ -9,6 +9,9 @@ create(Name,Desks) ->
     start(case ba_session_scope:current() of undefined -> Config;Id -> Config#{buffee => Id} end).
 join(Link) -> start(#{mode => join,invitation => Link}).
 start(Config) -> gen_server:call(ba_session_scope:ref(?MODULE),{start,Config},15000).
+broadcast_token() -> gen_server:call(ba_session_scope:ref(?MODULE),broadcast_token).
+broadcast() -> gen_server:call(ba_session_scope:ref(?MODULE),broadcast).
+broadcast(B) when is_boolean(B) -> gen_server:call(ba_session_scope:ref(?MODULE),{broadcast,B}).
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 connection() -> gen_server:call(ba_session_scope:ref(?MODULE),connection).
 disconnect() -> gen_server:call(ba_session_scope:ref(?MODULE),disconnect,15000).
@@ -24,6 +27,11 @@ init([]) ->
     Saved=ba_device_store:load(buffee_connection,undefined),
     self() ! cleanup,
     {ok,#{state => idle,remembered => Saved,connection_state => idle}}.
+handle_call(broadcast_token,_,S) -> {reply,case maps:get(broadcast,S,false) of true -> {ok,maps:get(broadcast_token,S)};false -> {error,consent_required} end,S};
+handle_call(broadcast,_,S) -> {reply,maps:get(broadcast,S,false),S};
+handle_call({broadcast,B},_,S) ->
+    case ba_session_scope:whereis(ba_device_handler) of undefined -> ok;_ -> ba_device_handler:audio_changed() end,
+    {reply,ok,S#{broadcast => B,broadcast_token => make_ref()}};
 handle_call(status,_,#{state := idle}=S) -> {reply,#{state => idle},S};
 handle_call(status,_,S) ->
     View = membership_status(),

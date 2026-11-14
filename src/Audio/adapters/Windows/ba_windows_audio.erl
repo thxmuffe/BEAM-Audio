@@ -31,16 +31,19 @@ handle_info(Message,S) ->
 notify_changed(S,S) -> ok;
 notify_changed(_,_) -> ba_events:notify(audio_input).
 
-input_call(start, _, #{port := undefined} = S) ->
+input_call(start,From,S) -> case ba_device_permission:allowed(broadcast) of
+    true -> input_call_permitted(start,From,S);false -> {reply,{error,consent_required},S} end;
+input_call(Request,From,S) -> input_call_permitted(Request,From,S).
+input_call_permitted(start, _, #{port := undefined} = S) ->
     Root = filename:dirname(filename:dirname(code:which(?MODULE))),
     try open_port({spawn_executable, filename:join(Root, "ba_audio_input.exe")},
                   [binary, {packet, 4}, exit_status, use_stdio, hide,{env,ba_native_env:without_secrets()}]) of
         Port -> {reply, ok, #{state => starting, port => Port}}
     catch error:Reason -> {reply, {error, Reason}, S#{state := error, error => <<"Build ba_audio_input.exe first.">>}} end;
-input_call(start, _, S) -> {reply, ok, S};
-input_call(stop, _, S) ->
+input_call_permitted(start, _, S) -> {reply, ok, S};
+input_call_permitted(stop, _, S) ->
     close(S), {reply, ok, #{state => stopped, port => undefined}};
-input_call(status, _, S) -> {reply, maps:without([port, accumulator], S), S}.
+input_call_permitted(status, _, S) -> {reply, maps:without([port, accumulator], S), S}.
 handle_cast(_, S) -> {noreply, S}.
 input_info({Port, {data, <<1, Size:32/little, Wave:Size/binary, Name/binary>>}}, #{port := Port} = S) ->
     try format(Wave) of

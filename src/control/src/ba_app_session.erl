@@ -26,9 +26,20 @@ permissions() -> [<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>,
     <<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>].
 consent() ->
     case ba_session_scope:whereis(ba_device_config) of
-        undefined -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false});
-        _ -> ba_device_config:consent()
+        undefined -> case application:get_env(ba_core,runtime_profile,legacy_apps) of
+            buffee_control -> #{speaker => false,microphone => false,broadcast => false,calibrate => false,dsp => false};
+            _ -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false}) end;
+        _ -> C=ba_device_config:consent(),
+             case application:get_env(ba_core,runtime_profile,legacy_apps) of
+                 buffee_control -> B=try ba_buffee:broadcast() catch exit:_ -> false end,C#{broadcast => B};
+                 _ -> C
+             end
     end.
+capability(broadcast,B) when is_boolean(B) ->
+    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+        buffee_control -> ba_buffee:broadcast(B);
+        _ -> ba_device_config:change(#{broadcast => B},#{})
+    end;
 capability(Key,B) when (Key=:=speaker orelse Key=:=microphone orelse Key=:=broadcast),is_boolean(B) ->
     ba_device_config:change(#{Key => B},#{});
 capability(_,_) -> {error,invalid_capability}.
@@ -51,7 +62,7 @@ snapshot() ->
     Base=#{profile => buffee_control,device => Id,device_name => ba_device_label:local(Id),device_label => ba_device_label:display(unicode:characters_to_binary(os:getenv("BA_DEVICE_NAME",ba_device_label:os_name()))),buffee => Buffee,connection => ba_buffee:connection(),contacts => ba_contacts:list(),
         desks => safe(fun ba_buffee_desks:status/0,#{}),
         default_desk => application:get_env(ba_core,default_reception_desk_url,<<>>),
-        configuration => maps:without([entries],Config),consent => maps:get(consent,Config),excluded => exclusions(),messages => [],devices => [],jobs => [],
+        configuration => maps:without([entries],Config),consent => consent(),excluded => exclusions(),messages => [],devices => [],jobs => [],
         audio => #{},clock => #{state => idle},passport => #{}},
     case maps:get(state,Buffee) of
         idle -> Base;
