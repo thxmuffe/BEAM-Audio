@@ -17,7 +17,15 @@ format(Name,Origin,Instance) ->
 
 %% Resolve display metadata at startup; never use a hardware name as identity.
 os_name() ->
-    {ok,Host}=inet:gethostname(),
+    case os:getenv("BA_DEVICE_NAME") of
+        false -> case os:getenv("BA_PLATFORM") of
+            "ios" -> "iPhone"; % iOS has no desktop subprocess/hostname dependency.
+            _ -> desktop_name()
+        end;
+        Name -> Name
+    end.
+desktop_name() ->
+    Host=case inet:gethostname() of {ok,H} -> H;_ -> "Device" end,
     case os:type() of
         {unix,darwin} -> case string:trim(os:cmd("/usr/sbin/scutil --get ComputerName 2>/dev/null")) of
             [] -> Host;Name -> Name end;

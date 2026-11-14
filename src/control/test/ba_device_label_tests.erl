@@ -20,3 +20,12 @@ platform_labels_test() ->
         os:putenv("BA_PLATFORM","ios"),
         ?assertEqual(<<"iPhone | Paavo’s iPhone"/utf8>>,ba_device_label:display(<<"Paavo’s iPhone"/utf8>>))
     after case Old of false -> os:unsetenv("BA_PLATFORM");_ -> os:putenv("BA_PLATFORM",Old) end end.
+
+ios_device_name_test() ->
+    Old=[{K,os:getenv(K)} || K <- ["BA_PLATFORM","BA_DEVICE_NAME"]],
+    try
+        os:putenv("BA_PLATFORM","ios"),os:putenv("BA_DEVICE_NAME","Paavo's iPhone"),
+        ?assertEqual("Paavo's iPhone",ba_device_label:os_name()),
+        ?assertEqual(<<"iPhone | Paavo's iPhone | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>)),
+        os:unsetenv("BA_DEVICE_NAME"),?assertEqual("iPhone",ba_device_label:os_name())
+    after lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old) end.

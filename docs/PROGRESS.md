@@ -228,3 +228,10 @@ manual.
 Native presentation scale: centralized PlatformUISettings defaults iOS to 120%
 and macOS to 100%, applied through WKWebView.pageZoom. Same shared frontend; no
 user setting or gesture restriction. iPhone sizing/reflow requires manual review.
+
+iOS Session creation fix: display-name fallback eagerly evaluated os_name(),
+which treated iOS as desktop Darwin and invoked scutil through os:cmd. iOS cannot
+spawn that desktop command. Name lookup now uses the supplied BA_DEVICE_NAME
+first and an iPhone fallback on iOS, avoiding desktop OS queries. Three focused
+label tests pass, including supplied/missing iOS device names. A real iPhone
+creation check remains manual after installing the rebuilt app.
