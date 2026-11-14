@@ -18,8 +18,19 @@ handle_call({request,#{<<"method">> := <<"list_sessions">>}=Command},_,S) ->
 handle_call({request,#{<<"method">> := <<"new_session">>}=Command},_,#{tabs := Tabs}=S) ->
     Id=binary:encode_hex(crypto:strong_rand_bytes(16)),
     case start(Id) of
-        ok -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => null}]}),
-              {reply,metadata(Id,#{},Next,Command),Next};
+        ok ->
+            case maps:get(<<"create">>,Command,false) of
+                true ->
+                    Desk=application:get_env(ba_core,default_reception_desk_url,<<"wss://buffee-reception.onrender.com/relay/v1">>),
+                    Reply=in(Id,fun() -> ba_device_api:request(#{<<"method">> => <<"create_buffee">>,<<"name">> => <<"New Session">>,<<"desks">> => [Desk]}) end),
+                    case maps:get(<<"error">>,Reply,null) of
+                        null -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => Id}]}),
+                            {reply,metadata(Id,Reply,Next,Command),Next};
+                        _ -> stop(Id),{reply,metadata(null,Reply,S,Command),S}
+                    end;
+                false -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => null}]}),
+                    {reply,metadata(Id,#{},Next,Command),Next}
+            end;
         {error,_} -> {reply,metadata(null,#{<<"error">> => <<"Could not start Session.">>},S,Command),S}
     end;
 handle_call({request,#{<<"method">> := <<"close_session">>,<<"session">> := Id}=Command},_,#{tabs := Tabs}=S) ->

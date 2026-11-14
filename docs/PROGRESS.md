@@ -216,3 +216,15 @@ Optional browser session storage cannot abort UI initialization. A focused actua
 macOS WebKit test with delayed runtime/no Sessions passes introduction loading,
 Join dialog opening and the + new-Session command. The runtime in that test is a
 stub; real macOS/iPhone connection acceptance remains manual.
+
+Plus-button behavior corrected: the web/native shell requests new_session with
+create=true, creating an authorized New Session immediately under the same Device
+identity. Home Join still allocates a separate blank context for its invitation.
+A disposable runtime check confirms + returns authorized membership, Owner role
+and matching Session/Buffee ID. Duplicate native branding inside Session pages
+is removed. macOS/iOS rebuilds include the change; real-device UI acceptance is
+manual.
+
+Native presentation scale: centralized PlatformUISettings defaults iOS to 120%
+and macOS to 100%, applied through WKWebView.pageZoom. Same shared frontend; no
+user setting or gesture restriction. iPhone sizing/reflow requires manual review.
