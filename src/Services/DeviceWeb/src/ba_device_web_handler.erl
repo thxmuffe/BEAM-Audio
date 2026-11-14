@@ -70,7 +70,7 @@ read_chunk(Req,State,Acc,Deadline,Remaining) ->
 
 allowed(#{<<"method">> := Method}=Command) ->
     not maps:is_key(<<"instance">>,Command) andalso lists:member(Method,
-        [<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
+        [<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
          <<"end_buffee">>,<<"capability">>,<<"undo">>,<<"redo">>,<<"send">>,
          <<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
          <<"request_chef">>,<<"set_role">>,<<"remove_device">>,<<"exclude">>,
@@ -122,6 +122,7 @@ asset(Path,Req,#{assets := Root}) ->
     end;
 asset(_,Req,_) -> reply(404,#{error => <<"No frontend configured.">>},Req).
 
+mime(<<".md">>) -> <<"text/plain; charset=utf-8">>;
 mime(<<".html">>) -> <<"text/html; charset=utf-8">>;
 mime(<<".css">>) -> <<"text/css; charset=utf-8">>;
 mime(<<".js">>) -> <<"application/javascript">>;

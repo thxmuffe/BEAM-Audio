@@ -39,6 +39,7 @@ command(#{<<"method">> := <<"capabilities">>,<<"consent">> := Values}=R) ->
 command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}=R) ->
     ba_device_config:change(#{capability_key(K) => B},config_options(R));
 command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);
+command(#{<<"method">> := <<"rename_session">>,<<"name">> := Name}) -> ba_buffee_membership:rename(Name);
 command(#{<<"method">> := <<"request_chef">>}) -> ba_buffee_membership:request_chef();
 command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_buffee_chat:send(Text);
 command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_buffee_clock:set_offset(Offset);
@@ -86,6 +87,7 @@ command(#{<<"method">> := <<"end_buffee">>}) ->
 command(_) ->
     {error, <<"Unsupported request.">>}.
 
+capability_key(<<"calibrate">>) -> calibrate;
 capability_key(<<"speaker">>) -> speaker;
 capability_key(<<"microphone">>) -> microphone;
 capability_key(<<"broadcast">>) -> broadcast.

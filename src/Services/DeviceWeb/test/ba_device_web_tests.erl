@@ -144,6 +144,22 @@ direct_device(#{dir := Dir}=C) ->
     try
         {ok,_}=ba_runtime:start(buffee_control),
         URL=start(C,#{}),
+        NativeListRequest = <<"native-list-request">>,
+        NativeList = json:decode(ba_bridge:request(json:encode(
+            #{method => list_sessions,request_id => NativeListRequest}))),
+        ?assertEqual(NativeListRequest,maps:get(<<"request_id">>,NativeList)),
+        ?assertEqual(1,length(maps:get(<<"sessions">>,NativeList))),
+        NativeCreateRequest = <<"native-create-request">>,
+        NativeCreated = json:decode(ba_bridge:request(json:encode(
+            #{method => new_session,request_id => NativeCreateRequest}))),
+        ?assertEqual(NativeCreateRequest,maps:get(<<"request_id">>,NativeCreated)),
+        NativeTab = maps:get(<<"session_id">>,NativeCreated),
+        ?assertEqual(2,length(maps:get(<<"sessions">>,NativeCreated))),
+        NativeCloseRequest = <<"native-close-request">>,
+        NativeClosed = json:decode(ba_bridge:request(json:encode(
+            #{method => close_session,session => NativeTab,request_id => NativeCloseRequest}))),
+        ?assertEqual(NativeCloseRequest,maps:get(<<"request_id">>,NativeClosed)),
+        ?assertEqual(1,length(maps:get(<<"sessions">>,NativeClosed))),
         {200,_,Body}=post(URL,#{method => snapshot}),
         Snapshot=json:decode(Body),
         [?assertEqual(200,status(post(URL,Command))) || Command <-
@@ -159,15 +175,29 @@ direct_device(#{dir := Dir}=C) ->
         ?assertMatch([#{local := true,state := idle}],maps:get(devices,Monitor)),
         {200,_,Undone}=post(URL,#{method => undo}),
         ?assertEqual(false,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Undone)))),
-        {200,_,Added}=post(URL,#{method => new_session}),
-        Tab=maps:get(<<"session_id">>,json:decode(Added)),
-        {200,_,Listing}=post(URL,#{method => list_sessions}),
-        ?assertEqual(2,length(maps:get(<<"sessions">>,json:decode(Listing)))),
+        CreateRequest = <<"new-tab-request">>,
+        {200,_,Added}=post(URL,#{method => new_session,request_id => CreateRequest}),
+        AddedReply=json:decode(Added),
+        ?assertEqual(CreateRequest,maps:get(<<"request_id">>,AddedReply)),
+        Tab=maps:get(<<"session_id">>,AddedReply),
+        ListRequest = <<"list-tabs-request">>,
+        {200,_,Listing}=post(URL,#{method => list_sessions,request_id => ListRequest}),
+        ListingReply=json:decode(Listing),
+        ?assertEqual(ListRequest,maps:get(<<"request_id">>,ListingReply)),
+        ?assertEqual(2,length(maps:get(<<"sessions">>,ListingReply))),
         {200,_,Scoped}=post(URL,#{method => capability,session => Tab,capability => microphone,enabled => true}),
         ?assertEqual(true,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Scoped)))),
         ?assertEqual(false,maps:get(microphone,ba_device_config:consent())),
-        {200,_,Closed}=post(URL,#{method => close_session,session => Tab}),
-        ?assertEqual(1,length(maps:get(<<"sessions">>,json:decode(Closed))))
+        CloseRequest = <<"close-tab-request">>,
+        {200,_,Closed}=post(URL,#{method => close_session,session => Tab,request_id => CloseRequest}),
+        ClosedReply=json:decode(Closed),
+        ?assertEqual(CloseRequest,maps:get(<<"request_id">>,ClosedReply)),
+        ?assertEqual(1,length(maps:get(<<"sessions">>,ClosedReply))),
+        MissingRequest = <<"closed-tab-request">>,
+        {200,_,Missing}=post(URL,#{method => snapshot,session => Tab,request_id => MissingRequest}),
+        MissingReply=json:decode(Missing),
+        ?assertEqual(MissingRequest,maps:get(<<"request_id">>,MissingReply)),
+        ?assertEqual(<<"No open Session.">>,maps:get(<<"error">>,MissingReply))
     after
         application:stop(ba_core),
         lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old)

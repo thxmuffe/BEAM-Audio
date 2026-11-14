@@ -29,8 +29,10 @@ request(JSON) ->
     end.
 
 buffee_request(JSON) ->
-    Reply=try ba_device_api:request(json:decode(JSON))
-          catch _:_ -> ba_device_api:request(#{}) end,
+    Request=try json:decode(JSON) catch _:_ -> #{} end,
+    Reply=try ba_sessions:request(Request)
+          catch _:_ -> maps:merge(#{<<"error">> => <<"Session runtime unavailable.">>},
+                                  maps:with([<<"request_id">>],Request)) end,
     iolist_to_binary(json:encode(Reply)).
 
 legacy_request(JSON) ->

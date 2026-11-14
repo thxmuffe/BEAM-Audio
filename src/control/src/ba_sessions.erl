@@ -13,47 +13,48 @@ handle_info(restore,#{tabs := Tabs}=S) ->
     [start(Id) || #{id := Id} <- Tabs,Id=/=<<"default">>],{noreply,S};
 handle_info(_,S) -> {noreply,S}.
 handle_cast(_,S) -> {noreply,S}.
-handle_call({request,#{<<"method">> := <<"list_sessions">>}},_,S) -> {reply,metadata(null,#{},S),S};
-handle_call({request,#{<<"method">> := <<"new_session">>}},_,#{tabs := Tabs}=S) ->
+handle_call({request,#{<<"method">> := <<"list_sessions">>}=Command},_,S) ->
+    {reply,metadata(null,#{},S,Command),S};
+handle_call({request,#{<<"method">> := <<"new_session">>}=Command},_,#{tabs := Tabs}=S) ->
     Id=binary:encode_hex(crypto:strong_rand_bytes(16)),
     case start(Id) of
         ok -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => null}]}),
-              {reply,metadata(Id,#{},Next),Next};
-        {error,_} -> {reply,metadata(null,#{<<"error">> => <<"Could not start Session.">>},S),S}
+              {reply,metadata(Id,#{},Next,Command),Next};
+        {error,_} -> {reply,metadata(null,#{<<"error">> => <<"Could not start Session.">>},S,Command),S}
     end;
-handle_call({request,#{<<"method">> := <<"close_session">>,<<"session">> := Id}},_,#{tabs := Tabs}=S) ->
+handle_call({request,#{<<"method">> := <<"close_session">>,<<"session">> := Id}=Command},_,#{tabs := Tabs}=S) ->
     case lists:any(fun(D) -> maps:get(id,D)=:=Id end,Tabs) of
-        false -> {reply,metadata(null,#{<<"error">> => <<"Unknown Session.">>},S),S};
+        false -> {reply,metadata(null,#{<<"error">> => <<"Unknown Session.">>},S,Command),S};
         true ->
             _=in(Id,fun ba_buffee:leave/0),stop(Id),
             Next=save(S#{tabs := [D || D <- Tabs,maps:get(id,D)=/=Id]}),
-            {reply,metadata(null,#{},Next),Next}
+            {reply,metadata(null,#{},Next,Command),Next}
     end;
 handle_call({request,Command},From,#{tabs := Tabs}=S) ->
     Default=case Tabs of [#{id := I}|_] -> I;[] -> null end,
     Id=maps:get(<<"session">>,Command,Default),
     case lists:any(fun(D) -> maps:get(id,D)=:=Id end,Tabs) of
-        false -> {reply,metadata(null,#{<<"error">> => <<"No open Session.">>},S),S};
+        false -> {reply,metadata(null,#{<<"error">> => <<"No open Session.">>},S,Command),S};
         true ->
             case prepare(Id,Command,S) of
-                {error,Message} -> {reply,metadata(Id,#{<<"error">> => Message},S),S};
+                {error,Message} -> {reply,metadata(Id,#{<<"error">> => Message},S,Command),S};
                 {Selected,Next} ->
                     spawn(fun() ->
                         Reply=try in(Selected,fun() -> dispatch(Command) end)
                             catch _:_ -> #{<<"error">> => <<"Session unavailable.">>} end,
-                        Result=gen_server:call(?MODULE,{finished,Selected,Reply},10000),
+                        Result=gen_server:call(?MODULE,{finished,Selected,Reply,Command},10000),
                         gen_server:reply(From,Result)
                     end),
                     {noreply,Next}
             end
     end;
-handle_call({finished,Id,Reply},_,#{tabs := Tabs}=S) ->
+handle_call({finished,Id,Reply,Command},_,#{tabs := Tabs}=S) ->
     Next=case maps:get(buffee,Reply,undefined) of
         #{state := idle} -> save_changed(S,S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{name := <<"New Session">>,buffee := null};false -> D end || D <- Tabs]});
         #{name := Name,buffee := Buffee} -> save_changed(S,S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{name := Name,buffee := Buffee};false -> D end || D <- Tabs]});
         _ -> S
     end,
-    {reply,metadata(Id,Reply,Next),Next};
+    {reply,metadata(Id,Reply,Next,Command),Next};
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 in(<<"default">>,F) -> ba_session_scope:run(undefined,F);
 in(Id,F) -> ba_session_scope:run(Id,F).
@@ -67,8 +68,9 @@ stop(Id) -> supervisor:terminate_child(ba_sup,{session,Id}),supervisor:delete_ch
 save_changed(#{tabs := Tabs},#{tabs := Tabs}=S) -> S;
 save_changed(_,S) -> save(S).
 save(#{tabs := Tabs}=S) -> ok=ba_device_store:save(web_sessions,Tabs),S.
-metadata(Id,Reply,#{tabs := Tabs}) ->
-    maps:merge(#{<<"error">> => null,session_id => Id,sessions => Tabs,supports_sessions => true},Reply).
+metadata(Id,Reply,#{tabs := Tabs},Command) ->
+    Base=#{<<"error">> => null,session_id => Id,sessions => Tabs,supports_sessions => true},
+    maps:merge(maps:merge(Base,Reply),maps:with([<<"request_id">>],Command)).
 prepare(Id,#{<<"method">> := <<"join_buffee">>,<<"invitation">> := Link},#{tabs := Tabs}=S) ->
     try
         {_,I}=ba_buffee_passport:parse_invitation(Link),Target=maps:get(<<"buffee">>,I),

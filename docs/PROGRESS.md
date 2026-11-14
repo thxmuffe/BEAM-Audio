@@ -89,11 +89,110 @@ after full shutdown. Both two-added-Session and default-plus-added-Session cases
 passed. Device-type label checks: 2 pass; HTTP boundary and tab command checks:
 7 pass. No automated visual review, native installation, public Reception change
 or listening/timing qualification was performed. Concurrent physical audio and
-manual UI acceptance remain unverified. Native hosts retain their existing single
-Session bridge; this tab shell is web-only.
+manual UI acceptance remain unverified.
+
+## Native Session-tab parity
+
+The macOS and iOS WebViews now load the same outer Session-tab shell as the web
+app instead of redirecting directly to one Session page. The native bridge
+supports listing, creating and closing tabs; each iframe remains on the
+packaged local origin, and snapshots are forwarded only to the matching Session.
+Session-management replies preserve request IDs so asynchronous bridge calls can
+be correlated. The Mac/iOS JSON bridge routes commands through `ba_sessions`,
+just like the web service. The native allowlist also includes the current Device
+role and removal actions used by the shared frontend.
+
+OpenSoundKit tests pass (4 tests), including idle-state navigation and native
+tab creation/closing. The iOS target compiles. DeviceWeb EUnit passes (7 tests),
+including list/create/close via the native bridge and request-ID correlation.
+The apps were not packaged or installed, and visual acceptance and concurrent
+physical audio remain unverified.
 
 Invite toolbox fix: any authorized participant may display and forward its
 existing reusable invitation; ownership is not required to share an existing
 link. Newly saved memberships preserve that link across rejoining. Old saved
 Guest memberships without a link need an invitation-based rejoin to recover it.
 Owner-only administration and targeted readmission remain unchanged.
+
+Web UI increment: Devices is the default first tab, My Device second, Chat last
+with an unread count. Offline row menus remain accessible. Kick removes admission
+and invalidates the old passport but permits a fresh invitation-based join; Ban
+is not implemented. Playback/Record use the existing local audio controls; Calibrate
+and DSP are unavailable placeholders. System audio moves to the Session header.
+My Device shows participation and provides Chef requests and self-demotion (an
+online Owner must apply a non-Owner Chef’s signed demotion request). Internal
+names are unchanged. Security architecture and choppy playback remain next steps.
+No native app build or visual acceptance is included.
+
+My Device refinement: “Let system use my device for:” introduces the controls.
+Role is an icon with a tooltip; role-selection buttons are removed. System audio
+requests Chef approval when enabled by a Guest. Calibrate now records independent
+local permission for microphone/speaker calibration, with undo/redo and persistence;
+it does not enable continuous recording or playback. A calibration execution
+workflow is not implemented by this UI change. DSP remains unavailable.
+
+Web home tab: the logo is a permanent, unclosable first tab. It opens static
+branding/help content; Session tabs remain independent and continue running while
+home is selected. Closing the last Session selects home. No runtime change.
+
+Role icon placement: moved beside the Session name in the persistent Session
+header; My Device contains consent controls only. Tooltip behavior is retained.
+
+Web chat layout: viewport-height flex layout reserves the composer at the bottom;
+only history scrolls as messages arrive. Removed the page-container focus outline,
+retaining control focus indicators. Navigation tabs now have solid unselected
+surfaces and conventional edges. CSS-only change; manual visual testing pending.
+
+Session viewport follow-up: nested Session documents use their iframe’s percentage
+height rather than a separate dynamic viewport height. Session panels fill their
+parent explicitly. Safari zoom/layout acceptance remains for manual verification.
+
+Web Session Settings now opens from the clickable status indicator beside the
+Session name; the duplicate gear button is removed. Keyboard/button semantics
+and connection-state tooltip are retained.
+
+Web visual trial: Invite is temporarily hidden; system-audio consent is a speaker
+icon toggle in the toolbox, with pressed state and descriptive status tooltip.
+Existing consent and Chef-request behavior is retained.
+
+Web header refinement: removed repeated Session/device names from the Session
+header. Session tabs display the participation/ownership icon with a descriptive
+tooltip. Session Settings states the local device name and explains Owner and
+Chef/Guest roles in words. Frontend syntax checks pass; visual review is manual.
+
+Web Session toolbar trial: all controls are right-aligned in Invite, system-audio,
+Undo, Redo, Settings order. Settings uses a bordered gear whose color indicates
+connection state; its accessible label and tooltip also explain the status.
+
+Web refinement: fixed toolbar button/SVG geometry, continuous selected-tab/page
+surface with navigation flush to the header bottom, and inline expandable
+Connection details inside Session Settings. Frontend syntax checked; visual
+acceptance remains manual.
+
+Session Settings now saves valid name/response-time edits on field change and
+role selections immediately, with only Close. Guests request Chef approval;
+self-demotion retains ownership. Chef name changes go to an online Owner and
+propagate via the revisioned signed membership statement; Owners rename directly.
+Connection details stays inline. The navigation baseline extends to both edges.
+
+Web settings grouping refined: Device heading/name/role form one spaced section;
+role uses native radios styled as a segmented control. Connection details uses the
+shared chevron shape, no input-like border, and selectable text. Invite now uses
+person-plus artwork; gear geometry is radial and square-constrained. Navigation
+order is Devices, Chat, My Device. JavaScript syntax checked; manual visual review
+pending.
+
+The introduction tab loads `src/Apps/WebApp/public/introduction.md` from the
+OpenSound checkout. Edit that file; supported Markdown is headings, paragraphs
+and unordered lists (no raw HTML or inline formatting). Asset builders copy it
+with the UI. The content is shortened from the product README for app users.
+Session navigation is now a left sidebar, becoming a bottom bar on narrow screens;
+Session tabs remain at the top. Manual visual validation is pending.
+
+Navigation visual trial: replaced the sidebar/bottom bar with always-visible
+compact text navigation (Devices, Chat, My Device), using an underline for the
+current view. Session actions align right and wrap below navigation on narrow
+screens. No hamburger or secondary tab outlines. CSS-only; manual review pending.
+
+Header wrapping fix: removed the narrow-screen full-row navigation width.
+Navigation and actions now share a row whenever their actual content fits.

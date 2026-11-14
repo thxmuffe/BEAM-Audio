@@ -4,9 +4,11 @@
 
 Web UI cleanup and real parallel Session tabs are implemented. Each tab has
 independent membership, chat, audio consent/history and clock workers. Device
-identity, saved contacts and Reception connections are shared. The user will
-inspect the layout and test actual concurrent audio manually. No native app
-rebuild or Reception deployment is part of this increment.
+identity, saved contacts and Reception connections are shared. Native Mac/iOS
+WebViews now load the same outer Session-tab shell and route its tab operations
+through the existing runtime bridge. The user will inspect the layout and test
+actual concurrent audio manually. App packaging/installation and Reception
+deployment are not part of this increment.
 
 ## Devices layout
 
@@ -35,3 +37,13 @@ builds and installations are outside this UI increment.
 Use [current progress and limits](PROGRESS.md), [architecture](ARCHITECTURE.md)
 and [networking research](AUDIO_NETWORKING.md). No replacement audio SDK or
 multicast/relay topology has been selected.
+
+Web UI increment: Devices is the default first tab, My Device second, Chat last
+with an unread count. Offline row menus remain accessible. Kick removes admission
+and invalidates the old passport but permits a fresh invitation-based join; Ban
+is not implemented. Playback/Record use the existing local audio controls; Calibrate
+and DSP are unavailable placeholders. System audio moves to the Session header.
+My Device shows participation and provides Chef requests and self-demotion (an
+online Owner must apply a non-Owner Chef’s signed demotion request). Internal
+names are unchanged. Security architecture and choppy playback remain next steps.
+No native app build or visual acceptance is included.

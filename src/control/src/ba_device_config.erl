@@ -25,8 +25,9 @@ validate(#{format := 1,revision := R,cursor := C,seen := Seen,states := States})
     true=lists:all(fun(Id) -> is_binary(Id) andalso byte_size(Id)>0 andalso byte_size(Id)=<128 end,Seen),
     [begin true=valid_config(Config),true=is_binary(Label),true=is_integer(T) end || #{config := Config,label := Label,time_ms := T} <- States],
     true=lists:all(fun(E) -> is_map(E) andalso maps:is_key(config,E) andalso maps:is_key(label,E) andalso maps:is_key(time_ms,E) end,States),ok.
-valid_config(C) when is_map(C),map_size(C)=:=3 ->
-    lists:sort(maps:keys(C))=:=[broadcast,microphone,speaker] andalso lists:all(fun is_boolean/1,maps:values(C));
+valid_config(C) when is_map(C) ->
+    lists:all(fun(K) -> maps:is_key(K,C) end,[broadcast,microphone,speaker]) andalso
+    lists:all(fun(K) -> lists:member(K,[broadcast,microphone,speaker,calibrate]) end,maps:keys(C)) andalso lists:all(fun is_boolean/1,maps:values(C));
 valid_config(_) -> false.
 current(#{states := States,cursor := C}) -> maps:get(config,lists:nth(C+1,States)).
 public(#{states := States,cursor := C,revision := R}=S) ->
@@ -73,7 +74,7 @@ apply_command({edit,Patch,_},S) when is_map(Patch) ->
     case New=:=Old of
         true -> unchanged;
         false ->
-            Changed=[K || K <- [speaker,microphone,broadcast],maps:get(K,Old)=/=maps:get(K,New)],
+            Changed=[K || K <- [speaker,microphone,broadcast,calibrate],maps:get(K,Old,false)=/=maps:get(K,New,false)],
             Label=case Changed of
                 [K] -> <<(case maps:get(K,New) of true -> <<"Enable ">>;false -> <<"Disable ">> end)/binary,(atom_to_binary(K))/binary>>;
                 _ -> <<"Change audio capabilities">>

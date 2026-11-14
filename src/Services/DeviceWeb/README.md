@@ -133,6 +133,10 @@ audio integration is the next concrete work item, separate from web control.
 
 The web shell uses `list_sessions`, `new_session` and `close_session`. Existing
 commands carry `session` to select a local runtime tree; closing invokes Leave.
+Replies to the tab-management commands echo `request_id` for asynchronous client
+correlation. Native WebViews use the same shell through the local runtime bridge,
+which routes these commands through `ba_sessions` too; each Session iframe
+receives only snapshots for its own `session` identifier.
 `session.html` may be framed only by this same loopback origin. No third-party
 framing is permitted. Session workers share one Device identity and Reception
 connection per URL; the service still owns no audio/membership policy.
