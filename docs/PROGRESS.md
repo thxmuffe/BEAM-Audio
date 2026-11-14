@@ -196,3 +196,23 @@ screens. No hamburger or secondary tab outlines. CSS-only; manual review pending
 
 Header wrapping fix: removed the narrow-screen full-row navigation width.
 Navigation and actions now share a row whenever their actual content fits.
+
+Apple frontend update: the shared native host reads the fixed bundled
+introduction.md through a local bridge; web still fetches that same file, and
+both use the same renderer. The screenshot’s short introduction was fallback
+content after the web-style load failed in the native host. Home now has Join a
+Session with a paste-link dialog, using a new parallel Session without replacing
+existing ones. Invalid-link retries reuse the new blank tab. Native rename command
+allowlist is also aligned with the web API. macOS and unsigned iOS device builds
+succeeded; both packaged frontends match all source assets byte-for-byte.
+Reopen the built Mac app; iPhone signing/install remains an Xcode step. Native
+visual/Join acceptance remains for manual testing; no running Session was stopped.
+
+Native home-action startup fix: early bridge requests could be discarded before
+the runtime/channel was ready, leaving + and Join disabled. The shared native
+host now retains bounded pending commands until the first runtime response, even
+when that response has no Device snapshot because all Sessions are closed.
+Optional browser session storage cannot abort UI initialization. A focused actual
+macOS WebKit test with delayed runtime/no Sessions passes introduction loading,
+Join dialog opening and the + new-Session command. The runtime in that test is a
+stub; real macOS/iPhone connection acceptance remains manual.

@@ -47,3 +47,11 @@ My Device shows participation and provides Chef requests and self-demotion (an
 online Owner must apply a non-Owner Chef’s signed demotion request). Internal
 names are unchanged. Security architecture and choppy playback remain next steps.
 No native app build or visual acceptance is included.
+
+Next manual check: reopen the updated macOS build and install the iOS build via
+Xcode; verify the shared introduction and home-page Join while other Sessions
+remain active. Both builds compile; device behavior is not yet visually verified.
+
+Native startup follow-up: test + and home-page Join after a cold start with no
+Sessions. A delayed-runtime WebKit regression test covers this case; use the
+rebuilt native apps for real Device testing.
