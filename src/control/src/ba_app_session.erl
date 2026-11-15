@@ -27,7 +27,7 @@ permissions() -> [<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>,
 consent() ->
     case ba_session_scope:whereis(ba_device_config) of
         undefined -> case application:get_env(ba_core,runtime_profile,legacy_apps) of
-            buffee_control -> #{speaker => false,microphone => false,broadcast => false,calibrate => false,dsp => false};
+            buffee_control -> #{speaker => false,microphone => false,broadcast => false,calibrate_microphone => false,calibrate_speaker => false,dsp => false};
             _ -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false}) end;
         _ -> C=ba_device_config:consent(),
              case application:get_env(ba_core,runtime_profile,legacy_apps) of
@@ -71,12 +71,12 @@ snapshot() ->
             Audio=safe(fun() -> case ba_session_scope:whereis(ba_audio_receiver) of undefined -> #{};_ -> ba_audio_receiver:snapshot() end end,#{}),
             Clock=ba_buffee_clock:status(),
             LocalName=maps:get(<<"device_name">>,maps:get(capabilities,Handler,#{}),ba_device_label:local(Id)),
+            Privileges=device_privileges(),
             Devices=[#{id => D,name => case D=:=Id of true -> LocalName;false -> maps:get(D,maps:get(peer_names,Control,#{}),<<>>) end,
                 local => D=:=Id,excluded => excluded(D),
                 has_error => maps:get(D,maps:get(peer_errors,Control,#{}),false),
-                chef_requested => lists:member(D,maps:get(chef_requests,Buffee,[])),
-                owner => lists:member(D,maps:get(owners,Buffee,[])),
-                roles => device_roles(D),
+                privileges => maps:get(D,Privileges,[]),
+                requests => maps:get(D,maps:get(requests,Buffee,#{}),[]),
                 state => case D=:=Id of true -> authorized;false -> maps:get(stage,maps:get(D,maps:get(sessions,Control,#{}),#{}),disconnected) end}
                 || D <- maps:get(members,Buffee,[])],
             LocalJobs=[#{id => atom_to_binary(K),device => Id,capability => K,state => maps:get(state,V,waiting)}
@@ -84,7 +84,7 @@ snapshot() ->
             Base#{device_name := LocalName,handler => Handler,devices := Devices,audio := Audio,clock := Clock,
                 jobs := LocalJobs++[J#{id => Key} || {Key,J} <- maps:to_list(maps:get(jobs,Control,#{}))],
                 messages := safe(fun ba_buffee_chat:history/0,[]),
-                passport := maps:with([buffee,owner,owners,membership,role,roles,state,epoch,revision],Buffee)}
+                passport := maps:with([buffee,owner,grant_holders,membership,privileges,state,epoch,revision],Buffee)}
     end.
 safe(F,Default) -> try F() catch exit:_ -> Default end.
 forget_snapshots() ->
@@ -97,8 +97,8 @@ forget_snapshots() ->
             "buffee_time_cache.term","audio_subscriptions.term","audio_subscription.term","clock_status.json"])
     end.
 
-device_roles(Id) ->
+device_privileges() ->
     case ba_buffee_membership:current() of
-        {ok,#{device_roles := Roles}} -> maps:get(Id,Roles,[guest]);
-        _ -> [guest]
+        {ok,#{device_privileges := Held}} -> maps:map(fun(_,Wires) -> ba_session_privileges:names(Wires) end,Held);
+        _ -> #{}
     end.

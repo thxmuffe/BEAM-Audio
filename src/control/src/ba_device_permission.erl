@@ -4,14 +4,15 @@
 allowed(broadcast) ->
     case application:get_env(ba_core,runtime_profile,legacy_apps) of
         buffee_control ->
-            try ba_buffee:broadcast() andalso lists:member(chef,maps:get(roles,ba_buffee_membership:status(),[]))
+            try ba_buffee:broadcast() andalso lists:member(<<"on_air">>,maps:get(privileges,ba_buffee_membership:status(),[]))
             catch exit:_ -> false end;
         _ -> true
     end;
 allowed(playback) -> ba_device_config:allowed(speaker);
 allowed(record) -> ba_device_config:allowed(microphone);
 allowed(microphone) -> allowed(record);
-allowed(calibrate) -> ba_device_config:allowed(calibrate);
+allowed(calibrate_microphone) -> ba_device_config:allowed(calibrate_microphone);
+allowed(calibrate_speaker) -> ba_device_config:allowed(calibrate_speaker);
 allowed(dsp) -> ba_device_config:allowed(dsp);
 allowed(legacy_capture) -> application:get_env(ba_core,runtime_profile,legacy_apps)=/=buffee_control;
 allowed(_) -> false.

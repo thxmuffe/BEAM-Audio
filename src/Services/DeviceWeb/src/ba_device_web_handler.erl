@@ -71,9 +71,9 @@ read_chunk(Req,State,Acc,Deadline,Remaining) ->
 allowed(#{<<"method">> := Method}=Command) ->
     not maps:is_key(<<"instance">>,Command) andalso lists:member(Method,
         [<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
-         <<"end_buffee">>,<<"capability">>,<<"undo">>,<<"redo">>,<<"send">>,
+         <<"end_buffee">>,<<"capability">>,<<"policy">>,<<"undo">>,<<"redo">>,<<"send">>,
          <<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
-         <<"request_chef">>,<<"set_role">>,<<"remove_device">>,<<"exclude">>,
+         <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
          <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>]);
 allowed(_) -> false.
 

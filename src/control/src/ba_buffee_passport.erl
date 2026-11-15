@@ -35,7 +35,7 @@ runtime_policy(P,Self) ->
       manager => maps:get(<<"manager">>,P),epoch => maps:get(<<"epoch">>,P),revision => maps:get(<<"revision">>,P),
       peers => maps:map(fun(_,M) -> lists:sort([permission(X) || X <- maps:get(<<"permissions">>,M)]) end,maps:remove(Self,Members))}.
 permissions(L) ->
-    true = is_list(L) andalso length(L) =< 9 andalso lists:usort(L) =:= L,
+    true = is_list(L) andalso length(L) =< 10 andalso lists:usort(L) =:= L,
     [permission(P) || P <- L],ok.
 permission(<<"capabilities_read">>) -> capabilities_read;
 permission(<<"job_offer">>) -> job_offer;
@@ -45,6 +45,7 @@ permission(<<"stream_subscribe">>) -> stream_subscribe;
 permission(<<"time_read">>) -> time_read;
 permission(<<"offset_write">>) -> offset_write;
 permission(<<"owner">>) -> owner;
+permission(<<"end_session">>) -> end_session;
 permission(<<"stream_publish">>) -> stream_publish.
 %% v4 transports the exact signed JSON bytes plus the raw Ed25519 signature.
 %% No re-signing, compression, external lookup or Reception-side state.

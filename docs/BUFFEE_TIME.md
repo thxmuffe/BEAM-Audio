@@ -20,13 +20,13 @@ unqualified; software handover is not proof of acoustic synchronization.
 ## Configuration and API
 
 Use the [membership configuration](BUFFEE_MEMBERSHIP.md). `time_read` permits
-sampling the reference and reading Response time. Only Chefs and Owners can
-change Session-wide Response time; an old `offset_write` flag alone grants no
-such permission. Hosting the clock process also grants no editing privilege.
-For example, an Owner can authorize a Chef:
+sampling the reference and reading Response time. Only Devices holding `grant`
+or `on_air` can change Session-wide Response time; an old `offset_write` flag
+alone grants no such permission. Hosting the clock process also grants nothing.
+For example, a `grant` holder can put a Device on air:
 
 ```erlang
-ok = ba_buffee_membership:set_role(DeviceId,chef).
+ok = ba_buffee_membership:grant_privilege(DeviceId,ba_session_privileges:wire(on_air)).
 ```
 
 Lists must be sorted and unique. A member with `time_read` automatically establishes

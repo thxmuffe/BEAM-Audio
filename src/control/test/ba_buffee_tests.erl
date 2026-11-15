@@ -25,6 +25,7 @@ buffee_test_() ->
      end,
      [fun idle_and_lifecycle/0,
       fun leave_and_resume_owner/0,
+      fun ending_needs_its_own_privilege/0,
       fun bridge_json_protocol/0,
       fun owner_name_in_connection/0,
       fun crash_notice_does_not_block_supervision/0]}.
@@ -74,7 +75,7 @@ idle_and_lifecycle() ->
     URL = <<"ws://127.0.0.1:4000/relay/v1">>,
     ?assertEqual(ok, ba_buffee:create(<<"Living Room Jam">>, [URL])),
     Status = ba_buffee:status(),
-    ?assertEqual(owner, maps:get(role, Status)),
+    ?assertEqual([],[<<"end_session">>,<<"grant">>,<<"on_air">>]--maps:get(privileges,Status)),
     ?assertEqual(<<"Living Room Jam">>, maps:get(name, Status)),
     ?assertEqual(authorized, maps:get(state, Status)),
     ?assertEqual({error, already_in_buffee}, ba_buffee:create(<<"Another">>, [URL])),
@@ -102,6 +103,16 @@ bridge_json_protocol() ->
     ?assertEqual(<<"buffee_control">>, maps:get(<<"profile">>, SnapRes)),
     ?assertEqual(#{<<"state">> => <<"idle">>}, maps:get(<<"buffee">>, SnapRes)).
 
+ending_needs_its_own_privilege() ->
+    ok=ba_buffee:create(<<"End privilege">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),
+    Self=maps:get(id,ba_buffee:status()),End=ba_session_privileges:wire(end_session),
+    ok=ba_buffee_membership:take_privilege(Self,End),
+    ?assertNot(lists:member(<<"end_session">>,maps:get(privileges,ba_buffee:status()))),
+    ?assertEqual({error,end_privilege_required},ba_buffee:end_buffee()),
+    ?assertEqual(authorized,maps:get(state,ba_buffee:status())),
+    %% A grant holder's own request needs nobody else's approval.
+    ok=ba_buffee_membership:request_privilege(End),
+    ok=ba_buffee:end_buffee(),?assertEqual(#{state => idle},ba_buffee:status()).
 leave_and_resume_owner() ->
     ok=ba_buffee:create(<<"Remember ownership">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),
     Before=ba_buffee:status(),{ok,Link}=ba_buffee_membership:invite(null),
@@ -109,7 +120,7 @@ leave_and_resume_owner() ->
     #{config := #{mode := recover_authority}}=ba_device_store:load(buffee_connection,undefined),
     ok=ba_buffee:join(Link),After=ba_buffee:status(),
     ?assertEqual(maps:get(buffee,Before),maps:get(buffee,After)),
-    ?assertEqual([owner,chef],maps:get(roles,After)),
+    ?assertEqual([],[<<"end_session">>,<<"grant">>,<<"on_air">>]--maps:get(privileges,After)),
     ok=ba_buffee:leave(),#{config := Config}=ba_device_store:load(buffee_connection,undefined),
     ok=ba_buffee:start(Config),
     ok=ba_buffee:end_buffee(),?assertEqual(undefined,ba_device_store:load(buffee_connection,undefined)).

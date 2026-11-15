@@ -316,3 +316,38 @@ Next: per-Session broadcast OFF/role-loss acknowledgements, native crash/restart
 recovery, remaining local grant caller audit and optional backend paths. Security
 is still incomplete; OS isolation and physical stop guarantees are not proven.
 See CONSENT_ENFORCEMENT.md. Manual additions at the end of PLAN.md are preserved.
+
+## Privileges replace roles — 2026-11-15
+
+Model: no Owner/Chef/Guest roles; Devices hold privileges `grant`, `on_air` and
+`end_session`. `ba_session_privileges` replaces `ba_buffee_roles`. Membership
+gains `request_privilege/1`, `grant_privilege/2`, `take_privilege/2` and
+`end_session/0`; `set_role/2` and `request_chef/0` are gone. The Device API
+commands are `request_privilege`, `grant_privilege` and `take_privilege`.
+Snapshots carry `privileges`, `grant_holders` and per-Device `requests` in place
+of `role`, `roles`, `owners` and `chef_requests`. Ending now needs `end_session`
+instead of ownership. A `grant` holder's own request applies at once.
+
+Wire: `owner` and `stream_publish` keep their signed spelling. New permission
+`end_session` and new membership messages `privilege_request` /
+`privilege_release` replace `chef_request` / `guest_request`, so every Device in
+a Session needs this build. Sessions saved before this change have a creator
+without `end_session`; it must request that privilege before it can end them.
+Reception is unchanged.
+
+Validation: focused EUnit for privileges, Session lifecycle, passport, clock and
+control protocol passes (51). `tests/control/session-privileges-smoke.py` passes
+with a local Reception and three disposable Devices; `buffee-time-smoke.py`
+passes. Full core EUnit: 205 tests, one failure in `ba_monitor_tests` (device
+label) that fails identically without this change. DeviceWeb EUnit has one
+consent-undo failure, and `buffee-membership-smoke.py`,
+`parallel-sessions-smoke.py` and `buffee-reconnect-smoke.py` fail, all identically
+without this change (consent work in progress).
+
+NOT DONE: the web UI and its preview state still use role commands and fields,
+so role controls (Allow, Make Chef, Share ownership, Destroy visibility) do not
+work against this core until the UI update. The native allowlist in OpenSoundKit
+has the new command names, but no app was rebuilt or installed. No automatic
+approval, time-limited grant or request board exists. Design standards and the
+component catalogue in OpenSound still describe roles.
+

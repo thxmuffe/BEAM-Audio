@@ -14,6 +14,19 @@ the control protocol's authenticated peer session or a Media Session, qualify it
 This supersedes every rule below that calls Buffee the intentional backend or
 product term.
 
+## Privileges replace roles — 2026-11-15
+
+There are no roles. Everyone in a Session is a Device, and Devices hold
+privileges: `grant` (give and take back privileges), `on_air` (send sound to the
+Session) and `end_session`. Privileges are requested and a `grant` holder
+answers; creating a Session gives the creator all three. Chef, Guest and Owner
+are retired words: do not add them to new code, documentation or UI. On the
+signed wire `grant` stays `owner` and `on_air` stays `stream_publish`. Session
+privileges never answer Device consent; only a Device's own user does. This
+supersedes every rule below that speaks of Owner, Chef or Guest roles; read
+"Owner" there as a `grant` holder and "Chef" as a Device holding `on_air`. See
+docs/TERMINOLOGY.md.
+
 ## UI vocabulary boundary — 2026-11-11
 
 In the UI use **Session**, **Device**, **Group**, **Join**, **Leave** and
@@ -139,10 +152,10 @@ in entity labels, lists and counts, and display role information separately.
 **Buffee** in existing identifiers is a retired name for a Session, not a typo.
 Do not autocorrect it to “buffet”; see the 2026-11-15 rule above.
 
-## Trusted ownership and return
+## Trusted grant holders and return
 
-Ownership can coexist with Chef or Guest. Any Owner may promote/demote participation,
-share/remove ownership, remove a Device, or destroy the Buffee. Owners are explicitly
-trusted. Leave and disconnection preserve ownership, including full shutdown; Destroy
-is separate. Do not add speculative offline-owner ceremonies, quorums or an external
-ownership registry. Manager/Inspector placement grants no administrative rights.
+A `grant` holder may give and take back privileges, including `grant` itself,
+and remove a Device. Ending the Session needs `end_session`. `grant` holders are
+explicitly trusted. Leave and disconnection preserve privileges, including full
+shutdown; End is separate. Do not add speculative offline ceremonies, quorums or
+an external registry. Manager/Inspector placement grants no privileges.

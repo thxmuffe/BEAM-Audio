@@ -11,7 +11,7 @@ from the core root. Native transport dependencies are prepared separately; see
 
 `ba_runtime:start(buffee_control)` starts an idle runtime. `ba_buffee:create/2`,
 `join/1`, `leave/0` and `end_buffee/0` control participation. Membership provides
-`set_role/2`, `request_chef/0` and invitations. Applications use `ba_device_api`;
+`request_privilege/1`, `grant_privilege/2`, `take_privilege/2` and invitations. Applications use `ba_device_api`;
 frontends submit commands and display snapshots, without owning policy.
 
 Contracts and local consent gate Workers independently of admission. Shared

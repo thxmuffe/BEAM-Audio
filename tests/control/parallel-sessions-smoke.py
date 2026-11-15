@@ -59,7 +59,7 @@ try:
   new=a.req('new_session')['session_id'];ra=a.req('join_buffee',session=new,invitation=links[0]);assert ra['session_id']==aslots[0];a.wait(aslots[0],lambda s:s['buffee']['role']=='owner')
   print('PASS: closed owner returns through its invitation with saved ownership',flush=True)
   a.close();a=Device(str(Path(state)/'a'),'14'*32);devices.append(a)
-  a.wait(aslots[0],lambda s:s['buffee'].get('role')=='owner');a.wait(aslots[1],lambda s:s['buffee'].get('role')=='owner')
+  a.wait(aslots[0],lambda s:'grant' in s['buffee'].get('privileges',[]));a.wait(aslots[1],lambda s:'grant' in s['buffee'].get('privileges',[]))
   assert a.req('connections')['count']==1
   print('PASS: both open Sessions restore after full runtime restart')
 finally:

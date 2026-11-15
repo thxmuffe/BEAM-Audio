@@ -2,7 +2,11 @@
 %% configuration. One serialized owner records changes from every supported client.
 -module(ba_device_config).
 -behaviour(gen_server).
--export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1]).
+-export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3]).
+%% Device resources the Session may ask to use, and requests from other Devices
+%% that this Device answers. Each has a policy: always, ask (default) or no.
+-define(PROTECTED,[speaker,microphone,calibrate_microphone,calibrate_speaker,dsp]).
+-define(ANSWERS,[on_air_requests]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 -define(LIMIT,100).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
@@ -11,6 +15,8 @@ snapshot() -> gen_server:call(ba_session_scope:ref(?MODULE),snapshot).
 change(Patch,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{edit,Patch,Options}).
 undo(Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{undo,Options}).
 redo(Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{redo,Options}).
+policy(Key) -> gen_server:call(ba_session_scope:ref(?MODULE),{policy,Key}).
+policy(Key,Value,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{policy,Key,Value,Options}).
 %% Read-only, fail-closed view for hot execution paths. Only this owner writes it.
 allowed(Key) ->
     case application:get_env(ba_core,runtime_profile,legacy_apps) of
@@ -25,7 +31,7 @@ init([]) ->
     ets:new(?MODULE,[named_table,protected,set,{read_concurrency,true}]),
     Secure=application:get_env(ba_core,runtime_profile,legacy_apps)=:=buffee_control,
     Default=case Secure of
-        true -> #{speaker => false,microphone => false,broadcast => false,calibrate => false,dsp => false};
+        true -> maps:from_keys([broadcast|?PROTECTED],false);
         false -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false})
     end,
     Initial=#{format => 1,revision => 0,cursor => 0,seen => [],
@@ -42,16 +48,29 @@ validate(#{format := 1,revision := R,cursor := C,seen := Seen,states := States})
     true=lists:all(fun(E) -> is_map(E) andalso maps:is_key(config,E) andalso maps:is_key(label,E) andalso maps:is_key(time_ms,E) end,States),ok.
 valid_config(C) when is_map(C) ->
     lists:all(fun(K) -> maps:is_key(K,C) end,[broadcast,microphone,speaker]) andalso
-    lists:all(fun(K) -> lists:member(K,[broadcast,microphone,speaker,calibrate,dsp]) end,maps:keys(C)) andalso lists:all(fun is_boolean/1,maps:values(C));
+    lists:all(fun(K) -> lists:member(K,[broadcast|?PROTECTED]) end,maps:keys(C)) andalso lists:all(fun is_boolean/1,maps:values(C));
 valid_config(_) -> false.
 current(#{states := States,cursor := C}) -> maps:get(config,lists:nth(C+1,States)).
 public(#{states := States,cursor := C,revision := R}=S) ->
-    #{revision => R,consent => current(S),revocation_pending => maps:get(revocation_pending,S,[]),can_undo => C>0 andalso history_allowed(current(S),maps:get(config,lists:nth(max(1,C),States))),can_redo => C+1<length(States) andalso history_allowed(current(S),maps:get(config,lists:nth(min(length(States),C+2),States))),
+    #{revision => R,consent => current(S),policies => maps:from_list([{K,policy_of(K,S)} || K <- ?PROTECTED++?ANSWERS]),revocation_pending => maps:get(revocation_pending,S,[]),can_undo => C>0 andalso history_allowed(current(S),maps:get(config,lists:nth(max(1,C),States))),can_redo => C+1<length(States) andalso history_allowed(current(S),maps:get(config,lists:nth(min(length(States),C+2),States))),
       undo_label => case C of 0 -> null;_ -> maps:get(label,lists:nth(C+1,States)) end,
       redo_label => case C+1<length(States) of true -> maps:get(label,lists:nth(C+2,States));false -> null end,
       cursor => C,entries => [E#{selected => I=:=C} || {I,E} <- lists:zip(lists:seq(0,length(States)-1),States)]}.
 handle_call(consent,_,S) -> {reply,current(S),S};
 handle_call(snapshot,_,S) -> {reply,public(S),S};
+handle_call({policy,Key},_,S) -> {reply,policy_of(Key,S),S};
+%% always is the standing grant; ask and no both keep the grant OFF. Nothing
+%% here approves a request: ask only records that the user wants to be asked.
+handle_call({policy,Key,Value,Options},From,S) ->
+    case {lists:member(Value,[always,ask,no]),lists:member(Key,?PROTECTED),lists:member(Key,?ANSWERS)} of
+        {true,true,_} ->
+            case handle_call({edit,#{Key => Value=:=always},Options},From,S) of
+                {reply,ok,Next} -> {reply,ok,choose(Key,Value,Next)};
+                Other -> Other
+            end;
+        {true,_,true} -> {reply,ok,choose(Key,Value,S)};
+        _ -> {reply,{error,invalid_configuration},S}
+    end;
 handle_call(Command,_,S) ->
     try operation(Command,S) of
         unchanged -> case maps:get(revocation_pending,S,[]) of [] -> {reply,ok,S};_ -> commit(S,S) end;
@@ -66,8 +85,8 @@ commit(Old,Next) ->
         true -> commit_registered(Old,Next);false -> {reply,{error,permission_registry_lost},Old}
     end.
 commit_registered(Old,Next) ->
-    Removed=[K || K <- [speaker,microphone,calibrate,dsp],maps:get(K,current(Old),false),not maps:get(K,current(Next),false)],
-    Added=[K || K <- [speaker,microphone,calibrate,dsp],not maps:get(K,current(Old),false),maps:get(K,current(Next),false)],
+    Removed=[K || K <- ?PROTECTED,maps:get(K,current(Old),false),not maps:get(K,current(Next),false)],
+    Added=[K || K <- ?PROTECTED,not maps:get(K,current(Old),false),maps:get(K,current(Next),false)],
     Pending=maps:get(revocation_pending,Old,[]),
     case {Removed,Added,Pending} of
         {[_|_],[_|_],_} -> {reply,{error,separate_permission_changes_required},Old};
@@ -111,7 +130,7 @@ apply_command({edit,Patch,_},S) when is_map(Patch) ->
     case New=:=Old of
         true -> unchanged;
         false ->
-            Changed=[K || K <- [speaker,microphone,broadcast,calibrate,dsp],maps:get(K,Old,false)=/=maps:get(K,New,false)],
+            Changed=[K || K <- [broadcast|?PROTECTED],maps:get(K,Old,false)=/=maps:get(K,New,false)],
             Label=case Changed of
                 [K] -> <<(case maps:get(K,New) of true -> <<"Enable ">>;false -> <<"Disable ">> end)/binary,(atom_to_binary(K))/binary>>;
                 _ -> <<"Change audio capabilities">>
@@ -146,7 +165,14 @@ changed() ->
     [gen_server:cast(Name,audio_changed) || Name <- Names],ok.
 history_allowed(Old,New) ->
     application:get_env(ba_core,runtime_profile,legacy_apps)=/=buffee_control orelse
-    not lists:any(fun(K) -> maps:get(K,New,false) andalso not maps:get(K,Old,false) end,[speaker,microphone,calibrate,dsp]).
+    not lists:any(fun(K) -> maps:get(K,New,false) andalso not maps:get(K,Old,false) end,?PROTECTED).
+policy_of(Key,S) ->
+    case maps:get(Key,current(S),false) of true -> always;_ -> maps:get(Key,maps:get(choices,S,#{}),ask) end.
+%% A protected key's always is its grant; only no, and an answer's always, are kept here.
+choose(Key,Value,S) ->
+    Choices=maps:remove(Key,maps:get(choices,S,#{})),
+    Kept=Value=:=no orelse (Value=:=always andalso lists:member(Key,?ANSWERS)),
+    S#{choices => case Kept of true -> Choices#{Key => Value};false -> Choices end}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info(_,S) -> {noreply,S}.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([revision,cursor],S);(log,_) -> [];(_,_) -> redacted end,Status).

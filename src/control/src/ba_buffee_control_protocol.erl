@@ -22,7 +22,7 @@ new({Public, Private}, #{buffee := Buffee, authority := Authority,manager := Man
         true = hex(Peer,64) andalso Peer =/= Id,
         true = is_list(Permissions) andalso length(Permissions) =< 9,
         true = lists:usort(Permissions) =:= Permissions,
-        true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer,stream_read,stream_subscribe,time_read,offset_write,owner,stream_publish]) end,Permissions)
+        true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer,stream_read,stream_subscribe,time_read,offset_write,owner,stream_publish,end_session]) end,Permissions)
     end,Peers),
     %% Reject an accidentally mismatched local key before opening a Desk route.
     Probe = crypto:sign(eddsa,none,?DOMAIN,[Private,ed25519]),
@@ -201,7 +201,7 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
             Grant = ba_buffee_time_protocol:permission(maps:get(<<"kind">>,Payload)),
             Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
             Allowed=case maps:get(<<"kind">>,Payload) of
-                <<"offset.set">> -> ba_buffee_roles:can_edit_settings([atom_to_binary(P) || P <- Permissions]);
+                <<"offset.set">> -> ba_session_privileges:may_edit_settings([atom_to_binary(P) || P <- Permissions]);
                 _ -> Grant=:=none orelse lists:member(Grant,Permissions) end,
             case Allowed of
                 true -> {ok,[],[{time,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};

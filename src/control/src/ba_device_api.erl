@@ -12,6 +12,9 @@ request(Request) when is_map(Request) ->
 request(_) -> request(#{}).
 printable(owner_or_valid_invitation_required) -> <<"Rejoin using an invitation to recover the shareable link.">>;
 printable(revocation_incomplete) -> <<"Permission is OFF, but stopping has not been confirmed. New grants are blocked; retry OFF or restart the app.">>;
+printable(grant_required) -> <<"Only a Device with the grant privilege can change privileges.">>;
+printable(end_privilege_required) -> <<"This Device needs the end-session privilege to end the Session.">>;
+printable(grant_holder_unavailable) -> <<"No Device that can grant privileges is reachable right now.">>;
 printable(local_approval_required) -> <<"Enable this permission explicitly in My Device; history cannot grant access.">>;
 printable(configuration_changed) -> <<"Settings changed in another client. Review the latest state and retry.">>;
 printable(invalid_buffee_config) -> <<"Invalid Session name, Reception address or invitation link.">>;
@@ -41,9 +44,18 @@ command(#{<<"method">> := <<"capabilities">>,<<"consent">> := Values}=R) ->
 command(#{<<"method">> := <<"capability">>,<<"capability">> := <<"broadcast">>,<<"enabled">> := B}) -> ba_app_session:capability(broadcast,B);
 command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}=R) ->
     ba_device_config:change(#{capability_key(K) => B},config_options(R));
+command(#{<<"method">> := <<"policy">>,<<"key">> := K,<<"value">> := V}=R) ->
+    Key=case K of <<"on_air_requests">> -> on_air_requests;_ -> capability_key(K) end,
+    Value=case V of <<"always">> -> always;<<"ask">> -> ask;<<"no">> -> no end,
+    ba_device_config:policy(Key,Value,config_options(R));
 command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);
 command(#{<<"method">> := <<"rename_session">>,<<"name">> := Name}) -> ba_buffee_membership:rename(Name);
-command(#{<<"method">> := <<"request_chef">>}) -> ba_buffee_membership:request_chef();
+command(#{<<"method">> := <<"request_privilege">>,<<"privilege">> := Name}) ->
+    ba_buffee_membership:request_privilege(ba_session_privileges:parse(Name));
+command(#{<<"method">> := <<"grant_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->
+    ba_buffee_membership:grant_privilege(Device,ba_session_privileges:parse(Name));
+command(#{<<"method">> := <<"take_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->
+    ba_buffee_membership:take_privilege(Device,ba_session_privileges:parse(Name));
 command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_buffee_chat:send(Text);
 command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_buffee_clock:set_offset(Offset);
 command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
@@ -79,8 +91,6 @@ command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
         Ids when is_list(Ids) -> Ids
     end,
     ba_buffee:invite(Selection, TTL);
-command(#{<<"method">> := <<"set_role">>,<<"device">> := Device,<<"role">> := Role}) ->
-    ba_buffee_membership:set_role(Device,role(Role));
 command(#{<<"method">> := <<"remove_device">>,<<"device">> := Device}) ->
     ba_buffee_membership:revoke(Device);
 command(#{<<"method">> := <<"leave_buffee">>}) ->
@@ -90,7 +100,8 @@ command(#{<<"method">> := <<"end_buffee">>}) ->
 command(_) ->
     {error, <<"Unsupported request.">>}.
 
-capability_key(<<"calibrate">>) -> calibrate;
+capability_key(<<"calibrate_microphone">>) -> calibrate_microphone;
+capability_key(<<"calibrate_speaker">>) -> calibrate_speaker;
 capability_key(<<"speaker">>) -> speaker;
 capability_key(<<"microphone">>) -> microphone;
 capability_key(<<"broadcast">>) -> broadcast.
@@ -131,7 +142,3 @@ flowing(_,_) -> false.
 readiness(S,Previous) ->
     View=readiness(S),View#{'audio-flowing' => flowing(View,Previous)}.
 
-role(<<"chef">>) -> chef;
-role(<<"guest">>) -> guest;
-role(<<"owner">>) -> owner;
-role(<<"remove_owner">>) -> remove_owner.

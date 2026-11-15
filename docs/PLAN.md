@@ -4,7 +4,12 @@
 
 The Web/Mac/iOS UI is shared and has concurrent Session tabs. The user confirmed
 iOS Session creation now works. Finish permission enforcement before changing
-choppy playback paths. Do not rename terminology during this work.
+choppy playback paths.
+
+Model change (2026-11-15): Session replaces Buffee and privileges replace roles in
+the core (see TERMINOLOGY.md). Next: update the shared web UI to the privilege
+commands and fields; its role controls do not work against the new core until
+then. Existing `buffee`/`chef` identifiers leave only where they get in the way.
 
 ### Increment 1 — essential local enforcement
 
@@ -68,7 +73,8 @@ all playback repair wait for an unproven iOS isolation design.
 
 ## Other deferred work
 
-- Terminology redesign only after the preceding work is ready, with user guidance.
+- Automatic approval, time-limited grants and a Manager request board for
+  privilege and consent requests (designed in discussion, not built).
 - Automatic invitation delivery/drag-to-invite requires a real invitation inbox.
 - Windows Web/native audio integration and platform-specific validation.
 - Device launch-slot reuse and bounded timestamped diagnostics.

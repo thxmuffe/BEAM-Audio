@@ -163,7 +163,8 @@ direct_device(#{dir := Dir}=C) ->
         {200,_,Body}=post(URL,#{method => snapshot}),
         Snapshot=json:decode(Body),
         [?assertEqual(200,status(post(URL,Command))) || Command <-
-            [#{method => request_chef},#{method => set_role,device => <<"unknown">>,role => chef},
+            [#{method => request_privilege,privilege => on_air},#{method => grant_privilege,device => <<"unknown">>,privilege => on_air},
+             #{method => take_privilege,device => <<"unknown">>,privilege => on_air},
              #{method => remove_device,device => <<"unknown">>}]],
         ?assertEqual(<<"idle">>,maps:get(<<"state">>,maps:get(<<"buffee">>,Snapshot))),
         ?assertNot(maps:is_key(<<"managed">>,Snapshot)),

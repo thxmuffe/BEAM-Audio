@@ -92,7 +92,7 @@ init([]) ->
         born => now_ms(),filter_last_slot => undefined,sample_due => now_ms(),offset_due => now_ms(),connect_due => now_ms(),phase_due => now_ms()+Phase},
     erlang:send_after(100,self(),tick),{ok,save(S)}.
 handle_call({offset,Value,Expected},From,S) when is_integer(Value),Value>=5,Value=<30000 ->
-    case {maps:get(role,S),ba_buffee_roles:can_edit_settings(maps:get(local_permissions,maps:get(view,S,#{}),[])),revision(Expected,S)} of
+    case {maps:get(role,S),ba_session_privileges:may_edit_settings(maps:get(local_permissions,maps:get(view,S,#{}),[])),revision(Expected,S)} of
         {waiting,_,_} -> {reply,{error,membership_unavailable},S};
         {_,false,_} -> {reply,{error,forbidden},S};
         {_,_,{error,R}} -> {reply,{error,R},S};
@@ -407,14 +407,14 @@ live(infinity) -> true;
 live(Deadline) when is_integer(Deadline) -> now_ms()<Deadline;
 live(_) -> false.
 
-%% Clock service placement is independent of ownership. Prefer the original
-%% reference while it is present; an online Chef can continue an acquired clock.
-provider(Reference,Self,#{device_roles := Roles}) ->
+%% Clock service placement grants nothing. Prefer the original reference while
+%% it is present; an online on-air Device can continue an acquired clock.
+provider(Reference,Self,#{device_privileges := Privileges}) ->
     Online=fun(Id) -> Id=:=Self orelse ba_buffee_desks:peer_online(Id) end,
-    case maps:is_key(Reference,Roles) andalso Online(Reference) of
+    case maps:is_key(Reference,Privileges) andalso Online(Reference) of
         true -> Reference;
         false ->
-            case lists:sort([Id || {Id,Rs} <- maps:to_list(Roles),lists:member(chef,Rs),Online(Id)]) of
+            case lists:sort([Id || {Id,Held} <- maps:to_list(Privileges),ba_session_privileges:has(on_air,Held),Online(Id)]) of
                 [Id|_] -> Id;
                 [] -> Reference
             end

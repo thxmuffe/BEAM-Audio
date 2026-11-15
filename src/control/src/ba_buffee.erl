@@ -54,14 +54,15 @@ handle_call({invite,Selection,TTL},_,#{state := active}=S) ->
         Error -> Error
     end,{reply,Result,S};
 handle_call(end_buffee,_,#{state := active}=S) ->
-    case ba_buffee_membership:status() of
-        #{role := owner} -> ba_buffee_membership:depart(),{reply,ok,forget(stop(S))};
-        _ -> {reply,{error,owner_only},S}
+    case ba_buffee_membership:end_session() of
+        ok -> {reply,ok,forget(stop(S))};
+        Error -> {reply,Error,S}
     end;
 handle_call(leave,_,#{state := active}=S) ->
-    case ba_buffee_membership:status() of
-        #{role := owner} -> {reply,ok,stop(S)};
-        _ -> ba_buffee_membership:depart(),{reply,ok,forget(stop(S))}
+    %% Leaving never gives up the grant privilege; that Device can return.
+    case lists:member(<<"grant">>,maps:get(privileges,ba_buffee_membership:status(),[])) of
+        true -> {reply,ok,stop(S)};
+        false -> ba_buffee_membership:depart(),{reply,ok,forget(stop(S))}
     end;
 handle_call(leave,_,#{remembered := #{config := #{mode := recover_authority}}}=S) ->
     {reply,ok,stop(S)};
@@ -171,7 +172,7 @@ membership_status() ->
 valid(#{mode := recover_authority,snapshot := #{policy := Policy,urls := URLs,name := Name}}) ->
     try
         ok=ba_buffee_passport:policy(Policy),ok=ba_buffee_passport:urls(URLs),
-        {Public,_}=ba_device_store:identity(),true=ba_buffee_roles:owner(binary:encode_hex(Public),Policy),
+        {Public,_}=ba_device_store:identity(),true=ba_session_privileges:has(grant,binary:encode_hex(Public),Policy),
         true=is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,true
     catch _:_ -> false end;
 valid(#{mode := create,name := Name,desks := Desks}) ->

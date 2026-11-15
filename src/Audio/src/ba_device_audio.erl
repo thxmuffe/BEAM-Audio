@@ -17,8 +17,8 @@ handle_info({'DOWN',_,process,_,_},S) -> {stop,normal,S};
 handle_info(_,S) -> {noreply,S}.
 reconcile(S) ->
     Requested=ba_app_session:consent(),
-    Roles=maps:get(roles,ba_buffee_membership:status(),[]),
-    Desired=Requested#{broadcast := maps:get(broadcast,Requested) andalso lists:member(chef,Roles)},
+    OnAir=lists:member(<<"on_air">>,maps:get(privileges,ba_buffee_membership:status(),[])),
+    Desired=Requested#{broadcast := maps:get(broadcast,Requested) andalso OnAir},
     Consent=case application:get_env(ba_core,audio_suspended,false) of
         true -> maps:map(fun(_,_) -> false end,Desired);false -> Desired
     end,Adapter=application:get_env(ba_core,audio_capture_adapter,ba_mac_audio),
@@ -69,8 +69,8 @@ reconcile(S) ->
                     end
             end,
             Audio0=(maps:get(audio,Captured,#{}))#{speaker => Speaker#{meter => maps:get(receive_meter,NextView,#{})}},
-            Audio=case maps:get(broadcast,Requested) andalso not lists:member(chef,Roles) of
-                true -> Audio0#{broadcast => #{state => waiting_for_role,error => <<"An Owner must authorize this Device as a Chef.">>}};
+            Audio=case maps:get(broadcast,Requested) andalso not OnAir of
+                true -> Audio0#{broadcast => #{state => waiting_for_privilege,error => <<"This Device needs the on-air privilege.">>}};
                 false -> Audio0
             end,
             Diagnostics=ba_audio_diagnostics:snapshot(NextView,ba_buffee_clock:status()),

@@ -1,44 +1,54 @@
 # BEAM Audio terminology
 
-## Devices and roles
+## Sessions, Devices and privileges
 
 A **Session** is a time-bound gathering of Devices sharing audio and voluntarily
-offered resources: Devices enter and leave, ownership may change, roles change.
+offered resources: Devices enter and leave, and their privileges change.
 **Buffee** is its retired name (2026-11-15). It survives in existing identifiers,
-wire fields and the text below, and is replaced only where it gets in the way.
-Device lists and counts always refer to Devices, with roles displayed separately.
+wire fields and older text, and is replaced only where it gets in the way.
 
-A Device participates as a **Chef** or **Guest** and can additionally be an
-**Owner**. These are not three mutually exclusive levels:
+There are no roles (2026-11-15). Everyone in a Session is a **Device**, and each
+Device holds **privileges**. Chef, Guest and Owner are retired words:
 
-| Role | Meaning |
-| --- | --- |
-| Guest | Receives audio and may offer consented microphone input and computing capacity. |
-| Chef | Has Guest capabilities and may publish music/system audio. |
-| Owner | Trusted administrator who may promote/demote Chef/Guest, share or remove ownership, remove a Device, and destroy the Buffee. Ownership does not imply Chef participation. |
+| Privilege | Lets the Device | Signed wire constant |
+| --- | --- | --- |
+| `grant` | Give and take back privileges, including its own; admit and remove Devices. | `owner` |
+| `on_air` | Send sound other than its microphone to the Session, and edit Session settings. | `stream_publish` |
+| `end_session` | End the Session for every reachable Device. | `end_session` |
 
-Creation explicitly gives the creating Device Owner and Chef roles. Sharing
-ownership preserves the recipient's existing participation role. Making an Owner
-a Guest preserves ownership; removing ownership preserves Chef/Guest participation.
-Local speaker, microphone and capture consent remains independently required.
+A Device that joins holds none of these. Privileges are always requested: a
+Device asks, and a `grant` holder answers. A `grant` holder's own request needs
+nobody else. Creating a Session is the one grant nobody approves: the creating
+Device starts with all three. `grant` is the root privilege, since its holder
+can give itself any other; `end_session` is separate so that ending is a
+deliberate step, not a security boundary against a `grant` holder. A returning
+Device gets its privileges back from its saved Device-identity passport.
 
-**Manager** and **Inspector** are predefined processes, not Device roles. They
-usually run on an Owner's VM, but their placement grants no administrative rights.
-Owners are deliberately trusted; there is no quorum, external ownership registry,
-or special procedure for an absent Owner. Normal signed state exchange applies
-when Devices reconnect. Do not add speculative offline-owner mechanisms.
+**On air** is a state, not a title. The privilege says a Device may go on air;
+the Device's own user chooses when it is on air. Going off air keeps the
+privilege, and is different from muting a Source that stays on air.
+
+Session privileges say what a Device may do in the Session. **Device consent**
+says what the Session may do with a Device (speaker, microphone, calibration,
+computing capacity). Only that Device's own user answers consent requests; no
+privilege held by anyone else can.
+
+**Manager** and **Inspector** are predefined processes. Their placement grants
+no privileges. `grant` holders are deliberately trusted; there is no quorum,
+external registry or special procedure for an absent one. Normal signed state
+exchange applies when Devices reconnect. Do not add speculative mechanisms.
 
 ## Lifetime
 
-**Leave** disconnects this Device. Ownership survives leaving and application
-shutdown, including shutdown of every Device. A remembered Owner can reopen the
-same Buffee using the same Device identity and saved ownership record. A live
-Owner may remove another Owner or remove a troublesome Device.
+**Leave** disconnects this Device. Privileges survive leaving and application
+shutdown, including shutdown of every Device. A remembered `grant` holder can
+reopen the same Session using the same Device identity and saved record.
 
-**Destroy** ends the Buffee for all reachable participants and clears their saved
-return intent. It is separate from Leave and requires ownership. An absent Owner
-does not end a Buffee: already admitted Chefs and Guests may continue. No Owners
-and no Chefs is idle participation, not an automatic destructive action.
+**End** (Destroy in the current UI) ends the Session for all reachable Devices
+and clears their saved return intent. It is separate from Leave and needs the
+`end_session` privilege. A Session with no `grant` holder online, or none at
+all, continues with the privileges already given; nothing is destroyed
+automatically.
 
 ## Technical components
 
@@ -54,7 +64,7 @@ and no Chefs is idle participation, not an automatic destructive action.
 | Media Session | A temporary authorized transport connection. |
 | Stream Handler | Erlang boundary for packet format and transport. |
 | Audio Engine | Established backend executing approved audio operations. |
-| Buffee Clock | Shared timeline and local monotonic mappings; its provider need not be an Owner. |
+| Buffee Clock | Shared timeline and local monotonic mappings; providing it needs and grants no privilege. |
 | Presentation Target | Independent broadcaster-assigned playback target carried by every packet. |
 | Response time | Buffee-wide delay before scheduled playback; existing technical APIs use Playback Offset and `offset_ms`. |
 

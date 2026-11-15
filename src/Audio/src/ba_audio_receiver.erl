@@ -50,13 +50,13 @@ handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pi
         Offer = gen_server:call(Pid,describe,100),Key = maps:get(source_key,Offer),
         {Pub,_}=ba_device_store:identity(),
         case publication_allowed(binary:encode_hex(Pub),Key) of
-            true -> ok;false -> throw(chef_required)
+            true -> ok;false -> throw(on_air_required)
         end,
         false = maps:is_key(Key,Sources),
         _ = ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer),
         Ref = monitor(process,Pid),Entry = #{pid => Pid,monitor => Ref,offer => Offer},
         {reply,ok,S#{sources := Sources#{Key => Entry}}}
-    catch throw:chef_required -> {reply,{error,chef_required},S};
+    catch throw:on_air_required -> {reply,{error,on_air_required},S};
           _:_ -> {reply,{error,invalid_or_duplicate_publication},S} end;
 handle_call({contract,Direction,Peer,Key,Id,Revision},_,#{contracts := Contracts} = S) ->
     try
@@ -494,9 +494,9 @@ publication_allowed(Peer,Key) ->
     end.
 buffee_publication_allowed(Peer,Key) ->
     case ba_buffee_membership:current() of
-        {ok,#{device_roles := Roles}} ->
-            case maps:find(Peer,Roles) of
-                {ok,Rs} -> ba_buffee_roles:may_publish(Rs,Key);
+        {ok,#{device_privileges := Privileges}} ->
+            case maps:find(Peer,Privileges) of
+                {ok,Held} -> ba_session_privileges:may_publish(Held,Key);
                 error -> false
             end;
         _ -> false

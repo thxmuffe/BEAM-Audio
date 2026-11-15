@@ -23,18 +23,18 @@ execution_gates_test() ->
         ?assertMatch({reply,{error,consent_required},_},ba_mac_audio:handle_call(start,{self(),make_ref()},Mac)),
         ?assertMatch({reply,{error,consent_required},_},ba_ios_input:handle_call(start,{self(),make_ref()},IOS)),
         ?assertEqual({stop,consent_required},ba_device_test_worker:init(#{})),
-        ok=ba_device_config:change(#{speaker => true,microphone => true,calibrate => true},#{}),
+        ok=ba_device_config:change(#{speaker => true,microphone => true,calibrate_microphone => true,calibrate_speaker => true},#{}),
         ?assert(ba_device_permission:allowed(playback)),
         ?assert(ba_device_permission:allowed(record)),
-        ?assert(ba_device_permission:allowed(calibrate)),
+        ?assert(ba_device_permission:allowed(calibrate_microphone)),
         ?assertNot(ba_device_permission:allowed(dsp)),
         ok=ba_device_config:change(#{speaker => false,microphone => false},#{}),
         denied_writes(),
         %% Late queued blocks are discarded before parsing/publishing their data.
         ?assertEqual(stopped,maps:get(state,ba_audio_input:captured(<<1,2,3>>,0,Input#{permission => record}))),
-        ?assert(ba_device_permission:allowed(calibrate)),
+        ?assert(ba_device_permission:allowed(calibrate_microphone)),
         ok=gen_server:stop(Config),
-        ?assertNot(ba_device_permission:allowed(calibrate)),
+        ?assertNot(ba_device_permission:allowed(calibrate_microphone)),
         ?assertEqual({error,consent_required},ba_ios_audio:open(#{}))
     after
         case is_process_alive(Config) of true -> gen_server:stop(Config);false -> ok end,

@@ -175,18 +175,19 @@ child-environment secret removal and supervised native-output failure checks.
 See [CLI usage/limitations](../../src/Tools/CLI/README.md) for real user-led audio
 commands and the explicitly deferred saved-configuration/undo work.
 
-## Ownership, participation and clock continuation (2026-11-11)
+## Privileges and clock continuation (2026-11-15)
 
 ```sh
-python3 tests/control/buffee-roles-smoke.py
+python3 tests/control/session-privileges-smoke.py
 ```
 
-Uses a local Reception and three disposable Devices. Checks Guest/Chef boundaries,
-shared ownership, administration after the first Owner leaves, cold return to the
-same Buffee, removal of ownership, and Destroy by another Owner. The clock check
-uses the explicit system reference and an accelerated two-sample filter: an already
-synchronized Chef continues the same timeline after the Owner leaves, including
-when no Owner is online. This is software timing evidence, not audio hardware or
-physical alignment qualification. The Owner-return unit test also exercises
+Uses a local Reception and three disposable Devices. Checks requested and granted
+privileges, a shared `grant` privilege, administration after the creator leaves,
+cold return to the same Session, giving up `grant`, and that End needs its own
+`end_session` privilege. The clock check uses the explicit system reference and
+an accelerated two-sample filter: an already synchronized on-air Device continues
+the same timeline after the creator leaves, including when no `grant` holder is
+online. This is software timing evidence, not audio hardware or physical
+alignment qualification. The creator-return unit test also exercises
 restoration with no other running Device. This replaces the superseded tests for
 surviving-peer-only recovery and implicit ownership of an empty invitation.
