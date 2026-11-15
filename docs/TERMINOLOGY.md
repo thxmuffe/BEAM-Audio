@@ -2,9 +2,11 @@
 
 ## Devices and roles
 
-**Buffee** is the intentional name for a gathering of Devices sharing audio and
-voluntarily offered resources. Product UI calls a Buffee a **Session**. Device
-lists and counts always refer to Devices, with roles displayed separately.
+A **Session** is a time-bound gathering of Devices sharing audio and voluntarily
+offered resources: Devices enter and leave, ownership may change, roles change.
+**Buffee** is its retired name (2026-11-15). It survives in existing identifiers,
+wire fields and the text below, and is replaced only where it gets in the way.
+Device lists and counts always refer to Devices, with roles displayed separately.
 
 A Device participates as a **Chef** or **Guest** and can additionally be an
 **Owner**. These are not three mutually exclusive levels:

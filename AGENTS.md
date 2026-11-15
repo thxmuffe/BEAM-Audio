@@ -2,6 +2,18 @@
 
 This is a small personal project worked on directly by the owner and assistant. Use common sense and favor practical progress over corporate/team rituals, elaborate approval flows, or mechanically applying generic best practices. Make focused edits directly on `main` without creating branches or pull requests unless explicitly asked. Do not be excessively cautious about ordinary development breakage: it is acceptable for work in progress to break, and we will fix problems as we find them. Do not knowingly compromise credentials, security boundaries or user data; preserve unrelated changes.
 
+## Session replaces Buffee — 2026-11-15
+
+**Session** is the name of the concept in UI, documentation and new code. The
+Buffee/buffet analogy is retired. Existing `buffee` identifiers (module names,
+wire fields, signed domains, saved-state files, CLI flags, the Reception URL)
+may stay and leave gradually: rename one only when it is in the way, never as
+bulk cleanup, and keep signed/wire/storage constants unless an explicit migration
+changes them. Do not introduce new Buffee names. Where "session" could also mean
+the control protocol's authenticated peer session or a Media Session, qualify it.
+This supersedes every rule below that calls Buffee the intentional backend or
+product term.
+
 ## UI vocabulary boundary — 2026-11-11
 
 In the UI use **Session**, **Device**, **Group**, **Join**, **Leave** and
@@ -124,8 +136,8 @@ Device is the entity; Chef/Guest is its participation role and Owner is independ
 separate coordination responsibility; Worker is a local process. Keep Device
 in entity labels, lists and counts, and display role information separately.
 
-**Buffee** is the intentional product term, not a typo. Preserve this spelling;
-do not autocorrect it to “buffet.” See the canonical terminology guide.
+**Buffee** in existing identifiers is a retired name for a Session, not a typo.
+Do not autocorrect it to “buffet”; see the 2026-11-15 rule above.
 
 ## Trusted ownership and return
 

@@ -61,3 +61,36 @@ multi-device listening tests. OS isolation remains a separate feasibility study.
 Resume with per-Session broadcast OFF/role-loss and native crash/restart recovery,
 then remaining local grant callers and optional execution paths. Do not describe
 all audio paths or the entire security architecture as complete.
+
+## Long-term security horizon and architectural direction
+
+These considerations guide future hardening beyond the current local enforcement slice:
+
+1. **Privilege separation (Native hardware gatekeeper):**
+   Separate hardware-entitled code from compute and networking. On macOS, isolate
+   audio capture/playback inside a minimal, auditable XPC service with hard-coded
+   watchdogs (e.g., maximum 3-second calibration session) and no network access. On
+   iOS, where multi-process background execution is prohibited, enforce strict lazy
+   acquisition and eager deallocation of Core Audio taps so OS hardware indicators
+   (orange dot) drop immediately when calibration ends.
+2. **DSP execution sandboxing (Single BEAM VM on mobile):**
+   iOS and ERTS restrict execution to one BEAM VM per app process. Because pure C
+   DSP libraries require only memory and arithmetic (no OS/network/file access), run
+   third-party or cluster DSP within a WebAssembly (Wasm) sandbox or memory-bounded
+   numeric buffers. This provides memory safety and fault isolation without
+   multi-process overhead.
+3. **Transparent instrumentation (Local ledger and session receipts):**
+   Maintain a local append-only, hash-chained audit ledger of hardware access
+   (timestamps, duration, contract ID, stop ACK latency). Broadcast high-level
+   signed lifecycle receipts to the Session stream so peers act as distributed
+   witnesses without leaking raw device telemetry.
+
+### Open questions
+
+- **Wasm runtime selection for iOS:** Evaluate lightweight embedded engines (e.g.,
+  WAMR or host-provided WebAssembly) that comply with iOS App Store W^X/JIT rules.
+- **Hardware watchdog limits:** Define acceptable hard temporal ceilings for
+  calibration routines before physical cutoff occurs regardless of software state.
+- **Witness privacy boundaries:** Determine the exact balance of audit metadata
+  shared with session peers to establish tamper evidence without leaking private
+  device patterns.
