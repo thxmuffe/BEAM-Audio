@@ -103,8 +103,11 @@ sets the old consent flag, so turning the top switch on starts the microphone.
    data shape: who, which device or resource, which use, until when, granted by
    whom. This changes security-sensitive admission code; design it first.
 7. **The Session page lists every right** with Request and Relinquish.
-8. **Scope and persistence of gates.** They are Device-wide and reset to Ask at
-   restart today; the user expects different trust per Session. Decide, then build.
+8. **Scope of gates.** They are Device-wide. Rule from the user (2026-11-16):
+   every Device property persists and is restored at restart (automation,
+   rights, on air, current Session); Session properties (response time, name,
+   invitation link, chat) stay with the Session. Done for the configuration
+   owner. The user also expects different trust per Session; decide, then build.
 9. **After the above:** verify the web shell against a real Device runtime and
    in the Mac/iOS hosts, and rewrite the OpenSoundKit WebKit tests for the final
    markup. The user asked for the tests to wait until the changes are complete.

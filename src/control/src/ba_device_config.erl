@@ -36,6 +36,9 @@ allowed(Key) ->
 init([]) ->
     ets:new(?MODULE,[named_table,protected,set,{read_concurrency,true}]),
     Secure=application:get_env(ba_core,runtime_profile,legacy_apps)=:=buffee_control,
+    %% A Device returns to the state it was in: every setting, ON AIR and the
+    %% standing choices are restored. Only a first start begins with everything off.
+    Gates=read_gates(ba_device_store:load(device_gates,#{})),
     Default=case Secure of
         true -> maps:from_keys([broadcast|?PROTECTED],false);
         false -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false})
@@ -43,9 +46,25 @@ init([]) ->
     Initial=#{format => 1,revision => 0,cursor => 0,seen => [],
         states => [#{label => <<"Initial audio settings">>,config => Default,time_ms => erlang:system_time(millisecond)}]},
     ok=validate(Initial),
-    Saved=case Secure of true -> undefined;false -> ba_device_store:load(device_configuration,undefined) end,
-    S=case Saved of undefined -> ok=ba_device_store:save(device_configuration,Initial),Initial;_ -> validate(Saved),Saved end,
-    publish(S),changed(),{ok,S#{permission_registry => whereis(ba_permission_pg)}}.
+    Saved=ba_device_store:load(device_configuration,undefined),
+    %% Live handles from the previous run (registry, pending stops) are not state.
+    S=case Saved of undefined -> ok=ba_device_store:save(device_configuration,Initial),Initial;
+        _ -> validate(Saved),maps:without([permission_registry,revocation_pending,revocation_executors],Saved) end,
+    Restored=S#{choices => maps:get(choices,Gates,#{}),auto_accept => maps:get(auto_accept,Gates,false),auto_grant => maps:get(auto_grant,Gates,false)},
+    publish(Restored),changed(),{ok,Restored#{permission_registry => whereis(ba_permission_pg)}}.
+%% Only well-formed choices are read back; anything else is dropped.
+read_gates(Saved) when is_map(Saved) ->
+    Choices=maps:filter(fun(K,V) -> lists:member(K,?PROTECTED++?ANSWERS) andalso lists:member(V,[always,no]) end,
+                        case maps:get(choices,Saved,#{}) of C when is_map(C) -> C;_ -> #{} end),
+    #{choices => Choices,auto_accept => maps:get(auto_accept,Saved,false)=:=true,auto_grant => maps:get(auto_grant,Saved,false)=:=true};
+read_gates(_) -> #{}.
+%% Written after every change to a standing choice. A failed write is not fatal;
+%% the choice then simply lasts until the next restart.
+save_gates(S) ->
+    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+        buffee_control -> try ba_device_store:save(device_gates,maps:with([choices,auto_accept,auto_grant],S)) catch _:_ -> ok end;
+        _ -> ok
+    end,S.
 validate(#{format := 1,revision := R,cursor := C,seen := Seen,states := States}) ->
     true=is_integer(R) andalso R>=0,true=is_list(States) andalso length(States)>0 andalso length(States)=< ?LIMIT+1,
     true=is_integer(C) andalso C>=0 andalso C<length(States),true=is_list(Seen) andalso length(Seen)=< ?LIMIT,
@@ -70,14 +89,14 @@ handle_call({policy,Key},_,S) ->
     Override=case lists:member(Key,?GRANTS) of true -> maps:get(auto_grant,S,false);false -> auto(S) end,
     {reply,case Override of true -> always;false -> policy_of(Key,S) end,S};
 %% Trust every Device that asks for a right. Grants nothing on this Device itself.
-handle_call({auto_grant,Enabled,_},_,S) when is_boolean(Enabled) -> {reply,ok,S#{auto_grant => Enabled}};
+handle_call({auto_grant,Enabled,_},_,S) when is_boolean(Enabled) -> {reply,ok,save_gates(S#{auto_grant => Enabled})};
 %% Accept every request. The stored choices stay as they are and are ignored
 %% while this is on. Turning it off is always recorded, even if a stop is pending.
 handle_call({auto_accept,Enabled,Options},From,S) when is_boolean(Enabled) ->
     Patch=maps:from_list([{K,Enabled orelse stored(K,S)=:=always} || K <- ?PROTECTED]),
     case handle_call({edit,Patch,Options},From,S) of
-        {reply,ok,Next} -> {reply,ok,Next#{auto_accept => Enabled}};
-        {reply,Error,Next} when not Enabled -> {reply,Error,Next#{auto_accept => false}};
+        {reply,ok,Next} -> {reply,ok,save_gates(Next#{auto_accept => Enabled})};
+        {reply,Error,Next} when not Enabled -> {reply,Error,save_gates(Next#{auto_accept => false})};
         Other -> Other
     end;
 %% always is the standing grant; ask and no both keep the grant OFF. Nothing
@@ -201,8 +220,8 @@ policy_of(Key,S) ->
         {_,false,always,_} -> ask;
         {_,false,_,_} -> Stored
     end.
-choose(Key,ask,S) -> S#{choices => maps:remove(Key,maps:get(choices,S,#{}))};
-choose(Key,Value,S) -> S#{choices => (maps:get(choices,S,#{}))#{Key => Value}}.
+choose(Key,ask,S) -> save_gates(S#{choices => maps:remove(Key,maps:get(choices,S,#{}))});
+choose(Key,Value,S) -> save_gates(S#{choices => (maps:get(choices,S,#{}))#{Key => Value}}).
 handle_cast(_,S) -> {noreply,S}.
 handle_info(_,S) -> {noreply,S}.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([revision,cursor],S);(log,_) -> [];(_,_) -> redacted end,Status).

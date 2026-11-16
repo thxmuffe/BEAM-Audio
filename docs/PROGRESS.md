@@ -434,6 +434,19 @@ link, the link and a QR code. Inviting a saved Device or group opens it.
 Automation uses a lightning icon, Session a settings gear. Headless check in
 preview at 900 and 390 px; the OS share sheet is not checked in the native hosts.
 
+Persistence (2026-11-16, the user's rule): a Device returns to the state it was
+in, for every Device property: automation (both top switches and every
+Always/No choice, `device_gates`), every grant, ON AIR, rights (kept in the
+Session policy and by rejoining) and the current Session. Session properties
+(response time, name, invitation link, chat) belong to the Session and are never
+saved with the Device. Previously the secure profile ignored the saved
+configuration and started with everything OFF, and the choices were never
+written. Only a first start begins with everything off. This replaces the old
+"permission owner restarts with every grant OFF" behaviour and its test; a
+restart of that owner also returns the saved grants. Covered by
+`ba_device_consent_tests`; 71 focused tests pass. The saved history is restored
+too, so Undo still works after a restart.
+
 NOT VERIFIED: the new shell against a real Device runtime or in the Mac/iOS
 hosts; no app was rebuilt. The OpenSoundKit WebKit tests still target the
 earlier tab, toolbox and Settings markup and need rewriting. See PLAN.md.

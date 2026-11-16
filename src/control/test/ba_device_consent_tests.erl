@@ -33,11 +33,12 @@ device_wide_consent_test() ->
         ba_sessions:request(#{<<"method">> => <<"close_session">>,<<"session">> => A}),
         ?assert(maps:get(speaker,In(B,fun ba_app_session:consent/0))),
         ok=gen_server:stop(Default),
-        %% The root restarts its single permission owner with every grant OFF.
+        %% The root restarts its single permission owner; the Device returns to the state it was in.
         wait_config(Default,50),
-        ?assert(lists:all(fun(V) -> V=:=false end,maps:values(ba_device_config:consent()))),
+        ?assert(maps:get(speaker,ba_device_config:consent())),?assert(maps:get(calibrate_speaker,ba_device_config:consent())),
+        ?assertNot(maps:get(microphone,ba_device_config:consent())),
         ?assertEqual({error,nothing_to_redo},ba_device_config:redo(#{})),
-        ?assertNot(maps:get(can_undo,ba_device_config:snapshot())),
+        ok=ba_device_config:change(#{speaker => false,calibrate_speaker => false},#{}),
         %% Policies: ask is the default, always is the grant, no is remembered.
         Policies=fun() -> maps:get(policies,ba_device_config:snapshot()) end,
         ?assert(lists:all(fun(V) -> V=:=ask end,maps:values(Policies()))),
@@ -79,7 +80,20 @@ device_wide_consent_test() ->
         ?assertEqual(always,ba_device_config:policy(on_air_requests)),?assertEqual(always,ba_device_config:policy(moderator_requests)),
         ?assertNot(ba_device_permission:allowed(record)),
         ok=ba_device_config:auto_grant(false,#{}),
-        ?assertEqual(no,ba_device_config:policy(moderator_requests)),?assertEqual(ask,ba_device_config:policy(on_air_requests))
+        ?assertEqual(no,ba_device_config:policy(moderator_requests)),?assertEqual(ask,ba_device_config:policy(on_air_requests)),
+        %% Every setting survives a restart: choices, both switches, grants and ON AIR.
+        ok=ba_device_config:policy(microphone,always,#{}),ok=ba_device_config:auto_grant(true,#{}),
+        ok=ba_device_config:policy(location,no,#{}),ok=ba_device_config:change(#{broadcast => true},#{}),
+        Before2=Policies(),Consent2=ba_device_config:consent(),Running=whereis(ba_device_config),
+        ok=gen_server:stop(Running,shutdown,5000),wait_config(Running,50),
+        ?assertEqual(Before2,Policies()),?assert(maps:get(auto_grant,ba_device_config:snapshot())),
+        ?assertNot(maps:get(auto_accept,ba_device_config:snapshot())),
+        ?assertEqual(always,ba_device_config:policy(moderator_requests)),
+        ?assertEqual(Consent2,ba_device_config:consent()),?assert(maps:get(broadcast,ba_device_config:consent())),
+        ok=ba_device_config:auto_accept(true,#{}),Consent3=ba_device_config:consent(),
+        Running2=whereis(ba_device_config),ok=gen_server:stop(Running2,shutdown,5000),wait_config(Running2,50),
+        ?assert(maps:get(auto_accept,ba_device_config:snapshot())),?assertEqual(Consent3,ba_device_config:consent()),
+        ?assert(maps:get(speaker,ba_device_config:consent()))
     after
         gen_server:stop(Sup,shutdown,5000),file:del_dir_r(Dir),
         [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Env],
