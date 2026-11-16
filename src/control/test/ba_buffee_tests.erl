@@ -90,13 +90,17 @@ idle_and_lifecycle() ->
 
 bridge_json_protocol() ->
     Id = binary:copy(<<"3">>, 64),
-    PutReq = json:encode(#{method => <<"put_contact">>, id => Id, name => <<"Charlie">>}),
+    %% The bridge takes the page's commands (ba_device_api:client_methods/0) and refuses the rest.
+    Refused = json:decode(ba_bridge:request(json:encode(#{method => <<"list_contacts">>, request_id => <<"r0">>}))),
+    ?assertEqual(<<"Unsupported command.">>, maps:get(<<"error">>, Refused)),
+    ?assertEqual(<<"r0">>, maps:get(<<"request_id">>, Refused)),
+    PutReq = json:encode(#{method => <<"save_contact">>, value => Id, name => <<"Charlie">>}),
     PutRes = json:decode(ba_bridge:request(PutReq)),
     ?assertEqual(null, maps:get(<<"error">>, PutRes)),
-    ListReq = json:encode(#{method => <<"list_contacts">>}),
+    ListReq = json:encode(#{method => <<"snapshot">>}),
     ListRes = json:decode(ba_bridge:request(ListReq)),
     ?assertEqual(null, maps:get(<<"error">>, ListRes)),
-    Result = maps:get(<<"result">>, ListRes),
+    Result = maps:get(<<"contacts">>, ListRes),
     ?assertEqual(<<"Charlie">>, maps:get(Id, maps:get(<<"contacts">>, Result))),
     SnapReq = json:encode(#{method => <<"snapshot">>}),
     SnapRes = json:decode(ba_bridge:request(SnapReq)),

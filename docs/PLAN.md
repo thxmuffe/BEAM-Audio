@@ -150,7 +150,20 @@ expanded (memory only); joining a saved Session from its menu is not built.
    rights, on air, current Session); Session properties (response time, name,
    invitation link, chat) stay with the Session. Done for the configuration
    owner. The user also expects different trust per Session; decide, then build.
-9. **After the above:** verify the web shell against a real Device runtime and
+9. **Native hosts (started 2026-11-16, ahead of 1–4 at the user's request).**
+   Done: one command list in the core (`ba_device_api:client_methods/0`), used
+   by the web server and by `ba_bridge` for the Mac/iOS apps (plus the host's
+   own `network_changed` and `audio_lifecycle`); the Swift copy is gone. The
+   bridge asks the OS for microphone access on the mic button
+   (`microphone_live`) as well. OpenSoundKit WebKit tests rewritten for the
+   current window (fresh Device opens on Devices; saved page restored and saved;
+   ON AIR/mic/speaker reach the Session page; bridge forwards commands); 6 Swift
+   tests pass with full Xcode (`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+   swift test`; the command-line tools alone lack XCTest). TO DO by the user:
+   Mac/iOS builds and manual checks (settings.config in the app's folder and
+   the one-time import, mic permission prompt, share sheet, on-air sound,
+   iOS kill-and-reopen keeps settings). Earlier wording follows:
+   **After the above:** verify the web shell against a real Device runtime and
    in the Mac/iOS hosts, and rewrite the OpenSoundKit WebKit tests for the final
    markup. The user asked for the tests to wait until the changes are complete.
 10. Pre-existing failures unrelated to this work: one device-label unit test,

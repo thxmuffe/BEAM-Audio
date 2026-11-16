@@ -124,7 +124,14 @@ commit_registered(Old,Next) ->
     Pending=maps:get(revocation_pending,Old,[]),
     case {Removed,Added,Pending} of
         {[_|_],[_|_],_} -> {reply,{error,separate_permission_changes_required},Old};
-        {_,[_|_],[_|_]} -> {reply,{error,revocation_incomplete},Old};
+        {_,[_|_],[_|_]} ->
+            %% An earlier stop was never confirmed. Retry it now; only if it is
+            %% still unconfirmed does the new grant stay blocked.
+            case ba_device_permission:revoke(Pending,maps:get(revocation_executors,Old,[])) of
+                ok -> Clear=#{revocation_pending => [],revocation_executors => []},
+                      commit_registered(maps:merge(Old,Clear),maps:merge(Next,Clear));
+                _ -> {reply,{error,revocation_incomplete},Old}
+            end;
         {[],_,[]} ->
             case persist(Next) of
                 ok -> publish(Next),changed(),{reply,ok,Next};

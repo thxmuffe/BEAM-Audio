@@ -69,12 +69,7 @@ read_chunk(Req,State,Acc,Deadline,Remaining) ->
     end.
 
 allowed(#{<<"method">> := Method}=Command) ->
-    not maps:is_key(<<"instance">>,Command) andalso lists:member(Method,
-        [<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
-         <<"end_buffee">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,<<"ui_get">>,<<"ui_set">>,<<"undo">>,<<"redo">>,<<"send">>,
-         <<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
-         <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
-         <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>]);
+    not maps:is_key(<<"instance">>,Command) andalso lists:member(Method,ba_device_api:client_methods());
 allowed(_) -> false.
 
 dispatch(_,Req,#{mode := preview}) ->

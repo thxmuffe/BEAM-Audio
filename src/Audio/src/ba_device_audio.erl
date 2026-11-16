@@ -16,7 +16,11 @@ handle_info(tick,S) -> erlang:send_after(250,self(),tick),{noreply,reconcile(S)}
 handle_info({'DOWN',_,process,_,_},S) -> {stop,normal,S};
 handle_info(_,S) -> {noreply,S}.
 reconcile(S) ->
-    Requested=ba_app_session:consent(),
+    %% The mic and speaker buttons are live actions on top of the gates: the
+    %% microphone sends only while its button is on, the speaker plays unless muted.
+    Gates=ba_app_session:consent(),
+    Requested=Gates#{microphone := maps:get(microphone,Gates) andalso ba_settings:get(mic_live,false) =:= true,
+                     speaker := maps:get(speaker,Gates) andalso ba_settings:get(muted,false) =/= true},
     OnAir=lists:member(<<"on_air">>,maps:get(privileges,ba_buffee_membership:status(),[])),
     Desired=Requested#{broadcast := maps:get(broadcast,Requested) andalso OnAir},
     Consent=case ba_settings:app(audio_suspended,false) of

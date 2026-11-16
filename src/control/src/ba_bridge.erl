@@ -28,9 +28,16 @@ request(JSON) ->
         legacy_apps -> legacy_request(Bin)
     end.
 
+%% The single gate for app windows: the page's commands (ba_device_api's list)
+%% and the two the native host itself sends.
 buffee_request(JSON) ->
     Request=try json:decode(JSON) catch _:_ -> #{} end,
-    Reply=try ba_sessions:request(Request)
+    Allowed=lists:member(maps:get(<<"method">>,Request,<<"snapshot">>),
+                         ba_device_api:client_methods()++[<<"network_changed">>,<<"audio_lifecycle">>]),
+    Reply=try case Allowed of
+              true -> ba_sessions:request(Request);
+              false -> maps:merge(#{<<"error">> => <<"Unsupported command.">>},maps:with([<<"request_id">>],Request))
+          end
           catch _:_ -> maps:merge(#{<<"error">> => <<"Session runtime unavailable.">>},
                                   maps:with([<<"request_id">>],Request)) end,
     iolist_to_binary(json:encode(Reply)).

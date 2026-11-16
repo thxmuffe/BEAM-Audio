@@ -59,7 +59,7 @@ contract(Buffee,Publisher,#{receiver := Receiver,source := Source}) ->
 snapshot() ->
     {Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
     Buffee=ba_buffee:status(),Config=ba_device_config:snapshot(),
-    Base=#{profile => buffee_control,device => Id,device_name => ba_device_label:local(Id),device_label => ba_device_label:display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name()))),buffee => Buffee,connection => ba_buffee:connection(),contacts => ba_contacts:list(),
+    Base=#{profile => buffee_control,device => Id,device_name => ba_device_label:local(Id),device_label => ba_device_label:display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name()))),buffee => Buffee,connection => ba_buffee:connection(),contacts => ba_contacts:list(),live => #{microphone => ba_settings:get(mic_live,false)=:=true,muted => ba_settings:get(muted,false)=:=true},
         desks => safe(fun ba_buffee_desks:status/0,#{}),
         default_desk => ba_settings:app(default_reception_desk_url,<<>>),
         configuration => maps:without([entries],Config),consent => consent(),excluded => exclusions(),messages => [],devices => [],jobs => [],

@@ -1,6 +1,13 @@
 %% Device-local commands shared by app bridges and CLI. Never network RPC.
 -module(ba_device_api).
--export([request/1,readiness/1,readiness/2]).
+-export([request/1,readiness/1,readiness/2,client_methods/0]).
+%% The one list of commands an app window may send (web, Mac, iOS, Windows).
+client_methods() ->
+    [<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
+     <<"end_buffee">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
+     <<"ui_get">>,<<"ui_set">>,<<"microphone_live">>,<<"speaker_mute">>,<<"undo">>,<<"redo">>,<<"send">>,<<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
+     <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
+     <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>].
 request(Request) when is_map(Request) ->
     Reply=try command(Request) of
         {ok,Data} -> (ba_app_session:snapshot())#{<<"error">> => null,<<"result">> => Data};
@@ -99,6 +106,9 @@ command(#{<<"method">> := <<"create_buffee">>, <<"name">> := Name, <<"desks">> :
     end;
 command(#{<<"method">> := <<"join_buffee">>, <<"invitation">> := Link}) ->
     case ba_buffee:join(Link) of ok -> ba_contacts:link(Link),ok;Other -> Other end;
+%% Live audio actions next to ON AIR; saved like every Device setting.
+command(#{<<"method">> := <<"microphone_live">>,<<"enabled">> := B}) when is_boolean(B) -> ba_settings:put(mic_live,B);
+command(#{<<"method">> := <<"speaker_mute">>,<<"muted">> := B}) when is_boolean(B) -> ba_settings:put(muted,B);
 %% The window's own state (which page is open) is a Device setting like the rest.
 command(#{<<"method">> := <<"ui_get">>}) -> {ok,ba_settings:get(ui,#{})};
 command(#{<<"method">> := <<"ui_set">>,<<"key">> := <<"view">>,<<"value">> := View}) ->

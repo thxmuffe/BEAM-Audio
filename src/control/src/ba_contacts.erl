@@ -90,7 +90,8 @@ handle_cast({link,Link},S) ->
         {_,I}=ba_buffee_passport:parse_invitation(Link),
         Session=maps:get(<<"buffee">>,I),Sessions=maps:get(sessions,S,#{}),
         E=maps:get(Session,Sessions,#{name => maps:get(<<"name">>,I),link => null,devices => #{}}),
-        persist(S#{sessions => Sessions#{Session => case maps:get(link,E) of null -> E#{link := Link};_ -> E end}},S)
+        Linked=case maps:get(link,E) of null -> E#{link := Link};_ -> E end,
+        persist(S#{sessions => Sessions#{Session => Linked#{last => now_s()}}},S)
     catch _:_ -> {noreply,S} end;
 handle_cast({kicked,Session,Device},S) ->
     Sessions=maps:get(sessions,S,#{}),
@@ -125,7 +126,9 @@ seen(Session,Name,Ids,S) ->
     Sessions=maps:get(sessions,S,#{}),
     E=maps:get(Session,Sessions,#{name => Name,link => null,devices => #{}}),
     D=lists:foldl(fun(Id,Acc) -> Acc#{Id => member} end,maps:get(devices,E),Ids),
-    S#{sessions => Sessions#{Session => E#{devices := D}}}.
+    S#{sessions => Sessions#{Session => E#{devices := D,last => now_s()}}}.
+%% When this Device last took part, for listing Sessions most recent first.
+now_s() -> erlang:system_time(second).
 contact_label(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<256 -> is_list(unicode:characters_to_list(B));
 contact_label(_) -> false.
 handle_info(_,S) -> {noreply,S}.
