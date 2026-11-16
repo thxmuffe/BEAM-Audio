@@ -23,6 +23,16 @@ loop(Id,Cap) ->
     end.
 command(#{<<"op">> := <<"start_runtime">>},_,_) -> ensure_started(),ba_app_session:snapshot();
 command(#{<<"op">> := <<"chat_history">>},_,_) -> ba_buffee_chat:history();
+%% The app path: the same Device API the windows use (it also records Session memory).
+%% Like the CLI and the apps: the app layer, so the audio worker (which opens links) runs.
+command(#{<<"op">> := <<"configure_app">>},_,_) ->
+    application:load(ba_core),result(ba_app_session:configure(#{platform => mac,consent => #{speaker => false,microphone => false,broadcast => false}}));
+command(#{<<"op">> := <<"debug_control">>},_,_) ->
+    #{protocol := P}=sys:get_state(ba_session_scope:ref(ba_buffee_control)),
+    #{peers => [binary:part(K,0,6) || K <- maps:keys(maps:get(peers,maps:get(policy,P,#{}),#{}))],
+      deadline => maps:get(membership_deadline,P,none),now => erlang:monotonic_time(millisecond),
+      sessions => [binary:part(K,0,6) || K <- maps:keys(maps:get(sessions,P,#{}))]};
+command(#{<<"op">> := <<"api">>,<<"request">> := Request},_,_) -> ensure_started(),ba_device_api:request(Request);
 command(#{<<"op">> := <<"crash_test_worker">>},_,_) ->
     logger:set_primary_config(level,error),logger:set_handler_config(default,level,critical),
     {ok,Child}=supervisor:start_child(ba_device_sup,

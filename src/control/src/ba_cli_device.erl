@@ -28,7 +28,8 @@ boot() ->
         ok=ba_app_session:configure(#{platform => mac,consent => Consent}),
         case maps:get(<<"observer">>,C,false) of
             true -> application:set_env(ba_core,audio_automation,false),application:set_env(ba_core,buffee_observer,true);
-            false -> ok
+            %% Like the apps: a Device returns to the Sessions it was in, including as their creator.
+            false -> application:set_env(ba_core,restore_buffee_on_start,true)
         end,
         {ok,_}=ba_runtime:start(buffee_control),
         case maps:find(<<"web">>,C) of

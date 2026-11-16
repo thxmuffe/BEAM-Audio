@@ -456,6 +456,24 @@ Invitation link, Delete saved session). Connection details are removed from the
 UI. A saved session's Invitation link uses the earlier group-invite path (it
 creates a Session from the group if none is open). Headless check in preview.
 
+Single page, one Device store, push (2026-11-16): the web app is one document
+(no per-Session frames). `store.mjs` holds every open Session's state and one
+record per Device (name, connected, on air, mic, own speaker) built from all of
+them; it tells views only when something visible changed (fast-changing
+readings are left out of the comparison). `<os-device>` (`device-view.mjs`,
+shadow DOM, styles in `device-view.css` because the CSP allows only same-origin
+stylesheets) is the one view of a Device, reused wherever it appears; each row
+adds that Session's own part (status, Admin, menu with rights/Kick/Ban). One
+Session is current (Chat, Invite, Settings, ON AIR); Devices shows every live
+Session, then remembered ones, groups, Saved devices. Push: `GET /api/events`
+(DeviceWeb, token header) streams the Session list and each Session's reduced
+state only when it changed (checked every 300 ms on the Device side); an
+outside rename reached the page in about 0.3 s. Native hosts keep request/reply
+with a 1.5 s refresh; the store still redraws only on change. Redraws are
+scheduled with a timer, not an animation frame, so hidden windows stay
+current. 23 frontend tests (store: one record per Device, change-only), 6 Swift
+WebKit tests, preview and real two-Session runs pass.
+
 NOT VERIFIED: the new shell against a real Device runtime or in the Mac/iOS
 hosts; no app was rebuilt. The OpenSoundKit WebKit tests still target the
 earlier tab, toolbox and Settings markup and need rewriting. See PLAN.md.

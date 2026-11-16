@@ -28,6 +28,15 @@ route(<<"POST">>,<<"/api/command">>,Req,State) ->
         true -> command_body(Req,State);
         false -> reply(403,#{error => <<"Invalid local session.">>},Req)
     end;
+%% Push: each open Session's state, sent only when it changed.
+route(<<"GET">>,<<"/api/events">>,Req,#{mode := preview}) -> reply(409,#{error => <<"Preview has no live Device.">>},Req);
+route(<<"GET">>,<<"/api/events">>,Req,State) ->
+    Token=ba_device_web_sup:token(),
+    Given=cowboy_req:header(<<"x-beam-audio-token">>,Req,<<>>),
+    case byte_size(Given)=:=byte_size(Token) andalso crypto:hash_equals(Token,Given) of
+        true -> events(Req,State);
+        false -> reply(403,#{error => <<"Invalid local session.">>},Req)
+    end;
 route(<<"GET">>,Path,Req,State) -> asset(Path,Req,State);
 route(_,_,Req,_) -> reply(404,#{error => <<"Unknown endpoint.">>},Req).
 
@@ -100,6 +109,49 @@ device_request(Command,_) ->
     %% The service is optional: it never creates a Device or enables audio.
     true=is_pid(whereis(ba_sup)),
     ba_sessions:request(Command).
+
+%% The Device's state is looked at every ?EVENT_MS ms on this side; the window
+%% only hears about it when what it shows has changed. A closed connection ends
+%% this process (Cowboy stops the stream), so there is nothing to clean up.
+-define(EVENT_MS,300).
+events(Req0,State) ->
+    Req=cowboy_req:stream_reply(200,#{<<"content-type">> => <<"text/event-stream">>,<<"cache-control">> => <<"no-store">>,
+        <<"x-content-type-options">> => <<"nosniff">>},Req0),
+    events(Req,State,#{},erlang:monotonic_time(millisecond)).
+events(Req,State,Sent,Beat) ->
+    Next=try
+        Listing=public(device_request(#{<<"method">> => <<"list_sessions">>},State)),
+        Tabs=maps:get(<<"sessions">>,Listing,[]),
+        S1=send_if_changed(Req,sessions,#{<<"type">> => <<"sessions">>,<<"sessions">> => Tabs},Sent),
+        lists:foldl(fun(#{<<"id">> := Id},Acc) ->
+            Snap=public(device_request(#{<<"method">> => <<"snapshot">>,<<"session">> => Id},State)),
+            send_if_changed(Req,{session,Id},#{<<"type">> => <<"session">>,<<"session_id">> => Id,<<"snapshot">> => view(Snap)},Acc)
+        end,S1,Tabs)
+    catch _:_ -> Sent end,
+    Now=erlang:monotonic_time(millisecond),
+    %% A comment line now and then keeps idle connections open.
+    NextBeat=case Now-Beat > 15000 of true -> cowboy_req:stream_body(<<": keep-alive\n\n">>,nofin,Req),Now;false -> Beat end,
+    timer:sleep(?EVENT_MS),
+    events(Req,State,Next,NextBeat).
+send_if_changed(Req,Key,Event,Sent) ->
+    Body=iolist_to_binary(json:encode(Event)),
+    case maps:get(Key,Sent,undefined)=:=Body of
+        true -> Sent;
+        false -> cowboy_req:stream_body([<<"data: ">>,Body,<<"\n\n">>],nofin,Req),Sent#{Key => Body}
+    end.
+public(Result) -> json:decode(iolist_to_binary(json:encode(Result))).
+%% What the window shows, without readings that change on every look.
+view(Snap) ->
+    Clock=maps:with([<<"state">>,<<"offset_policy">>],maps:get(<<"clock">>,Snap,#{})),
+    Handler=#{<<"audio">> => maps:map(fun(_,R) when is_map(R) -> maps:with([<<"state">>,<<"error">>],R);(_,R) -> R end,
+                                      maps:get(<<"audio">>,maps:get(<<"handler">>,Snap,#{}),#{}))},
+    Audio0=maps:get(<<"audio">>,Snap,#{}),
+    Audio=#{<<"offers">> => [maps:with([<<"device">>,<<"source_key">>],O) || O <- maps:get(<<"offers">>,Audio0,[]),is_map(O)],
+            <<"subscriptions">> => maps:map(fun(_,I) when is_map(I) -> maps:with([<<"state">>,<<"device">>,<<"playing">>],I);(_,I) -> I end,
+                                           maps:get(<<"subscriptions">>,Audio0,#{}))},
+    Managed=maps:with([<<"name">>],maps:get(<<"managed">>,Snap,#{})),
+    (maps:without([<<"desks">>,<<"diagnostics">>,<<"jobs">>,<<"passport">>,<<"request_id">>],Snap))#{
+        <<"clock">> => Clock,<<"handler">> => Handler,<<"audio">> => Audio,<<"managed">> => Managed}.
 
 asset(Path,Req,#{assets := Root}) ->
     %% Only direct children; never serve credentials or arbitrary host files.

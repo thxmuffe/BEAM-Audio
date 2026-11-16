@@ -243,8 +243,16 @@ client_refresh(S) ->
         false -> Next;
         true ->
             Req = fresh(16),Nonce = fresh(32),R = ba_buffee_desks:route(),
-            send(maps:get(authority,Next),maps:get(authority_route,Next),<<"hello">>,Req,
-                #{<<"nonce">> => Nonce,<<"credential">> => maps:get(credential,Next),<<"route">> => R},Next),
+            Hello = #{<<"nonce">> => Nonce,<<"credential">> => maps:get(credential,Next),<<"route">> => R},
+            send(maps:get(authority,Next),maps:get(authority_route,Next),<<"hello">>,Req,Hello,Next),
+            %% Mailboxes are new after a restart, so the last known one may be gone.
+            %% The invitation link's mailbox is re-registered by the creator on every
+            %% start: knock there too. The hello carries our current route back.
+            case stable_route(Next) of
+                undefined -> ok;
+                Same when Same =:= map_get(authority_route,Next) -> ok;
+                Stable -> send(maps:get(authority,Next),Stable,<<"hello">>,Req,Hello,Next)
+            end,
             Next#{request := #{id => Req,nonce => Nonce,deadline => Now+10000},last_attempt := Now}
     end.
 incoming(Peer,#{<<"type">> := <<"offline">>,<<"payload">> := Data},#{policy := P,routes := Routes}=S) when is_map(P) ->
@@ -509,6 +517,17 @@ open_requests(_) -> #{}.
 answer(Wire) ->
     Key=case Wire=:=ba_session_privileges:wire(on_air) of true -> on_air_requests;false -> moderator_requests end,
     try ba_device_config:policy(Key) catch exit:_ -> ask end.
+%% The Session's permanent invitation route: from this membership's own link,
+%% or from the Device's memory of the Session.
+stable_route(S) ->
+    Link=case maps:find(reusable_link,S) of
+        {ok,L} -> L;
+        error -> try maps:get(link,maps:get(maps:get(buffee,S),maps:get(sessions,ba_contacts:list(),#{})),null) catch _:_ -> null end
+    end,
+    try {_,I}=ba_buffee_passport:parse_invitation(Link),
+        Route=maps:get(<<"route">>,I),
+        case ba_buffee_passport:route(Route,maps:get(urls,S)) of ok -> Route;_ -> undefined end
+    catch _:_ -> undefined end.
 requested(Data) ->
     ba_buffee_passport:exact(Data,[<<"privilege">>]),Wire=maps:get(<<"privilege">>,Data),
     ok=ba_buffee_passport:permissions([Wire]),Wire.
