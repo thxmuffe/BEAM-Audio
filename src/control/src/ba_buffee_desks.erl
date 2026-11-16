@@ -14,8 +14,8 @@ send_route(To,Route,Type,Packet) -> gen_server:call(ba_session_scope:ref(?MODULE
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 peer_online(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{peer_online,Peer}).
 init([]) ->
-    true = os:getenv("BA_IDENTITY_SEED") =/= false,
-    true = os:getenv("BA_STATE_DIR") =/= false,
+    true = ba_settings:env("BA_IDENTITY_SEED") =/= false,
+    true = ba_settings:env("BA_STATE_DIR") =/= false,
     {Public,_} = ba_device_store:identity(),Id = binary:encode_hex(Public),
     Saved = ba_device_store:load(buffee_desks,#{id => Id,mailbox => fresh()}),
     Id = maps:get(id,Saved),

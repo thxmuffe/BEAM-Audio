@@ -10,25 +10,25 @@ main() ->
     ok = inet_db:set_lookup([file]),
     application:set_env(ba_core, relay_resolver, {?MODULE, resolve_host}),
     application:set_env(ba_core, clock_resolver, {?MODULE, resolve_host}),
-    case os:getenv("BA_AUDIO_PORT") of
+    case ba_settings:env("BA_AUDIO_PORT") of
         false -> ok;
         _ -> application:set_env(ba_core, audio_output_adapter, ba_ios_audio)
     end,
     CA = filename:join(code:root_dir(), "cacerts.pem"),
     case filelib:is_file(CA) of true -> application:set_env(ba_core, relay_cacertfile, CA); false -> ok end,
     %% The embedded app is always an unnamed, scoped Buffee Device.
-    {ok,buffee_control} = application:get_env(ba_core,runtime_profile),
+    {ok,buffee_control} = ba_settings:app(runtime_profile),
     {ok, _} = application:ensure_all_started(crypto),
     resolve_ice_servers(),
     {ok, _} = application:ensure_all_started(ba_core),
     Proof = #{status => <<"running">>, otp => list_to_binary(erlang:system_info(otp_release)),
               erts => list_to_binary(erlang:system_info(version)),
               os_pid => list_to_binary(os:getpid()), node => atom_to_binary(node())},
-    case os:getenv("BA_PROOF_PATH") of
+    case ba_settings:env("BA_PROOF_PATH") of
         false -> ok;
         Path -> ok = file:write_file(Path, json:encode(Proof))
     end,
-    Port = list_to_integer(os:getenv("BA_BRIDGE_PORT")),
+    Port = list_to_integer(ba_settings:env("BA_BRIDGE_PORT")),
     {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port,
                                   [binary, {packet, line}, {packet_size, 262144}, {active, false}], 10000),
     serve(Socket).
@@ -51,7 +51,7 @@ resolve_ice_servers() ->
     %% ExICE uses inet lookup for STUN/TURN. Seed its configured hostnames using
     %% the same in-process platform resolver as Gun; never spawn inet_gethost.
     Servers = application:get_env(ba_transport, native_ice_servers,
-        [#{urls => application:get_env(ba_core, direct_stun_urls, [])}]),
+        [#{urls => ba_settings:app(direct_stun_urls, [])}]),
     application:set_env(ba_transport,native_ice_servers,Servers),
     URLs = lists:append([case maps:get(urls, S, []) of
         U when is_binary(U) -> [U]; Us -> Us end || S <- Servers]),

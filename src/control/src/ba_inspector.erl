@@ -40,7 +40,7 @@ main() ->
     {ok,_} = ba_runtime:start(native_cluster),
     logger:set_primary_config(level,warning),
     await_desk(erlang:monotonic_time(millisecond)+60000),
-    Admission = case {os:getenv("BA_INSPECTOR_JOIN_FILE"),ba_legacy_cluster_trust:policy()} of
+    Admission = case {ba_settings:env("BA_INSPECTOR_JOIN_FILE"),ba_legacy_cluster_trust:policy()} of
         {false,undefined} -> not_joined;
         {false,_} -> restored;
         {_,Policy} when is_map(Policy) -> restored;

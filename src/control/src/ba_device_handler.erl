@@ -22,7 +22,7 @@ accept_job(Context,Id,Offer) -> gen_server:call(ba_session_scope:ref(?MODULE),{a
 cancel_job(Context,Id) -> gen_server:call(ba_session_scope:ref(?MODULE),{cancel_job,Context,Id}).
 session_down(Peer,Session) -> gen_server:call(ba_session_scope:ref(?MODULE),{session_down,Peer,Session}).
 init([]) ->
-    case application:get_env(ba_core,audio_automation,false) of true -> self() ! audio_worker;false -> ok end,
+    case ba_settings:app(audio_automation,false) of true -> self() ! audio_worker;false -> ok end,
     {ok,#{instance => fresh(),revision => 0,enabled => false,active => #{},history => [],
           contract => undefined,jobs => #{},control => undefined,control_monitor => undefined}}.
 
@@ -172,7 +172,7 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
             is_pid(ba_session_scope:whereis(ba_device_worker_sup)),
         <<"requires_consent">> => true,<<"consent">> => Enabled,
         <<"capacity">> => ?CAPACITY,<<"active">> => Count,<<"max_duration_ms">> => 10000}},
-    case application:get_env(ba_core,audio_automation,false) of
+    case ba_settings:app(audio_automation,false) of
         false -> Base;
         true -> Base#{<<"audio">> => maps:from_list([{atom_to_binary(K),
             #{<<"consent">> => B,<<"state">> => atom_to_binary(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting)),

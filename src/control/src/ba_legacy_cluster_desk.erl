@@ -212,7 +212,7 @@ mailbox(Cluster, S) ->
 
 channel(Id, Peer, Cap, Role, #{sessions := Sessions} = S) ->
     Ice = application:get_env(ba_transport, native_ice_servers,
-        [#{urls => application:get_env(ba_core, direct_stun_urls, [])}]),
+        [#{urls => ba_settings:app(direct_stun_urls, [])}]),
     {ok, Ctrl} = ba_dist_channel:start_link(self(), Role =:= server, Ice),
     case ba_legacy_cluster_trust:attach(Ctrl, Role) of
         ok ->

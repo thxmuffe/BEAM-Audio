@@ -2,7 +2,7 @@
 -module(ba_app_session).
 -export([configure/0,configure/1,consent/0,capability/2,snapshot/0,exclude/2,excluded/1,exclusions/0,contract/3,permissions/0]).
 configure() ->
-    case os:getenv("BA_PLATFORM") of
+    case ba_settings:env("BA_PLATFORM") of
         "mac" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => mac}),forget_snapshots();
         "ios" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => ios}),forget_snapshots();
         _ -> ok
@@ -26,17 +26,17 @@ permissions() -> [<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>,
     <<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>].
 consent() ->
     case ba_session_scope:whereis(ba_device_config) of
-        undefined -> case application:get_env(ba_core,runtime_profile,legacy_apps) of
+        undefined -> case ba_settings:app(runtime_profile,legacy_apps) of
             buffee_control -> #{speaker => false,microphone => false,broadcast => false,calibrate_microphone => false,calibrate_speaker => false,dsp => false};
-            _ -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false}) end;
+            _ -> ba_settings:app(audio_consent,#{speaker => true,microphone => false,broadcast => false}) end;
         _ -> C=ba_device_config:consent(),
-             case application:get_env(ba_core,runtime_profile,legacy_apps) of
+             case ba_settings:app(runtime_profile,legacy_apps) of
                  buffee_control -> B=try ba_buffee:broadcast() catch exit:_ -> false end,C#{broadcast => B};
                  _ -> C
              end
     end.
 capability(broadcast,B) when is_boolean(B) ->
-    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+    case ba_settings:app(runtime_profile,legacy_apps) of
         buffee_control -> ba_buffee:broadcast(B);
         _ -> ba_device_config:change(#{broadcast => B},#{})
     end;
@@ -59,9 +59,9 @@ contract(Buffee,Publisher,#{receiver := Receiver,source := Source}) ->
 snapshot() ->
     {Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
     Buffee=ba_buffee:status(),Config=ba_device_config:snapshot(),
-    Base=#{profile => buffee_control,device => Id,device_name => ba_device_label:local(Id),device_label => ba_device_label:display(unicode:characters_to_binary(os:getenv("BA_DEVICE_NAME",ba_device_label:os_name()))),buffee => Buffee,connection => ba_buffee:connection(),contacts => ba_contacts:list(),
+    Base=#{profile => buffee_control,device => Id,device_name => ba_device_label:local(Id),device_label => ba_device_label:display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name()))),buffee => Buffee,connection => ba_buffee:connection(),contacts => ba_contacts:list(),
         desks => safe(fun ba_buffee_desks:status/0,#{}),
-        default_desk => application:get_env(ba_core,default_reception_desk_url,<<>>),
+        default_desk => ba_settings:app(default_reception_desk_url,<<>>),
         configuration => maps:without([entries],Config),consent => consent(),excluded => exclusions(),messages => [],devices => [],jobs => [],
         audio => #{},clock => #{state => idle},passport => #{}},
     case maps:get(state,Buffee) of
@@ -89,7 +89,7 @@ snapshot() ->
 safe(F,Default) -> try F() catch exit:_ -> Default end.
 forget_snapshots() ->
     %% Explicit migration: never touch Keychain identity or contacts.term.
-    case os:getenv("BA_STATE_DIR") of
+    case ba_settings:env("BA_STATE_DIR") of
         false -> ok;
         Dir -> lists:foreach(fun(Name) ->
             case file:delete(filename:join(Dir,Name)) of ok -> ok;{error,enoent} -> ok;{error,R} -> error({snapshot_cleanup_failed,R}) end

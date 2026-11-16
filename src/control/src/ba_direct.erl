@@ -64,7 +64,7 @@ handle_info_event(retry, #{enabled := Enabled, routes := Routes, ready := Ready,
 handle_info_event(_, S) -> {noreply, S}.
 connect(Peer, #{enabled := true, connections := PCs} = S) ->
     case ba_peer_connection:start_link(self(), ba_relay:id() < Peer,
-            application:get_env(ba_core, direct_stun_urls, [])) of
+            ba_settings:app(direct_stun_urls, [])) of
         {ok, Pid} -> S#{connections := PCs#{Peer => Pid}};
         _ -> S
     end;

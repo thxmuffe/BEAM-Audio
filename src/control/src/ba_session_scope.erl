@@ -41,7 +41,7 @@ new_table(Name,Options) ->
 table(Name) -> case current() of undefined -> Name;Scope ->
     case ets:lookup(?TABLE,{table,Scope,Name}) of [{_,Tid}] -> Tid;[] -> undefined end end.
 state_directory(Name) ->
-    case {os:getenv("BA_STATE_DIR"),current(),Name} of
+    case {ba_settings:env("BA_STATE_DIR"),current(),Name} of
         {false,_,_} -> false;
         {Root,_,device_configuration} -> Root;
         {Root,_,contacts} -> Root;
@@ -53,8 +53,8 @@ set_env(Key,Value) -> case current() of undefined -> application:set_env(ba_core
     Scope -> ets:insert(?TABLE,{{env,Scope,Key},Value}),ok end.
 unset_env(Key) -> case current() of undefined -> application:unset_env(ba_core,Key);
     Scope -> ets:delete(?TABLE,{env,Scope,Key}),ok end.
-get_env(Key) -> case current() of undefined -> application:get_env(ba_core,Key);Scope ->
-    case ets:lookup(?TABLE,{env,Scope,Key}) of [{_,V}] -> {ok,V};[] -> application:get_env(ba_core,Key) end end.
+get_env(Key) -> case current() of undefined -> ba_settings:app(Key);Scope ->
+    case ets:lookup(?TABLE,{env,Scope,Key}) of [{_,V}] -> {ok,V};[] -> ba_settings:app(Key) end end.
 get_env(Key,Default) -> case get_env(Key) of {ok,V} -> V;undefined -> Default end.
 spawn(F) -> Scope=current(),erlang:spawn(fun() -> run(Scope,F) end).
 spawn_link(F) -> Scope=current(),erlang:spawn_link(fun() -> run(Scope,F) end).

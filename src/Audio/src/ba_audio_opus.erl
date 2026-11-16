@@ -1,12 +1,12 @@
 %% Local binding to the approved GStreamer decode path. Erlang owns all targets.
 -module(ba_audio_opus).
 -export([available/0,open/0,push/2,event/2,close/1,descriptor/1]).
-available() -> os:getenv("BA_GSTREAMER_PCM_HELPER")=/=false andalso os:getenv("BA_GSTREAMER_PYTHON")=/=false.
+available() -> ba_settings:env("BA_GSTREAMER_PCM_HELPER")=/=false andalso ba_settings:env("BA_GSTREAMER_PYTHON")=/=false.
 open() ->
     case available() of
         false -> {error,opus_decoder_unavailable};
         true ->
-            Python = os:getenv("BA_GSTREAMER_PYTHON"),Helper = os:getenv("BA_GSTREAMER_PCM_HELPER"),
+            Python = ba_settings:env("BA_GSTREAMER_PYTHON"),Helper = ba_settings:env("BA_GSTREAMER_PCM_HELPER"),
             Port = open_port({spawn_executable,Python},[binary,{packet,4},exit_status,use_stdio,{env,ba_native_env:without_secrets()},
                 {busy_limits_msgq,{65536,131072}},{args,[Helper]}]),
             {ok,Port}

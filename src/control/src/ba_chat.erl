@@ -87,7 +87,7 @@ local_event(Event,Text,Node,State) ->
     record_message(Message,State).
 
 cluster_member(Node) ->
-    case application:get_env(ba_core,native_desk,false) of
+    case ba_settings:app(native_desk,false) of
         false -> true;
         true ->
             case ba_legacy_cluster_trust:snapshot() of

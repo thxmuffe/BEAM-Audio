@@ -5,7 +5,7 @@
 start(_Type, _Args) ->
     %% Releases may start the application before the native bridge entry point.
     %% Configure both Apple hosts before starting any restore/audio owners.
-    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+    case ba_settings:app(runtime_profile,legacy_apps) of
         buffee_control -> ba_app_session:configure();
         _ -> ok
     end,

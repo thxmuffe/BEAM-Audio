@@ -5,11 +5,12 @@
 start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+    case ba_settings:app(runtime_profile,legacy_apps) of
         buffee_control ->
             ok=ba_session_scope:init(),
             {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
-                 [#{id => ba_permission_pg,start => {pg,start_link,[ba_permission_pg]}},
+                 [#{id => ba_settings,start => {ba_settings,start_link,[]}},
+                  #{id => ba_permission_pg,start => {pg,start_link,[ba_permission_pg]}},
                   #{id => ba_device_config,start => {ba_device_config,start_link,[]}},
                   #{id => ba_contacts,start => {ba_contacts,start_link,[]}},
                   #{id => ba_desk_connections_sup,start => {ba_desk_connections_sup,start_link,[]},type => supervisor,shutdown => infinity},
@@ -22,6 +23,7 @@ init([]) ->
 existing_profile() ->
     %% Restart chat too if its process-group scope disappears.
     Core = [
+        #{id => ba_settings, start => {ba_settings, start_link, []}},
         #{id => ba_pg, start => {pg, start_link, [ba_pg]}},
         #{id => ba_chat, start => {ba_chat, start_link, []}}
     ],
@@ -32,8 +34,8 @@ existing_profile() ->
         #{id => ba_network, start => {ba_network, start_link, []}},
         #{id => ba_buffees, start => {ba_buffees, start_link, []}}
     ],
-    Children = case application:get_env(ba_core, runtime_profile, legacy_apps) of
-        native_cluster -> Core ++ case application:get_env(ba_core, native_desk, false) of
+    Children = case ba_settings:app(runtime_profile, legacy_apps) of
+        native_cluster -> Core ++ case ba_settings:app(native_desk, false) of
             true -> [#{id => ba_legacy_cluster_desk, start => {ba_legacy_cluster_desk, start_link, []}}];
             false -> []
         end;

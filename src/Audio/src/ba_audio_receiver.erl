@@ -362,7 +362,7 @@ restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := 
             end
     end.
 clock_ready(S) ->
-    Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
+    Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
     try ba_subscription:clock_ready(Module:status(),maps:get(resume_after,S)) catch _:_ -> false end.
 start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
     case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
@@ -466,7 +466,7 @@ terminate(_,S) ->
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([suspended,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
 resync_clock() ->
-    Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
+    Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
     try Module:resync() catch _:_ -> unavailable end.
 
 renew_media(Id,Peer,Session,Until,#{context := #{peer := Peer,session := Session,deadline := Old}=C,session := P}=R)
@@ -488,7 +488,7 @@ transport_status(#{session := P}) when is_pid(P) ->
 transport_status(_) -> #{}.
 
 publication_allowed(Peer,Key) ->
-    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+    case ba_settings:app(runtime_profile,legacy_apps) of
         buffee_control -> buffee_publication_allowed(Peer,Key);
         _ -> true
     end.

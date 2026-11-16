@@ -4,7 +4,7 @@
 -export([start_link/3, push/3, stop/1, available/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
-available() -> application:get_env(ba_core, audio_output_adapter) =/= undefined.
+available() -> ba_settings:app(audio_output_adapter) =/= undefined.
 start_link(Owner, Descriptor, Adapter) -> gen_server:start_link(?MODULE, {Owner, Descriptor, Adapter}, []).
 push(Pid, Header, PCM) -> gen_server:cast(Pid, {packet, Header, PCM}).
 stop(Pid) -> try gen_server:stop(Pid) catch exit:_ -> ok end.

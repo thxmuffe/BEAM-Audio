@@ -19,9 +19,9 @@ reconcile(S) ->
     Requested=ba_app_session:consent(),
     OnAir=lists:member(<<"on_air">>,maps:get(privileges,ba_buffee_membership:status(),[])),
     Desired=Requested#{broadcast := maps:get(broadcast,Requested) andalso OnAir},
-    Consent=case application:get_env(ba_core,audio_suspended,false) of
+    Consent=case ba_settings:app(audio_suspended,false) of
         true -> maps:map(fun(_,_) -> false end,Desired);false -> Desired
-    end,Adapter=application:get_env(ba_core,audio_capture_adapter,ba_mac_audio),
+    end,Adapter=ba_settings:app(audio_capture_adapter,ba_mac_audio),
     [Adapter:stop(K) || K <- [microphone,broadcast],not maps:get(K,Consent),maps:get(state,Adapter:status(K))=/=stopped],
     case ba_buffee_membership:current() of
         {ok,#{policy := #{buffee := Buffee,peers := Peers},routes := _}} ->
@@ -116,6 +116,6 @@ connect_peers(Peers,S) ->
 printable(R) when is_binary(R) -> R;
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
 terminate(_,_) ->
-    Adapter=application:get_env(ba_core,audio_capture_adapter,ba_mac_audio),
+    Adapter=ba_settings:app(audio_capture_adapter,ba_mac_audio),
     [try Adapter:stop(K) catch exit:_ -> ok end || K <- [microphone,broadcast]],
     case ba_session_scope:whereis(ba_audio_receiver) of undefined -> ok;_ -> try ba_audio_receiver:stop() catch exit:_ -> ok end end,ok.

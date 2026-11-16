@@ -80,6 +80,48 @@ Not yet checked against a real Device runtime or the Mac/iOS hosts.
 Known gap until step 2 of the ordered plan below: an effective Always still
 sets the old consent flag, so turning the top switch on starts the microphone.
 
+### In progress (2026-11-16): one settings pipeline, then Sessions memory
+
+User decisions: a Device starts from one plain-text user settings file, saved
+right away on every change (throttled), shared by CLI, web, Mac, iOS and
+Windows. Secrets stay separate. Every configuration value travels through it.
+A Session exists once its invitation link exists; the file remembers every
+link (with its name) and the Devices seen in each Session. That memory only
+grows: Devices are never removed, only given a new status (kicked); absent ones
+show grey. Saved Sessions load only when expanded. "End Session" becomes "Kick
+everyone (including me) and leave". Undo/redo is set aside (in memory only);
+Git-managed settings may come later.
+
+Phase 1 DONE (not committed): `ba_settings` owns `settings.config` (text,
+`file:consult`, writes within 200 ms, atomic rename, unreadable file kept as
+`.broken`). All 99 `os:getenv("BA_…")` / `application:get_env(ba_core,…)` reads
+in the core go through `ba_settings:env/app`, which the file can override.
+`ba_device_config` (grants incl. ON AIR, automation) and `ba_contacts` (saved
+Devices and groups) keep their state there; the `device_configuration`,
+`device_gates` and `contacts` files are no longer used; on the first start
+without `settings.config` their content is imported once. 74 focused tests,
+`cli-config-smoke.py` (text file, restart, hand edit) and the three-Device
+smoke pass. The Reception service is not part of this pipeline.
+
+Phase 2 DONE (not committed): Sessions memory lives in the settings under
+`contacts`: `sessions => #{SessionId => #{name, link, devices => #{DeviceId =>
+member | kicked}}}`. It only grows: `ba_contacts:observe` adds Devices,
+`kicked/2` changes a status, a Device seen again as a member is a member again.
+The first known link is kept (join, the Share page, and right after creating a
+Session, which now makes its link at once). Earlier per-Session groups
+(`buffee_groups`) became Session entries; custom groups stay groups. The open
+Sessions (`web_sessions`) are `open_sessions` in the settings. Passports and
+grant-holder signing state stay in each Session's private `buffee_connection`.
+New command `rename_saved_session {entry, name}` (the word `session` is the
+UI's routing field). UI: past Sessions under Saved sessions (Devices grey unless
+present, "Kicked" shown), menu Rename session / Invitation link (copy, share);
+"End Session" is "Kick everyone and leave"; custom groups' menu says "Invite
+group"; groups no longer collapse when clicking elsewhere. 76 focused tests
+(2 new memory tests), the three-Device and CLI settings smoke tests pass;
+preview headless check. Not verified: link recording and kick status against
+a real two-Device run; Mac/iOS/Windows hosts. Saved Sessions do not connect when
+expanded (memory only); joining a saved Session from its menu is not built.
+
 ### Ordered plan (agreed order pending the user's confirmation)
 
 1. **Request board and the on-air request (core).** The Manager keeps open

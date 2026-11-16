@@ -20,7 +20,7 @@ query(Host, Port, Timeout) ->
     end.
 
 resolve(Host) ->
-    case application:get_env(ba_core, clock_resolver) of
+    case ba_settings:app(clock_resolver) of
         {ok, {Module, Function}} -> Module:Function(list_to_binary(Host));
         undefined -> {ok, inet}
     end.

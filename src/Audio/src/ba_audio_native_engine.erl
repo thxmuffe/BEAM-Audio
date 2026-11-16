@@ -3,14 +3,14 @@
 -module(ba_audio_native_engine).
 -export([available/0, open/1, command/2, event/2, close/1]).
 
-available() -> os:getenv("BA_WEBRTC_AUDIO_PORT") =/= false.
+available() -> ba_settings:env("BA_WEBRTC_AUDIO_PORT") =/= false.
 open(Options) -> case ba_device_permission:allowed(playback) of
-    true -> case application:get_env(ba_core,runtime_profile,legacy_apps) of
+    true -> case ba_settings:app(runtime_profile,legacy_apps) of
         buffee_control -> {error,native_revocation_protocol_required};
         _ -> open_permitted(Options)
     end;false -> {error,consent_required} end.
 open_permitted(#{ice_servers := ICE}) ->
-    case os:getenv("BA_WEBRTC_AUDIO_PORT") of
+    case ba_settings:env("BA_WEBRTC_AUDIO_PORT") of
         false -> {error, <<"Native audio output is unavailable on this device.">>};
         PortText ->
             case gen_tcp:connect({127,0,0,1}, list_to_integer(PortText),

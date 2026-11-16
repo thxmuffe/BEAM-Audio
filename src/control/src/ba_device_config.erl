@@ -25,7 +25,7 @@ auto_accept(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{a
 auto_grant(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{auto_grant,Enabled,Options}).
 %% Read-only, fail-closed view for hot execution paths. Only this owner writes it.
 allowed(Key) ->
-    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+    case ba_settings:app(runtime_profile,legacy_apps) of
         buffee_control ->
             try ets:lookup(?MODULE,permissions) of
                 [{permissions,C,_,Registry}] -> Registry=/=undefined andalso Registry=:=whereis(ba_permission_pg) andalso maps:get(Key,C,false)=:=true;
@@ -35,21 +35,20 @@ allowed(Key) ->
     end.
 init([]) ->
     ets:new(?MODULE,[named_table,protected,set,{read_concurrency,true}]),
-    Secure=application:get_env(ba_core,runtime_profile,legacy_apps)=:=buffee_control,
-    %% A Device returns to the state it was in: every setting, ON AIR and the
-    %% standing choices are restored. Only a first start begins with everything off.
-    Gates=read_gates(ba_device_store:load(device_gates,#{})),
+    Secure=ba_settings:app(runtime_profile,legacy_apps)=:=buffee_control,
+    %% The Device starts from its settings: every grant, ON AIR and the standing
+    %% choices. Only a first start begins with everything off. Undo history lives
+    %% only while the Device runs.
+    Gates=read_gates(ba_settings:get(automation,#{})),
     Default=case Secure of
         true -> maps:from_keys([broadcast|?PROTECTED],false);
-        false -> application:get_env(ba_core,audio_consent,#{speaker => true,microphone => false,broadcast => false})
+        false -> ba_settings:app(audio_consent,#{speaker => true,microphone => false,broadcast => false})
     end,
-    Initial=#{format => 1,revision => 0,cursor => 0,seen => [],
-        states => [#{label => <<"Initial audio settings">>,config => Default,time_ms => erlang:system_time(millisecond)}]},
-    ok=validate(Initial),
-    Saved=ba_device_store:load(device_configuration,undefined),
-    %% Live handles from the previous run (registry, pending stops) are not state.
-    S=case Saved of undefined -> ok=ba_device_store:save(device_configuration,Initial),Initial;
-        _ -> validate(Saved),maps:without([permission_registry,revocation_pending,revocation_executors],Saved) end,
+    Saved=ba_settings:get(consent,undefined),
+    Consent=case valid_config(Saved) of true -> Saved;false -> Default end,
+    S=#{format => 1,revision => 0,cursor => 0,seen => [],
+        states => [#{label => <<"Initial audio settings">>,config => Consent,time_ms => erlang:system_time(millisecond)}]},
+    ok=validate(S),
     Restored=S#{choices => maps:get(choices,Gates,#{}),auto_accept => maps:get(auto_accept,Gates,false),auto_grant => maps:get(auto_grant,Gates,false)},
     publish(Restored),changed(),{ok,Restored#{permission_registry => whereis(ba_permission_pg)}}.
 %% Only well-formed choices are read back; anything else is dropped.
@@ -58,13 +57,8 @@ read_gates(Saved) when is_map(Saved) ->
                         case maps:get(choices,Saved,#{}) of C when is_map(C) -> C;_ -> #{} end),
     #{choices => Choices,auto_accept => maps:get(auto_accept,Saved,false)=:=true,auto_grant => maps:get(auto_grant,Saved,false)=:=true};
 read_gates(_) -> #{}.
-%% Written after every change to a standing choice. A failed write is not fatal;
-%% the choice then simply lasts until the next restart.
-save_gates(S) ->
-    case application:get_env(ba_core,runtime_profile,legacy_apps) of
-        buffee_control -> try ba_device_store:save(device_gates,maps:with([choices,auto_accept,auto_grant],S)) catch _:_ -> ok end;
-        _ -> ok
-    end,S.
+%% Written to the settings after every change to a standing choice.
+save_gates(S) -> ok=ba_settings:put(automation,maps:with([choices,auto_accept,auto_grant],S)),S.
 validate(#{format := 1,revision := R,cursor := C,seen := Seen,states := States}) ->
     true=is_integer(R) andalso R>=0,true=is_list(States) andalso length(States)>0 andalso length(States)=< ?LIMIT+1,
     true=is_integer(C) andalso C>=0 andalso C<length(States),true=is_list(Seen) andalso length(Seen)=< ?LIMIT,
@@ -121,7 +115,7 @@ handle_call(Command,_,S) ->
           error:function_clause -> {reply,{error,invalid_configuration},S}
     end.
 commit(Old,Next) ->
-    case application:get_env(ba_core,runtime_profile,legacy_apps)=/=buffee_control orelse maps:get(permission_registry,Old,whereis(ba_permission_pg))=:=whereis(ba_permission_pg) of
+    case ba_settings:app(runtime_profile,legacy_apps)=/=buffee_control orelse maps:get(permission_registry,Old,whereis(ba_permission_pg))=:=whereis(ba_permission_pg) of
         true -> commit_registered(Old,Next);false -> {reply,{error,permission_registry_lost},Old}
     end.
 commit_registered(Old,Next) ->
@@ -184,10 +178,11 @@ apply_command({undo,_},#{cursor := C}=S) -> history_edit(S,S#{cursor := C-1});
 apply_command({redo,_},#{cursor := C,states := States}) when C+1>=length(States) -> {error,nothing_to_redo};
 apply_command({redo,_},#{cursor := C}=S) -> history_edit(S,S#{cursor := C+1}).
 history_edit(Old,New) -> case history_allowed(current(Old),current(New)) of true -> New;false -> {error,local_approval_required} end.
-persist(S) -> try ba_device_store:save(device_configuration,S) of ok -> ok;_ -> {error,configuration_save_failed}
+%% The current grants go to the settings; the settings owner writes them to disk.
+persist(S) -> try ba_settings:put(consent,current(S)) of ok -> ok;_ -> {error,configuration_save_failed}
               catch _:_ -> {error,configuration_save_failed} end.
 token(Key) ->
-    case application:get_env(ba_core,runtime_profile,legacy_apps) of
+    case ba_settings:app(runtime_profile,legacy_apps) of
         buffee_control -> try ets:lookup(?MODULE,permissions) of
             [{permissions,C,T,Registry}] -> case Registry=/=undefined andalso Registry=:=whereis(ba_permission_pg) andalso maps:get(Key,C,false) of true -> {ok,maps:get(Key,T)};false -> {error,consent_required} end;
             _ -> {error,consent_required}
@@ -204,7 +199,7 @@ changed() ->
     Names=[ba_device_handler|[{global,N} || {ba_session,_,ba_device_handler}=N <- global:registered_names()]],
     [gen_server:cast(Name,audio_changed) || Name <- Names],ok.
 history_allowed(Old,New) ->
-    application:get_env(ba_core,runtime_profile,legacy_apps)=/=buffee_control orelse
+    ba_settings:app(runtime_profile,legacy_apps)=/=buffee_control orelse
     not lists:any(fun(K) -> maps:get(K,New,false) andalso not maps:get(K,Old,false) end,?PROTECTED).
 auto(S) -> maps:get(auto_accept,S,false).
 stored(Key,S) -> maps:get(Key,maps:get(choices,S,#{}),ask).

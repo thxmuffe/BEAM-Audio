@@ -36,7 +36,7 @@ init([]) ->
     end,
     Config = maps:with([policy,routes],View),
     Protocol = (ba_buffee_control_protocol:new(Identity,maps:get(policy,View)))#{
-        membership_deadline => maps:get(until,View),lease_ms => application:get_env(ba_core,control_session_lease_ms,60000)},
+        membership_deadline => maps:get(until,View),lease_ms => ba_settings:app(control_session_lease_ms,60000)},
     erlang:send_after(250,self(),expire),
     {ok,#{protocol => Protocol,config => Config,callers => #{},peer_names => #{},jobs => #{},
           handler_requests => gen_server:reqids_new(),handler_monitor => monitor(process,ba_session_scope:whereis(ba_device_handler)),
@@ -153,7 +153,7 @@ handle_info({membership_authorized,View},S) ->
                 ba_device_store:identity(),maps:get(policy,View))}
     end,
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => maps:get(until,View),
-        lease_ms => application:get_env(ba_core,control_session_lease_ms,60000)}}};
+        lease_ms => ba_settings:app(control_session_lease_ms,60000)}}};
 handle_info(membership_invalidated,S) ->
     Next = reset(membership_invalidated,S),
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => now_ms()}}};

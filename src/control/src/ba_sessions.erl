@@ -7,7 +7,7 @@
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 request(Command) -> gen_server:call(?MODULE,{request,Command},30000).
 init([]) ->
-    Tabs=ba_device_store:load(web_sessions,[#{id => <<"default">>,name => <<"Session">>,buffee => null}]),
+    Tabs=ba_settings:get(open_sessions,[#{id => <<"default">>,name => <<"Session">>,buffee => null}]),
     self() ! restore,{ok,#{tabs => Tabs}}.
 handle_info(restore,#{tabs := Tabs}=S) ->
     [start(Id) || #{id := Id} <- Tabs,Id=/=<<"default">>],{noreply,S};
@@ -21,7 +21,7 @@ handle_call({request,#{<<"method">> := <<"new_session">>}=Command},_,#{tabs := T
         ok ->
             case maps:get(<<"create">>,Command,false) of
                 true ->
-                    Desk=application:get_env(ba_core,default_reception_desk_url,<<"wss://buffee-reception.onrender.com/relay/v1">>),
+                    Desk=ba_settings:app(default_reception_desk_url,<<"wss://buffee-reception.onrender.com/relay/v1">>),
                     Reply=in(Id,fun() -> ba_device_api:request(#{<<"method">> => <<"create_buffee">>,<<"name">> => <<"New Session">>,<<"desks">> => [Desk]}) end),
                     case maps:get(<<"error">>,Reply,null) of
                         null -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => Id}]}),
@@ -78,7 +78,7 @@ stop(<<"default">>) -> ok;
 stop(Id) -> supervisor:terminate_child(ba_sup,{session,Id}),supervisor:delete_child(ba_sup,{session,Id}),ba_session_scope:clear(Id).
 save_changed(#{tabs := Tabs},#{tabs := Tabs}=S) -> S;
 save_changed(_,S) -> save(S).
-save(#{tabs := Tabs}=S) -> ok=ba_device_store:save(web_sessions,Tabs),S.
+save(#{tabs := Tabs}=S) -> ok=ba_settings:put(open_sessions,Tabs),S.
 metadata(Id,Reply,#{tabs := Tabs},Command) ->
     Base=#{<<"error">> => null,session_id => Id,sessions => Tabs,supports_sessions => true},
     maps:merge(maps:merge(Base,Reply),maps:with([<<"request_id">>],Command)).

@@ -2,7 +2,7 @@
 -module(ba_cli_store).
 -include_lib("kernel/include/file.hrl").
 -export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,remove/1,names/0,valid_name/1,reserve/3]).
-home() -> case os:getenv("BA_CLI_HOME") of false -> filename:join(filename:basedir(user_data,"beam-audio"),"devices");P -> filename:absname(P) end.
+home() -> case ba_settings:env("BA_CLI_HOME") of false -> filename:join(filename:basedir(user_data,"beam-audio"),"devices");P -> filename:absname(P) end.
 valid_name(N) -> re:run(N,"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$",[{capture,none}])=:=match.
 dir(N) -> case valid_name(N) of true -> filename:join(home(),N);false -> error(invalid_device_name) end.
 private_dir(D) ->

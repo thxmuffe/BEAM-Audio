@@ -200,4 +200,4 @@ rejoin_config(Config,_) -> Config.
 restore_enabled() ->
     ba_session_scope:get_env(restore_buffee_on_start,false) andalso
     (ba_session_scope:current()=/=undefined orelse lists:any(fun(D) -> maps:get(id,D)=:=<<"default">> end,
-        ba_device_store:load(web_sessions,[#{id => <<"default">>}]))).
+        ba_settings:get(open_sessions,[#{id => <<"default">>}]))).

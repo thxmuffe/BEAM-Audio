@@ -77,7 +77,7 @@ format_status(Status) -> maps:map(fun(state,S) -> maps:with([kind,dropped_callba
 capture_start(_,#{socket := undefined,kind := K}=S) ->
     case ba_audio_input:ready() of
         ok ->
-            case gen_tcp:connect({127,0,0,1},list_to_integer(os:getenv("BA_AUDIO_INPUT_PORT")),
+            case gen_tcp:connect({127,0,0,1},list_to_integer(ba_settings:env("BA_AUDIO_INPUT_PORT")),
                     [binary,{packet,4},{packet_size,131072},{active,once}],2000) of
                 {ok,Socket} ->
                     Mode=case K of microphone -> 1;broadcast -> 2 end,

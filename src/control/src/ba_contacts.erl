@@ -2,6 +2,11 @@
 -module(ba_contacts).
 -behaviour(gen_server).
 -export([start_link/0,list/0,put/2,delete/1,group/2,delete_group/1,resolve/1,observe/3,observe_name/2]).
+%% Sessions memory: every Session this Device has known, by Session id, with its
+%% name, its original invitation link and the Devices seen there. It only grows:
+%% a Device is never removed, a kicked one keeps its place with status kicked.
+-export([link/1,kicked/2,rename_session/2,forget_session/1]).
+%% Only the person removes an entry; nothing is forgotten automatically.
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
 observe(Buffee,Name,Ids) -> gen_server:cast(?MODULE,{observe,Buffee,Name,Ids}).
 observe_name(Id,Name) -> gen_server:cast(?MODULE,{observe_name,Id,Name}).
@@ -12,8 +17,38 @@ delete(Id) -> gen_server:call(?MODULE,{delete,Id}).
 group(Name,Ids) -> gen_server:call(?MODULE,{group,Name,Ids}).
 delete_group(Name) -> gen_server:call(?MODULE,{delete_group,Name}).
 resolve(Selection) -> gen_server:call(?MODULE,{resolve,Selection}).
-init([]) -> {ok,ba_device_store:load(contacts,#{contacts => #{},groups => #{}})}.
-handle_call(list,_,S) -> {reply,maps:with([contacts,groups],S),S};
+link(Link) -> gen_server:cast(?MODULE,{link,Link}).
+kicked(Session,Device) -> gen_server:cast(?MODULE,{kicked,Session,Device}).
+rename_session(Session,Name) -> gen_server:call(?MODULE,{rename_session,Session,Name}).
+forget_session(Session) -> gen_server:call(?MODULE,{forget_session,Session}).
+init([]) ->
+    S=sessions_from_groups(ba_settings:get(contacts,#{contacts => #{},groups => #{}})),
+    ok=ba_settings:put(contacts,S),{ok,S}.
+%% Earlier versions kept each Session as a group named after it; those become Session entries.
+sessions_from_groups(#{groups := Groups}=S) ->
+    Links=maps:get(buffee_groups,S,#{}),Sessions=maps:get(sessions,S,#{}),
+    Moved=maps:fold(fun(Session,Group,Acc) ->
+        case maps:is_key(Session,Acc) of
+            true -> Acc;
+            false -> Acc#{Session => #{name => Group,link => null,devices => maps:from_keys(maps:get(Group,Groups,[]),member)}}
+        end end,Sessions,Links),
+    (maps:remove(buffee_groups,S))#{groups := maps:without(maps:values(Links),Groups),sessions => Moved}.
+handle_call(list,_,S) -> {reply,maps:with([contacts,groups,sessions],S),S};
+handle_call({forget_session,Session},_,S) ->
+    Sessions=maps:get(sessions,S,#{}),
+    case maps:is_key(Session,Sessions) of
+        true -> Next=S#{sessions := maps:remove(Session,Sessions)},ok=ba_settings:put(contacts,Next),{reply,ok,Next};
+        false -> {reply,{error,unknown_session},S}
+    end;
+handle_call({rename_session,Session,Name},_,S) ->
+    Sessions=maps:get(sessions,S,#{}),
+    case maps:find(Session,Sessions) of
+        {ok,E} -> case label(Name) of
+            true -> Next=S#{sessions := Sessions#{Session => E#{name := Name}}},ok=ba_settings:put(contacts,Next),{reply,ok,Next};
+            false -> {reply,{error,invalid_contact_or_group},S}
+        end;
+        error -> {reply,{error,unknown_session},S}
+    end;
 handle_call({resolve,Selection},_,#{contacts := Contacts,groups := Groups}=S) ->
     Result = try
         Ids = case Selection of {group,Name} -> maps:get(Name,Groups);L when is_list(L) -> L end,
@@ -24,7 +59,7 @@ handle_call({resolve,Selection},_,#{contacts := Contacts,groups := Groups}=S) ->
     {reply,Result,S};
 handle_call(Command,_,S) ->
     try update(Command,S) of
-        Next -> ok = ba_device_store:save(contacts,Next),{reply,ok,Next}
+        Next -> ok=ba_settings:put(contacts,Next),{reply,ok,Next}
     catch error:{badmatch,false} -> {reply,{error,invalid_contact_or_group},S};
           error:{badkey,_} -> {reply,{error,unknown_contact},S};
           error:function_clause -> {reply,{error,invalid_contact_or_group},S}
@@ -47,17 +82,22 @@ handle_cast({observe,Buffee,Name,Ids},S) ->
         true=is_list(Ids) andalso length(Ids)=<32,
         true=lists:all(fun(Id) -> ba_buffee_job:hex(Id,64) end,Ids),
         Collected=lists:foldl(fun(Id,Acc) -> observed_name(Id,binary:part(Id,0,12),Acc) end,S,lists:usort(Ids)),
-        Links=maps:get(buffee_groups,Collected,#{}),Groups=maps:get(groups,Collected),
-        Group=case maps:find(Buffee,Links) of
-            {ok,Existing} -> Existing;
-            error -> case lists:member(Name,maps:values(Links)) of
-                false -> Name;
-                true -> <<(unicode:characters_to_binary(lists:sublist(unicode:characters_to_list(Name),24)))/binary," | ",(binary:part(Buffee,0,8))/binary>>
-            end
-        end,
-        Members=lists:usort(Ids++maps:get(Group,Groups,[])),
-        persist(Collected#{groups := Groups#{Group => Members},buffee_groups => Links#{Buffee => Group}},S)
+        persist(seen(Buffee,Name,Ids,Collected),S)
     catch error:{badmatch,false} -> {noreply,S} end;
+%% The first link known for a Session is kept: it is the Session's permanent invitation.
+handle_cast({link,Link},S) ->
+    try
+        {_,I}=ba_buffee_passport:parse_invitation(Link),
+        Session=maps:get(<<"buffee">>,I),Sessions=maps:get(sessions,S,#{}),
+        E=maps:get(Session,Sessions,#{name => maps:get(<<"name">>,I),link => null,devices => #{}}),
+        persist(S#{sessions => Sessions#{Session => case maps:get(link,E) of null -> E#{link := Link};_ -> E end}},S)
+    catch _:_ -> {noreply,S} end;
+handle_cast({kicked,Session,Device},S) ->
+    Sessions=maps:get(sessions,S,#{}),
+    case maps:find(Session,Sessions) of
+        {ok,#{devices := D}=E} -> persist(S#{sessions => Sessions#{Session => E#{devices := D#{Device => kicked}}}},S);
+        error -> {noreply,S}
+    end;
 handle_cast({observe_name,Id,Name},S) ->
     case ba_buffee_job:hex(Id,64) andalso contact_label(Name) of
         true -> persist(observed_name(Id,Name,S),S);
@@ -65,7 +105,7 @@ handle_cast({observe_name,Id,Name},S) ->
     end;
 handle_cast(_,S) -> {noreply,S}.
 persist(S,S) -> {noreply,S};
-persist(Next,_) -> ok=ba_device_store:save(contacts,Next),{noreply,Next}.
+persist(Next,_) -> ok=ba_settings:put(contacts,Next),{noreply,Next}.
 manual_name(Id,S) ->
     case maps:find(auto_names,S) of
         {ok,Names} -> S#{auto_names := maps:remove(Id,Names)};
@@ -80,6 +120,12 @@ observed_name(Id,Name,#{contacts := Contacts}=S) ->
             _ -> S
         end
     end.
+%% Devices are added, never removed; one seen again as a member is a member again.
+seen(Session,Name,Ids,S) ->
+    Sessions=maps:get(sessions,S,#{}),
+    E=maps:get(Session,Sessions,#{name => Name,link => null,devices => #{}}),
+    D=lists:foldl(fun(Id,Acc) -> Acc#{Id => member} end,maps:get(devices,E),Ids),
+    S#{sessions => Sessions#{Session => E#{devices := D}}}.
 contact_label(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<256 -> is_list(unicode:characters_to_list(B));
 contact_label(_) -> false.
 handle_info(_,S) -> {noreply,S}.

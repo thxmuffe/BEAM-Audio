@@ -27,7 +27,7 @@
 %% Only local platform configuration selects modules. Remote descriptors never do.
 %% The default keeps existing iPhone hosts compatible with this Erlang update.
 selected() ->
-    case os:getenv("BA_AUDIO_ENGINE") of
+    case ba_settings:env("BA_AUDIO_ENGINE") of
         false -> {ok, ba_audio_engine_libwebrtc};
         "libwebrtc" -> {ok, ba_audio_engine_libwebrtc};
         "gstreamer" -> {ok, ba_audio_engine_gstreamer};

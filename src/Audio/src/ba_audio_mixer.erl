@@ -21,7 +21,7 @@ push(Id,D,H,PCM) ->
     end.
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 clock() ->
-    Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
+    Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
     try {ok,Module:id(),Module:now()} catch _:_ -> {error,clock_unavailable} end.
 init([]) ->
     process_flag(trap_exit,true),
@@ -77,7 +77,7 @@ handle_call(_,_,S) -> {reply,ok,S}.
 handle_cast({packet,Id,D,H,PCM,T},S) ->
     case ba_device_permission:valid(playback,T) of true -> accept_packet(Id,D,H,PCM,S);false -> {noreply,drop(stale_permission,S)} end;
 handle_cast({packet,Id,D,H,PCM},S) ->
-    case application:get_env(ba_core,runtime_profile,legacy_apps) of buffee_control -> {noreply,drop(stale_permission,S)};_ -> accept_packet(Id,D,H,PCM,S) end;
+    case ba_settings:app(runtime_profile,legacy_apps) of buffee_control -> {noreply,drop(stale_permission,S)};_ -> accept_packet(Id,D,H,PCM,S) end;
 handle_cast(_,S) -> {noreply,S}.
 accept_packet(Id,D,H,PCM,S) ->
     case {clock(),maps:get(mix,S)} of
@@ -104,7 +104,7 @@ handle_info(_,S) -> {noreply,S}.
 open(S) -> case ba_device_permission:allowed(playback) of
     true -> open_permitted(S);false -> {error,consent_required} end.
 open_permitted(#{device := undefined,mix := Mix} = S) ->
-    case {clock(),application:get_env(ba_core,audio_output_adapter)} of
+    case {clock(),ba_settings:app(audio_output_adapter)} of
         {{ok,Clock,{ok,_}},{ok,A}} when Clock=:=map_get(clock,Mix) ->
             D = #{sample_rate => maps:get(rate,Mix),channel_count => 2,sample_format => float32_le,clock => Clock},
             case A:open(D) of {ok,Device} -> {ok,S#{device := {A,Device}}};Error -> Error end;
@@ -116,7 +116,7 @@ render(S) -> case ba_device_permission:allowed(playback) of
     false -> (close(S))#{mix := undefined,descriptors := #{}}
 end.
 render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
-    Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
+    Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
     case {ba_audio_mix:next_time(Mix),clock()} of
         {Time,{ok,Clock,{ok,_}}} when is_integer(Time),Clock=:=map_get(clock,Mix) ->
             case Module:to_monotonic(Time) of

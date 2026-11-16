@@ -32,10 +32,10 @@ valid_url(URL) when is_binary(URL), byte_size(URL) =< 512 ->
     catch _:_ -> false end;
 valid_url(_) -> false.
 init(#{owner := Owner, delivery := Delivery} = Options) ->
-    DefaultURL = case application:get_env(ba_core, reception_desk_url) of
+    DefaultURL = case ba_settings:app(reception_desk_url) of
         {ok, U} -> U;
-        undefined -> case os:getenv("BA_RECEPTION_DESK_URL") of
-            false -> application:get_env(ba_core, default_reception_desk_url, undefined);
+        undefined -> case ba_settings:env("BA_RECEPTION_DESK_URL") of
+            false -> ba_settings:app(default_reception_desk_url, undefined);
             "" -> undefined;
             V -> list_to_binary(V)
         end
@@ -116,7 +116,7 @@ handle_info_event(connect, #{conn := undefined, url := URL} = S) when is_binary(
         Opts = #{protocols => [http], retry => 0, connect_timeout => 5000,
                  domain_lookup_timeout => 5000, tls_handshake_timeout => 5000,
                  transport => case TLS of true -> tls; false -> tcp end},
-        ResolvedOpts = case application:get_env(ba_core, relay_resolver) of
+        ResolvedOpts = case ba_settings:app(relay_resolver) of
             undefined -> Opts;
             {ok, {Module, Function}} ->
                 {ok, Family} = Module:Function(Host), Opts#{tcp_opts => [Family]}
@@ -230,8 +230,8 @@ owner_message(Event,S) ->
 name(N) when is_atom(N) -> atom_to_binary(N);
 name(N) -> N.
 tls_options() ->
-    Setting = case os:getenv("BA_RELAY_CA_FILE") of
-        false -> application:get_env(ba_core, relay_cacertfile);
+    Setting = case ba_settings:env("BA_RELAY_CA_FILE") of
+        false -> ba_settings:app(relay_cacertfile);
         Path0 -> {ok, Path0}
     end,
     CA = case Setting of

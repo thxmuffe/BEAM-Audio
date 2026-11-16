@@ -3,7 +3,7 @@
 -behaviour(ba_audio_engine).
 -export([info/0, available/0, open/1, command/2, event/2, close/1]).
 info() ->
-    Scheduled = os:getenv("BA_GSTREAMER_SCHEDULE") =:= "1",
+    Scheduled = ba_settings:env("BA_GSTREAMER_SCHEDULE") =:= "1",
     #{id => <<"gstreamer">>, wire_profile => <<"webrtc_opus_rtp">>,
       formats => [#{encoding => opus, sample_rate => 48000, channel_count => 2}],
       output_sample_format => float32_le, jitter_buffer => true, loss_concealment => configured,

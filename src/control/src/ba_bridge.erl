@@ -22,7 +22,7 @@ loop() ->
 %% An embedded host can call this same function without emulating terminal I/O.
 request(JSON) ->
     Bin = if is_binary(JSON) -> JSON; true -> iolist_to_binary(JSON) end,
-    case application:get_env(ba_core, runtime_profile, legacy_apps) of
+    case ba_settings:app(runtime_profile, legacy_apps) of
         buffee_control -> buffee_request(Bin);
         native_cluster -> ba_native_bridge:request(Bin);
         legacy_apps -> legacy_request(Bin)

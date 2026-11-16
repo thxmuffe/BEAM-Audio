@@ -29,7 +29,7 @@ boot(#{mode := create,desks := URLs} = Config,S) ->
     Default = #{<<"v">> => 1,<<"type">> => <<"policy">>,<<"buffee">> => maps:get(buffee,Config,fresh(16)),
         <<"authority">> => Id,<<"manager">> => Id,<<"epoch">> => 1,<<"revision">> => 1,
         <<"members">> => #{Id => #{<<"membership">> => fresh(16),
-            <<"permissions">> => ba_session_privileges:creator(application:get_env(ba_core,buffee_default_permissions,[<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>]))}}},
+            <<"permissions">> => ba_session_privileges:creator(ba_settings:app(buffee_default_permissions,[<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>]))}}},
     Saved = ba_device_store:load(buffee_authority,#{policy => Default,invitations => #{},routes => #{}}),
     P = maps:get(policy,Saved),ok = ba_buffee_passport:policy(P),true = ba_session_privileges:has(grant,Id,P),
     Buffee = maps:get(<<"buffee">>,P),ok = ba_buffee_desks:configure(Buffee,URLs,Primary,maps:get(routes,Saved)),
@@ -402,7 +402,7 @@ credential(Peer,Packet,S) ->
     catch _:_ -> denied end.
 admit(Peer,R,_Credential,_Kind,#{policy := P,routes := Routes}=S) ->
     Members = maps:get(<<"members">>,P),true = map_size(Members) < 16 orelse maps:is_key(Peer,Members),
-    M = maps:get(Peer,Members,#{<<"membership">> => fresh(16),<<"permissions">> => application:get_env(ba_core,buffee_default_permissions,[])}),
+    M = maps:get(Peer,Members,#{<<"membership">> => fresh(16),<<"permissions">> => ba_settings:app(buffee_default_permissions,[])}),
     Updated = not maps:is_key(Peer,Members) orelse maps:get(Peer,Routes,undefined) =/= R,
     Admission=case Updated of true -> M#{<<"membership">> := fresh(16)};false -> M end,
     NewP = case Updated of true -> bump(P#{<<"members">> := Members#{Peer => Admission}},false);false -> P end,

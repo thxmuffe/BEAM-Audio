@@ -244,15 +244,26 @@ beamaudio redo device --devicename test1
 
 The same OTP owner records the three audio switches from CLI, app and supported
 internal setters. History is bounded to 100 undo steps, with names such as
-“Enable microphone”. Settings and undo/redo position persist across restarts.
+“Enable microphone”. The settings persist across restarts; the undo history
+lives only while the Device runs. Undo may take a grant back, Redo may not
+give one again.
 A no-op or failed edit adds no step; editing after undo discards redo. Concurrent
 stale undo/redo fails clearly and retries carry a command ID. Inspect returns a
 small revision/consent/history summary; `history` includes entries.
 
-`device_configuration.term` uses the existing private versioned file store.
-There is no Git/database/event broker. Save failure reports an error and does not
-apply new settings. Hardware failure is separate observed state; desired intent
-and its undo history remain available. Shared Offset, contacts, ephemeral
+## Settings file
+
+Every Device (CLI, web, Mac, iOS, Windows) keeps its settings in one plain-text
+file, `settings.config` in its state directory, owned by `ba_settings`. It holds
+Erlang terms (`file:consult/1`) and may be edited by hand while the Device is
+stopped. Every change is written within 200 ms and atomically (temporary file,
+then rename), so after a crash the Device starts from the last saved settings. An
+unreadable file is kept as `settings.config.broken` and the Device starts from
+defaults. Every configuration read goes through `ba_settings`: the file may
+override environment variables (`{environment,#{"BA_..." => "..."}}`) and ba_core
+application settings (`{runtime,#{key => value}}`). Secrets never go in it: the
+identity seed stays in its own private file. Hardware failure is separate
+observed state. Shared Offset, contacts, ephemeral
 exclusions and Buffee membership are not in Device audio history. Saved intent
 cannot revive a Buffee, bypass OS permissions or restore packet/clock state.
 

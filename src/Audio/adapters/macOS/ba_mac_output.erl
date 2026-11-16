@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 -export([open/1,write/4,close/1,available/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
-available() -> case os:getenv("BA_MAC_DEVICE_AUDIO_HELPER") of false -> false;P -> filelib:is_regular(P) end.
+available() -> case ba_settings:env("BA_MAC_DEVICE_AUDIO_HELPER") of false -> false;P -> filelib:is_regular(P) end.
 open(D) -> case ba_device_permission:allowed(playback) of
     true -> permitted_open(D);false -> {error,consent_required} end.
 write(D,T,F,PCM) -> case ba_device_permission:allowed(playback) of
@@ -25,7 +25,7 @@ init(Rate) ->
     end.
 init_permitted(Rate) ->
     process_flag(trap_exit,true),
-    Port=open_port({spawn_executable,os:getenv("BA_MAC_DEVICE_AUDIO_HELPER")},
+    Port=open_port({spawn_executable,ba_settings:env("BA_MAC_DEVICE_AUDIO_HELPER")},
         [binary,{packet,4},exit_status,use_stdio,{env,ba_native_env:without_secrets()},{args,["output",integer_to_list(Rate)]}]),
     receive
         {Port,{data,<<1>>}} -> calibrate(Port);

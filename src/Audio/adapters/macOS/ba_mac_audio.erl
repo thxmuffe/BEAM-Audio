@@ -6,7 +6,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,format_status/1]).
 
 available() -> case helper() of false -> false; Path -> filelib:is_regular(Path) end.
-helper() -> os:getenv("BA_MAC_AUDIO_HELPER").
+helper() -> ba_settings:env("BA_MAC_AUDIO_HELPER").
 helper(broadcast) -> helper();
 helper(microphone) -> helper().
 name(broadcast) -> ?MODULE;

@@ -2,7 +2,7 @@
 -module(ba_device_label).
 -export([local/1,format/3,os_name/0,display/1]).
 local(Instance) ->
-    format(display(unicode:characters_to_binary(os:getenv("BA_DEVICE_NAME",os_name()))),
+    format(display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",os_name()))),
            application:get_env(ba_device_web,origin,<<>>),Instance).
 format(Name,Origin,Instance) ->
     %% Bound UTF-8 labels to the existing 256-byte capability field.
@@ -17,8 +17,8 @@ format(Name,Origin,Instance) ->
 
 %% Resolve display metadata at startup; never use a hardware name as identity.
 os_name() ->
-    case os:getenv("BA_DEVICE_NAME") of
-        false -> case os:getenv("BA_PLATFORM") of
+    case ba_settings:env("BA_DEVICE_NAME") of
+        false -> case ba_settings:env("BA_PLATFORM") of
             "ios" -> "iPhone"; % iOS has no desktop subprocess/hostname dependency.
             _ -> desktop_name()
         end;
@@ -35,7 +35,7 @@ desktop_name() ->
 
 %% Human-readable type and OS name; the signing key remains the identity.
 display(Name) ->
-    Type=case os:getenv("BA_PLATFORM") of
+    Type=case ba_settings:env("BA_PLATFORM") of
         "ios" -> <<"iPhone">>;
         "mac" -> <<"Mac">>;
         "windows" -> <<"Windows">>;

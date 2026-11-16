@@ -72,7 +72,7 @@ command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_buffee_
 command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
     {Pub,_}=ba_device_store:identity(),
     case Device=:=binary:encode_hex(Pub) of true -> {ok,ba_device_handler:capabilities()};false -> ba_buffee_control:read_capabilities(Device) end;
-command(#{<<"method">> := <<"invitation">>}) -> ba_buffee_membership:invite(null);
+command(#{<<"method">> := <<"invitation">>}) -> remember_link(ba_buffee_membership:invite(null));
 command(#{<<"method">> := <<"snapshot">>}) -> null;
 command(#{<<"method">> := <<"list_contacts">>}) ->
     {ok, ba_contacts:list()};
@@ -91,10 +91,25 @@ command(#{<<"method">> := <<"put_group">>, <<"name">> := Name, <<"ids">> := Ids}
     ba_contacts:group(Name, Ids);
 command(#{<<"method">> := <<"delete_group">>, <<"name">> := Name}) ->
     ba_contacts:delete_group(Name);
+%% A Session exists once its invitation link exists: creating one makes its link.
 command(#{<<"method">> := <<"create_buffee">>, <<"name">> := Name, <<"desks">> := Desks}) ->
-    ba_buffee:create(Name, Desks);
+    case ba_buffee:create(Name, Desks) of
+        ok -> _=try remember_link(ba_buffee_membership:invite(null)) catch _:_ -> ok end,ok;
+        Other -> Other
+    end;
 command(#{<<"method">> := <<"join_buffee">>, <<"invitation">> := Link}) ->
-    ba_buffee:join(Link);
+    case ba_buffee:join(Link) of ok -> ba_contacts:link(Link),ok;Other -> Other end;
+%% The window's own state (which page is open) is a Device setting like the rest.
+command(#{<<"method">> := <<"ui_get">>}) -> {ok,ba_settings:get(ui,#{})};
+command(#{<<"method">> := <<"ui_set">>,<<"key">> := <<"view">>,<<"value">> := View}) ->
+    case lists:member(View,[<<"home">>,<<"chat">>,<<"contacts">>,<<"share">>,<<"settings">>]) of
+        true -> _=ba_settings:update(ui,fun(UI) -> UI#{view => View} end,#{}),ok;
+        false -> {error,<<"Unknown page.">>}
+    end;
+command(#{<<"method">> := <<"forget_saved_session">>,<<"entry">> := Session}) ->
+    ba_contacts:forget_session(Session);
+command(#{<<"method">> := <<"rename_saved_session">>,<<"entry">> := Session,<<"name">> := Name}) ->
+    ba_contacts:rename_session(Session,Name);
 command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
     TTL = maps:get(<<"ttl">>, Req, null),
     Selection = case Sel of
@@ -102,14 +117,21 @@ command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
         Ids when is_list(Ids) -> Ids
     end,
     ba_buffee:invite(Selection, TTL);
+%% A kicked Device stays in this Device's memory of the Session, marked kicked.
 command(#{<<"method">> := <<"remove_device">>,<<"device">> := Device}) ->
-    ba_buffee_membership:revoke(Device);
+    case ba_buffee_membership:revoke(Device) of
+        ok -> case ba_buffee:status() of #{buffee := Session} -> ba_contacts:kicked(Session,Device);_ -> ok end,ok;
+        Other -> Other
+    end;
 command(#{<<"method">> := <<"leave_buffee">>}) ->
     ba_buffee:leave();
 command(#{<<"method">> := <<"end_buffee">>}) ->
     ba_buffee:end_buffee();
 command(_) ->
     {error, <<"Unsupported request.">>}.
+
+remember_link({ok,Link}=Result) when is_binary(Link) -> ba_contacts:link(Link),Result;
+remember_link(Result) -> Result.
 
 capability_key(<<"calibrate_microphone">>) -> calibrate_microphone;
 capability_key(<<"calibrate_speaker">>) -> calibrate_speaker;

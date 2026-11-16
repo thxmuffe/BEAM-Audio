@@ -127,7 +127,7 @@ handle_info(Message,#{decoder := Decoder}=S) ->
     case ba_audio_opus:event(Decoder,Message) of
         ready -> {noreply,opus_open(S#{decoder_ready := true})};
         {pcm,RTP,Frames,PCM} ->
-            Module = application:get_env(ba_core,audio_clock_adapter,ba_buffee_clock),
+            Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
             case {live(S),Module:now(),Module:id()=:=maps:get(clock,maps:get(descriptor,S))} of
                 {true,{ok,Now},true} ->
                     case ba_audio_rtp_time:decode(RTP,Now) of

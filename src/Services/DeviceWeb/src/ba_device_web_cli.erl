@@ -13,7 +13,7 @@ main() ->
             true ->
                 {ok,_}=application:ensure_all_started(crypto),
                 %% Launchers may supply the Device's persistent platform identity.
-                case {os:getenv("BA_STATE_DIR"),os:getenv("BA_IDENTITY_SEED")} of
+                case {ba_settings:env("BA_STATE_DIR"),ba_settings:env("BA_IDENTITY_SEED")} of
                     {D,K} when is_list(D),is_list(K) -> ok;
                     _ ->
                         Temp=case os:getenv("TEMP") of false -> ".";T -> T end,
@@ -21,7 +21,7 @@ main() ->
                         ok=filelib:ensure_dir(filename:join(Dir,"state")),os:putenv("BA_STATE_DIR",Dir),
                         os:putenv("BA_IDENTITY_SEED",binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(32))))
                 end,
-                os:putenv("BA_DEVICE_NAME",os:getenv("BA_DEVICE_NAME",ba_device_label:os_name())),
+                os:putenv("BA_DEVICE_NAME",ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name())),
                 application:load(ba_core),
                 application:set_env(ba_core,restore_buffee_on_start,true),
                 application:set_env(ba_core,buffee_default_permissions,ba_app_session:permissions()),
@@ -74,11 +74,11 @@ open_browser(URL) ->
     case os:type() of
         {unix,darwin} -> os:cmd("open "++URL);
         {win32,_} ->
-            Script=os:getenv("BA_WEB_BROWSER_SCRIPT"),
+            Script=ba_settings:env("BA_WEB_BROWSER_SCRIPT"),
             case Script of
                 false -> os:cmd("cmd /c start \"\" "++URL);
                 _ ->
-                    Port=open_port({spawn_executable,os:getenv("BA_WEB_POWERSHELL")},
+                    Port=open_port({spawn_executable,ba_settings:env("BA_WEB_POWERSHELL")},
                         [{args,["-NoLogo","-NoProfile","-ExecutionPolicy","Bypass","-File",Script,URL]},exit_status,hide]),
                     receive {Port,{exit_status,_}} -> ok after 10000 -> port_close(Port) end
             end;

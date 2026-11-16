@@ -17,7 +17,7 @@ start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE), ?M
 init([]) -> {ok, #{state => stopped, frames => 0, blocks => 0, dropped_callbacks => 0, capture_timing => #{},
     presentation_state => #{stream_id => binary:encode_hex(crypto:strong_rand_bytes(16))},
     presentation_delay_ns => undefined,
-    skipped_frames => 0, send_errors => 0, available => os:getenv("BA_MAC_OPUS_HELPER") =/= false}}.
+    skipped_frames => 0, send_errors => 0, available => ba_settings:env("BA_MAC_OPUS_HELPER") =/= false}}.
 handle_call(start,From,S) -> case ba_device_permission:allowed(broadcast) of
     true -> capture_start(From,S);false -> {reply,{error,consent_required},S} end;
 handle_call(status, _, S) -> {reply, maps:without([port, source, source_monitor], S), S};
@@ -102,7 +102,7 @@ terminate(_, S) ->
     case maps:find(source,S) of {ok,Source} -> try ba_audio:unpublish(Source) catch exit:_ -> ok end; _ -> ok end.
 
 capture_start( _, #{state := stopped} = S) ->
-    case os:getenv("BA_MAC_OPUS_HELPER") of
+    case ba_settings:env("BA_MAC_OPUS_HELPER") of
         false -> {reply, {error, <<"Rebuild the Mac app with the Opus comparison helper.">>}, S};
         Helper ->
             Port = open_port({spawn_executable, Helper}, [binary, {packet,4}, exit_status, use_stdio,{env,ba_native_env:without_secrets()}]),

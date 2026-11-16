@@ -69,15 +69,15 @@ offset_view(D) ->
 
 init([]) ->
     ba_session_scope:new_table(?MODULE,[named_table,protected,{read_concurrency,true}]),
-    Interval = application:get_env(ba_core,clock_sample_interval_ms,5000),
-    Count = application:get_env(ba_core,clock_filter_samples,20),
-    Phase = application:get_env(ba_core,clock_interval_ms,30000),PPM = application:get_env(ba_core,clock_slew_ppm,500),
+    Interval = ba_settings:app(clock_sample_interval_ms,5000),
+    Count = ba_settings:app(clock_filter_samples,20),
+    Phase = ba_settings:app(clock_interval_ms,30000),PPM = ba_settings:app(clock_slew_ppm,500),
     true = is_integer(Interval) andalso Interval>=10 andalso Interval=<60000,
     true = is_integer(Count) andalso Count>0 andalso Count=<128,
     true = is_integer(Phase) andalso Phase>=10 andalso Phase=<600000,
     true = is_integer(PPM) andalso PPM>0 andalso PPM<1000000,
-    Mode = application:get_env(ba_core,clock_reference,application:get_env(ba_core,clock_upstream,{ntp,"ntp.metas.ch"})),
-    Reference = case Mode of auto -> application:get_env(ba_core,clock_upstream,{ntp,"ntp.metas.ch"});_ -> Mode end,
+    Mode = ba_settings:app(clock_reference,ba_settings:app(clock_upstream,{ntp,"ntp.metas.ch"})),
+    Reference = case Mode of auto -> ba_settings:app(clock_upstream,{ntp,"ntp.metas.ch"});_ -> Mode end,
     true = valid_reference(Reference),
     D = #{role => waiting,mapping => undefined,timeline => undefined,instance => fresh(),
         master_instance => undefined,master => undefined,reference_revision => 0,revision => 0,
@@ -106,7 +106,7 @@ handle_call({offset,Value,Expected},From,S) when is_integer(Value),Value>=5,Valu
             end
     end;
 handle_call({reference,Mode},_,#{role := authority} = S) ->
-    R = case Mode of auto -> application:get_env(ba_core,clock_upstream,{ntp,"ntp.metas.ch"});_ -> Mode end,
+    R = case Mode of auto -> ba_settings:app(clock_upstream,{ntp,"ntp.metas.ch"});_ -> Mode end,
     case valid_reference(R) of
         false -> {reply,{error,invalid_reference},S};
         true ->

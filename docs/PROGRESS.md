@@ -447,6 +447,15 @@ restart of that owner also returns the saved grants. Covered by
 `ba_device_consent_tests`; 71 focused tests pass. The saved history is restored
 too, so Undo still works after a restart.
 
+Settings and Sessions (2026-11-16): Automation and Session are merged into
+Settings (both top switches, Rights, Leave/End). A top switch that is on hides
+the rows under it. Devices becomes Sessions: the current Session's name (with
+Rename session and Invitation link in its menu), Response time and Devices, then
+Saved sessions (saved groups, renamed accordingly; each with Rename session,
+Invitation link, Delete saved session). Connection details are removed from the
+UI. A saved session's Invitation link uses the earlier group-invite path (it
+creates a Session from the group if none is open). Headless check in preview.
+
 NOT VERIFIED: the new shell against a real Device runtime or in the Mac/iOS
 hosts; no app was rebuilt. The OpenSoundKit WebKit tests still target the
 earlier tab, toolbox and Settings markup and need rewriting. See PLAN.md.

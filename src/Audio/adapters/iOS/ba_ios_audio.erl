@@ -7,7 +7,7 @@ open(D) -> case ba_device_permission:allowed(playback) of
 write(D,T,F,PCM) -> case ba_device_permission:valid(playback,maps:get(permission_token,D,legacy)) of
     true -> permitted_write(D,T,F,PCM);false -> {error,consent_revoked} end.
 permitted_open(#{sample_rate := Rate, channel_count := Channels}) when Channels =< 2 ->
-    Port = list_to_integer(os:getenv("BA_AUDIO_PORT")),
+    Port = list_to_integer(ba_settings:env("BA_AUDIO_PORT")),
     case gen_tcp:connect({127,0,0,1}, Port,
             [binary, {packet,4}, {active,false}, {send_timeout,1000}, {send_timeout_close,true}], 2000) of
         {ok, Socket} ->

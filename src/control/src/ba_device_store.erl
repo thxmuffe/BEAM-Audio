@@ -4,7 +4,7 @@
 -export([identity/0, node_name/1, load/2, save/2]).
 
 identity() ->
-    case os:getenv("BA_IDENTITY_SEED") of
+    case ba_settings:env("BA_IDENTITY_SEED") of
         false -> crypto:generate_key(eddsa, ed25519);
         Hex ->
             Seed = binary:decode_hex(list_to_binary(Hex)),
@@ -69,12 +69,12 @@ path(Name) ->
         false -> undefined; % Existing command-line/probe profiles remain ephemeral.
         Directory ->
             %% Never persist membership under an identity that cannot be restored.
-            true = os:getenv("BA_IDENTITY_SEED") =/= false,
+            true = ba_settings:env("BA_IDENTITY_SEED") =/= false,
             filename:join(Directory, atom_to_list(Name) ++ ".term")
     end.
 
 %% Live records never read/write device files, including old Buffee snapshots.
 transient(Name) ->
-    application:get_env(ba_core,runtime_profile,legacy_apps)=:=buffee_control andalso
+    ba_settings:app(runtime_profile,legacy_apps)=:=buffee_control andalso
     lists:member(Name,[buffee_authority,buffee_member,buffee_desks,buffee_time_policy,
                       buffee_time_cache,audio_subscriptions,buffee_exclusions]).

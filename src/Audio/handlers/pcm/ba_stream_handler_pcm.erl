@@ -34,7 +34,7 @@ close(_,_) -> ok.
 
 output_available() -> ba_audio_output:available().
 start_output(Owner, Descriptor) ->
-    case application:get_env(ba_core, audio_output_adapter) of
+    case ba_settings:app(audio_output_adapter) of
         {ok, Adapter} ->
             supervisor:start_child(ba_session_scope:ref(ba_audio_sup),
                 #{id => {output, make_ref()},
