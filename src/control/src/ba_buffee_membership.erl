@@ -2,13 +2,14 @@
 %% presence and connections remain separate and survive leaving and shutdown.
 -module(ba_buffee_membership).
 -behaviour(gen_server).
--export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,grant_privilege/2,take_privilege/2,request_privilege/1,end_session/0,rename/1]).
+-export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 rename(Name) -> gen_server:call(ba_session_scope:ref(?MODULE),{rename,Name}).
 request_privilege(Wire) -> gen_server:call(ba_session_scope:ref(?MODULE),{request_privilege,Wire}).
 grant_privilege(Device,Wire) -> gen_server:call(ba_session_scope:ref(?MODULE),{change,grant,Device,Wire}).
 take_privilege(Device,Wire) -> gen_server:call(ba_session_scope:ref(?MODULE),{change,take,Device,Wire}).
 end_session() -> gen_server:call(ba_session_scope:ref(?MODULE),end_session).
+decline_privilege(Device,Wire) -> gen_server:call(ba_session_scope:ref(?MODULE),{decline,Device,Wire}).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 current() -> gen_server:call(ba_session_scope:ref(?MODULE),current).
@@ -149,7 +150,14 @@ handle_call({rename,Name},_,#{state := authorized,policy := P,id := Id}=S) ->
 handle_call({request_privilege,Wire},From,#{role := authority,id := Id}=S) ->
     handle_call({change,grant,Id,Wire},From,S);
 handle_call({request_privilege,Wire},_,#{state := authorized}=S) ->
-    {reply,ask_holders(<<"privilege_request">>,#{<<"privilege">> => Wire},S),S};
+    Result=ask_holders(<<"privilege_request">>,#{<<"privilege">> => Wire},S),
+    case Result of ok -> chat({privilege_requested,maps:get(id,S),Wire});_ -> ok end,
+    {reply,Result,S};
+%% Declining only clears this Device's reminder; the requester is not told.
+handle_call({decline,Device,Wire},_,#{role := authority}=S) ->
+    Requests=maps:get(requests,S,#{}),
+    {reply,ok,S#{requests => Requests#{Device => lists:delete(Wire,maps:get(Device,Requests,[]))}}};
+handle_call({decline,_,_},_,S) -> {reply,{error,grant_required},S};
 handle_call({change,Op,Device,Wire},_,#{role := authority,policy := P}=S) ->
     case ba_session_privileges:change(maps:get(id,S),Device,Op,Wire,P) of
         {ok,Updated} ->
@@ -253,7 +261,9 @@ incoming(Peer,#{<<"type">> := <<"privilege_release">>,<<"payload">> := Data},#{r
     {reply,_,Next}=handle_call({change,take,Peer,requested(Data)},undefined,S),Next;
 incoming(Peer,#{<<"type">> := <<"privilege_request">>,<<"payload">> := Data},#{role := authority,policy := P}=S) ->
     Wire=requested(Data),true=maps:is_key(Peer,maps:get(<<"members">>,P)),Requests=maps:get(requests,S,#{}),
-    case answer(Wire) of
+    Answer=answer(Wire),
+    case Answer of no -> ok;_ -> chat({privilege_requested,Peer,Wire}) end,
+    case Answer of
         always -> {reply,_,Next}=handle_call({change,grant,Peer,Wire},undefined,S),Next;
         no -> S;
         ask -> S#{requests => Requests#{Peer => lists:usort([Wire|maps:get(Peer,Requests,[])])}}
@@ -431,9 +441,9 @@ view(S) -> #{device_privileges => maps:map(fun(_,M) -> maps:get(<<"permissions">
 publish(S) ->
     P=maps:get(policy,S),
     ba_contacts:observe(maps:get(buffee,S),maps:get(name,S),maps:keys(maps:remove(maps:get(id,S),maps:get(<<"members">>,P)))),
-    View=view(S),
-    case ba_session_scope:whereis(ba_buffee_chat) of undefined -> ok;Chat -> Chat ! {session_privileges,maps:get(device_privileges,View)} end,
+    View=view(S),chat({session_privileges,maps:get(device_privileges,View)}),
     notify({membership_authorized,View}).
+chat(Event) -> case ba_session_scope:whereis(ba_buffee_chat) of undefined -> ok;Chat -> Chat ! Event,ok end.
 invalidate() -> notify(membership_invalidated).
 notify(Event) -> case ba_session_scope:whereis(ba_buffee_control) of undefined -> ok;Pid -> Pid ! Event end.
 send(To,R,Type,Request,Payload,S) ->
@@ -494,13 +504,11 @@ open_requests(#{policy := P}=S) when is_map(P) ->
         case Wires--ba_session_privileges:held(Device,P) of [] -> false;Open -> {true,ba_session_privileges:names(Open)} end
     end,maps:get(requests,S,#{}));
 open_requests(_) -> #{}.
-%% This Device's user decides how on-air requests are answered. Requests for
-%% any other privilege always wait for an explicit answer.
+%% This Device's user decides how requests for rights are answered: the on-air
+%% right, and moderator rights (giving rights, ending the Session).
 answer(Wire) ->
-    case Wire=:=ba_session_privileges:wire(on_air) of
-        true -> try ba_device_config:policy(on_air_requests) catch exit:_ -> ask end;
-        false -> ask
-    end.
+    Key=case Wire=:=ba_session_privileges:wire(on_air) of true -> on_air_requests;false -> moderator_requests end,
+    try ba_device_config:policy(Key) catch exit:_ -> ask end.
 requested(Data) ->
     ba_buffee_passport:exact(Data,[<<"privilege">>]),Wire=maps:get(<<"privilege">>,Data),
     ok=ba_buffee_passport:permissions([Wire]),Wire.

@@ -67,6 +67,13 @@ def main():
             # Every privilege is requested; a grant holder answers.
             assert b.request('request_privilege',privilege='on_air')['ok']
             control.wait(a,lambda s: s['membership']['requests'].get(b.identity['id']) == ['on_air'])
+            # Both the asking Device and the one that can answer see the request in chat.
+            told(a, b, 'asks to go on air'); told(b, b, 'asks to go on air')
+            assert a.request('decline_privilege',peer=b.identity['id'],privilege='on_air')['ok']
+            assert b.identity['id'] not in a.request('snapshot')['membership']['requests']
+            assert c.request('decline_privilege',peer=b.identity['id'],privilege='on_air') == {'error': 'grant_required'}
+            assert b.request('request_privilege',privilege='on_air')['ok']
+            control.wait(a,lambda s: s['membership']['requests'].get(b.identity['id']) == ['on_air'])
             assert a.request('grant_privilege',peer=b.identity['id'],privilege='on_air')['ok']
             holds(b,'on_air')
             for d in (a, b, c): told(d, b, 'can now go on air')

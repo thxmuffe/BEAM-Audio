@@ -44,8 +44,19 @@ command(#{<<"method">> := <<"capabilities">>,<<"consent">> := Values}=R) ->
 command(#{<<"method">> := <<"capability">>,<<"capability">> := <<"broadcast">>,<<"enabled">> := B}) -> ba_app_session:capability(broadcast,B);
 command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}=R) ->
     ba_device_config:change(#{capability_key(K) => B},config_options(R));
+command(#{<<"method">> := <<"auto_accept">>,<<"enabled">> := Enabled}=R) when is_boolean(Enabled) ->
+    ba_device_config:auto_accept(Enabled,config_options(R));
+command(#{<<"method">> := <<"auto_grant">>,<<"enabled">> := Enabled}=R) when is_boolean(Enabled) ->
+    ba_device_config:auto_grant(Enabled,config_options(R));
+command(#{<<"method">> := <<"decline_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->
+    ba_buffee_membership:decline_privilege(Device,ba_session_privileges:parse(Name));
 command(#{<<"method">> := <<"policy">>,<<"key">> := K,<<"value">> := V}=R) ->
-    Key=case K of <<"on_air_requests">> -> on_air_requests;_ -> capability_key(K) end,
+    Key=case K of
+        <<"on_air_requests">> -> on_air_requests;
+        <<"moderator_requests">> -> moderator_requests;
+        <<"location">> -> location;
+        _ -> capability_key(K)
+    end,
     Value=case V of <<"always">> -> always;<<"ask">> -> ask;<<"no">> -> no end,
     ba_device_config:policy(Key,Value,config_options(R));
 command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);

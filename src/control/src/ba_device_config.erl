@@ -2,11 +2,15 @@
 %% configuration. One serialized owner records changes from every supported client.
 -module(ba_device_config).
 -behaviour(gen_server).
--export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3]).
+-export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3,auto_accept/2,auto_grant/2]).
 %% Device resources the Session may ask to use, and requests from other Devices
 %% that this Device answers. Each has a policy: always, ask (default) or no.
+%% PROTECTED uses still carry a consent flag; the others are recorded choices only.
 -define(PROTECTED,[speaker,microphone,calibrate_microphone,calibrate_speaker,dsp]).
--define(ANSWERS,[on_air_requests]).
+-define(USES,[location]).
+%% Requests for rights: on_air, and moderator rights (grant, end_session).
+-define(GRANTS,[on_air_requests,moderator_requests]).
+-define(ANSWERS,?USES++?GRANTS).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 -define(LIMIT,100).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
@@ -17,6 +21,8 @@ undo(Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{undo,Options}).
 redo(Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{redo,Options}).
 policy(Key) -> gen_server:call(ba_session_scope:ref(?MODULE),{policy,Key}).
 policy(Key,Value,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{policy,Key,Value,Options}).
+auto_accept(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{auto_accept,Enabled,Options}).
+auto_grant(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{auto_grant,Enabled,Options}).
 %% Read-only, fail-closed view for hot execution paths. Only this owner writes it.
 allowed(Key) ->
     case application:get_env(ba_core,runtime_profile,legacy_apps) of
@@ -52,19 +58,34 @@ valid_config(C) when is_map(C) ->
 valid_config(_) -> false.
 current(#{states := States,cursor := C}) -> maps:get(config,lists:nth(C+1,States)).
 public(#{states := States,cursor := C,revision := R}=S) ->
-    #{revision => R,consent => current(S),policies => maps:from_list([{K,policy_of(K,S)} || K <- ?PROTECTED++?ANSWERS]),revocation_pending => maps:get(revocation_pending,S,[]),can_undo => C>0 andalso history_allowed(current(S),maps:get(config,lists:nth(max(1,C),States))),can_redo => C+1<length(States) andalso history_allowed(current(S),maps:get(config,lists:nth(min(length(States),C+2),States))),
+    #{revision => R,consent => current(S),policies => maps:from_list([{K,policy_of(K,S)} || K <- ?PROTECTED++?ANSWERS]),auto_accept => auto(S),auto_grant => maps:get(auto_grant,S,false),revocation_pending => maps:get(revocation_pending,S,[]),can_undo => C>0 andalso history_allowed(current(S),maps:get(config,lists:nth(max(1,C),States))),can_redo => C+1<length(States) andalso history_allowed(current(S),maps:get(config,lists:nth(min(length(States),C+2),States))),
       undo_label => case C of 0 -> null;_ -> maps:get(label,lists:nth(C+1,States)) end,
       redo_label => case C+1<length(States) of true -> maps:get(label,lists:nth(C+2,States));false -> null end,
       cursor => C,entries => [E#{selected => I=:=C} || {I,E} <- lists:zip(lists:seq(0,length(States)-1),States)]}.
 handle_call(consent,_,S) -> {reply,current(S),S};
 handle_call(snapshot,_,S) -> {reply,public(S),S};
-handle_call({policy,Key},_,S) -> {reply,policy_of(Key,S),S};
+%% The answer in force: a top switch overrides the stored choice without changing
+%% it. "Auto grant" covers requests for rights; "auto accept" covers the rest.
+handle_call({policy,Key},_,S) ->
+    Override=case lists:member(Key,?GRANTS) of true -> maps:get(auto_grant,S,false);false -> auto(S) end,
+    {reply,case Override of true -> always;false -> policy_of(Key,S) end,S};
+%% Trust every Device that asks for a right. Grants nothing on this Device itself.
+handle_call({auto_grant,Enabled,_},_,S) when is_boolean(Enabled) -> {reply,ok,S#{auto_grant => Enabled}};
+%% Accept every request. The stored choices stay as they are and are ignored
+%% while this is on. Turning it off is always recorded, even if a stop is pending.
+handle_call({auto_accept,Enabled,Options},From,S) when is_boolean(Enabled) ->
+    Patch=maps:from_list([{K,Enabled orelse stored(K,S)=:=always} || K <- ?PROTECTED]),
+    case handle_call({edit,Patch,Options},From,S) of
+        {reply,ok,Next} -> {reply,ok,Next#{auto_accept => Enabled}};
+        {reply,Error,Next} when not Enabled -> {reply,Error,Next#{auto_accept => false}};
+        Other -> Other
+    end;
 %% always is the standing grant; ask and no both keep the grant OFF. Nothing
 %% here approves a request: ask only records that the user wants to be asked.
 handle_call({policy,Key,Value,Options},From,S) ->
     case {lists:member(Value,[always,ask,no]),lists:member(Key,?PROTECTED),lists:member(Key,?ANSWERS)} of
         {true,true,_} ->
-            case handle_call({edit,#{Key => Value=:=always},Options},From,S) of
+            case handle_call({edit,#{Key => auto(S) orelse Value=:=always},Options},From,S) of
                 {reply,ok,Next} -> {reply,ok,choose(Key,Value,Next)};
                 Other -> Other
             end;
@@ -166,13 +187,22 @@ changed() ->
 history_allowed(Old,New) ->
     application:get_env(ba_core,runtime_profile,legacy_apps)=/=buffee_control orelse
     not lists:any(fun(K) -> maps:get(K,New,false) andalso not maps:get(K,Old,false) end,?PROTECTED).
+auto(S) -> maps:get(auto_accept,S,false).
+stored(Key,S) -> maps:get(Key,maps:get(choices,S,#{}),ask).
+%% The user's own choice for one item. A grant made or taken another way
+%% (the capability command, undo) is reported as what it now is.
 policy_of(Key,S) ->
-    case maps:get(Key,current(S),false) of true -> always;_ -> maps:get(Key,maps:get(choices,S,#{}),ask) end.
-%% A protected key's always is its grant; only no, and an answer's always, are kept here.
-choose(Key,Value,S) ->
-    Choices=maps:remove(Key,maps:get(choices,S,#{})),
-    Kept=Value=:=no orelse (Value=:=always andalso lists:member(Key,?ANSWERS)),
-    S#{choices => case Kept of true -> Choices#{Key => Value};false -> Choices end}.
+    Stored=stored(Key,S),
+    case {lists:member(Key,?ANSWERS),maps:get(Key,current(S),false),Stored,auto(S)} of
+        {true,_,_,_} -> Stored;
+        {_,true,always,_} -> always;
+        {_,true,_,true} -> Stored;
+        {_,true,_,false} -> always;
+        {_,false,always,_} -> ask;
+        {_,false,_,_} -> Stored
+    end.
+choose(Key,ask,S) -> S#{choices => maps:remove(Key,maps:get(choices,S,#{}))};
+choose(Key,Value,S) -> S#{choices => (maps:get(choices,S,#{}))#{Key => Value}}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info(_,S) -> {noreply,S}.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([revision,cursor],S);(log,_) -> [];(_,_) -> redacted end,Status).

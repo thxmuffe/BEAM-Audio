@@ -37,6 +37,15 @@ handle_info({peer_linked,Peer},#{linked := Linked}=S) ->
     end;
 handle_info({peer_unlinked,Peer},#{linked := Linked}=S) -> {noreply,S#{linked := lists:delete(Peer,Linked)}};
 %% Privileges affect everyone, so each signed change is shown to everyone.
+%% A request waits for an answer from a Device that can give rights.
+handle_info({privilege_requested,Device,Wire},S) ->
+    Text=case [T || {Privilege,T} <- [{on_air,<<"asks to go on air">>},{grant,<<"asks for the right to give and take rights">>},
+                                      {end_session,<<"asks for the right to end the Session">>}],ba_session_privileges:wire(Privilege)=:=Wire] of
+        [T] -> T;[] -> <<"asks for a right">> end,
+    {noreply,info(Device,Text,S)};
+%% A Device starts or stops sending sound to the Session (seen locally).
+handle_info({on_air,Device,true},S) -> {noreply,info(Device,<<"is going on air">>,S)};
+handle_info({on_air,Device,false},S) -> {noreply,info(Device,<<"went off air">>,S)};
 handle_info({session_privileges,New},#{privileges := undefined}=S) -> {noreply,S#{privileges := New}};
 handle_info({session_privileges,New},#{privileges := Old}=S) ->
     Changes=[{Id,Text} || Id <- lists:sort(maps:keys(New)),{Privilege,Gained,Lost} <- named(),

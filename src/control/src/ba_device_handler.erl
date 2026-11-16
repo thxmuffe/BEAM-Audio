@@ -186,7 +186,8 @@ capability_metrics(S) ->
     case maps:find(<<"audio">>,Base) of
         error -> Base;
         {ok,Audio} -> Base#{<<"audio">> := maps:map(fun(K,Entry) ->
-            Key=case K of <<"speaker">> -> speaker;<<"microphone">> -> microphone;<<"broadcast">> -> broadcast end,
+            %% Every consent key, including calibration and DSP; K came from atom_to_binary above.
+            Key=binary_to_existing_atom(K),
             Row=maps:get(Key,maps:get(audio,S,#{}),#{}),
             Meter=maps:get(meter,Row,#{}),
             Counts=maps:from_list([{Wire,V} || {Field,Wire} <- [{blocks,<<"blocks">>},{frames,<<"frames">>},{dropped_callbacks,<<"dropped">>}],

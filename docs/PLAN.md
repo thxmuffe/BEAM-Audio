@@ -6,10 +6,111 @@ The Web/Mac/iOS UI is shared and has concurrent Session tabs. The user confirmed
 iOS Session creation now works. Finish permission enforcement before changing
 choppy playback paths.
 
-Model change (2026-11-15): Session replaces Buffee and privileges replace roles in
-the core (see TERMINOLOGY.md). Next: update the shared web UI to the privilege
-commands and fields; its role controls do not work against the new core until
-then. Existing `buffee`/`chef` identifiers leave only where they get in the way.
+Model change (2026-11-15): Session replaces Buffee and privileges replace roles
+(see TERMINOLOGY.md). The web UI now uses privileges, policies and a Session
+selector (PROGRESS.md, 2026-11-16). Existing `buffee`/`chef` identifiers leave
+only where they get in the way.
+
+### Direction set by the user on 2026-11-16: rights gate, requests act
+
+The Always / Ask / No choices are access gates only. They never start or stop a
+Device action. Actions start from requests:
+
+1. A Device presses ON AIR. That tells the Session's Manager "I am playing".
+2. The Manager posts a request on the Session's request board: every Device
+   with a speaker should open it and subscribe to the Session's audio.
+3. Each Device answers for itself. Its gate for that use and device pair
+   ("speaker for audio") decides: Always accepts, No declines, Ask prompts the
+   user ("Allow speaker use for audio?").
+
+Every right, and all Device-specific configuration, should go through this one
+mechanism, built from standard OTP blocks. OTP has no rights framework, so the
+model stays ours; the mechanics should be plain `gen_statem`, supervisors, `pg`
+and ETS. Today's code differs: an `always` policy still sets the old consent
+flag, which starts capture or playback directly, and nothing posts requests.
+
+Vocabulary: a **request** is what gets posted; the **request board** is the
+Manager's list of open requests; a **Worker** is the local process that carries
+out an accepted one. "Job" and `job_offer` are the older names for the same
+idea and leave gradually.
+
+### In progress (2026-11-16): the top switch and answering requests
+
+User decisions: "Auto accept all requests" is its own switch. It never changes
+the choices under it; they are ignored while it is on. A Device that can give
+rights sees requests in three places: a chat line when a request is made, a red
+balloon on the requesting Device's row menu, and a banner it can answer. The
+row menu spells each request out in words with its answer.
+
+Core DONE, not committed (65 focused EUnit tests and the three-Device
+`session-privileges-smoke.py` pass):
+
+- `ba_device_config:auto_accept/2`, Device API `auto_accept {enabled}`,
+  snapshot `configuration.auto_accept`. Stored `policies` are unchanged by it;
+  `ba_device_config:policy/1` returns the answer in force.
+- Chat info lines "asks to go on air" (and the two other rights), on both the
+  asking Device and each Device that can answer.
+- `ba_buffee_membership:decline_privilege/2`, Device API `decline_privilege
+  {device, privilege}`: clears the reminder only; the requester is not told.
+- Web and native command allowlists include both new commands.
+
+Web UI DONE, not committed (20 frontend tests pass; checked in headless Chrome
+in preview mode at 900 and 390 px, no page errors):
+
+- The top switch sends one `auto_accept` command and reads
+  `configuration.auto_accept`; the rows keep their stored values, greyed, with
+  "Ignored while auto accept is on".
+- `openRequests` (state.mjs) lists what this Device can answer: grant holders
+  only, Devices still connected, rights not already held.
+- Device rows: red balloon with the count on the row menu; each request spelled
+  out at the top of the menu with Allow and Decline. The inline Allow is gone.
+- Banner under the top bar for the target Session (oldest request, "+N more"),
+  answered through the `opensound-answer-request` window event.
+
+Then (same day) the page became **Automation** with two top switches, each
+over its own choices: "Auto accept all requests" (calibration, audio, and new
+`location` for GPS) and "Auto grant full rights" (`auto_grant`) over
+`on_air_requests` and new `moderator_requests` (requests for `grant` or
+`end_session`). Neither switch changes the choices under it. `location` is a
+recorded choice only: nothing asks for location yet. Auto grant applies to
+requests that arrive after it is turned on.
+
+Not yet checked against a real Device runtime or the Mac/iOS hosts.
+
+Known gap until step 2 of the ordered plan below: an effective Always still
+sets the old consent flag, so turning the top switch on starts the microphone.
+
+### Ordered plan (agreed order pending the user's confirmation)
+
+1. **Request board and the on-air request (core).** The Manager keeps open
+   requests as static data (kind, parameters, selector, expiry), announces new
+   ones and gives the list to a joining Device, like the stream catalogue.
+   ON AIR posts "open your speaker and subscribe". Devices select themselves.
+2. **Gates stop acting (core, same increment as 1).** Policies decide answers
+   only. Playback and capture start when a request is accepted and stop when it
+   ends or the gate turns to No. These two steps must land together: removing
+   the direct start without the request flow would leave no way to play.
+3. **One grant state machine.** Each asked-and-answered grant is a `gen_statem`
+   under a supervisor: asking, granted (with a state timeout for "3 minutes" or
+   "until 17:00"), ended. It replaces the hand-written bookkeeping for `ask`
+   and feeds the existing acknowledged-stop barrier on revocation.
+4. **The approval prompt (UI).** "Allow <device> use for <use>?" with the
+   duration choice, shown where the user is; pending prompts are visible state.
+5. **"Auto accept all requests"** is its own switch (see In progress above).
+6. **One machinery for rights.** Entrance and the passport (direct re-entry)
+   become privileges; Ban is taking entrance so an invitation no longer
+   re-admits. Session privileges, Device gates and Device settings share one
+   data shape: who, which device or resource, which use, until when, granted by
+   whom. This changes security-sensitive admission code; design it first.
+7. **The Session page lists every right** with Request and Relinquish.
+8. **Scope and persistence of gates.** They are Device-wide and reset to Ask at
+   restart today; the user expects different trust per Session. Decide, then build.
+9. **After the above:** verify the web shell against a real Device runtime and
+   in the Mac/iOS hosts, and rewrite the OpenSoundKit WebKit tests for the final
+   markup. The user asked for the tests to wait until the changes are complete.
+10. Pre-existing failures unrelated to this work: one device-label unit test,
+    one consent-undo test in DeviceWeb, and the membership, parallel-sessions
+    and reconnect smoke tests.
 
 ### Increment 1 — essential local enforcement
 

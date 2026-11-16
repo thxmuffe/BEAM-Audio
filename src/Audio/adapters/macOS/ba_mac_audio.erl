@@ -43,7 +43,8 @@ handle_call(start,From,#{kind := Kind}=S) ->
     end;
 handle_call(stop,_,S) -> {Result,Next}=stop_confirmed(S),{reply,Result,Next};
 handle_call(status, _, S) ->
-    Diagnostics = maps:without([port, input, request_sent, host_offset, best_round_trip], S),
+    %% Internal handles (port, permission token) are not status and cannot become JSON.
+    Diagnostics = maps:without([port, input, request_sent, host_offset, best_round_trip, permission_token, stop_result], S),
     Public = maps:merge(Diagnostics, ba_audio_input:status(maps:get(input, S))),
     {reply, Public#{available => available()}, S};
 handle_call(_, _, S) -> {reply, {error, unsupported_request}, S}.
@@ -103,9 +104,14 @@ input_info({'DOWN', Ref, process, _, _}, S) ->
     end;
 input_info(_, S) -> {noreply, S}.
 
+%% The helper may already have exited (a timer read can arrive after that):
+%% report it as a capture failure instead of crashing into a restart loop.
 read(#{port := Port} = S) ->
     Sent = erlang:monotonic_time(nanosecond),
-    true = port_command(Port, <<$r>>), S#{request_sent => Sent}.
+    try port_command(Port, <<$r>>) of
+        true -> S#{request_sent => Sent}
+    catch error:badarg -> fail(<<"Audio capture helper stopped; check macOS recording permission.">>, S)
+    end.
 
 fail(Text, S) ->
     close_port(S),

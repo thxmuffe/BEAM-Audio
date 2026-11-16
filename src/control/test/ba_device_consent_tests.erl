@@ -54,7 +54,32 @@ device_wide_consent_test() ->
         ?assertNot(maps:is_key(on_air_requests,ba_device_config:consent())),
         ok=ba_device_config:policy(on_air_requests,ask,#{}),?assertEqual(ask,ba_device_config:policy(on_air_requests)),
         ?assertEqual({error,invalid_configuration},ba_device_config:policy(broadcast,always,#{})),
-        ?assertEqual({error,invalid_configuration},ba_device_config:policy(microphone,sometimes,#{}))
+        ?assertEqual({error,invalid_configuration},ba_device_config:policy(microphone,sometimes,#{})),
+        %% The top switch grants everything and leaves each stored choice alone.
+        ok=ba_device_config:policy(microphone,no,#{}),ok=ba_device_config:policy(calibrate_microphone,ask,#{}),
+        ok=ba_device_config:policy(speaker,always,#{}),Before=Policies(),
+        ok=ba_device_config:auto_accept(true,#{}),
+        ?assert(maps:get(auto_accept,ba_device_config:snapshot())),?assertEqual(Before,Policies()),
+        ?assert(ba_device_permission:allowed(record)),?assert(ba_device_permission:allowed(calibrate_speaker)),
+        %% Requests for rights have their own switch.
+        ?assertEqual(ask,ba_device_config:policy(on_air_requests)),
+        ok=ba_device_config:policy(speaker,no,#{}),?assert(ba_device_permission:allowed(playback)),
+        ok=ba_device_config:auto_accept(false,#{}),
+        ?assertNot(maps:get(auto_accept,ba_device_config:snapshot())),
+        ?assertEqual(Before#{speaker := no},Policies()),
+        ?assertNot(ba_device_permission:allowed(record)),?assertNot(ba_device_permission:allowed(playback)),
+        ?assertEqual(ask,ba_device_config:policy(on_air_requests)),
+        %% Location is a recorded choice; it never becomes a consent flag.
+        ok=ba_device_config:policy(location,always,#{}),?assertEqual(always,ba_device_config:policy(location)),
+        ?assertNot(maps:is_key(location,ba_device_config:consent())),
+        %% Auto grant answers every request for a right and leaves the choices under it alone.
+        ok=ba_device_config:policy(moderator_requests,no,#{}),Grants=Policies(),
+        ok=ba_device_config:auto_grant(true,#{}),
+        ?assert(maps:get(auto_grant,ba_device_config:snapshot())),?assertEqual(Grants,Policies()),
+        ?assertEqual(always,ba_device_config:policy(on_air_requests)),?assertEqual(always,ba_device_config:policy(moderator_requests)),
+        ?assertNot(ba_device_permission:allowed(record)),
+        ok=ba_device_config:auto_grant(false,#{}),
+        ?assertEqual(no,ba_device_config:policy(moderator_requests)),?assertEqual(ask,ba_device_config:policy(on_air_requests))
     after
         gen_server:stop(Sup,shutdown,5000),file:del_dir_r(Dir),
         [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Env],

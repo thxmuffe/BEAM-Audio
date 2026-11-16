@@ -80,6 +80,8 @@ command(#{<<"op">> := <<"grant">>,<<"peer">> := Peer,<<"permissions">> := Ps},_,
     result(ba_buffee_membership:grant(Peer,Ps));
 command(#{<<"op">> := <<"answer_on_air_requests">>,<<"value">> := V},_,_) ->
     result(ba_device_config:policy(on_air_requests,binary_to_existing_atom(V),#{}));
+command(#{<<"op">> := <<"decline_privilege">>,<<"peer">> := Peer,<<"privilege">> := Name},_,_) ->
+    result(ba_buffee_membership:decline_privilege(Peer,ba_session_privileges:parse(Name)));
 command(#{<<"op">> := <<"request_privilege">>,<<"privilege">> := Name},_,_) ->
     result(ba_buffee_membership:request_privilege(ba_session_privileges:parse(Name)));
 command(#{<<"op">> := <<"grant_privilege">>,<<"peer">> := Peer,<<"privilege">> := Name},_,_) ->

@@ -74,11 +74,22 @@ reconcile(S) ->
                 false -> Audio0
             end,
             Diagnostics=ba_audio_diagnostics:snapshot(NextView,ba_buffee_clock:status()),
-            maps:get(owner,S) ! {audio_state,self(),Audio,Diagnostics},Captured#{contracts := Wanted};
+            %% A Device is on air while it sends sound to the Session: this Device
+            %% when it publishes a source, a peer when it offers one.
+            OnAirNow=lists:usort([Self || Local=/=[]]++[maps:get(device,O) || O <- maps:get(offers,View)]),
+            maps:get(owner,S) ! {audio_state,self(),Audio,Diagnostics},announce_on_air(OnAirNow,Captured#{contracts := Wanted});
         _ ->
             Audio=maps:map(fun(_,B) -> #{state => case B of true -> waiting_for_membership;false -> disabled end} end,Consent),
-            maps:get(owner,S) ! {audio_state,self(),Audio,ba_audio_diagnostics:snapshot(#{},ba_buffee_clock:status())},S
+            maps:get(owner,S) ! {audio_state,self(),Audio,ba_audio_diagnostics:snapshot(#{},ba_buffee_clock:status())},S#{on_air => []}
     end.
+%% Each change becomes a local chat line; the chat process owns the wording.
+announce_on_air(Now,S) ->
+    Before=maps:get(on_air,S,[]),
+    case ba_session_scope:whereis(ba_buffee_chat) of
+        undefined -> ok;
+        Chat -> [Chat ! {on_air,D,true} || D <- Now--Before],[Chat ! {on_air,D,false} || D <- Before--Now]
+    end,
+    S#{on_air => Now}.
 capture(K,false,_,S) -> S#{audio => (maps:get(audio,S,#{}))#{K => #{state => disabled}}};
 capture(K,true,Adapter,S) ->
     Status=Adapter:status(K),State=maps:get(state,Status),

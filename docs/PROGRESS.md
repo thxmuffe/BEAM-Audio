@@ -351,3 +351,89 @@ has the new command names, but no app was rebuilt or installed. No automatic
 approval, time-limited grant or request board exists. Design standards and the
 component catalogue in OpenSound still describe roles.
 
+## Policies, hello and the web shell — 2026-11-15/16
+
+Core (committed 2026-11-15): Device policies `always | ask | no` per protected
+resource (`ba_device_config:policy/1,3`, Device API `policy`), calibration consent
+split into `calibrate_microphone` and `calibrate_speaker`, and a grant holder's
+`on_air_requests` policy that answers on-air requests automatically. `ask` is
+only recorded: nothing in the system can ask yet, so it behaves as off. Session
+chat gains local info entries: "is here" when an authenticated link to a Device
+comes up, and a line for every signed change of `grant`, `on_air` or
+`end_session`. Info entries are derived by each Device and never sent.
+Validated by 65 focused EUnit tests and `session-privileges-smoke.py` (three
+Devices, local Reception).
+
+Web UI (2026-11-16): window-level Session tabs are replaced by a native Session
+selector with status text, a fixed-label ON AIR button and a bottom row of
+icons (Home, Chat, Devices, My Device, Session). The Session view no longer
+rebuilds its controls on each refresh; that had wiped the Session name and
+Response time fields while typing. Leaving or ending a Session removes it from
+the selector. Relinquishing a right now asks first. Invite is visible again in
+Devices. Frontend state tests: 18 pass (run with node@22; the default Homebrew
+node on the development Mac fails to start). Checked in headless Chrome against
+the preview adapter at 900 and 390 px wide: create, rename while refreshing,
+on air, view switching and a second Session, with no page errors.
+
+Answering requests (2026-11-16): "Auto accept all requests" is its own switch
+(`auto_accept`); turning it on or off never changes the choices under it, which
+show greyed as "Ignored while auto accept is on". A request for a right adds a
+chat line ("… asks to go on air") on the asking Device and on each Device that
+can answer. A grant holder sees a red balloon on the asking Device's row menu,
+the request spelled out in that menu, and a banner under the top bar; both
+offer Allow and Decline (`decline_privilege` clears the reminder only; the
+asking Device is not told). Core: 65 EUnit tests and the three-Device smoke
+test pass. Web: 20 frontend tests pass; headless Chrome check in preview at
+900 and 390 px. Known gap: an effective Always still sets the old consent flag,
+so turning the switch on starts the microphone until the request board lands.
+
+Automation (2026-11-16): My Device is renamed Automation and made compact.
+A second top switch, "Auto grant full rights" (Device API `auto_grant`),
+answers requests for rights; under it are the on-air right
+(`on_air_requests`) and moderator rights (`moderator_requests`, used for
+`grant` and `end_session` requests, which earlier always waited). "Auto
+accept all requests" no longer answers rights requests. GPS is a new
+`location` choice, recorded only. Core: 65 EUnit tests pass; the three-Device
+smoke test passed on a second run (the first timed out on clock sync before
+any privilege step). Web: 21 frontend tests; headless check at 900 and 390 px.
+
+Session picker (2026-11-16): the `+` button is gone. The picker lists joined
+Sessions by name, shows "Not joined" (not "New Session") for an unjoined slot,
+and always ends with "Create a new Session…", which opens the create dialog and
+is never left selected. An unjoined slot is reused before a new one is opened;
+the last slot stays after Leave. Join and Create are on Home only; Devices
+shows just the list; the Session page keeps its controls, disabled, when not
+joined. The picker sits at its own width in the top-left corner, ON AIR in the
+top-right. Headless check in preview at 900 and 390 px.
+
+Fixes from the user's first real-runtime test (2026-11-16): with auto accept
+on, `calibrate_microphone` reached `ba_device_handler:capability_metrics/1`,
+which only knew speaker/microphone/broadcast, and the handler crash-looped
+("ba_device_handler stopped (case_clause)" in chat, "Device unavailable").
+It now takes every consent key. Separately, ON AIR's system-audio helper exited
+at once (likely macOS System Audio Recording permission) and a pending read
+wrote to the closed port, crash-looping `ba_mac_audio`; that read now reports a
+capture failure instead. The top bar is gone: the picker and ON AIR float in
+the top corners over pages that run to the top edge.
+
+ON AIR delay (2026-11-16): once capture ran, `ba_mac_audio:status/1` exposed
+its permission token (an Erlang reference) and `ba_device_audio` copied the
+whole status into `handler.audio.broadcast`, so every snapshot failed JSON
+encoding and the UI showed "Device unavailable" with ON AIR grey. The status
+now omits internal handles. Chat gains local lines "<Device> is going on air"
+and "went off air", derived in `ba_device_audio` from this Device's published
+sources and peers' offers (any source counts, microphone included). Saved
+groups get a menu with Rename and Delete; removed saved Devices and groups now
+leave the list instead of staying as greyed rows. 71 focused EUnit tests and
+the three-Device smoke test pass. The on-air chat line and the ON AIR timing are
+not verified on real Devices.
+
+Invite tab (2026-11-16): the Invite button and dialog are replaced by an
+Invite page in the centre of the bottom row (share icon): OS share sheet, copy
+link, the link and a QR code. Inviting a saved Device or group opens it.
+Automation uses a lightning icon, Session a settings gear. Headless check in
+preview at 900 and 390 px; the OS share sheet is not checked in the native hosts.
+
+NOT VERIFIED: the new shell against a real Device runtime or in the Mac/iOS
+hosts; no app was rebuilt. The OpenSoundKit WebKit tests still target the
+earlier tab, toolbox and Settings markup and need rewriting. See PLAN.md.
