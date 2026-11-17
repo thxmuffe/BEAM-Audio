@@ -45,7 +45,8 @@ handle_call(snapshot,_,S) ->
              providers => map_size(maps:get(providers,S)),
              provider_status => [#{peer => maps:get(peer,maps:get(context,R)),source => maps:get(source,R),
                  transport => transport_status(R)} || R <- maps:values(maps:get(providers,S))],mixer => ba_audio_mixer:status(),
-             rejected => maps:get(rejected,S),receive_meter => receive_meter(maps:get(subscriptions,S)),diagnostics => ba_diagnostics:view(S)},S};
+             rejected => maps:get(rejected,S),suspended => maps:get(suspended,S),
+             receive_meter => receive_meter(maps:get(subscriptions,S)),diagnostics => ba_diagnostics:view(S)},S};
 handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pid)=:=node(),map_size(Sources)<16 ->
     try
         Offer = gen_server:call(Pid,describe,100),Key = maps:get(source_key,Offer),
@@ -120,10 +121,10 @@ handle_call({gain,Id,G},_,#{subscriptions := Items} = S) when is_number(G),G>=0,
     end;
 handle_call(suspend,_,S) -> {reply,ok,disconnect_all(S#{suspended := true})};
 handle_call(resume,_,S) ->
-    resync_clock(),
+    resync_clock(resume),
     {reply,ok,disconnect_all(S#{suspended := false,resume_after := erlang:monotonic_time(nanosecond)})};
 handle_call(_,_,S) -> {reply,{error,unsupported_request},S}.
-handle_cast(network_changed,S) -> resync_clock(),{noreply,disconnect_all(S#{resume_after := erlang:monotonic_time(nanosecond)})};
+handle_cast(network_changed,S) -> resync_clock(network_changed),{noreply,disconnect_all(S#{resume_after := erlang:monotonic_time(nanosecond)})};
 handle_cast(_,S) -> {noreply,S}.
 handle_info(catalog_bootstrap,S) -> {noreply,refresh_all(S)};
 handle_info({audio_session_up,#{peer := Peer,session := Session}},S) ->
@@ -507,9 +508,11 @@ terminate(_,S) ->
 
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([suspended,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
-resync_clock() ->
+resync_clock(Reason) ->
     Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
-    try Module:resync() catch _:_ -> unavailable end.
+    try case erlang:function_exported(Module,resync,1) of
+        true -> Module:resync(Reason);false -> Module:resync()
+    end catch _:_ -> unavailable end.
 
 renew_media(Id,Peer,Session,Until,#{context := #{peer := Peer,session := Session,deadline := Old}=C,session := P}=R)
         when Until>Old ->

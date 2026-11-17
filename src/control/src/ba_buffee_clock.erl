@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 -compile({no_auto_import,[now/0]}).
 -export([start_link/0,id/0,now/0,filtered_utc_time/0,from_monotonic/1,to_monotonic/1,map_times/1,
-         presentation/1,status/0,set_reference/1,resync/0,offset/0,offset_status/0,set_offset/1,set_offset/2,
+         presentation/1,status/0,set_reference/1,resync/0,resync/1,offset/0,offset_status/0,set_offset/1,set_offset/2,
          reference_sample/0,peer_sample/2,seed_sample/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
@@ -36,7 +36,9 @@ offset_status() -> offset_view(snapshot()).
 set_offset(Value) -> gen_server:call(ba_session_scope:ref(?MODULE),{offset,Value,current},6000).
 set_offset(Value,Revision) -> gen_server:call(ba_session_scope:ref(?MODULE),{offset,Value,Revision},6000).
 set_reference(Mode) -> gen_server:call(ba_session_scope:ref(?MODULE),{reference,Mode}).
-resync() -> gen_server:call(ba_session_scope:ref(?MODULE),resync).
+resync() -> resync(explicit).
+resync(Reason) when Reason=:=explicit;Reason=:=resume;Reason=:=network_changed ->
+    gen_server:call(ba_session_scope:ref(?MODULE),{resync,Reason}).
 reference_sample() -> {error,use_authenticated_buffee_control}.
 peer_sample(_,_) -> {error,use_authenticated_buffee_control}.
 seed_sample(_) -> {error,use_authenticated_buffee_control}.
@@ -82,7 +84,8 @@ init([]) ->
     D = #{role => waiting,mapping => undefined,timeline => undefined,instance => fresh(),
         master_instance => undefined,master => undefined,reference_revision => 0,revision => 0,
         last_sync => undefined,confirmed => false,filter_ready => false,filter_sample_count => 0,
-        filter_required_samples => Count,sample_interval_ms => Interval,interval_ms => Phase,
+        filter_required_samples => Count,filter_reset_count => 0,filter_reset_reason => startup,
+        sample_interval_ms => Interval,interval_ms => Phase,
         threshold_ns => 2000000,slew_ppm => PPM,measurement_uncertainty_ns => unknown,
         last_error => null,offset_error => null,rejected => 0,upstream_acquisitions => 0,
         offset => undefined,offset_until => undefined,authorization_until => undefined},
@@ -122,14 +125,15 @@ handle_call({reference,Mode},_,#{role := authority} = S) ->
             end
     end;
 handle_call({reference,_},_,S) -> {reply,{error,authority_reference_only},S};
-handle_call(resync,_,#{role := authority} = S) ->
+handle_call(resync,From,S) -> handle_call({resync,explicit},From,S);
+handle_call({resync,_},_,#{role := authority} = S) ->
     Due = case {maps:get(reference,S),maps:get(last_external_start,S)} of
         {system,_} -> now_ms();{_,undefined} -> now_ms();{_,Started} -> max(now_ms(),Started+15000)
     end,
     D = maps:get(clock,S),
     {reply,ok,save(S#{blocked := false,next_external := Due,clock := D#{confirmed := false}})};
-handle_call(resync,_,S) ->
-    {reply,ok,save(reset_filter(invalidate(S#{sample_due := now_ms(),offset_due := now_ms()})))};
+handle_call({resync,Reason},_,S) ->
+    {reply,ok,save(reset_filter(Reason,invalidate(S#{sample_due := now_ms(),offset_due := now_ms()})))};
 handle_call(_,_,S) -> {reply,{error,invalid_request},S}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info(tick,S0) ->
@@ -182,13 +186,13 @@ scope({Buffee,Authority}=Scope,Role,S) ->
     Saved = ba_device_store:load(Name,undefined),
     P = case Saved of #{buffee := Buffee,authority := Authority,policy := Policy} -> ba_buffee_time_protocol:state(Policy),Policy;_ -> Default end,
     case Role of authority -> checkpoint(Name,Scope,P);member -> ok end,
-    Next = reset_filter(invalidate(S)),D = maps:get(clock,Next),
+    Next = reset_filter(scope_changed,invalidate(S)),D = maps:get(clock,Next),
     Next#{scope := Scope,clock := D#{offset := P,offset_until := undefined}}.
 follow(#{view := V} = S) ->
     case lists:member(<<"time_read">>,maps:get(local_permissions,V,[])) of
         false ->
             D = maps:get(clock,S),Pending = maps:filter(fun(_,P) -> maps:get(kind,P)=:= <<"offset.set">> end,maps:get(pending,S)),
-            reset_filter(S#{pending := Pending,clock := D#{confirmed := false,offset_until := undefined}});
+            reset_filter(permission_unavailable,S#{pending := Pending,clock := D#{confirmed := false,offset_until := undefined}});
         true ->
             {_,Authority} = maps:get(scope,S),
             case context(Authority) of
@@ -276,8 +280,13 @@ apply_sample(P,T4,Until,#{scope := {Buffee,_},clock := D0}=S0) ->
     end,
     {ok,Sample} = ba_buffee_clock_sync:measure(T1,T2,T3,T4),true = maps:get(round_trip_ns,Sample)=<4000000000,
     Key = {Timeline,Instance,Revision},Stale = age(maps:get(last_sync,D0),T4),
-    Reset = maps:get(filter_reference,S0)=/=Key orelse (is_integer(Stale) andalso Stale>freshness(S0)*1000000),
-    S = case Reset of true -> reset_filter(S0);false -> S0 end,D = maps:get(clock,S),
+    Reference=maps:get(filter_reference,S0),
+    S = case {Reference,Reference=/=Key,is_integer(Stale) andalso Stale>freshness(S0)*1000000} of
+        {undefined,_,_} -> S0; % Already empty; retain the reason that cleared it.
+        {_,true,_} -> reset_filter(reference_changed,S0);
+        {_,false,true} -> reset_filter(sample_gap,S0);
+        _ -> S0
+    end,D = maps:get(clock,S),
     Slot = (mono_ms(T4)-maps:get(born,S)) div maps:get(sample_interval_ms,D),
     Filter = case Slot=:=maps:get(filter_last_slot,S) of
         true -> maps:get(filter,S);false -> ba_buffee_clock_filter:add(Sample,maps:get(filter,S)) end,
@@ -377,9 +386,10 @@ expire(#{pending := Pending}=S) ->
 invalidate(S) ->
     maps:foreach(fun(_,P) -> answer(P,{error,unconfirmed}) end,maps:get(pending,S)),
     D = maps:get(clock,S),S#{pending := #{},clock := D#{confirmed := false,offset_until := undefined}}.
-reset_filter(#{clock := D}=S) ->
+reset_filter(Reason,#{clock := D}=S) ->
     S#{filter := ba_buffee_clock_filter:new(maps:get(filter_required_samples,D)),filter_reference := undefined,filter_last_slot := undefined,
-       clock := D#{filter_ready := false,filter_sample_count := 0}}.
+       clock := D#{filter_ready := false,filter_sample_count := 0,
+           filter_reset_count => maps:get(filter_reset_count,D,0)+1,filter_reset_reason => Reason}}.
 fail(Reason,#{clock := D}=S) -> S#{clock := D#{confirmed := false,last_error := Reason}}.
 cancel_upstream(#{upstream := undefined}=S) -> S;
 cancel_upstream(#{upstream := #{pid := Pid,monitor := Ref}}=S) -> demonitor(Ref,[flush]),exit(Pid,kill),S#{upstream := undefined}.

@@ -139,6 +139,22 @@ session_renewal_retains_filter_but_invalidates_readiness_test() ->
         ?assertEqual({error,clock_unavailable},ba_buffee_clock:now())
     end).
 
+member_resync_identifies_why_the_filter_was_cleared_test() ->
+    with_clock(member,fun(_) ->
+        await(fun() -> maps:get(role,ba_buffee_clock:status())=:=follower end),
+        sys:replace_state(ba_buffee_clock,fun(S) ->
+            D=maps:get(clock,S),Count=maps:get(filter_reset_count,D),
+            {reply,ok,Network}=ba_buffee_clock:handle_call({resync,network_changed},undefined,S),
+            ND=maps:get(clock,Network),
+            ?assertEqual(network_changed,maps:get(filter_reset_reason,ND)),
+            ?assertEqual(Count+1,maps:get(filter_reset_count,ND)),
+            ?assertEqual(false,maps:get(filter_ready,ND)),
+            ?assertEqual(maps:get(mapping,D),maps:get(mapping,ND)),
+            {reply,ok,Resume}=ba_buffee_clock:handle_call({resync,resume},undefined,Network),
+            ?assertEqual(resume,maps:get(filter_reset_reason,maps:get(clock,Resume))),Resume
+        end)
+    end).
+
 settings_permission_is_independent_of_clock_hosting_test() ->
     with_clock(authority,fun(_) ->
         await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),

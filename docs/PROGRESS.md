@@ -1,5 +1,43 @@
 # Current implementation and validation
 
+## iPhone bursts followed by clock reacquisition — 2026-11-17
+
+The user ran the prior output repair, but reported silence and volume buttons
+controlling the ringer. CLI inspection through the existing Web Device showed
+zero Mixer output while the iPhone clock was acquiring; `speaker: ready` means
+the capability is available, not proof of an active native audio session.
+At 20:46:42 Helsinki, following a user-heard burst, instance 5DDA4DA3 had rendered
+182 blocks, counted eight native late-buffer rejections, and returned to clock
+holdover with filter 1/20 and an empty Mixer. There was no output socket failure
+or pending stop. After relaunch, instance 743B3362 repeated the pattern: at
+20:53:28 it had rendered 141 blocks, one native late rejection, and again had
+filter 1/20, holdover and no Mixer streams. Mac capture remained active.
+
+Read-only debugger attachment was attempted to inspect the native route, but
+the expression ran before asynchronous attachment completed and LLDB exited.
+The user reported the app stopping at that time. Process inspection confirmed
+exit; no OpenSound crash report was present. The debugger is the likely cause,
+not a confirmed application crash. The existing app was relaunched through
+devicectl without rebuilding or changing identity/settings. No further attach
+attempt was made. Saved identity was confirmed through the CLI after relaunch.
+
+Added bounded clock reset reason/count metrics and tags for explicit resync,
+resume, network changes, reference changes, sample gaps, and missing time
+permission. An empty filter preserves the reason that cleared it when the next
+sample arrives. Added receiver suspension/active/mix-ready counts. Fixed
+`transport.sessions` to count actual worker status rows instead of all saved
+subscriptions, and added `transport.open`. None proves physical speaker output.
+Source review found iOS unconditionally resynced after every subsequent usable
+NWPath notification; it now compares NWPath values and ignores unchanged paths.
+Whether duplicate notifications caused the live resets remains unproven.
+
+Validation: 18 focused clock, diagnostic, iOS-binding and restore EUnit tests
+pass; iOS runtime Swift parsing and diff whitespace checks pass. NWPath's
+Equatable conformance was verified in the installed iPhone SDK. No new full
+native build or deployment. The user has been asked to rebuild/Run the iPhone
+so CLI inspection can identify the actual reset trigger. Sustained playback
+and native route/session state remain unverified.
+
 ## iPhone native rejection and dead output handle — 2026-11-17
 
 Inspected through the existing managed Web Device's public `call device` /

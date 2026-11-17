@@ -1,5 +1,24 @@
 # Current plan
 
+## Repeated iPhone clock reacquisition — 2026-11-17
+
+The previous output repair is running: two user-heard bursts coincided with
+182 and 141 rendered blocks, native late-buffer drops, no closed-output failure,
+and the clock filter returning to 1/20 with an empty Mixer. Sustained playback
+is still broken. Speaker `ready` and saved subscriptions do not prove open audio.
+
+Implemented for the next diagnostic build: report clock filter-reset reason/count,
+receiver suspension/active/mix-ready counts, and actual Media Session/open counts
+through CLI metrics. Distinguish resume, network notification, sample gap,
+reference change and permission loss. iOS ignores unchanged network-path
+notifications using NWPath equality, instead of resyncing on every notification.
+This is not yet proof that duplicate notifications caused the observed resets.
+
+Next: user-led iPhone rebuild/Run, then inspect the next reset reason and repair
+that confirmed path. The audio clock policy is unchanged. The debugger attempt
+coincided with app exit; no OpenSound crash report was present, and the existing
+app was relaunched preserving saved identity. Continue using CLI diagnostics.
+
 ## iPhone output rejection and stalled recovery — 2026-11-17
 
 Public-CLI inspection through the existing Web Device reproduced brief iPhone
@@ -12,11 +31,10 @@ later targets continue on the same output, without retiming. Local audio TCP
 uses NODELAY. Genuine closures with unconfirmed stop block handle reuse and
 expose `mixer.output_stop_pending`. Consent/stop acknowledgements stay intact.
 
-Next: user rebuilds/runs the iPhone in Xcode, keeps Mac broadcast on and Web
-playback off, waits for clock acquisition, then listens. Component tests and
-Swift typechecking pass; the repair is not installed or proven audible. If
-drops continue, inspect the precise native counters and logged target lead
-before changing handoff policy. Clock-filter resets and Web overlap remain open.
+Follow-up: user ran the repaired iPhone and heard brief audio; the precise late
+buffer counter now appears without socket failures. Sustained playback is still
+interrupted by clock-filter resets (see above). Native target lead and Web
+overlap remain separate investigations; do not change targets on a guess.
 
 ## Generic public Device API through CLI — 2026-11-17
 

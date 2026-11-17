@@ -5,13 +5,18 @@
 -define(MAX_INT,9007199254740991).
 snapshot(Audio,Clock) ->
     Subs=maps:values(maps:get(subscriptions,Audio,#{})),
-    Transports=[maps:get(transport,R,#{}) || R <- Subs++maps:get(provider_status,Audio,[])],
+    Transports=[T || R <- Subs++maps:get(provider_status,Audio,[]),
+        T <- [maps:get(transport,R,#{})],map_size(T)>0],
     Mixer=maps:get(mixer,Audio,#{}),
     Base=#{<<"sampled_at_ms">> => erlang:system_time(millisecond),
-        <<"receiver.subscriptions">> => length(Subs),<<"transport.sessions">> => length(Transports)},
-    R=fields(<<"receiver">>,[rejected,publications],Audio,Base),
+        <<"receiver.subscriptions">> => length(Subs),<<"transport.sessions">> => length(Transports),
+        <<"transport.open">> => length([ok || #{open := true} <- Transports]),
+        <<"receiver.active_subscriptions">> => length([ok || #{state := active} <- Subs]),
+        <<"receiver.mix_ready_subscriptions">> => length([ok || #{mix_ready := true} <- Subs])},
+    R=fields(<<"receiver">>,[rejected,publications,suspended],Audio,Base),
     M=fields(<<"mixer">>,[dropped,rendered,queued_blocks,queued_bytes,clipped_frames,streams,output_stop_pending],Mixer,R),
-    C=fields(<<"clock">>,[state,last_error,age_ns,round_trip_ns,remaining_correction_ns,filter_sample_count,filter_required_samples],Clock,M),
+    C=fields(<<"clock">>,[state,last_error,offset_error,age_ns,round_trip_ns,remaining_correction_ns,
+        filter_ready,filter_sample_count,filter_required_samples,filter_reset_count,filter_reset_reason],Clock,M),
     O=fields(<<"clock">>,[offset_ms,ready],maps:get(offset_policy,Clock,#{}),C),
     T=lists:foldl(fun(View,Acc) ->
         lists:foldl(fun(K,A) ->

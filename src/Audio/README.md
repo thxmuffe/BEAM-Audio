@@ -26,6 +26,15 @@ stop; it cannot be reused as healthy. EOF alone does not confirm native stop.
 Rebuild/run the iPhone app to update both sides of the local binding protocol.
 Focused hardware-free protocol checks: `rebar3 eunit --module=ba_ios_audio_tests`.
 
+For bursts followed by silence, inspect `clock.filter_reset_reason` and
+`clock.filter_reset_count` alongside `clock.filter_ready` and clock state.
+Reasons distinguish `resume`, `network_changed`, `sample_gap`,
+`reference_changed`, `scope_changed` and `permission_unavailable`.
+`receiver.suspended`, `receiver.active_subscriptions`,
+`receiver.mix_ready_subscriptions`, `transport.sessions` and `transport.open`
+distinguish saved intent from live media work. Speaker `ready` means capability
+availability; receive/render counters alone do not prove physical output.
+
 Build commands belong in [BUILDING](../../docs/BUILDING.md). Product permission
 and launch instructions are in [macOS](../../../OpenSound/docs/MACOS_APP.md),
 [iOS](../../../OpenSound/docs/iOS/README.md) and
