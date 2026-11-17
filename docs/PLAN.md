@@ -1,5 +1,139 @@
 # Current plan
 
+## Latest observed blocker — 2026-11-17
+
+The user's two Windows Devices now target the same BESTSESSION2 ID. Live
+snapshots and a real CLI-monitor observer show healthy Reception authentication,
+no backend privileges, zero admitted peers, and no active advertiser for the
+invitation admission mailbox. Fresh join remains discovering until an existing
+introduction grants membership; two pending joiners do not discover/admit each
+other. This is the central admission dependency identified below. Fixing it
+requires the agreed participation/identity/rights separation; do not relabel a
+UI-cache fix as repaired peer admission or silently create Admin privileges.
+The user explicitly leaves persistent-admin design outside this work.
+
+Fixed separately: a reused UI slot retained the previous Session's local Admin
+row. Cache rows by actual Session identity and read the local Device's privileges
+from the current snapshot. 27 frontend tests and four browser scenarios pass.
+
+
+## Latest frontend repair — 2026-11-17
+
+Device status SVGs no longer recreate their stylesheet/DOM on refresh. Stable
+row patching preserves Device custom elements, menus/focus and disclosure state;
+explicit SVG dimensions/strokes prevent oversized black fallback graphics.
+The opening dialog treats pasted `beamaudio://` links as Join, not a new Session
+name, and accepts full invitations. Read-only local inspection established that
+the user's two self-only Admin views were distinct Sessions named after the
+invitation. No automatic dead-Session recreation was observed; do not infer it.
+Keep admin persistence out of this repair, as explicitly requested. Existing
+running Sessions and Device identities are unchanged. 26 frontend tests and
+three headless Chromium regression scenarios pass; Web/Windows assets rebuilt.
+
+
+## Latest implementation: notification-driven audio catalogue and one-click Windows build — 2026-11-17
+
+Supersedes the catalogue-polling findings in the audit below. Shared audio sources
+now send a signed `catalog.changed` notification when registered, removed, paused
+or rebound. Receivers read the catalogue on that event, on authenticated peer
+connection/reconnection, or once at receiver startup. Pending reads coalesce
+changes into one follow-up read. The five-second all-peer catalogue polling is
+removed; idle reconciliation ticks issue no catalogue reads. Existing source
+formats and signing domains remain unchanged; updated publishers are required
+to emit the new notification. General Manager playback requests/board are still
+not implemented. Local audio reconciliation, UI snapshot sampling and protocol
+lease/clock timers remain separate pending work, not claimed removed here.
+
+The user wants no typed build command. Double-click OpenSound/Build.cmd.
+`build.py` is the single Windows build implementation; cmd/Bash/optional
+PowerShell wrappers call it. Real Build.cmd and Git Bash builds, fresh MSVC
+launcher/identity-helper compilation, six HTTP/API tests, 25 frontend tests,
+32 audio/control tests and the packaged Windows local integration check pass.
+This does not establish physical audio or complete visual acceptance.
+
+
+## Windows unification and Session concurrency audit — 2026-11-17
+
+Windows now packages the shared Web frontend and DeviceWeb API in a Chrome/Edge
+app window. wxErlang UI/model/chart sources are removed. Existing Windows native
+identity keys/state are retained. Compilation, 25 frontend tests, six applicable
+DeviceWeb tests, 35 control/clock protocol tests and the local packaged Windows
+integration pass. Native Windows PCM capture/output remain unintegrated.
+
+A concrete mesh defect is repaired: the control owner now initiates missing
+admitted peer connections, independently of the optional monitor. The clock and
+monitor no longer initiate competing handshakes. Three Devices discover each
+other, both endpoints restart, original invitations still admit a fresh Device,
+and a second Session/repeated Join retain the original peers.
+
+The user asks for an architecture analysis before changing admission: joining
+locally must work offline; each peer pair must proceed independently; one broken
+Device or Session must not block the others. Local Join currently returns success
+and opens a Session before remote admission; the supplied BESTSESSION2 test
+stalled waiting for authorized connectivity, not in the Join command itself.
+Do not describe that timeout as a proven Join-command failure or blame an old
+version without evidence.
+
+Audit findings still to address: fresh network admission depends on an online
+`grant` holder issuing a passport; a policy/routes change resets all peer links;
+Session list/start/stop preparation can block in the shared coordinator; Web SSE
+and native polling collect Session snapshots sequentially. The request board is
+still planned, not implemented as a general board. Existing rights requests are
+not that board. Separate local participation, pairwise identity verification,
+privilege grants and transport. A request to introduce a new Device must be
+processed independently per pair, with no all-Device acknowledgement barrier.
+Manager announcements must not become a prerequisite for local Join.
+
+User direction during this audit: a new Device enters through Reception, then
+introduces itself to the other Devices directly or through a Manager's request.
+Evaluate the traffic model against OTP's peer mesh before implementing it. A
+mesh supplies independent addressed links, not automatic broadcast of all data;
+the request board remains application data (open requests and independent
+answers), separate from transport and privileges. Keep one transport per Device
+pair, multiplex Sessions, send membership/request changes to relevant peers and
+media only to subscribers. This is a proposed direction, not yet implemented.
+
+Further design challenge from the user: B can tell C its observation of A;
+all-to-all direct probing is not a requirement merely to maintain a Session's
+presence list. Evaluate established membership/failure-detection and dissemination
+patterns before adding a custom board. SWIM separates detection from gossip and
+uses indirect probes/piggybacked changes; Partisan offers BEAM overlay backends
+including HyParView. Neither gossip nor a forwarded observation establishes a
+working direct A-C media path. Individually authenticated identity/privilege
+proofs remain separate: memberlist's shared-key fully-trusted membership is not
+our mutually untrusted Device boundary. A request board may remain application
+requests/pub-sub, but must not become a new discovery or admission framework.
+Full-mesh connection establishment repaired above is a bounded fix to the
+existing topology, not evidence that mandatory full mesh is the final design.
+References: https://www.cs.cornell.edu/projects/Quicksilver/public_pdfs/SWIM.pdf,
+https://github.com/lasp-lang/partisan,
+https://github.com/hashicorp/memberlist/blob/master/SECURITY.md.
+
+Audio request-flow audit requested by the user (2026-11-17): desired flow is
+ON AIR -> Manager announces/requests playback -> each Device independently
+accepts under its local gates and creates its own subscription -> UI learns
+changes. The current code only partially implements this. `ba_device_audio`
+reconciles locally every 250 ms, starts capture from local consent/live switches,
+creates its own deterministic publication/receive contracts and automatically
+subscribes to every available remote offer while speaker consent permits it.
+`ba_audio_receiver` polls all authenticated peer catalogues every 5 seconds;
+source registration does not publish a Manager announcement. A subscriber sends
+`subscribe`, the publisher admits it and starts the provider Media Session,
+then the receiver creates its endpoint; the publisher generates the WebRTC offer.
+No general Manager playback-request dispatch is in this path. UI delivery is
+change-filtered, but DeviceWeb gathers snapshots every 300 ms and native hosts
+poll every 1500 ms; an optional CLI monitor also queries peer capabilities.
+The Windows shared profile still does not configure this native audio worker.
+This was a source audit, not a new physical audio test or a protocol change.
+
+Current shared-profile control packets still route via Reception (`send/3` in
+`ba_buffee_control`); pairwise authenticated protocol sessions are not physical
+direct sockets. Direct control transport is a separate unfinished change. Borrow
+OTP's targeted messaging and pg-style eventual membership/scopes, not `global`'s
+full-partition coupling or trusted Distributed Erlang. Keep the existing signed
+wire/credential boundaries until an explicit admission migration is designed.
+
+
 ## Priority: Device-owned consent before playback repair
 
 The Web/Mac/iOS UI is shared and has concurrent Session tabs. The user confirmed

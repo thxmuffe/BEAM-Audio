@@ -6,7 +6,10 @@
 start() ->
     %% Windows bundles pure-BEAM transport dependencies alongside its ebin.
     Root = filename:dirname(filename:dirname(code:which(?MODULE))),
-    code:add_paths(filelib:wildcard(filename:join([Root, "relay_lib", "*", "ebin"]))),
+    Libraries=case filelib:is_dir(filename:join(Root,"lib")) of
+        true -> "lib";false -> "relay_lib"
+    end,
+    code:add_paths(filelib:wildcard(filename:join([Root, Libraries, "*", "ebin"]))),
     application:ensure_all_started(ba_core).
 %% Explicit runtime profiles. Buffee control must use a non-distributed VM.
 start(Profile) when Profile =:= native_cluster; Profile =:= buffee_control ->

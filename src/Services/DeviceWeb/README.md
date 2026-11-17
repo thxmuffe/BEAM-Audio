@@ -140,3 +140,14 @@ receives only snapshots for its own `session` identifier.
 `session.html` may be framed only by this same loopback origin. No third-party
 framing is permitted. Session workers share one Device identity and Reception
 connection per URL; the service still owns no audio/membership policy.
+
+## Windows app host (2026-11-17)
+
+OpenSound Windows packages this service and the shared web assets, starting an
+unnamed `buffee_control` VM. `--app` implies `--open` and uses
+`open-browser.ps1 -App`: an isolated installed Chrome/Edge process. Its exit
+stops the local Device and flushes settings. It cannot combine with `--monitor`.
+The browser does not inherit `BA_IDENTITY_SEED`. The Windows host keeps existing
+Credential Manager keys/leases/state; Web development DPAPI slots stay separate.
+Native Windows audio is still unconfigured. No public Reception deployment is
+part of this migration.

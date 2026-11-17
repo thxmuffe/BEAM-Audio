@@ -4,6 +4,7 @@
 validate(#{<<"kind">> := K} = P) ->
     case K of
         <<"catalog.read">> -> exact(P,[<<"kind">>]);
+        <<"catalog.changed">> -> exact(P,[<<"kind">>]);
         <<"catalog.end">> -> exact(P,[<<"kind">>]);
         <<"catalog.offer">> ->
             exact(P,[<<"kind">>,<<"source">>,<<"incarnation">>,<<"name">>,<<"rate">>,<<"channels">>,<<"format">>,<<"clock">>,<<"paused">>]),

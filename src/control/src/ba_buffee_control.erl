@@ -213,7 +213,7 @@ handle_info(expire,S) ->
             _ -> reply(Peer,{error,Reason},Acc)
         end
     end,S#{protocol := Protocol},Events),
-    Final = renew_sessions(expire_jobs(ensure_handler_monitor(Next))),
+    Final = connect_missing(renew_sessions(expire_jobs(ensure_handler_monitor(Next)))),
     erlang:send_after(250,self(),expire), {noreply,Final};
 handle_info({'DOWN',Ref,process,_,_},#{handler_monitor := Ref} = S) ->
     {noreply,reset(handler_restarted,S#{handler_monitor := undefined})};
@@ -309,7 +309,9 @@ event(Peer,{session_replaced,Old},S) ->
     drop_session(Peer,Old),fence_peer_jobs(Peer,reply(Peer,{error,session_replaced},S));
 event(_,{session_renewed,Context},S) ->
     audio_notify({audio_session_renewed,Context}),S;
-event(_,authorized,S) -> S.
+event(Peer,authorized,S) ->
+    Context=ba_buffee_control_protocol:context(Peer,now_ms(),maps:get(protocol,S)),
+    critical_audio_notify({audio_session_up,Context}),S.
 
 discover_name(Peer,S) ->
     %% One asynchronous ordinary capability read after authentication and after
@@ -471,3 +473,18 @@ connect_peer(Peer,S) ->
             end;
         {error,Reason,_} -> {reply,{error,Reason},S}
     end.
+
+%% Peer liveness belongs to the runtime, not to an optional UI/CLI monitor.
+%% Only one side initiates; the existing signed handshake and expiry own the
+%% connection lifecycle. Admission, routes and local exclusions still gate it.
+connect_missing(#{protocol := Protocol,config := #{routes := Routes}}=S) ->
+    Id=maps:get(id,Protocol),Sessions=maps:get(sessions,Protocol),
+    Peers=maps:keys(maps:get(peers,maps:get(policy,Protocol))),
+    lists:foldl(fun(Peer,Acc) ->
+        case Id<Peer andalso not maps:is_key(Peer,Sessions) andalso
+             maps:is_key(Peer,Routes) andalso not ba_app_session:excluded(Peer) andalso
+             ba_buffee_desks:peer_online(Peer) of
+            true -> {reply,_,Next}=connect_peer(Peer,Acc),Next;
+            false -> Acc
+        end
+    end,S,Peers).

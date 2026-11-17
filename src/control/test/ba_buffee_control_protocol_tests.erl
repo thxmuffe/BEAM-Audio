@@ -213,6 +213,13 @@ membership_deadline_is_synchronous_test() ->
     {_,Peer,_,_,Fresh,_} = fixture(),
     ?assertMatch({error,_,_},p(connect,[Peer,5,Fresh#{membership_deadline => 5}])).
 
+catalogue_change_uses_authenticated_audio_channel_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),
+    Id=binary:copy(<<"C">>,32),Payload=#{<<"kind">> => <<"catalog.changed">>},
+    {ok,Packet,_}=p(audio_message,[B,Id,Payload,5,SA]),
+    {ok,[],[{audio,Id,Payload,#{peer := A}}],Received}=p(receive_packet,[A,Packet,6,SB]),
+    ?assertMatch({error,_,_},p(receive_packet,[A,Packet,7,Received])).
+
 stream_control_requires_grants_and_exact_schema_test() ->
     {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
     Id = binary:copy(<<"A">>,32),P = #{<<"kind">> => <<"catalog.read">>},

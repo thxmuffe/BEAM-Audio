@@ -31,9 +31,10 @@ init([]) ->
     Items = ba_subscription:load(),
     erlang:send_after(250,self(),tick),
     Control = ba_session_scope:whereis(ba_buffee_control),true = is_pid(Control),monitor(process,Control),
+    self() ! catalog_bootstrap,
     {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
           providers => #{},catalogs => #{},contracts => #{},control => Control,
-          suspended => false,resume_after => undefined,rejected => 0,poll_at => now_ms()}}.
+          suspended => false,resume_after => undefined,rejected => 0}}.
 waiting(I) -> #{intent => I,state => waiting_for_source,session => undefined,retry_at => now_ms(),packets => 0}.
 handle_call(snapshot,_,S) ->
     View = maps:map(fun(_,R) ->
@@ -55,7 +56,7 @@ handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pi
         false = maps:is_key(Key,Sources),
         _ = ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer),
         Ref = monitor(process,Pid),Entry = #{pid => Pid,monitor => Ref,offer => Offer},
-        {reply,ok,S#{sources := Sources#{Key => Entry}}}
+        {reply,ok,announce_catalog(S#{sources := Sources#{Key => Entry}})}
     catch throw:on_air_required -> {reply,{error,on_air_required},S};
           _:_ -> {reply,{error,invalid_or_duplicate_publication},S} end;
 handle_call({contract,Direction,Peer,Key,Id,Revision},_,#{contracts := Contracts} = S) ->
@@ -124,13 +125,22 @@ handle_call(resume,_,S) ->
 handle_call(_,_,S) -> {reply,{error,unsupported_request},S}.
 handle_cast(network_changed,S) -> resync_clock(),{noreply,disconnect_all(S#{resume_after := erlang:monotonic_time(nanosecond)})};
 handle_cast(_,S) -> {noreply,S}.
+handle_info(catalog_bootstrap,S) -> {noreply,refresh_all(S)};
+handle_info({audio_session_up,#{peer := Peer,session := Session}},S) ->
+    case context(Peer) of
+        {ok,#{session := Session}} ->
+            Cs=maps:get(catalogs,S),
+            Pending=case maps:find(Peer,Cs) of
+                {ok,#{session := Session}} -> Cs;
+                _ -> maps:remove(Peer,Cs)
+            end,
+            {_,Next}=catalog(Peer,S#{catalogs := Pending}),{noreply,Next};
+        _ -> {noreply,S}
+    end;
 handle_info(tick,S) ->
     erlang:send_after(250,self(),tick),
     Catalogs = maps:filter(fun(_,C) -> maps:get(deadline,C)>now_ms() end,maps:get(catalogs,S)),
-    Next = case now_ms()>=maps:get(poll_at,S) of
-        true -> refresh_all(S#{catalogs := Catalogs,poll_at := now_ms()+5000});
-        false -> S#{catalogs := Catalogs}
-    end,
+    Next = S#{catalogs := Catalogs},
     Final = lists:foldl(fun(Id,Acc) -> restore_one(Id,true,Acc) end,Next,maps:keys(maps:get(subscriptions,Next))),
     Recovered=case maps:get(suspended,Final) of
         true -> Final;
@@ -208,7 +218,7 @@ handle_info({publication_rebound,Pid,Offer},#{sources := Sources}=S) ->
                     false -> Acc
                 end
             end,S,maps:to_list(maps:get(providers,S))),
-            {noreply,Next#{sources := Sources#{Key := E#{offer := Offer}}}};
+            {noreply,announce_catalog(Next#{sources := Sources#{Key := E#{offer := Offer}}})};
         _ -> {noreply,reject(S)}
     end;
 handle_info({publication_state,Pid,B},#{sources := Sources} = S) ->
@@ -220,7 +230,8 @@ handle_info({publication_state,Pid,B},#{sources := Sources} = S) ->
             Providers = maps:map(fun(_,R) ->
                 case maps:get(source,R)=:=Key of true -> R#{paused := B};false -> R end
             end,maps:get(providers,S)),
-            {noreply,S#{sources := Sources#{Key := E#{offer := O#{paused := B}}},providers := Providers}};
+            Next=S#{sources := Sources#{Key := E#{offer := O#{paused := B}}},providers := Providers},
+            {noreply,case maps:get(paused,O)=:=B of true -> Next;false -> announce_catalog(Next) end};
         _ -> {noreply,reject(S)}
     end;
 handle_info({'DOWN',_,process,Pid,_},#{control := Pid} = S) -> {stop,normal,S};
@@ -238,7 +249,10 @@ handle_info({'DOWN',Ref,process,Pid,Reason},S) ->
         none -> S
     end,
     Sources = maps:filter(fun(_,#{monitor := M}) -> M=/=Ref end,maps:get(sources,Next)),
-    {noreply,Next#{sources := Sources}};
+    Updated=Next#{sources := Sources},
+    {noreply,case map_size(Sources)=:=map_size(maps:get(sources,Next)) of
+        true -> Updated;false -> announce_catalog(Updated)
+    end};
 handle_info(_,S) -> {noreply,S}.
 
 %% Max individual received-Source level, not a mixed/native speaker measurement.
@@ -252,6 +266,17 @@ receive_meter(Items) ->
                <<"meter_age_ms">> => lists:max([A || {_,A} <- Fresh]),<<"meter_stage">> => <<"receive_max">>}
     end.
 
+incoming(#{peer := Peer},_,#{<<"kind">> := <<"catalog.changed">>},#{catalogs := Cs}=S) ->
+    %% Changes arriving while a snapshot is in flight request one more snapshot,
+    %% rather than losing the event or launching overlapping reads.
+    case maps:find(Peer,Cs) of
+        {ok,#{deadline := Deadline}=C} ->
+            case now_ms()<Deadline of
+                true -> S#{catalogs := Cs#{Peer := C#{dirty => true}}};
+                false -> {_,Next}=catalog(Peer,S#{catalogs := maps:remove(Peer,Cs)}),Next
+            end;
+        error -> {_,Next}=catalog(Peer,S),Next
+    end;
 incoming(#{peer := Peer} = Context,Id,#{<<"kind">> := <<"catalog.read">>},S) ->
     maps:foreach(fun(Key,#{offer := Offer}) ->
         send(Peer,Id,ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer))
@@ -266,10 +291,14 @@ incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.offer"
           paused => maps:get(<<"paused">>,P),profiles => #{channel => D}},
     S#{catalogs := Cs#{Peer := C#{offers := Offers#{Key => O}}}};
 incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.end">>},#{catalogs := Cs,offers := Old} = S) ->
-    #{id := Id,session := Session,deadline := Deadline,offers := Offers} = maps:get(Peer,Cs),true = now_ms()<Deadline,
+    #{id := Id,session := Session,deadline := Deadline,offers := Offers}=C = maps:get(Peer,Cs),true = now_ms()<Deadline,
     Kept = maps:filter(fun({P,_},_) -> P=/=Peer end,Old),
     Added = maps:from_list([{{Peer,K},O} || {K,O} <- maps:to_list(Offers)]),
-    S#{catalogs := maps:remove(Peer,Cs),offers := maps:merge(Kept,Added)};
+    Next=S#{catalogs := maps:remove(Peer,Cs),offers := maps:merge(Kept,Added)},
+    case maps:get(dirty,C,false) of
+        true -> {_,Refreshed}=catalog(Peer,Next),Refreshed;
+        false -> Next
+    end;
 incoming(Context,Id,#{<<"kind">> := <<"subscribe">>} = P,S) -> admit(Context,Id,P,S);
 incoming(Context,Id,#{<<"kind">> := <<"accepted">>} = P,S) ->
     R = maps:get(Id,maps:get(subscriptions,S)),matches(Context,P,R),opening = maps:get(state,R),
@@ -385,6 +414,14 @@ catalog(Peer,#{catalogs := Cs} = S) ->
                 Error -> {Error,S}
             end;
         _ -> {{error,no_session_or_pending},S}
+    end.
+announce_catalog(S) ->
+    case ba_buffee_membership:current() of
+        {ok,#{policy := #{peers := Peers}}} ->
+            [send(Peer,fresh(),#{<<"kind">> => <<"catalog.changed">>}) ||
+                {Peer,Permissions} <- maps:to_list(Peers),lists:member(stream_read,Permissions),
+                not ba_app_session:excluded(Peer)],S;
+        _ -> S
     end.
 refresh_all(S) ->
     case ba_buffee_membership:current() of

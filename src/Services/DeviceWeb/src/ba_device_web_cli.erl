@@ -9,6 +9,7 @@ main() ->
             false -> error(missing_mode)
         end,
         true=not maps:get(monitor,Options,false) orelse maps:get(local_device,Options,false),
+        true=not (maps:get(app,Options,false) andalso maps:get(monitor,Options,false)),
         case maps:get(local_device,Options,false) of
             true ->
                 {ok,_}=application:ensure_all_started(crypto),
@@ -33,7 +34,7 @@ main() ->
         {ok,_}=application:ensure_all_started(ba_device_web),
         URL=binary_to_list(ba_device_web_sup:origin()),
         io:format("BEAM Audio: ~s (~p)~nPress Control-C to stop.~n",[URL,maps:get(mode,Options,device)]),
-        case Open of true -> open_browser(URL);false -> ok end,
+        Browser=case Open of true -> open_browser(URL,maps:get(app,Options,false));false -> none end,
         case maps:get(monitor,Options,false) of
             true ->
                 {Pid,Ref}=spawn_monitor(fun() -> ba_cli_monitor:run_local(#{all => true}) end),
@@ -43,9 +44,18 @@ main() ->
                         receive shutdown -> ok end;
                     shutdown -> ok
                 end;
-            false -> receive shutdown -> ok end
+            false -> receive
+                shutdown -> ok;
+                {Browser,{exit_status,0}} when is_port(Browser) -> ok;
+                {Browser,{exit_status,Code}} when is_port(Browser) -> error({browser_failed,Code})
+            end
         end,
-        application:stop(ba_device_web),halt()
+        application:stop(ba_device_web),
+        case maps:get(local_device,Options,false) of
+            true -> ok=ba_settings:flush(),application:stop(ba_core);
+            false -> ok
+        end,
+        halt()
     catch _:_ ->
         io:format(standard_error,"Cannot start Device Web. Use --assets DIR [--port PORT] (--local-device | --preview | --device-record FILE) [--open].~nCheck that the port is free and the paths/options are valid.~n",[]),
         halt(1)
@@ -58,6 +68,8 @@ options(["--port",Port|Rest],Options,Open) ->
     N=list_to_integer(Port),true=N>=0 andalso N=<65535,options(Rest,Options#{port => N},Open);
 options(["--monitor"|Rest],Options,Open) ->
     options(Rest,Options#{monitor => true},Open);
+options(["--app"|Rest],Options,_) ->
+    options(Rest,Options#{app => true},true);
 options(["--local-device"|Rest],Options,Open) ->
     false=maps:is_key(record,Options),
     false=maps:get(mode,Options,device)=:=preview,
@@ -69,7 +81,7 @@ options(["--device-record",Path|Rest],Options,Open) ->
     options(Rest,Options#{record => filename:absname(Path)},Open);
 options(["--open"|Rest],Options,_) -> options(Rest,Options,true).
 
-open_browser(URL) ->
+open_browser(URL,App) ->
     %% URL is generated from our numeric loopback port, never user shell input.
     case os:type() of
         {unix,darwin} -> os:cmd("open "++URL);
@@ -78,9 +90,14 @@ open_browser(URL) ->
             case Script of
                 false -> os:cmd("cmd /c start \"\" "++URL);
                 _ ->
+                    Extra=case App of true -> ["-App"];false -> [] end,
                     Port=open_port({spawn_executable,ba_settings:env("BA_WEB_POWERSHELL")},
-                        [{args,["-NoLogo","-NoProfile","-ExecutionPolicy","Bypass","-File",Script,URL]},exit_status,hide]),
-                    receive {Port,{exit_status,_}} -> ok after 10000 -> port_close(Port) end
+                        [{args,["-NoLogo","-NoProfile","-ExecutionPolicy","Bypass","-File",Script,URL]++Extra},
+                         {env,ba_native_env:without_secrets()},exit_status,hide]),
+                    case App of
+                        true -> Port;
+                        false -> receive {Port,{exit_status,_}} -> ok after 10000 -> port_close(Port) end
+                    end
             end;
         {unix,_} -> os:cmd("xdg-open "++URL)
     end.

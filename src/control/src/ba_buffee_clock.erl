@@ -89,7 +89,7 @@ init([]) ->
     S = #{clock => D,scope => undefined,role => waiting,view => undefined,reference => Reference,
         pending => #{},upstream => undefined,blocked => false,last_external_start => undefined,next_external => now_ms(),backoff_ms => 30000,
         filter => ba_buffee_clock_filter:new(Count),filter_reference => undefined,
-        born => now_ms(),filter_last_slot => undefined,sample_due => now_ms(),offset_due => now_ms(),connect_due => now_ms(),phase_due => now_ms()+Phase},
+        born => now_ms(),filter_last_slot => undefined,sample_due => now_ms(),offset_due => now_ms(),phase_due => now_ms()+Phase},
     erlang:send_after(100,self(),tick),{ok,save(S)}.
 handle_call({offset,Value,Expected},From,S) when is_integer(Value),Value>=5,Value=<30000 ->
     case {maps:get(role,S),ba_session_privileges:may_edit_settings(maps:get(local_permissions,maps:get(view,S,#{}),[])),revision(Expected,S)} of
@@ -196,11 +196,9 @@ follow(#{view := V} = S) ->
                     A = periodic(<<"sample.request">>,sample_due,#{<<"t1">> => ns(mono())},S),
                     periodic(<<"offset.get">>,offset_due,#{},A);
                 _ ->
-                    Next = invalidate(S),
-                    case now_ms()>=maps:get(connect_due,Next) of
-                        true -> _ = ba_buffee_control:connect(Authority),Next#{connect_due := now_ms()+1000};
-                        false -> Next
-                    end
+                    %% The control owner connects every admitted peer pair.
+                    %% A second initiator here can collide with its handshake.
+                    invalidate(S)
             end
     end.
 periodic(Kind,Due,Extra,S) ->

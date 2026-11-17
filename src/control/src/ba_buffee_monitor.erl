@@ -25,10 +25,10 @@ read(Self,Self,Metrics) ->
     end;
 read(Peer,_,Metrics) ->
     try
-        %% A passive observer still needs an authenticated session to each peer.
+        %% The control owner maintains authenticated peer connections.
         case ba_buffee_control:audio_context(Peer) of
             {ok,_} -> fetch(Peer,Metrics);
-            _ -> ba_buffee_control:connect(Peer),#{id => Peer,state => connecting}
+            _ -> #{id => Peer,state => connecting}
         end
     catch exit:_ -> #{id => Peer,state => unavailable} end.
 fetch(Peer,Metrics) ->

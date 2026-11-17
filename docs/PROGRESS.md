@@ -1,5 +1,129 @@
 # Current implementation and validation
 
+## BESTSESSION2 live monitor and stale Admin display — 2026-11-17
+
+Read-only snapshots from the user's current browser and EXE backends confirm
+both target 94275F980055429F7368BCCCE0DA59BE, with distinct Device identities.
+Both Reception connections are authenticated/error-free, membership is waiting,
+privileges are empty, rejected messages are zero and backend Device lists are
+empty. A disposable Windows observer ran production ba_cli_monitor:run_local
+three times using the supplied invitation (no audio, chat or privilege changes).
+Every sample remained discovering/waiting; an explicit Reception lookup of the
+invitation admission mailbox returned zero active advertisers. This establishes
+an unavailable invitation admission route, not proof of a particular remote
+Device being powered off. Current fresh-join code cannot discover/admit the two
+waiting Devices to one another without an existing grant-holder introduction.
+That centralized admission dependency remains; it was not bypassed or redesigned.
+
+The apparent Admin privileges were a distinct UI error: cached offline rows were
+keyed by UI slot only and survived switching from the previously created Session
+to this different Session. The row cache is now scoped to the actual Session ID;
+the local row derives current privileges from its own backend snapshot, including
+while the authenticated member list is still empty. Offline rows remain within
+the same Session. No actual privileges/persistence were changed. 27 frontend
+tests and four headless browser regression scenarios pass, including the exact
+old-Admin -> waiting-Join transition. Web/Windows assets rebuilt.
+
+The diagnostic observer stopped after the bounded check. Its redacted output is
+in builds/intermediates/session-monitor/monitor.log; the invitation input was
+removed afterwards. Existing user runtimes/Sessions were left running unchanged.
+
+
+## Shared device-row flicker and invitation routing — 2026-11-17
+
+The oversized black symbols were the ordinary on-air/speaker SVGs briefly
+rendered without CSS. OsDevice replaced its entire shadow root, including the
+stylesheet link, when state changed; outer Session-row refreshes also replaced
+Device elements. The component now creates its DOM/stylesheet once and updates
+text, visibility and attributes in place. SVG presentation attributes bound size
+and outline rendering even when CSS is delayed or unavailable. Device/Session
+row reconciliation patches existing light-DOM nodes, retaining custom elements,
+disclosures and focused actions. The stylesheet URL is relative to the module
+for bundled hosts as well as HTTP.
+
+Read-only checks of the user's two local backends confirmed distinct Device
+identities and distinct Session IDs (7882… and 2FF4…), both Sessions named with
+the pasted invitation URL. Both were creators of their own separate Session;
+this was not automatic recreation of the invited Session. Existing Sessions,
+privileges and persistence were left untouched at the user's request. The opening
+dialog now identifies invitation input and switches visibly to Join, retaining
+the complete link instead of truncating it to the old 100-character name limit.
+Normal names still create through the existing API and backend validation.
+
+Validation: 26 frontend tests pass. An isolated real headless Chromium check
+passes 50 rapid state changes with delayed CSS, 80 row updates with CSS returning
+503 (stable Device/style/action nodes and keyboard focus), and the actual opening
+form sending Join, never Create, for a long invitation. No runtime exceptions.
+Windows and Web assets are rebuilt from the shared sources. Existing running
+windows require reload/relaunch; existing wrongly named Sessions are not migrated
+automatically. No admin-persistence or admission-policy redesign was made.
+
+
+## Audio catalogue events and clickable Windows build — 2026-11-17
+
+Removed the unconditional five-second peer catalogue query. Sources send
+`catalog.changed` on registration, source process exit, pause change and rebound.
+Receivers fetch on notification or authenticated peer-up; startup reads the
+initial state of established peers once. An in-flight snapshot remembers/coalesces
+later changes; bootstrap/peer-up do not duplicate an already-pending read. These
+are signed audio-control messages with the same session, identity and replay
+checks. Existing wire shapes/domains remain; old publishers need updating to emit
+notifications. No Reception change or general Manager request board is included.
+
+32 focused EUnit tests cover idle ticks with no network catalogue reads, initial
+state/reconnection, notification coalescing, publication lifecycle, exact wire
+shape, signed delivery/replay rejection and existing restore behavior. Local
+reconciliation/retry timers, UI sampling and clock/lease maintenance remain;
+this is not a claim of an entirely event-driven runtime or physical playback.
+
+OpenSound/Build.cmd is the requested double-click build. All Windows packaging
+logic now lives in build.py; Bash and optional PowerShell entries delegate to it.
+Verified Build.cmd end to end, Git Bash build/tests, a fresh MSVC launcher and
+identity-helper compilation, six DeviceWeb HTTP/API tests, 25 frontend tests and
+the packaged Windows local three-Device/restart/concurrent-Session check. User
+computer control remains stopped; no new visual or audio hardware test occurred.
+
+
+## Windows shared frontend and mesh repair — 2026-11-17
+
+OpenSound Windows uses exactly the shared Web assets and the common
+`buffee_control`/DeviceWeb API, in an installed Chrome/Edge app process. Removed
+its wx UI/model/chart/supervisor sources and obsolete model tests. Thin Win32 and
+Erlang hosts retain existing Credential Manager keys, slot lease and state paths.
+Browser subprocesses do not inherit the identity seed; app-process exit flushes
+settings and stops the runtime. Web development DPAPI slots remain separate.
+
+Found/repaired: only clock-authority pairs connected automatically; other pairs
+needed the optional monitor. The control owner now connects all admitted online
+peer pairs with one deterministic initiator. Clock/monitor duplicate initiation
+is removed. This is mesh establishment, not the proposed request-board/admission
+redesign. Synchronous cross-peer/cross-Session coupling remains in other paths;
+see PLAN.md's concurrency audit.
+
+Validation on Windows: package compilation; six applicable DeviceWeb EUnit tests
+(Unix socket bridge omitted); 25 frontend tests; 35 signed-control/clock tests;
+`tests/Windows/shared-web-smoke.py` passes isolated app shutdown/settings and
+secret-environment checks, three-Device visibility without a monitor, local chat,
+member and creator restarts, old invitation/new Device, two concurrent Sessions
+and repeat-Join deduplication. The local Reception needed recompiling stale
+artifacts first. Test clocks use system time and Reception is loopback-only.
+
+The supplied BESTSESSION2 invitation parsed and local Join returned success;
+public Reception authenticated, but remote admission remained waiting. No
+particular Device's online state/version was established. A broad public test
+Session/chat run was rejected by automatic approval review; it was replaced by
+local tests. Only the user's specific invitation was tested publicly, without
+chat or privilege changes. No Reception deployment occurred.
+
+The app window was observed, but Edge account onboarding prevented complete
+visual interaction; the user stopped computer control with Escape. Chrome is
+now preferred when installed. Browser-window closure and existing native
+credential restoration have not received full visual acceptance. Native Windows
+capture/playback remain unconfigured in the shared profile; the old metering
+input/autonomous output do not meet its shared PCM/revocation contract. No
+physical playback or speaker timing claim is made.
+
+
 ## Implemented
 
 - Trusted independent ownership and Chef/Guest roles; multiple Owners, explicit

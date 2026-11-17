@@ -7,7 +7,9 @@ web_test_() ->
          ?_test(origin_and_token(C)),
          ?_test(command_boundary(C)),
          ?_test(preview_is_isolated(C)),
-         ?_test(socket_bridge(C)),
+         %% The transitional CLI socket bridge is Unix-only. Windows apps use
+         %% the direct Device API exercised below.
+         case os:type() of {win32,_} -> [];_ -> ?_test(socket_bridge(C)) end,
          ?_test(direct_device(C)),
          ?_test(listener_lifecycle(C))]
     end}.
@@ -19,7 +21,7 @@ setup() ->
     {ok,_}=application:ensure_all_started(inets),
     {ok,_}=application:ensure_all_started(cowboy),
     Dir=filename:join([Root,"builds/intermediates/DeviceWeb",
-        "test-"++integer_to_list(erlang:unique_integer([positive]))]),
+        "test-"++binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(8)))]),
     ok=filelib:ensure_dir(filename:join(Dir,"index.html")),
     ok=file:write_file(filename:join(Dir,"index.html"),<<"<!doctype html><title>Test UI</title>">>),
     ok=file:write_file(filename:join(Dir,"state.mjs"),<<"export const test = true;">>),
@@ -188,7 +190,8 @@ direct_device(#{dir := Dir}=C) ->
         ?assertEqual(2,length(maps:get(<<"sessions">>,ListingReply))),
         {200,_,Scoped}=post(URL,#{method => capability,session => Tab,capability => microphone,enabled => true}),
         ?assertEqual(true,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Scoped)))),
-        ?assertEqual(false,maps:get(microphone,ba_device_config:consent())),
+        %% Resource consent is Device-wide, shared by all Session clients.
+        ?assertEqual(true,maps:get(microphone,ba_device_config:consent())),
         CloseRequest = <<"close-tab-request">>,
         {200,_,Closed}=post(URL,#{method => close_session,session => Tab,request_id => CloseRequest}),
         ClosedReply=json:decode(Closed),

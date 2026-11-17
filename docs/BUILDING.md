@@ -92,25 +92,21 @@ Unsigned compilation does not install the app or prove playback.
 
 ## Windows
 
-From BEAM-Audio in a Windows developer terminal:
+Prepare Windows OTP/rebar3 with `scripts/platforms/Windows/setup.ps1` in
+BEAM-Audio. From the OpenSound checkout, double-click **Build.cmd**. The build
+window reports success/failure and waits for a key. Open the output at
+`builds/Windows/OpenSound/OpenSound.exe`.
 
-```powershell
-.\scripts\platforms\Windows\setup.ps1
-python scripts/platforms/Windows/setup-native.py
-.\scripts\platforms\Windows\prepare-transport.ps1
-python scripts/platforms/Windows/prepare-audio.py
-```
+`build.py` is the single Python backend. Optional terminal usage:
+`python build.py --test` or Git Bash `./build.sh windows --test`. PowerShell
+entry points delegate to the same backend. The build and a fresh MSVC launcher/
+identity-helper compilation were validated on Windows.
 
-Then from OpenSound:
-
-```powershell
-.\src\Apps\Windows\build.ps1 -Transport Native
-.\builds\Windows\OpenSound\OpenSound.exe
-```
-
-Windows requires its own OTP, native NIF and GStreamer artifacts; Mac/iOS binaries
-are not reusable there. Packaging uses core sources/caches, with final app output
-in OpenSound/builds. The Windows build must be run on Windows.
+Windows packages the shared frontend and `buffee_control` through DeviceWeb in
+an installed Chrome/Edge window. Python, Windows OTP/rebar3 and Visual Studio
+C++ tools are required; no native transport NIF or GStreamer/Python audio build
+is needed for this control/UI target. Native audio still needs shared PCM/consent
+integration. See the [Windows guide](../../OpenSound/docs/Windows/README.md).
 
 ## Ownership and checks
 
