@@ -96,7 +96,17 @@ await_admission(Name,Until,LastState) ->
 loop(Name,A,Metrics,Plain,Instances,Names) ->
     Now=erlang:monotonic_time(millisecond),
     Skip=[Id || {Id,#{retry := Until}} <- maps:to_list(Plain),Now<Until],
-    R=monitor_request(Name,#{<<"method">> => <<"monitor">>,<<"metrics">> => Metrics,<<"plain">> => Skip}),
+    %% A watch outlives one failed read: show it and try again on the next tick.
+    try monitor_request(Name,#{<<"method">> => <<"monitor">>,<<"metrics">> => Metrics,<<"plain">> => Skip}) of
+        R -> show(R,Name,A,Metrics,Plain,Instances,Names,Now)
+    catch throw:{cli_error,_,Detail} when not (is_map_key(once,A) andalso map_get(once,A) =:= true) ->
+        io:put_chars(["Device read failed, retrying: ",safe(error_text(Detail)),"\n"]),
+        receive stop_monitor -> ok after maps:get(interval,A,1000) -> loop(Name,A,Metrics,Plain,Instances,Names) end
+    end.
+error_text(#{error := E}) when is_binary(E) -> E;
+error_text(#{error := E}) -> iolist_to_binary(io_lib:format("~p",[E]));
+error_text(_) -> <<"unknown error">>.
+show(R,Name,A,Metrics,Plain,Instances,Names,Now) ->
     Raw=maps:get(<<"result">>,R),
     Rows=[case maps:get(<<"name">>,Row,maps:get(maps:get(<<"id">>,Row),Names,<<>>)) of
         <<>> -> Row;N -> Row#{<<"name">> => N}
