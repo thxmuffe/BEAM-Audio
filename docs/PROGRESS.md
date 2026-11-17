@@ -764,3 +764,12 @@ service failed: the clone did not carry the Dockerfile path, and the new route
 needs the commits pushed. Tests: Reception ExUnit (both paths), core, frontend
 and Swift pass; one intermittent core EUnit failure was seen once and not
 reproduced in five further runs.
+
+Reception live (2026-11-17): Render service `beamaudio` (srv-dbu7fih42hec73bpsjv0,
+free plan, Frankfurt, auto-deploy off) recreated with the CLI after both old
+services were deleted; root directory `src/Services/ReceptionDesk`, which is now
+the Docker context. Commit 9dd9f9f is live. `/health` answers, `/reception` and
+`/relay/v1` both upgrade to WebSocket, and `session-restart-smoke.py --url
+wss://beamaudio.onrender.com/reception` passes (two Devices link, both restart,
+relink, chat). `buffee-control-smoke.py` no longer matches the probe's API after
+the join-model change and was not run; `public-smoke.py` needs the Windows bundle.

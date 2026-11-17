@@ -2,6 +2,7 @@
 
 The member knocks through the invitation link's mailbox, which the creator
 re-registers on every start; chat flows again afterwards."""
+import argparse
 import importlib.util
 from pathlib import Path
 import shutil
@@ -27,22 +28,25 @@ def until(what, check, seconds=60):
         time.sleep(.2)
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--url', help='use this Reception (e.g. wss://beamaudio.onrender.com/reception) instead of a local one')
+    args = parser.parse_args()
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
     output = control.ROOT / 'builds/intermediates/buffee-control-check'
     output.mkdir(parents=True, exist_ok=True)
     subprocess.run([shutil.which('erlc'), '-Werror', '-o', str(output), str(HERE / 'ba_buffee_control_probe.erl')], check=True)
     paths = [output, *(control.ROOT / 'builds/intermediates/control/default/lib').glob('*/ebin')]
-    devices = []; desk = relay.start_desk(port)
+    devices = []; desk = None if args.url else relay.start_desk(port)
     try:
         with tempfile.TemporaryDirectory() as state:
             def device(name, seed=None):
                 d = control.Runtime(paths, seed=seed, state=str(Path(state) / name)); devices.append(d)
                 d.request('configure_app'); d.request('start_app'); return d
             api = lambda d, **r: d.request('api', request=r)
-            url = f'ws://127.0.0.1:{port}/relay/v1'
+            url = args.url or f'ws://127.0.0.1:{port}/relay/v1'
             a = device('creator')
-            assert api(a, method='create_buffee', name='Restart test', desks=[url]).get('error') is None
+            made = api(a, method='create_buffee', name='Restart test', desks=[url]); assert made.get('error') is None, made.get('error')
             link = until('invitation', lambda: (lambda r: r.get('result') if isinstance(r.get('result'), str) else None)(api(a, method='invitation')))
             b = device('member')
             assert api(b, method='join_buffee', invitation=link).get('error') is None
@@ -59,7 +63,7 @@ def main():
             print('PASS: both Devices restarted with new mailboxes; the member knocked via the link, was let back in, linked, and chat flows')
     finally:
         for d in devices: d.close()
-        desk.terminate(); desk.wait(timeout=5)
+        if desk: desk.terminate(); desk.wait(timeout=5)
 
 if __name__ == '__main__':
     main()
