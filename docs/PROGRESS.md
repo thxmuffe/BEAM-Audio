@@ -1,5 +1,17 @@
 # Current implementation and validation
 
+## Planning handoff to Mac — 2026-11-17
+
+The user approved Reception-based peer discovery, Manager coordination separate
+from privileges, and ordinary ("guest") participation on every Join. Joining
+an empty Session never creates Admin; administrative authority must come from
+an explicit grant rooted in the original creator. Persistent-admin design is
+deferred. The accepted requirements, implementation order, live reproduction
+and acceptance checks are at the top of PLAN.md. This handoff changes documents
+only; the central admission dependency is still unfixed. Both checkout working
+trees remain local/uncommitted, with no push or transfer to Mac performed.
+
+
 ## BESTSESSION2 live monitor and stale Admin display — 2026-11-17
 
 Read-only snapshots from the user's current browser and EXE backends confirm

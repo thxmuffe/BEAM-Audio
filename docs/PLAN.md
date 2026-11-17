@@ -1,5 +1,98 @@
 # Current plan
 
+## Agreed next work / Mac handoff — 2026-11-17
+
+This is the user's accepted model and supersedes earlier admission proposals
+below. Planning only in this increment: the actual joining blocker is NOT fixed.
+
+### Required behavior
+
+1. A Device contacts Reception using the invitation to discover/access the
+   Devices participating in that Session. Discovery must not require the
+   original creator, an online administrator or an administrator-only mailbox.
+   Reception stays an opaque authentication/introduction/routing service; it
+   does not decide privileges or interpret Session application policy.
+2. When other Devices are present, one of them hosts the Session's Manager.
+   Find that Manager through the available peers. Manager is a coordination
+   process, separate from administrative privilege: hosting or replacing it
+   never grants Admin. Its lifecycle must not recreate the old creator gate.
+3. Join itself always establishes ordinary (the user's word: "guest")
+   participation, with no administrative privilege. An empty Session does not
+   promote the first arrival, turn a joiner into a creator, or justify creating
+   a replacement Session with new rights. Preserve the invitation's Session ID.
+4. Admin is an explicit privilege rooted in the original creator and given
+   through legitimate explicit delegation. Possessing an invitation, finding
+   no peers, hosting Manager or being first online supplies no such delegation.
+   Use the existing `grant` privilege vocabulary in implementation; "guest"
+   here means an ordinary Device, not a newly introduced role system.
+5. Local participation, discovery, individual peer authentication, Manager
+   coordination and privilege grants are distinct concerns. Each connection
+   proceeds independently; an absent, incompatible or failing Device/Session
+   must not stall other available peers or Sessions. If no peers are online,
+   retain the joined Session and react when peers appear.
+6. Use messages/change notifications for discovery and work announcements,
+   following established patterns/libraries. The request board describes
+   application work (e.g. subscribe/play), not a new prerequisite for joining.
+   Devices create their own subscriptions under local consent. Manager
+   placement and Session privileges never override that consent.
+
+### Scope and order on Mac
+
+First separate Session-scoped Reception discovery from the existing
+`ba_buffee_membership:discover/1` -> grant-holder passport chain. Verify the
+invitation/Device identity with the existing security boundary while making
+ordinary participation independent of receiving an administrative grant.
+Evaluate established membership/discovery mechanisms before extending bespoke
+protocol machinery. Keep Reception small; do not silently change signed domains,
+wire/storage constants or deploy a service to hide an application-layer gate.
+
+Then connect peer discovery to the Manager lifecycle and independent per-peer
+connections. Make UI state report actual participation/reachability and the
+Device's actual privileges. Do not solve persistent-admin storage, recovery,
+revocation history or ownership succession in this increment; that design was
+explicitly deferred. No automatic Admin bootstrap is an acceptable workaround.
+
+After discovery/admission works, finish the planned Manager notification ->
+Device-local decision -> subscription flow. Catalogue change notifications are
+already implemented; the general Manager playback-request board is not.
+
+### Acceptance checks
+
+- Original creator and every Admin offline: two unprivileged Devices join the
+  same existing invitation, discover one another and exchange permitted basic
+  control/chat. Neither gains `grant`, `on_air` or `end_session` from joining.
+- Empty Session: first Device joins as ordinary, keeps the exact Session ID,
+  and later discovers another joiner without automatic administrative rights.
+- Available peers expose the Manager; hosting or moving Manager does not
+  change privileges. Its discovery/recovery does not block ordinary Join.
+- One peer is unavailable/incompatible: other peer connections and a second
+  concurrent Session continue. Returning peers are handled through events.
+- Explicit administrative grants remain distinct and require legitimate
+  authority rooted in the original creator. No persistent-admin redesign is
+  claimed or required for these basic guest-participation checks.
+
+### Current evidence and checkout state
+
+BESTSESSION2: `94275F980055429F7368BCCCE0DA59BE`. Both Windows backends and an
+independent production CLI-monitor observer connected to Reception successfully,
+then stayed discovering/waiting with no admitted peers or privileges. The
+invitation's admission mailbox had zero active advertisers. This is the live
+reproduction of the gate to remove, not proof that Reception transport is down.
+
+The previous Admin badge was a UI cache leak from another Session, now fixed.
+27 frontend tests and four isolated Chromium scenarios pass. Shared frontend
+flicker/invitation-routing fixes, Windows packaging and catalogue notifications
+are already in the working trees. Windows uses shared Web assets, Build.cmd
+and one Python build backend; native Windows audio is still unintegrated.
+No running user Session/privileges were modified by the monitor or UI repair.
+
+Both BEAM-Audio and OpenSound have local uncommitted changes. This update does
+not commit, push, transfer files, rebuild Apple apps or change runtime behavior.
+Carry both checkout changes to the Mac before continuing; read this section and
+PROGRESS.md there first. Implement and validate the remaining shared-runtime
+work on Mac; do not start by rewriting the completed Windows/UI repairs.
+
+
 ## Latest observed blocker — 2026-11-17
 
 The user's two Windows Devices now target the same BESTSESSION2 ID. Live
