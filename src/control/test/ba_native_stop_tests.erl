@@ -8,9 +8,22 @@ end,fun(S) -> ?assertEqual(ok,ba_native_stop:socket(S,<<4>>,<<4>>)) end).
 socket_eof_is_not_ack_test() -> peer(fun(S) ->
     {ok,<<4>>}=gen_tcp:recv(S,0,1000)
 end,fun(S) -> ?assertEqual({error,native_stop_unconfirmed},ba_native_stop:socket(S,<<4>>,<<4>>)) end).
-port_eof_is_not_ack_test() ->
-    P=open_port({spawn_executable,"/usr/bin/true"},[binary,{packet,4},exit_status]),
-    ?assertMatch({error,_},ba_native_stop:port(P,<<4>>,<<4>>)).
+%% The helper's own exit (seen through waitpid) proves it stopped.
+port_exit_confirms_stop_test() ->
+    P=open_port({spawn_executable,"/bin/sleep"},[binary,{packet,4},exit_status,{args,["0.2"]}]),
+    ?assertEqual(ok,ba_native_stop:port(P,<<4>>,<<4>>)).
+%% A helper that never answers is killed, and confirmed only by its exit.
+port_silent_helper_is_killed_test_() -> {timeout,10,fun() ->
+    P=open_port({spawn_executable,"/bin/sleep"},[binary,{packet,4},exit_status,{args,["30"]}]),
+    {os_pid,OsPid}=erlang:port_info(P,os_pid),
+    ?assertEqual(ok,ba_native_stop:port(P,<<4>>,<<4>>)),
+    ?assertEqual("",string:trim(os:cmd("ps -o pid= -p "++integer_to_list(OsPid))))
+end}.
+%% A port already gone (its exit consumed elsewhere) cannot confirm anything.
+port_closed_is_not_ack_test() ->
+    P=open_port({spawn_executable,"/bin/sleep"},[binary,{packet,4},exit_status,{args,["30"]}]),
+    port_close(P),
+    ?assertEqual({error,native_stop_unconfirmed},ba_native_stop:port(P,<<4>>,<<4>>)).
 peer(Server,Client) ->
     {ok,L}=gen_tcp:listen(0,[binary,{packet,4},{active,false},{ip,{127,0,0,1}}]),
     {ok,{_,Port}}=inet:sockname(L),Parent=self(),

@@ -74,18 +74,17 @@ try:
         member = runtime('member', seed)
         fresh = member.request('start_app')
         assert fresh['buffee'] == {'state': 'idle'} and fresh['connection'] == {'state': 'idle'}
-        # Restarting a Owner must not manufacture a new gathering under the old name.
+        # A grant holder's restart returns to the same Session through its link.
         owner_seed = owner.seed
         owner.close()
         for platform in ('mac', 'ios'):
             owner = runtime('owner', owner_seed, platform=platform)
             # Plain application startup, before any bridge/UI configure call.
-            ended = owner.request('start_runtime')
-            assert ended['buffee'] == {'state': 'idle'}
-            assert ended['connection']['state'] == 'ended'
-            assert ended['connection']['name'] == 'Test gathering'
+            restarted = owner.request('start_runtime')['connection']
+            assert restarted['state'] in ('joined', 'rejoining'), restarted
+            assert restarted['name'] == 'Test gathering' and restarted['buffee'] == old['buffee']
             owner.close()
-        print('PASS: OTP immediately restores participant from saved Passport; same membership and Buffee; private storage; revocation still enforced; explicit Leave clears intent; Owner restart explains ended gathering; no UI or audio')
+        print('PASS: OTP immediately restores participant from its saved link and policy; same Buffee; private storage; revocation still enforced; explicit Leave clears intent; grant holder restart returns to the same Session; no UI or audio')
 finally:
     for r in runtimes:
         r.close()

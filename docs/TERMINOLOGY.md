@@ -21,8 +21,9 @@ Device asks, and a `grant` holder answers. A `grant` holder's own request needs
 nobody else. Creating a Session is the one grant nobody approves: the creating
 Device starts with all three. `grant` is the root privilege, since its holder
 can give itself any other; `end_session` is separate so that ending is a
-deliberate step, not a security boundary against a `grant` holder. A returning
-Device gets its privileges back from its saved Device-identity passport.
+deliberate step, not a security boundary against a `grant` holder. Holding the
+Session's link is what lets a Device participate; there is no separate passport.
+A returning Device gets its privileges back from the signed policy it saved.
 
 **On air** is a state, not a title. The privilege says a Device may go on air;
 the Device's own user chooses when it is on air. Going off air keeps the

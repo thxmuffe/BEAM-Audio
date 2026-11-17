@@ -1,77 +1,98 @@
 -module(ba_buffee_passport_tests).
 -include_lib("eunit/include/eunit.hrl").
-fixture() ->
-    {Pub,Key}=crypto:generate_key(eddsa,ed25519),A=binary:encode_hex(Pub),
-    B=binary:copy(<<"B">>,64),Buffee=binary:copy(<<"A">>,32),
-    Pass=#{<<"v">>=>1,<<"type">>=><<"passport">>,<<"buffee">>=>Buffee,
-           <<"authority">>=>A,<<"device">>=>B,<<"membership">>=>Buffee,<<"epoch">>=>1},
-    {A,B,Buffee,Key,Pass}.
-passport_binding_test() ->
-    {A,B,Buffee,Key,P}=fixture(),Packet=ba_buffee_passport:sign(P,Key),
-    ?assertEqual(P,ba_buffee_passport:passport(Packet,A,B,Buffee)),
-    ?assertException(error,_,ba_buffee_passport:passport(Packet,A,A,Buffee)),
-    ?assertException(error,_,ba_buffee_passport:passport(Packet,A,B,binary:copy(<<"C">>,32))),
-    ?assertException(error,_,ba_buffee_passport:verify(Packet,B)),
-    ?assertException(error,_,ba_buffee_passport:passport(ba_buffee_passport:sign(P#{<<"epoch">>:=0},Key),A,B,Buffee)).
+-define(URL,<<"ws://127.0.0.1:4000/relay/v1">>).
+key() -> {Pub,Key}=crypto:generate_key(eddsa,ed25519),{binary:encode_hex(Pub),Key}.
+invitation(Creator,Key) ->
+    Nonce=binary:copy(<<"A">>,32),
+    I=#{<<"v">>=>1,<<"type">>=><<"invitation">>,<<"name">>=><<"Test gathering">>,<<"authority">>=>Creator,
+        <<"nonce">>=>Nonce,<<"buffee">>=>ba_buffee_passport:session_id(Creator,Nonce),
+        <<"secret">>=>binary:copy(<<"B">>,64),<<"desks">>=>[?URL]},
+    {I,ba_buffee_passport:sign(I,Key)}.
+
 strict_decode_test() ->
     ?assertException(error,_,ba_buffee_passport:decode(<<"{\"x\":1,\"x\":2}">>)),
     ?assertException(error,_,ba_buffee_passport:decode(binary:copy(<<"x">>,32769))),
     ?assertException(error,_,ba_buffee_passport:parse_invitation(<<"beamaudio://buffee/v2?cookie=old">>)).
-policy_separates_permission_test() ->
-    {A,B,Buffee,_,_}=fixture(),
-    P=#{<<"v">>=>1,<<"type">>=><<"policy">>,<<"buffee">>=>Buffee,<<"authority">>=>A,
-        <<"manager">>=>A,<<"epoch">>=>1,<<"revision">>=>1,
-        <<"members">>=>#{A=>#{<<"membership">>=>Buffee,<<"permissions">>=>[]},
-                         B=>#{<<"membership">>=>Buffee,<<"permissions">>=>[]}}},
-    ?assertEqual(#{B=>[]},maps:get(peers,ba_buffee_passport:runtime_policy(P,A))),
+
+link_names_its_creator_test() ->
+    {A,Key}=key(),{I,Packet}=invitation(A,Key),Link=ba_buffee_passport:invitation(Packet),
+    ?assertMatch(<<"beamaudio://session/v5?",_/binary>>,Link),
+    ?assertEqual({Packet,I},ba_buffee_passport:parse_invitation(Link)),
+    %% The Session ID must follow from the signer's key: no squatting another ID.
+    {B,BKey}=key(),
+    Squat=ba_buffee_passport:invitation(ba_buffee_passport:sign(I#{<<"authority">> := B},BKey)),
+    ?assertException(error,_,ba_buffee_passport:parse_invitation(Squat)),
+    Forged=ba_buffee_passport:invitation(ba_buffee_passport:sign(I,BKey)),
+    ?assertException(error,_,ba_buffee_passport:parse_invitation(Forged)),
+    %% Tampering with the signature or the body is refused.
+    #{query := Q}=uri_string:parse(Link),[{<<"ticket">>,Ticket}]=uri_string:dissect_query(Q),
+    Raw=base64:decode(Ticket,#{mode => urlsafe,padding => false}),
+    <<First,Rest/binary>>=Raw,N=byte_size(Raw)-1,<<Prefix:N/binary,Last>>=Raw,
+    [?assertException(error,_,ba_buffee_passport:parse_invitation(<<"beamaudio://session/v5?ticket=",
+        (base64:encode(Bad,#{mode => urlsafe,padding => false}))/binary>>))
+        || Bad <- [<<(First bxor 1),Rest/binary>>,<<Prefix/binary,(Last bxor 1)>>]],
+    %% Earlier formats named the inviter; they are no longer accepted.
+    ?assertException(error,_,ba_buffee_passport:parse_invitation(binary:replace(Link,<<"/v5">>,<<"/v4">>))),
+    ?assertException(error,_,ba_buffee_passport:parse_invitation(binary:replace(Link,<<"beamaudio:">>,<<"https:">>))).
+
+mailbox_and_proof_depend_on_the_secret_test() ->
+    S1=binary:copy(<<"B">>,64),S2=binary:copy(<<"C">>,64),
+    ?assertNotEqual(ba_buffee_passport:mailbox(S1),ba_buffee_passport:mailbox(S2)),
+    ?assertEqual(32,byte_size(ba_buffee_passport:mailbox(S1))),
+    P=[<<"joiner">>,<<"X">>,<<"A">>,<<"B">>],
+    ?assertNotEqual(ba_buffee_passport:proof(S1,P),ba_buffee_passport:proof(S2,P)),
+    ?assertNotEqual(ba_buffee_passport:proof(S1,P),ba_buffee_passport:proof(S1,[<<"joiner">>,<<"X">>,<<"B">>,<<"A">>])).
+
+genesis_and_participant_permissions_test() ->
+    {A,Key}=key(),{I,_}=invitation(A,Key),B=binary:copy(<<"B">>,64),
+    G=ba_buffee_passport:genesis(I,[<<"status_read">>]),
+    ?assertEqual(ok,ba_buffee_passport:policy(G)),?assertEqual(0,maps:get(<<"revision">>,G)),
+    ?assert(ba_session_privileges:has(grant,A,G)),
+    ?assertEqual(#{B=>[status_read]},maps:get(peers,ba_buffee_passport:runtime_policy(G,A,#{A=>[],B=>[<<"status_read">>]}))),
+    ?assertException(error,_,ba_buffee_passport:policy(G#{<<"removed">> := [A]})),
     ?assertException(error,_,ba_buffee_passport:permissions([<<"spawn">>])),
     ?assertException(error,_,ba_buffee_passport:permissions([<<"status_read">>,<<"status_read">>])).
-invitation_scope_without_expiry_test() ->
-    {A,_,Buffee,Key,_}=fixture(),URL = <<"ws://127.0.0.1:4000/relay/v1">>,
-    I=#{<<"v">>=>1,<<"type">>=><<"invitation">>,<<"name">>=><<"Test gathering">>,<<"authority">>=>A,<<"buffee">>=>Buffee,
-        <<"invite">>=>Buffee,<<"secret">>=>binary:copy(<<"A">>,64),
-        <<"expires">>=>erlang:system_time(second)+60,<<"desks">>=>[URL],
-        <<"route">>=>#{<<"desk">>=>URL,<<"mailbox">>=>Buffee}},
-    Packet=ba_buffee_passport:sign(I,Key),Link=ba_buffee_passport:invitation(Packet),
-    ?assertEqual({Packet,I},ba_buffee_passport:parse_invitation(Link)),
-    ?assertMatch(<<"beamaudio://session/v4?",_/binary>>,Link),
-    #{query := Q}=uri_string:parse(Link),[{<<"ticket">>,Ticket}]=uri_string:dissect_query(Q),
-    <<First,Rest/binary>>=base64:decode(Ticket,#{mode => urlsafe,padding => false}),
-    Bad=base64:encode(<<(First bxor 1),Rest/binary>>,#{mode => urlsafe,padding => false}),
-    ?assertException(error,_,ba_buffee_passport:parse_invitation(<<"beamaudio://session/v4?ticket=",Bad/binary>>)),
-    Raw=base64:decode(Ticket,#{mode => urlsafe,padding => false}),
-    N=byte_size(Raw)-1,<<Prefix:N/binary,Last>>=Raw,
-    BadBody=base64:encode(<<Prefix/binary,(Last bxor 1)>>,#{mode => urlsafe,padding => false}),
-    ?assertException(error,_,ba_buffee_passport:parse_invitation(<<"beamaudio://session/v4?ticket=",BadBody/binary>>)),
-    ?assertException(error,_,ba_buffee_passport:parse_invitation(<<"beamaudio://session/v4?ticket=AA">>)),
-    ?assertException(error,_,ba_buffee_passport:parse_invitation(binary:copy(<<"x">>,32769))),
-    Legacy = <<"beamaudio://buffee/v3?",(uri_string:compose_query([{<<"ticket">>,base64:encode(Packet)}]))/binary>>,
-    ?assertEqual({Packet,I},ba_buffee_passport:parse_invitation(Legacy)),
-    ?assert(byte_size(Link)<byte_size(Legacy)*0.75),
-    io:format("Invitation lengths: legacy=~B compact=~B~n",[byte_size(Legacy),byte_size(Link)]),
-    ?assertEqual({Packet,I},ba_buffee_passport:parse_invitation(binary:replace(Legacy,<<"beamaudio:">>,<<"beamaudio:">>))),
-    ?assertException(error,_,ba_buffee_passport:parse_invitation(binary:replace(Link,<<"beamaudio:">>,<<"https:">>))),
-    Expired=ba_buffee_passport:invitation(ba_buffee_passport:sign(I#{<<"expires">>:=1},Key)),
-    ?assertMatch({_,#{<<"expires">> := 1}},ba_buffee_passport:parse_invitation(Expired)),
-    Unlimited=ba_buffee_passport:invitation(ba_buffee_passport:sign(I#{<<"expires">>:=null},Key)),
-    ?assertMatch({_,#{<<"expires">> := null}},ba_buffee_passport:parse_invitation(Unlimited)),
-    ?assertException(error,_,ba_buffee_passport:route(#{<<"desk">>=><<"ws://127.0.0.1:99/relay/v1">>,<<"mailbox">>=>Buffee},[URL])).
-stale_authority_response_test() ->
-    {A,B,Buffee,Key,_}=fixture(),Req=binary:copy(<<"A">>,32),Nonce=binary:copy(<<"A">>,64),
-    S=#{role=>member,id=>B,buffee=>Buffee,authority=>A,rejected=>0,
-        request=>#{id=>Req,nonce=>Nonce,deadline=>erlang:monotonic_time(millisecond)-1}},
-    Body=#{<<"v">>=>1,<<"type">>=><<"denied">>,<<"from">>=>A,<<"to">>=>B,
-        <<"buffee">>=>Buffee,<<"request">>=>Req,<<"payload">>=>#{<<"nonce">>=>Nonce,<<"reason">>=><<"revoked">>}},
+
+delegation_chain_reaches_the_creator_test() ->
+    {A,AKey}=key(),{B,BKey}=key(),{C,CKey}=key(),{I,_}=invitation(A,AKey),
+    Buffee=maps:get(<<"buffee">>,I),G=ba_buffee_passport:genesis(I,[]),
+    Grant=ba_session_privileges:wire(grant),
+    P=G#{<<"revision">> := 4,<<"members">> := (maps:get(<<"members">>,G))#{B=>#{<<"permissions">>=>[Grant]},C=>#{<<"permissions">>=>[Grant]}}},
+    AB=ba_buffee_passport:sign(ba_buffee_passport:delegation(Buffee,A,B,2),AKey),
+    BC=ba_buffee_passport:sign(ba_buffee_passport:delegation(Buffee,B,C,4),BKey),
+    St=#{<<"name">>=><<"N">>,<<"policy">>=>P,<<"delegations">>=>#{B=>AB,C=>BC}},
+    ?assertEqual(0,ba_buffee_passport:grant_revision(A,A,St)),
+    ?assertEqual(2,ba_buffee_passport:grant_revision(B,A,St)),
+    ?assertEqual(4,ba_buffee_passport:grant_revision(C,A,St)),
+    %% A certificate outside the creator's chain, or for another Session, fails.
+    {X,XKey}=key(),
+    Rogue=ba_buffee_passport:sign(ba_buffee_passport:delegation(Buffee,X,C,4),XKey),
+    ?assertException(error,_,ba_buffee_passport:grant_revision(C,A,St#{<<"delegations">> := #{C=>Rogue}})),
+    Other=ba_buffee_passport:sign(ba_buffee_passport:delegation(binary:copy(<<"F">>,32),A,B,2),AKey),
+    ?assertException(error,_,ba_buffee_passport:grant_revision(B,A,St#{<<"delegations">> := #{B=>Other}})),
+    %% Cycles never reach the creator.
+    CB=ba_buffee_passport:sign(ba_buffee_passport:delegation(Buffee,C,B,3),CKey),
+    ?assertException(error,_,ba_buffee_passport:grant_revision(B,A,St#{<<"delegations">> := #{B=>CB,C=>BC}})).
+
+statement_round_trip_test() ->
+    {A,Key}=key(),{I,_}=invitation(A,Key),G=ba_buffee_passport:genesis(I,[]),
+    St=#{<<"name">>=><<"N">>,<<"policy">>=>G#{<<"revision">> := 1},<<"delegations">>=>#{}},
+    Packet=ba_buffee_passport:sign(St,Key),
+    ?assertEqual(St,ba_buffee_passport:statement(Packet,A)),
+    {B,_}=key(),?assertException(error,_,ba_buffee_passport:statement(Packet,B)).
+
+stale_handshake_response_is_rejected_test() ->
+    {A,Key}=key(),B=binary:copy(<<"B">>,64),Buffee=binary:copy(<<"A">>,32),Req=binary:copy(<<"A">>,32),
+    S=#{id=>B,buffee=>Buffee,rejected=>0,participants=>#{},outgoing=>#{},pending=>#{}},
+    Body=#{<<"v">>=>1,<<"type">>=><<"welcome">>,<<"from">>=>A,<<"to">>=>B,
+        <<"buffee">>=>Buffee,<<"request">>=>Req,<<"payload">>=>#{<<"policy">>=>null}},
     Packet=ba_buffee_passport:sign(Body,Key),
     ?assertEqual({noreply,S#{rejected:=1}},ba_buffee_membership:handle_info({desk_delivery,unused,A,Packet},S)).
 
-old_signed_departure_cannot_evict_a_new_admission_test() ->
-    {APub,_}=crypto:generate_key(eddsa,ed25519),A=binary:encode_hex(APub),
-    {BPub,BKey}=crypto:generate_key(eddsa,ed25519),B=binary:encode_hex(BPub),
-    Buffee=binary:copy(<<"A">>,32),Old=binary:copy(<<"B">>,32),New=binary:copy(<<"C">>,32),
-    S=#{role=>authority,id=>A,buffee=>Buffee,rejected=>0,routes=>#{},invitations=>#{},
-        policy=>#{<<"members">>=>#{B=>#{<<"membership">>=>New}}}},
-    Body=#{<<"v">>=>1,<<"type">>=><<"leave">>,<<"from">>=>B,<<"to">>=>A,
-        <<"buffee">>=>Buffee,<<"request">>=>Old,<<"payload">>=>#{<<"membership">>=>Old}},
-    Packet=ba_buffee_passport:sign(Body,BKey),
-    ?assertEqual({noreply,S#{rejected:=1}},ba_buffee_membership:handle_info({desk_delivery,unused,B,Packet},S)).
+non_participant_cannot_end_the_session_test() ->
+    {A,Key}=key(),B=binary:copy(<<"B">>,64),Buffee=binary:copy(<<"A">>,32),
+    S=#{id=>B,buffee=>Buffee,rejected=>0,participants=>#{},outgoing=>#{},pending=>#{},pairs=>#{}},
+    Body=#{<<"v">>=>1,<<"type">>=><<"ended">>,<<"from">>=>A,<<"to">>=>B,
+        <<"buffee">>=>Buffee,<<"request">>=>Buffee,<<"payload">>=>#{<<"pair">>=>Buffee}},
+    Packet=ba_buffee_passport:sign(Body,Key),
+    ?assertEqual({noreply,S#{rejected:=1}},ba_buffee_membership:handle_info({desk_delivery,unused,A,Packet},S)).

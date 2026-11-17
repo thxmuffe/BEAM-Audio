@@ -19,10 +19,20 @@ ok = ba_buffee_membership:revoke(Device).             %% remove the Device
 ```
 
 Each privilege is independent. Only `grant` holders change privileges; running
-Manager or Inspector processes grants nothing. Changes are signed by the
-administering `grant` holder and shared with the other Devices over the existing
-bounded authenticated Reception transport, without Distributed Erlang. A Session
-whose last `grant` holder gives it up continues unchanged.
+Manager or Inspector processes grants nothing. The privileges are one signed,
+versioned **policy** (v2: `members` with permissions, `removed`, `revision`).
+Revision 0 follows from the link alone: the creator holds every privilege. Each
+change is the next revision, signed by the `grant` holder that made it, and is
+sent to every present Device. Every Device keeps the latest policy it accepted.
+
+A Device accepts a signed policy when its signer holds `grant` in the policy the
+Device already has, or when **delegation certificates** lead from the creator to
+the signer at a revision newer than the Device has seen. A `grant` holder signs
+a certificate whenever it gives `grant`; the certificates travel with the
+policy, so a newcomer can trust a delegated `grant` holder while the creator is
+away. A higher revision wins; equal revisions with different content resolve to
+the smaller statement hash, so Devices that saw concurrent changes converge.
+A Session whose last `grant` holder gives it up continues unchanged.
 
 On the wire each admitted Device has one sorted permission list. `grant` is
 spelled `owner` and `on_air` is spelled `stream_publish` there; these are signed
@@ -34,10 +44,11 @@ registering a local Source and when accepting a peer catalogue. Microphone
 contribution needs local consent only. No privilege can remotely turn on a
 microphone or system capture.
 
-Snapshots expose the local `privileges`, `grant_holders`, each Device's
-privileges, and (to `grant` holders) open `requests` per Device. Internal
-membership worker states `authority` and `member` are implementation states.
-Current limits remain 16 admitted Devices and four Receptions.
+Snapshots expose the local `privileges`, `grant_holders`, the present
+`participants`, each known Device's privileges, and (to `grant` holders) open
+`requests` per Device. A present Device without a policy entry holds the
+`buffee_default_permissions`. Limits: 16 present Devices, 16 policy entries,
+31 removed Devices and four Receptions.
 
 ## Create, join, leave and return
 
@@ -53,19 +64,40 @@ ok = ba_buffee:join(Link).
 %% Admission is asynchronous: wait for state => authorized.
 ```
 
-Invitations are private, reusable bearer links. Their signed payload identifies
-the Session, issuer and permitted Receptions. Another `grant` holder can
-advertise the same invitation and admit Devices after the first one leaves. An
-empty discovery result gives nobody a privilege and creates no replacement.
+### The link
 
-`ba_buffee:leave/0` disconnects only the local Device. `grant` holders retain a
-saved policy/invitation record. With the same Device identity, startup can
-restore that Session even if every Device previously shut down. Joining its saved
-invitation after Leave also restores the remembered privileges directly. `restore_buffee_on_start`
-enables automatic restoration. Live processes and clock mappings are recreated,
-not restored from disk. Ordinary presence/state exchange refreshes routes and
-known policy when a Device reconnects; return is not gated on a special surviving
-peer challenge.
+The creator writes the Session's link once; it never changes and every
+participant shares the same one. `beamaudio://session/v5?ticket=…` carries the
+creator's signature and the signed JSON body `buffee`, `authority` (the
+creator's key), `nonce`, `name`, `desks` (1–4 Reception URLs) and `secret`. The
+Session ID is the first 32 hex characters of sha256(creator key ‖ nonce), so
+anyone can check which key created a Session. The link is a bearer credential
+and is not encrypted: whoever holds it can read the name, creator and
+Receptions. Earlier v3/v4 links, which named the inviter rather than the creator,
+and their saved records are no longer accepted (2026-11-17).
+
+### Joining is pairwise
+
+Holding the link is enough to participate. Every present Device advertises the
+Session mailbox, sha256("beamaudio-session-mailbox/v1:" ‖ secret), on the link's
+Receptions; Reception sees that value, never the secret. A Device looks up who
+is present and runs a handshake with each of them independently: `hello`,
+`challenge`, `proof`, `welcome`. Both sides prove the secret with an HMAC bound
+to the direction, the challenge and both Device IDs, and exchange their policies.
+No Device waits for a creator, a `grant` holder or a Manager, and none admits
+others on everyone's behalf. A Device arriving at an empty Session is simply its
+only participant: it keeps the Session ID, gains no privilege and is found by
+later arrivals. A Device listed as removed in the receiver's policy is refused.
+
+### Leave and return
+
+`ba_buffee:leave/0` disconnects only the local Device; Reception drops its
+advertisement. Every Device keeps its accepted policy for each Session it has
+joined (`buffee_sessions`, at most 32), so privileges survive Leave and
+application shutdown. Joining the same link later restores them at once, even
+when nobody else is present. A `grant` holder also keeps the intent to return on
+next start; `restore_buffee_on_start` enables automatic restoration. Live
+processes and clock mappings are recreated, not restored from disk.
 
 Admitted Devices keep their privileges when no `grant` holder is present. The
 last synchronized clock can continue on an available on-air Device; read
@@ -78,13 +110,16 @@ A Device holding `end_session` can call `ba_buffee:end_buffee/0` (Destroy Sessio
 in the current UI). A signed End tears down reached Devices and clears saved
 return intent. Without the privilege the call returns `end_privilege_required`;
 a `grant` holder can request the privilege for itself first. Ordinary Leave or
-transport loss never substitutes for End. `revoke/1` removes a Device's access;
-forwarding the existing invitation does not clear that removal. Explicitly
-inviting that contact may.
+transport loss never substitutes for End. End is bound to each pair's handshake.
+`revoke/1` lists the Device as removed in the next policy and tells every
+present Device, including the removed one, which stays visible as `revoked`.
+Forwarding the link does not clear a removal; explicitly inviting that contact
+may.
 
-No durable public end registry or offline ceremony is introduced. A Device that
-was disconnected cannot receive an End while absent; removal of a returning
-troublesome Device remains an explicit `grant`-holder action.
+No durable public end registry or offline ceremony is introduced. Because the
+link never changes, End and removal reach only Devices that are present or that
+later meet a Device holding the newer policy. A removed Device that returns to an
+empty Session is alone there until such a Device arrives.
 
 ## Privilege requests
 
@@ -94,7 +129,8 @@ identities can request. `grant` holders see open requests per Device in
 `requests`; granting the privilege clears the request. Requests do not change
 consent. They are a `grant` holder's live runtime state, not signed Session
 state or an offline queue. Automatic approval and time-limited grants are not
-implemented. Reception remains unchanged.
+implemented. Reception remains unchanged: its existing capability-scoped lookup
+already lists every Device advertising the same mailbox.
 
 ## Device API
 

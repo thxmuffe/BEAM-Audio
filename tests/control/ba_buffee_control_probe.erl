@@ -61,10 +61,6 @@ command(#{<<"op">> := <<"crash_test_worker">>},_,_) ->
     {ok,Child}=supervisor:start_child(ba_device_sup,
         #{id => ba_crash_test_child,start => {?MODULE,crash_child,[]},restart => temporary}),
     Child ! crash,#{ok => true};
-command(#{<<"op">> := <<"expire_authority_presence">>},_,_) ->
-    Now=erlang:monotonic_time(millisecond),
-    sys:replace_state(ba_buffee_membership,fun(S) -> S#{until := Now-1,owner_deadline := Now-1} end),
-    whereis(ba_buffee_membership) ! tick,#{ok => true};
 command(#{<<"op">> := <<"set_observer">>},_,_) ->
     application:set_env(ba_core,buffee_observer,true),#{ok => true};
 command(#{<<"op">> := <<"start_app">>},_,_) ->
@@ -103,12 +99,6 @@ command(#{<<"op">> := <<"group_contacts">>,<<"name">> := Name,<<"ids">> := Ids},
 command(#{<<"op">> := <<"delete_group">>,<<"name">> := Name},_,_) ->
     ensure_started(),result(ba_contacts:delete_group(Name));
 command(#{<<"op">> := <<"invite">>},_,_) -> result(ba_buffee_membership:invite(3600));
-command(#{<<"op">> := <<"invite_expired">>},_,_) ->
-    %% A genuine old signed invitation, without altering the host clock.
-    {ok,Link}=ba_buffee_membership:invite(3600),
-    {_,Body}=ba_buffee_passport:parse_invitation(Link),
-    {_,Key}=ba_device_store:identity(),
-    result({ok,ba_buffee_passport:invitation(ba_buffee_passport:sign(Body#{<<"expires">> := 1},Key))});
 command(#{<<"op">> := <<"grant">>,<<"peer">> := Peer,<<"permissions">> := Ps},_,_) ->
     result(ba_buffee_membership:grant(Peer,Ps));
 command(#{<<"op">> := <<"answer_on_air_requests">>,<<"value">> := V},_,_) ->
@@ -140,6 +130,8 @@ command(#{<<"op">> := <<"read">>,<<"peer">> := Peer},_,_) ->
 command(#{<<"op">> := <<"capabilities">>,<<"peer">> := Peer},_,_) ->
     result(ba_buffee_control:read_capabilities(Peer));
 command(#{<<"op">> := <<"enable_test">>},_,_) ->
+    %% The test job also needs this Device's DSP consent (the `friendly` preset).
+    ok=ba_device_config:preset(friendly,#{}),
     result(ba_device_handler:enable_test(true));
 command(#{<<"op">> := <<"allow_jobs">>,<<"manager">> := Manager,<<"contract">> := Contract},_,_) ->
     result(ba_device_handler:set_test_contract(Manager,Contract,1));

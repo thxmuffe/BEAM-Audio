@@ -16,13 +16,18 @@ handle_cast(_,S) -> {noreply,S}.
 handle_call({request,#{<<"method">> := <<"list_sessions">>}=Command},_,S) ->
     {reply,metadata(null,#{},S,Command),S};
 handle_call({request,#{<<"method">> := <<"new_session">>}=Command},_,#{tabs := Tabs}=S) ->
-    Id=binary:encode_hex(crypto:strong_rand_bytes(16)),
+    %% A created Session's ID names its creator, so the scope gets that same ID.
+    Nonce=binary:encode_hex(crypto:strong_rand_bytes(16)),
+    Id=case maps:get(<<"create">>,Command,false) of
+        true -> {Pub,_}=ba_device_store:identity(),ba_buffee_passport:session_id(binary:encode_hex(Pub),Nonce);
+        false -> Nonce
+    end,
     case start(Id) of
         ok ->
             case maps:get(<<"create">>,Command,false) of
                 true ->
                     Desk=ba_settings:app(default_reception_desk_url,<<"wss://buffee-reception.onrender.com/relay/v1">>),
-                    Reply=in(Id,fun() -> ba_device_api:request(#{<<"method">> => <<"create_buffee">>,<<"name">> => <<"New Session">>,<<"desks">> => [Desk]}) end),
+                    Reply=in(Id,fun() -> ba_device_api:request(#{<<"method">> => <<"create_buffee">>,<<"name">> => <<"New Session">>,<<"desks">> => [Desk],<<"nonce">> => Nonce}) end),
                     case maps:get(<<"error">>,Reply,null) of
                         null -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => Id}]}),
                             {reply,metadata(Id,Reply,Next,Command),Next};

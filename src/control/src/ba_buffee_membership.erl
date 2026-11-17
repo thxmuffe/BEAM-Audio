@@ -1,9 +1,15 @@
-%% Devices hold privileges; holders of `grant` administer them. Privileges,
-%% presence and connections remain separate and survive leaving and shutdown.
+%% Participation, privileges and connections are separate. Holding the link lets
+%% a Device participate; each pair of present Devices proves the link to each
+%% other independently, with no hub. Privileges are a signed, versioned policy
+%% that grant holders change and every Device keeps; the highest revision wins.
 -module(ba_buffee_membership).
 -behaviour(gen_server).
 -export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
+-define(LOOKUP_MS,2000).
+-define(HANDSHAKE_MS,10000).
+-define(REFUSED_MS,30000).
+-define(MAX_PARTICIPANTS,15).
 rename(Name) -> gen_server:call(ba_session_scope:ref(?MODULE),{rename,Name}).
 request_privilege(Wire) -> gen_server:call(ba_session_scope:ref(?MODULE),{request_privilege,Wire}).
 grant_privilege(Device,Wire) -> gen_server:call(ba_session_scope:ref(?MODULE),{change,grant,Device,Wire}).
@@ -18,195 +24,155 @@ depart() -> gen_server:call(ba_session_scope:ref(?MODULE),depart).
 invite_devices(Ids,TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite_devices,Ids,TTL}).
 grant(Device,Permissions) -> gen_server:call(ba_session_scope:ref(?MODULE),{grant,Device,Permissions}).
 revoke(Device) -> gen_server:call(ba_session_scope:ref(?MODULE),{revoke,Device}).
+
 init([]) ->
     {Pub,Private} = ba_device_store:identity(),Id = binary:encode_hex(Pub),
     {ok,Config} = ba_session_scope:get_env(buffee_membership),
-    Base = #{id => Id,private => Private,pending => #{},request => undefined,
-             state => waiting,until => 0,rejected => 0,last_attempt => now_ms()-5000},
-    S = boot(Config,Base),erlang:send_after(250,self(),tick),{ok,S}.
-boot(#{mode := create,desks := URLs} = Config,S) ->
-    ok = ba_buffee_passport:urls(URLs),Id = maps:get(id,S),Primary = maps:get(desk,Config,hd(URLs)),
-    Default = #{<<"v">> => 1,<<"type">> => <<"policy">>,<<"buffee">> => maps:get(buffee,Config,fresh(16)),
-        <<"authority">> => Id,<<"manager">> => Id,<<"epoch">> => 1,<<"revision">> => 1,
-        <<"members">> => #{Id => #{<<"membership">> => fresh(16),
-            <<"permissions">> => ba_session_privileges:creator(ba_settings:app(buffee_default_permissions,[<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>]))}}},
-    Saved = ba_device_store:load(buffee_authority,#{policy => Default,invitations => #{},routes => #{}}),
-    P = maps:get(policy,Saved),ok = ba_buffee_passport:policy(P),true = ba_session_privileges:has(grant,Id,P),
-    Buffee = maps:get(<<"buffee">>,P),ok = ba_buffee_desks:configure(Buffee,URLs,Primary,maps:get(routes,Saved)),
-    Route = ba_buffee_desks:route(),Routes = (maps:get(routes,Saved))#{Id => Route},
-    CurrentPolicy = P,
-    Next = S#{role => authority,name => maps:get(name,Config),policy => CurrentPolicy,invitations => maps:get(invitations,Saved),routes => Routes,
-        urls => URLs,primary => Primary,buffee => Buffee,authority => Id,state := authorized,until := infinity},
-    Ready=case maps:find(reusable,Config) of
-        {ok,Link} ->
-            {_,I}=ba_buffee_passport:parse_invitation(Link),
-            ok=ba_buffee_desks:advertise(maps:get(<<"mailbox">>,maps:get(<<"route">>,I))),
-            Entry=#{hash => crypto:hash(sha256,maps:get(<<"secret">>,I)),
-                    issuer => maps:get(<<"authority">>,I),blocked => []},
-            Next#{reusable_link => Link,invitations := #{maps:get(<<"invite">>,I) => Entry}};
-        error -> Next
-    end,
-    checkpoint_authority(Ready),publish(Ready),Ready;
-boot(#{mode := recover_authority,snapshot := Snapshot},S) ->
-    %% Ownership survives app shutdown. No surviving-peer ceremony is needed.
-    ok=save(buffee_authority,maps:with([policy,invitations,routes],Snapshot)),
-    Seed=maps:merge(S,maps:with([reusable_link],Snapshot)),
-    Ready=boot(#{mode => create,name => maps:get(name,Snapshot),desks => maps:get(urls,Snapshot),
-           desk => maps:get(primary,Snapshot)},Seed),
-    announce(Ready),Ready;
+    S = boot(Config,#{id => Id,private => Private,rejected => 0}),
+    erlang:send_after(250,self(),tick),{ok,S}.
+%% Creating writes the permanent link; the creator then participates like anyone.
+boot(#{mode := create,name := Name,desks := URLs} = Config,#{id := Id} = S) ->
+    ok = ba_buffee_passport:urls(URLs),true = valid_name(Name),
+    Nonce = maps:get(nonce,Config,fresh(16)),Buffee = ba_buffee_passport:session_id(Id,Nonce),
+    case maps:find(buffee,Config) of {ok,Wanted} -> Buffee = Wanted;error -> ok end,
+    I = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"buffee">> => Buffee,<<"authority">> => Id,
+          <<"nonce">> => Nonce,<<"secret">> => fresh(32),<<"desks">> => URLs,<<"name">> => Name},
+    start(ba_buffee_passport:invitation(sign(I,S)),I,maps:get(desk,Config,hd(URLs)),S);
 boot(#{mode := join,invitation := Link} = Config,S) ->
-    {Ticket,I} = ba_buffee_passport:parse_invitation(Link),
-    Saved = ba_device_store:load(buffee_member,undefined),
-    case Saved of
-        #{id := Id,buffee := Buffee} when Id =:= map_get(id,S),Buffee =:= map_get(<<"buffee">>,I) ->
-            boot_saved(Config,Saved,S#{name => maps:get(<<"name">>,I),reusable_link => Link});
-        undefined ->
-            URLs = maps:get(<<"desks">>,I),Primary = maps:get(desk,Config,hd(URLs)),
-            Buffee=maps:get(<<"buffee">>,I),
-            ok=ba_buffee_desks:configure(Buffee,URLs,Primary,#{}),
-            S#{role => discovering,credential => Ticket,reusable_link => Link,invitation => I,
-               name => maps:get(<<"name">>,I),authority => maps:get(<<"authority">>,I),
-               buffee => Buffee,urls => URLs,primary => Primary,policy => undefined,routes => #{}}
-    end;
-boot(#{mode := rejoin,name := Name,member := Saved}=Config,S) ->
-    boot_saved(Config,Saved,S#{name => Name});
+    {_,I} = ba_buffee_passport:parse_invitation(Link),
+    start(Link,I,maps:get(desk,Config,hd(maps:get(<<"desks">>,I))),S);
 boot(#{mode := resume},_S) ->
     error(ephemeral_buffees_cannot_be_resumed).
-boot_saved(Config,#{id := Id,passport := Passport,authority := Authority,buffee := Buffee,
-                   desks := URLs,primary := OldPrimary,authority_route := R} = Saved,#{id := Id} = S) ->
-    Envelope=ba_buffee_passport:decode(Passport),
-    Body=ba_buffee_passport:decode(base64:decode(maps:get(<<"body">>,Envelope))),
-    _ = ba_buffee_passport:passport(Passport,maps:get(<<"authority">>,Body),Id,Buffee),
-    client(Passport,Authority,Buffee,URLs,maps:get(desk,Config,OldPrimary),R,maps:get(floor,Saved,#{}),maps:merge(S,maps:with([reusable_link],Saved))).
-client(Credential,Authority,Buffee,URLs,Primary,AuthorityRoute,Floor,S) ->
-    ok = ba_buffee_passport:urls(URLs),true = lists:member(Primary,URLs),
-    %% The authority registers the same identity/mailbox at every permitted Desk.
-    R = AuthorityRoute#{<<"desk">> := Primary},
-    ok = ba_buffee_desks:configure(Buffee,URLs,Primary,#{Authority => R}),
-    S#{role => member,credential => Credential,authority => Authority,authority_route => R,
-       buffee => Buffee,urls => URLs,primary => Primary,owner_deadline => now_ms()+30000,floor => Floor,policy => undefined,routes => #{Authority => R}}.
+start(Link,I,Primary,S) ->
+    Buffee = maps:get(<<"buffee">>,I),URLs = maps:get(<<"desks">>,I),true = lists:member(Primary,URLs),
+    Secret = maps:get(<<"secret">>,I),
+    Base = S#{link => Link,buffee => Buffee,authority => maps:get(<<"authority">>,I),secret => Secret,
+        cap => ba_buffee_passport:mailbox(Secret),name => maps:get(<<"name">>,I),urls => URLs,primary => Primary,
+        policy => ba_buffee_passport:genesis(I,ba_settings:app(buffee_default_permissions,[<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>])),signed => undefined,signer => undefined,delegations => #{},
+        participants => #{},pairs => #{},pending => #{},outgoing => #{},requests => #{},
+        state => authorized,until => infinity,last_lookup => now_ms()-?LOOKUP_MS},
+    Ready = restore(maps:get(Buffee,ba_device_store:load(buffee_sessions,#{}),undefined),Base),
+    ok = ba_buffee_desks:configure(Buffee,URLs,Primary,#{}),
+    ok = ba_buffee_desks:advertise(maps:get(cap,Ready)),
+    checkpoint(Ready),self_check(publish(Ready)).
+%% This Device's own record: the policy it last accepted.
+restore(#{signer := Signer,signed := Packet},S) ->
+    try St = ba_buffee_passport:statement(Packet,Signer),
+        true = same_session(maps:get(<<"policy">>,St),S),adopt(Signer,Packet,St,S)
+    catch _:_ -> S end;
+restore(_,S) -> S.
 
-handle_call(status,_,S) ->
-    P = maps:get(policy,S),
+handle_call(status,_,#{policy := P}=S) ->
     {reply,#{id => maps:get(id,S),buffee => maps:get(buffee,S),privileges => local_privileges(S),grant_holders => holders(P),
-        name => maps:get(name,S),owner => maps:get(authority,S),
-        requests => open_requests(S),
-        state => maps:get(state,S),grant_holder_present => grant_holder_present(S),epoch => value(<<"epoch">>,P),revision => value(<<"revision">>,P),
-        members => case P of undefined -> [];_ -> maps:keys(maps:get(<<"members">>,P)) end,
-        membership => case P of undefined -> null;_ ->
-            maps:get(<<"membership">>,maps:get(maps:get(id,S),maps:get(<<"members">>,P)),null) end,
-        rejected => maps:get(rejected,S)},S};
-handle_call(current,_,#{state := authorized} = S) ->
-    {reply,{ok,view(S)},S};
+        name => maps:get(name,S),owner => maps:get(authority,S),requests => open_requests(S),
+        state => maps:get(state,S),grant_holder_present => grant_holder_present(S),epoch => null,
+        revision => maps:get(<<"revision">>,P),members => known(S),participants => maps:keys(maps:get(participants,S)),
+        membership => null,rejected => maps:get(rejected,S)},S};
+handle_call(current,_,#{state := authorized} = S) -> {reply,{ok,view(S)},S};
 handle_call(current,_,S) -> {reply,{error,maps:get(state,S)},S};
-handle_call({invite,_},_,#{state := authorized,reusable_link := Link}=S) ->
-    {reply,{ok,compact_link(Link)},S};
-handle_call({invite,TTL},_,S) ->
-    case invitations([undefined],TTL,S) of
-        {ok,[#{invitation := Link}],Next} -> {reply,{ok,Link},Next#{reusable_link => Link}};
-        {error,R} -> {reply,{error,R},S}
+%% Every participant holds the same permanent link and may share it.
+handle_call({invite,_},_,S) -> {reply,{ok,maps:get(link,S)},S};
+handle_call({invite_devices,Ids,_},_,S) when is_list(Ids),length(Ids)>0,length(Ids)=<15 ->
+    case lists:all(fun(Id) -> Id=:=undefined orelse hex(Id,64) end,Ids) of
+        false -> {reply,{error,invalid_invitation},S};
+        true ->
+            %% Explicitly inviting a removed contact lifts the removal; forwarding does not.
+            Lift = [Id || Id <- Ids,Id=/=undefined,lists:member(Id,removed(S))],
+            Next = case Lift=/=[] andalso grant_holder(S) of
+                true -> update(fun(P) -> {ok,P#{<<"removed">> := maps:get(<<"removed">>,P)--Lift}} end,S);
+                false -> {ok,S}
+            end,
+            case Next of
+                {ok,S1} -> {reply,{ok,[#{device => Id,invitation => maps:get(link,S)} || Id <- Ids]},S1};
+                Error -> {reply,Error,S}
+            end
     end;
-handle_call({invite_devices,Ids,TTL},_,S) ->
-    case invitations(Ids,TTL,S) of
-        {ok,Links,Next} -> {reply,{ok,Links},Next};
-        {error,R} -> {reply,{error,R},S}
-    end;
-handle_call(end_session,_,#{state := authorized,policy := P,routes := Routes}=S) ->
+handle_call({invite_devices,_,_},_,S) -> {reply,{error,invalid_invitation},S};
+handle_call(end_session,_,#{state := authorized,policy := P}=S) ->
     case ba_session_privileges:has(end_session,maps:get(id,S),P) of
         false -> {reply,{error,end_privilege_required},S};
         true ->
             maps:foreach(fun(Peer,R) ->
-                case Peer=:=maps:get(id,S) of
-                    true -> ok;
-                    false ->
-                        M=maps:get(Peer,maps:get(<<"members">>,P)),
-                        send(Peer,R,<<"ended">>,fresh(16),#{<<"membership">> => maps:get(<<"membership">>,M)},S)
-                end
-            end,Routes),{reply,ok,S}
+                send(Peer,R,<<"ended">>,fresh(16),#{<<"pair">> => maps:get(Peer,maps:get(pairs,S))},S)
+            end,maps:get(participants,S)),{reply,ok,S}
     end;
 handle_call(end_session,_,S) -> {reply,{error,end_privilege_required},S};
-handle_call(depart,_,#{role := authority}=S) -> {reply,ok,S};
-handle_call(depart,_,#{role := member}=S) ->
-    %% Bind departure to this admission: replaying an old signed leave must not
-    %% evict the same Device after it accepts a fresh invitation.
-    case maps:get(policy,S) of
-        undefined -> ok;
-        P ->
-            M = maps:get(maps:get(id,S),maps:get(<<"members">>,P)),
-            send(maps:get(authority,S),maps:get(authority_route,S),<<"leave">>,fresh(16),
-                #{<<"membership">> => maps:get(<<"membership">>,M)},S)
-    end,{reply,ok,S};
-handle_call({rename,Name},_,#{state := authorized,role := authority,policy := P}=S) ->
-    case valid_name(Name) of
-        true -> Next=owned_update(bump(P,false),S#{name := Name}),checkpoint_authority(Next),changed(Next,maps:get(routes,S)),{reply,ok,Next};
-        false -> {reply,{error,invalid_session_name},S}
-    end;
+%% Leaving changes no signed state: Reception drops this Device's advertisement.
+handle_call(depart,_,S) -> {reply,ok,S};
 handle_call({rename,Name},_,#{state := authorized,policy := P,id := Id}=S) ->
-    case valid_name(Name) andalso ba_session_privileges:has(on_air,Id,P) of
-        true -> {reply,ask_holders(<<"rename_request">>,#{<<"name">> => Name},S),S};
-        false -> {reply,{error,forbidden},S}
+    case {valid_name(Name),grant_holder(S),ba_session_privileges:has(on_air,Id,P)} of
+        {false,_,_} -> {reply,{error,invalid_session_name},S};
+        {true,true,_} -> reply(update(fun(Q) -> {ok,Q} end,S#{name := Name}),S);
+        {true,false,true} -> {reply,ask_holders(<<"rename_request">>,#{<<"name">> => Name},S),S};
+        {true,false,false} -> {reply,{error,forbidden},S}
     end;
 %% Every privilege is requested. A grant holder's own request needs no one else.
-handle_call({request_privilege,Wire},From,#{role := authority,id := Id}=S) ->
-    handle_call({change,grant,Id,Wire},From,S);
-handle_call({request_privilege,Wire},_,#{state := authorized}=S) ->
-    Result=ask_holders(<<"privilege_request">>,#{<<"privilege">> => Wire},S),
-    case Result of ok -> chat({privilege_requested,maps:get(id,S),Wire});_ -> ok end,
-    {reply,Result,S};
+handle_call({request_privilege,Wire},From,#{id := Id}=S) ->
+    case grant_holder(S) of
+        true -> handle_call({change,grant,Id,Wire},From,S);
+        false ->
+            Result = ask_holders(<<"privilege_request">>,#{<<"privilege">> => Wire},S),
+            case Result of ok -> chat({privilege_requested,Id,Wire});_ -> ok end,
+            {reply,Result,S}
+    end;
 %% Declining only clears this Device's reminder; the requester is not told.
-handle_call({decline,Device,Wire},_,#{role := authority}=S) ->
-    Requests=maps:get(requests,S,#{}),
-    {reply,ok,S#{requests => Requests#{Device => lists:delete(Wire,maps:get(Device,Requests,[]))}}};
-handle_call({decline,_,_},_,S) -> {reply,{error,grant_required},S};
-handle_call({change,Op,Device,Wire},_,#{role := authority,policy := P}=S) ->
-    case ba_session_privileges:change(maps:get(id,S),Device,Op,Wire,P) of
-        {ok,Updated} ->
-            Next0=owned_update(bump(Updated,false),S),Requests=maps:get(requests,Next0,#{}),
-            Next=Next0#{requests => Requests#{Device => lists:delete(Wire,maps:get(Device,Requests,[]))}},
-            checkpoint_authority(Next),changed(Next,maps:get(routes,S)),{reply,ok,Next};
-        Error -> {reply,Error,S}
+handle_call({decline,Device,Wire},_,S) ->
+    case grant_holder(S) of
+        true -> Requests = maps:get(requests,S),
+            {reply,ok,S#{requests := Requests#{Device => lists:delete(Wire,maps:get(Device,Requests,[]))}}};
+        false -> {reply,{error,grant_required},S}
     end;
-handle_call({grant,Device,Permissions},_,#{role := authority,policy := P} = S) ->
-    try
-        true = ba_session_privileges:has(grant,maps:get(id,S),P),
-        ok = ba_buffee_passport:permissions(Permissions),Members = maps:get(<<"members">>,P),
-        M = maps:get(Device,Members),NewP = bump(P#{<<"members">> := Members#{Device := M#{<<"permissions">> := Permissions}}},false),
-        Next = owned_update(NewP,S),checkpoint_authority(Next),changed(Next,maps:get(routes,S)),
-        {reply,ok,Next}
-    catch exit:{membership_storage_failed,_} = Reason -> exit(Reason);
-          _:_ -> {reply,{error,invalid_grant},S} end;
-handle_call({revoke,Device},_,#{role := authority,policy := P,routes := Routes,invitations := Invites} = S) ->
-    case ba_session_privileges:has(grant,maps:get(id,S),P) andalso Device=/=maps:get(id,S) andalso maps:is_key(Device,maps:get(<<"members">>,P)) of
-        false -> {reply,{error,invalid_revocation},S};
+handle_call({change,Op,Device,Wire},_,#{id := Id}=S) ->
+    case grant_holder(S) of
         true ->
-            Manager=case maps:get(<<"manager">>,P) of Device -> maps:get(<<"authority">>,P);Existing -> Existing end,
-            NewP = bump(P#{<<"manager">> := Manager,<<"members">> := maps:remove(Device,maps:get(<<"members">>,P))},true),
-            Next = S#{policy := NewP,routes := maps:remove(Device,Routes),
-                invitations := maps:map(fun(_,E) -> E#{blocked => lists:delete(Device,maps:get(blocked,E,[]))} end,Invites)},
-            checkpoint_authority(Next),changed(Next,Routes),{reply,ok,Next}
+            case update(fun(P) -> case member(Device,P,S) of
+                    {ok,Q} -> ba_session_privileges:change(Id,Device,Op,Wire,Q);
+                    Error -> Error
+                end end,S) of
+                {ok,Next} -> Requests = maps:get(requests,Next),
+                    {reply,ok,Next#{requests := Requests#{Device => lists:delete(Wire,maps:get(Device,Requests,[]))}}};
+                Error -> {reply,Error,S}
+            end;
+        %% Any Device may give up its own privilege; a grant holder applies it.
+        false when Op=:=take,Device=:=Id -> {reply,ask_holders(<<"privilege_release">>,#{<<"privilege">> => Wire},S),S};
+        false -> {reply,{error,grant_required},S}
     end;
-%% Any Device may give up its own privilege; a grant holder applies it.
-handle_call({change,take,Device,Wire},_,#{id := Device,state := authorized}=S) ->
-    {reply,ask_holders(<<"privilege_release">>,#{<<"privilege">> => Wire},S),S};
-handle_call({change,_,_,_},_,S) -> {reply,{error,grant_required},S};
+handle_call({grant,Device,Permissions},_,S) ->
+    Result = try
+        true = grant_holder(S),ok = ba_buffee_passport:permissions(Permissions),
+        update(fun(P) -> {ok,Q} = member(Device,P,S),Members = maps:get(<<"members">>,Q),
+            {ok,Q#{<<"members">> := Members#{Device := #{<<"permissions">> => Permissions}}}} end,S)
+    catch exit:{membership_storage_failed,_} = Reason -> exit(Reason);
+          _:_ -> {error,invalid_grant} end,
+    case Result of {ok,Next} -> {reply,ok,Next};_ -> {reply,{error,invalid_grant},S} end;
+handle_call({revoke,Device},_,#{id := Id}=S) ->
+    case grant_holder(S) andalso Device=/=Id andalso hex(Device,64) of
+        false -> {reply,{error,invalid_revocation},S};
+        true -> reply(update(fun(P) ->
+            Manager = case maps:get(<<"manager">>,P) of Device -> maps:get(<<"authority">>,P);M -> M end,
+            Removed = lists:usort([Device|maps:get(<<"removed">>,P)]),
+            case length(Removed) =< 31 of
+                true -> {ok,P#{<<"manager">> := Manager,<<"members">> := maps:remove(Device,maps:get(<<"members">>,P)),
+                               <<"removed">> := Removed}};
+                false -> {error,too_many_removed}
+            end end,S),S)
+    end;
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(_,S) -> {noreply,S}.
+
 handle_info(tick,S0) ->
-    S1 = S0#{pending := maps:filter(fun(_,E) -> maps:get(deadline,E) > now_ms() end,maps:get(pending,S0))},
-    S2 = case maps:get(role,S1) of
-        discovering -> discover(S1);
-        authority -> S1;
-        member -> client_tick(S1)
-    end,
+    Now = now_ms(),
+    S1 = S0#{pending := maps:filter(fun(_,E) -> maps:get(deadline,E) > Now end,maps:get(pending,S0)),
+             outgoing := maps:filter(fun(_,E) -> maps:get(deadline,E) > Now end,maps:get(outgoing,S0))},
+    S2 = case Now-maps:get(last_lookup,S1) >= ?LOOKUP_MS of true -> discover(S1);false -> S1 end,
     erlang:send_after(250,self(),tick),{noreply,S2};
-handle_info({desk_event,_,connected},#{role := authority}=S) ->
-    announce(S),{noreply,S};
-handle_info({desk_event,URL,connected},#{role := member,primary := URL,state := waiting}=S) ->
-    %% Do not wait for the retry timer after the Desk becomes usable.
-    {noreply,client_refresh(S#{last_attempt := now_ms()-5000,request := undefined})};
-handle_info({desk_event,URL,disconnected},#{role := member,primary := URL} = S) ->
-    {noreply,S};
+handle_info({desk_event,_,connected},S) ->
+    %% Do not wait for the next lookup after a Desk becomes usable.
+    {noreply,discover(S)};
 handle_info({desk_event,_,_},S) -> {noreply,S};
+handle_info({lookup,URL,{ok,Owners}},S) when is_list(Owners) ->
+    {noreply,lists:foldl(fun(Owner,Acc) -> hello(Owner,URL,Acc) end,S,Owners)};
+handle_info({lookup,_,_},S) -> {noreply,S};
 handle_info({desk_delivery,_,From,Packet},S) ->
     try
         B = ba_buffee_passport:verify(Packet,From),
@@ -218,239 +184,222 @@ handle_info({desk_delivery,_,From,Packet},S) ->
           _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}} end;
 handle_info(_,S) -> {noreply,S}.
 
-discover(#{last_attempt := Last}=S) ->
-    case now_ms()-Last >= 1000 of
-        false -> S;
-        true ->
-            I=maps:get(invitation,S),R=maps:get(<<"route">>,I),
-            URL=maps:get(<<"desk">>,R),Cap=maps:get(<<"mailbox">>,R),
-            Next=S#{last_attempt := now_ms()},
-            case ba_buffee_desks:lookup(URL,Cap) of
-                {ok,[]} -> Next;
-                {ok,[Owner|_]} ->
-                    client(maps:get(credential,S),Owner,maps:get(buffee,S),maps:get(urls,S),URL,R,#{},Next);
-                {error,_} -> Next
-            end
+%% Reception lists every Device present on the Session mailbox. Lookups run
+%% outside this process so a slow Desk never blocks membership.
+discover(#{state := authorized,urls := URLs,cap := Cap}=S) ->
+    Self = self(),
+    [ba_session_scope:spawn(fun() ->
+        Self ! {lookup,URL,try ba_buffee_desks:lookup(URL,Cap) catch _:_ -> {error,unavailable} end}
+    end) || URL <- URLs],
+    S#{last_lookup := now_ms()};
+discover(S) -> S#{last_lookup := now_ms()}.
+hello(Owner,URL,#{id := Id,participants := Ps,outgoing := Out}=S) ->
+    case Owner=:=Id orelse maps:is_key(Owner,Ps) orelse maps:is_key(Owner,Out)
+         orelse lists:member(Owner,removed(S)) orelse not hex(Owner,64) of
+        true -> S;
+        false ->
+            Req = fresh(16),Nonce = fresh(32),R = #{<<"desk">> => URL,<<"mailbox">> => maps:get(cap,S)},
+            send(Owner,R,<<"hello">>,Req,#{<<"nonce">> => Nonce,<<"route">> => ba_buffee_desks:route()},S),
+            S#{outgoing := Out#{Owner => #{request => Req,nonce => Nonce,deadline => now_ms()+?HANDSHAKE_MS}}}
     end.
 
-client_tick(S) -> client_refresh(S).
-client_refresh(S) ->
-    Now = now_ms(),Request = maps:get(request,S),Next=S,
-    Due = maps:get(state,Next) =/= revoked andalso Now-maps:get(last_attempt,Next) >= 5000 andalso
-        (Request =:= undefined orelse Now >= maps:get(deadline,Request)),
-    Refresh = maps:get(state,Next) =/= authorized orelse Now >= maps:get(until,Next)-30000,
-    case Due andalso Refresh of
-        false -> Next;
-        true ->
-            Req = fresh(16),Nonce = fresh(32),R = ba_buffee_desks:route(),
-            Hello = #{<<"nonce">> => Nonce,<<"credential">> => maps:get(credential,Next),<<"route">> => R},
-            send(maps:get(authority,Next),maps:get(authority_route,Next),<<"hello">>,Req,Hello,Next),
-            %% Mailboxes are new after a restart, so the last known one may be gone.
-            %% The invitation link's mailbox is re-registered by the creator on every
-            %% start: knock there too. The hello carries our current route back.
-            case stable_route(Next) of
-                undefined -> ok;
-                Same when Same =:= map_get(authority_route,Next) -> ok;
-                Stable -> send(maps:get(authority,Next),Stable,<<"hello">>,Req,Hello,Next)
-            end,
-            Next#{request := #{id => Req,nonce => Nonce,deadline => Now+10000},last_attempt := Now}
-    end.
-incoming(Peer,#{<<"type">> := <<"offline">>,<<"payload">> := Data},#{policy := P,routes := Routes}=S) when is_map(P) ->
-    ba_buffee_passport:exact(Data,[<<"route">>]),
-    true=maps:is_key(Peer,maps:get(<<"members">>,P)),
-    R=maps:get(<<"route">>,Data),R=maps:get(Peer,Routes),
-    Next=S#{routes := maps:remove(Peer,Routes)},
-    ok=ba_buffee_desks:configure(maps:get(buffee,S),maps:get(urls,S),maps:get(primary,S),maps:get(routes,Next)),
-    publish(Next),Next;
-incoming(Peer,#{<<"type">> := <<"rename_request">>,<<"payload">> := Data},#{role := authority,policy := P}=S) ->
-    ba_buffee_passport:exact(Data,[<<"name">>]),true=ba_session_privileges:has(on_air,Peer,P),
-    {reply,_,Next}=handle_call({rename,maps:get(<<"name">>,Data)},undefined,S),Next;
-incoming(Peer,#{<<"type">> := <<"privilege_release">>,<<"payload">> := Data},#{role := authority}=S) ->
-    {reply,_,Next}=handle_call({change,take,Peer,requested(Data)},undefined,S),Next;
-incoming(Peer,#{<<"type">> := <<"privilege_request">>,<<"payload">> := Data},#{role := authority,policy := P}=S) ->
-    Wire=requested(Data),true=maps:is_key(Peer,maps:get(<<"members">>,P)),Requests=maps:get(requests,S,#{}),
-    Answer=answer(Wire),
-    case Answer of no -> ok;_ -> chat({privilege_requested,Peer,Wire}) end,
-    case Answer of
-        always -> {reply,_,Next}=handle_call({change,grant,Peer,Wire},undefined,S),Next;
-        no -> S;
-        ask -> S#{requests => Requests#{Peer => lists:usort([Wire|maps:get(Peer,Requests,[])])}}
+%% Pairwise handshake. Each side proves the link's secret, bound to both IDs.
+incoming(Peer,#{<<"type">> := <<"hello">>,<<"request">> := Req,<<"payload">> := Data},#{pending := Pending}=S)
+        when map_size(Pending) < 16 ->
+    ba_buffee_passport:exact(Data,[<<"nonce">>,<<"route">>]),
+    Nonce = maps:get(<<"nonce">>,Data),true = hex(Nonce,64),
+    R = maps:get(<<"route">>,Data),ok = ba_buffee_passport:route(R,maps:get(urls,S)),
+    case lists:member(Peer,removed(S)) of
+        true -> send(Peer,R,<<"denied">>,Req,#{<<"nonce">> => Nonce,<<"policy">> => policy_state(S)},S),S;
+        false ->
+            Challenge = fresh(32),
+            send(Peer,R,<<"challenge">>,Req,#{<<"nonce">> => Nonce,<<"challenge">> => Challenge,
+                <<"proof">> => proof(S,[<<"responder">>,Nonce,maps:get(id,S),Peer]),
+                <<"route">> => ba_buffee_desks:route()},S),
+            S#{pending := Pending#{Req => #{peer => Peer,route => R,nonce => Nonce,challenge => Challenge,
+                deadline => now_ms()+?HANDSHAKE_MS}}}
     end;
-incoming(Peer,#{<<"type">> := <<"presence">>,<<"payload">> := Data},#{policy := P,routes := Routes}=S) when is_map(P) ->
-    true=maps:is_key(Peer,maps:get(<<"members">>,P)),
-    ba_buffee_passport:exact(Data,[<<"route">>]),R=maps:get(<<"route">>,Data),
-    ok=ba_buffee_passport:route(R,maps:get(urls,S)),
-    Next=S#{routes := Routes#{Peer => R}},
-    ok=ba_buffee_desks:configure(maps:get(buffee,S),maps:get(urls,S),maps:get(primary,S),maps:get(routes,Next)),
-    send(Peer,R,<<"policy">>,fresh(16),policy_state(Next),Next),Next;
-incoming(Peer,#{<<"type">> := <<"policy">>,<<"payload">> := Data},#{policy := Current}=S) when is_map(Current) ->
-    true=maps:is_key(Peer,maps:get(<<"members">>,Current)),
-    ba_buffee_passport:exact(Data,[<<"state">>,<<"signer">>]),
-    Signer=maps:get(<<"signer">>,Data),true=ba_session_privileges:has(grant,Signer,Current),
-    Statement=ba_buffee_passport:verify(maps:get(<<"state">>,Data),Signer),
-    ba_buffee_passport:exact(maps:remove(<<"name">>,Statement),[<<"policy">>,<<"routes">>,<<"invitations">>]),
-    P=maps:get(<<"policy">>,Statement),ok=ba_buffee_passport:policy(P),
-    true=maps:get(<<"buffee">>,P)=:=maps:get(buffee,S),
-    true=maps:get(<<"authority">>,P)=:=maps:get(<<"authority">>,Current),
-    true=maps:get(<<"revision">>,P)>=maps:get(<<"revision">>,Current),
-    true=maps:get(<<"revision">>,P)>maps:get(<<"revision">>,Current) orelse P=:=Current,
-    Routes0=maps:get(<<"routes">>,Statement),
-    Routes=case maps:is_key(maps:get(id,S),maps:get(<<"members">>,P)) of
-        true -> Routes0#{(maps:get(id,S)) => ba_buffee_desks:route()};false -> Routes0 end,
-    maps:foreach(fun(Id,R) -> true=maps:is_key(Id,maps:get(<<"members">>,P)),
-        ba_buffee_passport:route(R,maps:get(urls,S)) end,Routes),
-    Id=maps:get(id,S),
-    case maps:is_key(Id,maps:get(<<"members">>,P)) of
-        false -> invalidate(),ba_buffee:ended(self()),S#{state := revoked,until := 0};
-        true ->
-            Role=case ba_session_privileges:has(grant,Id,P) of true -> authority;false -> member end,
-            Next=S#{name := maps:get(<<"name">>,Statement,maps:get(name,S)),policy := P,routes := Routes,role := Role,policy_signer => Signer,signed_state => maps:get(<<"state">>,Data),
-                invitations => read_invitation_state(maps:get(<<"invitations">>,Statement))},
-            case Role of authority -> checkpoint_authority(Next);member -> checkpoint_member(Next) end,
-            ok=ba_buffee_desks:configure(maps:get(buffee,S),maps:get(urls,S),maps:get(primary,S),Routes),
-            publish(Next),Next
+incoming(Peer,#{<<"type">> := <<"challenge">>,<<"request">> := Req,<<"payload">> := Data},#{outgoing := Out}=S) ->
+    #{request := Req,nonce := Nonce} = E = maps:get(Peer,Out),false = maps:is_key(refused,E),
+    ba_buffee_passport:exact(Data,[<<"nonce">>,<<"challenge">>,<<"proof">>,<<"route">>]),
+    Nonce = maps:get(<<"nonce">>,Data),Challenge = maps:get(<<"challenge">>,Data),true = hex(Challenge,64),
+    true = equal(proof(S,[<<"responder">>,Nonce,Peer,maps:get(id,S)]),maps:get(<<"proof">>,Data)),
+    R = maps:get(<<"route">>,Data),ok = ba_buffee_passport:route(R,maps:get(urls,S)),
+    send(Peer,R,<<"proof">>,Req,#{<<"challenge">> => Challenge,
+        <<"proof">> => proof(S,[<<"joiner">>,Challenge,maps:get(id,S),Peer]),<<"policy">> => policy_state(S)},S),
+    S#{outgoing := Out#{Peer := E#{challenge => Challenge,route => R}}};
+incoming(Peer,#{<<"type">> := <<"proof">>,<<"request">> := Req,<<"payload">> := Data},#{pending := Pending}=S) ->
+    #{peer := Peer,route := R,nonce := Nonce,challenge := Challenge} = maps:get(Req,Pending),
+    ba_buffee_passport:exact(Data,[<<"challenge">>,<<"proof">>,<<"policy">>]),
+    Challenge = maps:get(<<"challenge">>,Data),
+    true = equal(proof(S,[<<"joiner">>,Challenge,Peer,maps:get(id,S)]),maps:get(<<"proof">>,Data)),
+    S1 = merge(Peer,maps:get(<<"policy">>,Data),S#{pending := maps:remove(Req,Pending)}),
+    Full = map_size(maps:get(participants,S1)) >= ?MAX_PARTICIPANTS andalso not maps:is_key(Peer,maps:get(participants,S1)),
+    case lists:member(Peer,removed(S1)) orelse Full orelse maps:get(state,S1)=/=authorized of
+        true -> send(Peer,R,<<"denied">>,Req,#{<<"nonce">> => Nonce,<<"policy">> => policy_state(S1)},S1),S1;
+        false ->
+            S2 = join(Peer,R,pair(Nonce,Challenge),S1),
+            send(Peer,R,<<"welcome">>,Req,#{<<"policy">> => policy_state(S2)},S2),S2
     end;
-incoming(Peer,#{<<"type">> := <<"hello">>,<<"request">> := Req,<<"payload">> := Payload},
-         #{role := authority,pending := Pending} = S) when map_size(Pending) < 16 ->
-    ba_buffee_passport:exact(Payload,[<<"nonce">>,<<"credential">>,<<"route">>]),
-    Nonce = maps:get(<<"nonce">>,Payload),true = hex(Nonce,64),R = maps:get(<<"route">>,Payload),
-    ba_buffee_passport:route(R,maps:get(urls,S)),Credential = maps:get(<<"credential">>,Payload),
-    case credential(Peer,Credential,S) of
-        denied -> send(Peer,R,<<"denied">>,Req,#{<<"nonce">> => Nonce,<<"reason">> => <<"revoked">>},S),S;
-        {ok,_} ->
-            Challenge = fresh(32),Hash = binary:encode_hex(crypto:hash(sha256,Credential)),
-            Data = #{<<"nonce">> => Nonce,<<"challenge">> => Challenge,<<"hash">> => Hash},
-            send(Peer,R,<<"challenge">>,Req,Data,S),
-            S#{pending := Pending#{Req => #{peer => Peer,route => R,credential => Credential,data => Data,deadline => now_ms()+10000}}}
+incoming(Peer,#{<<"type">> := <<"welcome">>,<<"request">> := Req,<<"payload">> := Data},#{outgoing := Out}=S) ->
+    #{request := Req,nonce := Nonce,challenge := Challenge,route := R} = maps:get(Peer,Out),
+    ba_buffee_passport:exact(Data,[<<"policy">>]),
+    Theirs = maps:get(<<"policy">>,Data),
+    S1 = merge(Peer,Theirs,S#{outgoing := maps:remove(Peer,Out)}),
+    case lists:member(Peer,removed(S1)) orelse maps:get(state,S1)=/=authorized of
+        true -> S1;
+        false ->
+            S2 = join(Peer,R,pair(Nonce,Challenge),S1),
+            %% The responder sent an older policy than ours: bring it up to date.
+            case policy_state(S2)=:=Theirs of true -> ok;false -> tell(Peer,S2) end,S2
     end;
-incoming(Peer,#{<<"type">> := <<"proof">>,<<"request">> := Req,<<"payload">> := Data},#{role := authority} = S) ->
-    #{peer := Peer,route := R,credential := Credential,data := Data,deadline := Deadline} = maps:get(Req,maps:get(pending,S)),
-    true = now_ms() < Deadline,
-    {ok,Kind} = credential(Peer,Credential,S),
-    Next = admit(Peer,R,Credential,Kind,S#{pending := maps:remove(Req,maps:get(pending,S))}),
-    P = maps:get(policy,Next),M = maps:get(Peer,maps:get(<<"members">>,P)),
-    Passport = sign(#{<<"v">> => 1,<<"type">> => <<"passport">>,<<"buffee">> => maps:get(buffee,S),
-        <<"authority">> => maps:get(id,S),<<"device">> => Peer,<<"membership">> => maps:get(<<"membership">>,M),
-        <<"epoch">> => maps:get(<<"epoch">>,P)},Next),
-    Grant = #{<<"nonce">> => maps:get(<<"nonce">>,Data),<<"challenge">> => maps:get(<<"challenge">>,Data),
-              <<"passport">> => Passport,<<"policy">> => sign(owner_statement(P,Next),Next),<<"routes">> => maps:get(routes,Next)},
-    send(Peer,R,<<"grant">>,Req,Grant,Next),Next;
-incoming(Authority,#{<<"type">> := <<"challenge">>,<<"request">> := Req,<<"payload">> := Data},
-         #{role := member,authority := Authority,request := #{id := Req,nonce := Nonce,deadline := Deadline} = Request} = S) ->
-    true = now_ms() < Deadline,ba_buffee_passport:exact(Data,[<<"nonce">>,<<"challenge">>,<<"hash">>]),
-    Nonce = maps:get(<<"nonce">>,Data),true = hex(maps:get(<<"challenge">>,Data),64),
-    Expected = binary:encode_hex(crypto:hash(sha256,maps:get(credential,S))),Expected = maps:get(<<"hash">>,Data),
-    send(Authority,maps:get(authority_route,S),<<"proof">>,Req,Data,S),
-    S#{request := Request#{challenge => maps:get(<<"challenge">>,Data)}};
-incoming(Authority,#{<<"type">> := <<"grant">>,<<"request">> := Req,<<"payload">> := G},
-         #{role := member,authority := Authority,request := #{id := Req,nonce := Nonce,challenge := Challenge,deadline := Deadline}} = S) ->
-    true = now_ms() < Deadline,ba_buffee_passport:exact(G,[<<"nonce">>,<<"challenge">>,<<"passport">>,<<"policy">>,<<"routes">>]),
-    Nonce = maps:get(<<"nonce">>,G),Challenge = maps:get(<<"challenge">>,G),
-    Statement = ba_buffee_passport:verify(maps:get(<<"policy">>,G),Authority),
-    ba_buffee_passport:exact(maps:remove(<<"name">>,Statement),[<<"policy">>,<<"routes">>,<<"invitations">>]),
-    P=maps:get(<<"policy">>,Statement),ok = ba_buffee_passport:policy(P),
-    true = ba_session_privileges:has(grant,Authority,P),Buffee = maps:get(buffee,S),Buffee = maps:get(<<"buffee">>,P),
-    Passport = maps:get(<<"passport">>,G),Pass = ba_buffee_passport:passport(Passport,Authority,maps:get(id,S),Buffee),
-    #{<<"membership">> := Mid} = maps:get(maps:get(id,S),maps:get(<<"members">>,P)),Mid = maps:get(<<"membership">>,Pass),
-    Epoch = maps:get(<<"epoch">>,P),Epoch = maps:get(<<"epoch">>,Pass),
-    Floor = maps:get(floor,S),true = Epoch >= maps:get(epoch,Floor,0),
-    true = maps:get(<<"revision">>,P) >= maps:get(revision,Floor,0),
-    Routes = maps:get(<<"routes">>,G),true = map_size(Routes) =< map_size(maps:get(<<"members">>,P)),
-    true = lists:all(fun(D) -> maps:is_key(D,maps:get(<<"members">>,P)) end,maps:keys(Routes)),
-    maps:foreach(fun(_,R) -> ba_buffee_passport:route(R,maps:get(urls,S)) end,Routes),
-    NewFloor = #{epoch => Epoch,revision => maps:get(<<"revision">>,P)},
-    Saved = maps:merge(maps:with([reusable_link],S),#{id => maps:get(id,S),passport => Passport,authority => Authority,buffee => Buffee,
-        desks => maps:get(urls,S),primary => maps:get(primary,S),authority_route => maps:get(authority_route,S),floor => NewFloor}),
-    ok = save(buffee_member,Saved),
-    ba_buffee:remember(self(),maps:get(name,S),Saved),
-    ok = ba_buffee_desks:configure(Buffee,maps:get(urls,S),maps:get(primary,S),Routes),
-    Mode=case ba_session_privileges:has(grant,maps:get(id,S),P) of true -> authority;false -> member end,
-    Next = S#{name := maps:get(<<"name">>,Statement,maps:get(name,S)),credential := Passport,policy := P,routes := Routes,floor := NewFloor,request := undefined,
-              role := Mode,invitations => read_invitation_state(maps:get(<<"invitations">>,Statement)),policy_signer => Authority,signed_state => maps:get(<<"policy">>,G),state := authorized,until := Deadline+50000,owner_deadline := Deadline+50000},
-    case Mode of authority -> checkpoint_authority(Next);member -> ok end,publish(Next),Next;
-incoming(Authority,#{<<"type">> := <<"denied">>,<<"request">> := Req,<<"payload">> := D},
-         #{role := member,authority := Authority,request := #{id := Req,nonce := Nonce,deadline := Deadline}} = S) ->
-    true = now_ms() < Deadline,ba_buffee_passport:exact(D,[<<"nonce">>,<<"reason">>]),
-    Nonce = maps:get(<<"nonce">>,D),<<"revoked">> = maps:get(<<"reason">>,D),
-    invalidate(),S#{state := revoked,until := 0,request := undefined};
-incoming(Peer,#{<<"type">> := <<"ended">>,<<"payload">> := P},#{policy := Policy}=S) ->
-    true=ba_session_privileges:has(end_session,Peer,Policy),
-    ba_buffee_passport:exact(P,[<<"membership">>]),
-    Membership=maps:get(<<"membership">>,maps:get(maps:get(id,S),maps:get(<<"members">>,maps:get(policy,S)))),
-    Membership=maps:get(<<"membership">>,P),
-    invalidate(),ba_buffee:ended(self()),S#{state := ended,until := 0};
-incoming(Peer,#{<<"type">> := <<"leave">>,<<"payload">> := Payload},
-         #{role := authority,policy := P,routes := Routes}=S) ->
-    ba_buffee_passport:exact(Payload,[<<"membership">>]),true = Peer=/=maps:get(id,S),
-    #{<<"membership">> := Membership} = maps:get(Peer,maps:get(<<"members">>,P)),
-    Membership = maps:get(<<"membership">>,Payload),
-    NewP = bump(P,false),
-    Next = S#{policy := NewP,routes := maps:remove(Peer,Routes)},
-    checkpoint_authority(Next),changed(Next,Routes),Next;
+incoming(Peer,#{<<"type">> := <<"denied">>,<<"request">> := Req,<<"payload">> := Data},#{outgoing := Out}=S) ->
+    #{request := Req,nonce := Nonce} = E = maps:get(Peer,Out),
+    ba_buffee_passport:exact(Data,[<<"nonce">>,<<"policy">>]),Nonce = maps:get(<<"nonce">>,Data),
+    %% A refusal proves nothing by itself; only its signed policy can remove us.
+    merge(Peer,maps:get(<<"policy">>,Data),S#{outgoing := Out#{Peer := E#{refused => true,deadline := now_ms()+?REFUSED_MS}}});
+%% Everything below comes only from Devices that completed the handshake.
+incoming(Peer,#{<<"type">> := Type,<<"payload">> := Data},#{participants := Ps}=S) when is_map_key(Peer,Ps) ->
+    participant(Peer,Type,Data,S);
 incoming(_,_,_) -> error(unexpected_membership_message).
 
-credential(Peer,Packet,S) ->
-    try
-        Envelope=ba_buffee_passport:decode(Packet),P0=ba_buffee_passport:decode(base64:decode(maps:get(<<"body">>,Envelope))),
-        Buffee = maps:get(buffee,S),Buffee = maps:get(<<"buffee">>,P0),
-        case maps:get(<<"type">>,P0) of
-            <<"passport">> ->
-                Signer=maps:get(<<"authority">>,P0),
-                Pass = ba_buffee_passport:passport(Packet,Signer,Peer,Buffee),
-                #{<<"membership">> := Mid} = maps:get(Peer,maps:get(<<"members">>,maps:get(policy,S))),
-                Mid = maps:get(<<"membership">>,Pass),true = maps:get(<<"epoch">>,Pass) =< maps:get(<<"epoch">>,maps:get(policy,S)),
-                {ok,passport};
-            <<"invitation">> ->
-                {_,P} = ba_buffee_passport:parse_invitation(ba_buffee_passport:invitation(Packet)),
-                E = maps:get(maps:get(<<"invite">>,P),maps:get(invitations,S)),
-                true = maps:get(issuer,E,maps:get(id,S)) =:= maps:get(<<"authority">>,P),
-                false = lists:member(Peer,maps:get(blocked,E,[])),
-                true = crypto:hash_equals(maps:get(hash,E),crypto:hash(sha256,maps:get(<<"secret">>,P))),{ok,invitation}
-        end
-    catch _:_ -> denied end.
-admit(Peer,R,_Credential,_Kind,#{policy := P,routes := Routes}=S) ->
-    Members = maps:get(<<"members">>,P),true = map_size(Members) < 16 orelse maps:is_key(Peer,Members),
-    M = maps:get(Peer,Members,#{<<"membership">> => fresh(16),<<"permissions">> => ba_settings:app(buffee_default_permissions,[])}),
-    Updated = not maps:is_key(Peer,Members) orelse maps:get(Peer,Routes,undefined) =/= R,
-    Admission=case Updated of true -> M#{<<"membership">> := fresh(16)};false -> M end,
-    NewP = case Updated of true -> bump(P#{<<"members">> := Members#{Peer => Admission}},false);false -> P end,
-    Next = S#{policy := NewP,routes := Routes#{Peer => R}},
-    checkpoint_authority(Next),
-    case Updated of true -> changed(Next,maps:remove(Peer,Routes));false -> ok end,Next.
+participant(Peer,<<"offline">>,Data,#{participants := Ps}=S) ->
+    ba_buffee_passport:exact(Data,[<<"route">>]),R = maps:get(<<"route">>,Data),R = maps:get(Peer,Ps),
+    publish(routes(S#{participants := maps:remove(Peer,Ps),pairs := maps:remove(Peer,maps:get(pairs,S))}));
+participant(Peer,<<"policy">>,Data,S) ->
+    ba_buffee_passport:exact(Data,[<<"policy">>]),merge(Peer,maps:get(<<"policy">>,Data),S);
+participant(Peer,<<"rename_request">>,Data,#{policy := P}=S) ->
+    ba_buffee_passport:exact(Data,[<<"name">>]),true = grant_holder(S),true = ba_session_privileges:has(on_air,Peer,P),
+    {reply,_,Next} = handle_call({rename,maps:get(<<"name">>,Data)},undefined,S),Next;
+participant(Peer,<<"privilege_release">>,Data,S) ->
+    true = grant_holder(S),
+    {reply,_,Next} = handle_call({change,take,Peer,requested(Data)},undefined,S),Next;
+participant(Peer,<<"privilege_request">>,Data,S) ->
+    true = grant_holder(S),Wire = requested(Data),Requests = maps:get(requests,S),
+    Answer = answer(Wire),
+    case Answer of no -> ok;_ -> chat({privilege_requested,Peer,Wire}) end,
+    case Answer of
+        always -> {reply,_,Next} = handle_call({change,grant,Peer,Wire},undefined,S),Next;
+        no -> S;
+        ask -> S#{requests := Requests#{Peer => lists:usort([Wire|maps:get(Peer,Requests,[])])}}
+    end;
+participant(Peer,<<"ended">>,Data,#{policy := P,pairs := Pairs}=S) ->
+    true = ba_session_privileges:has(end_session,Peer,P),
+    ba_buffee_passport:exact(Data,[<<"pair">>]),true = maps:get(<<"pair">>,Data)=:=maps:get(Peer,Pairs),
+    invalidate(),ba_buffee:ended(self()),S#{state := ended,until := 0};
+participant(_,_,_,_) -> error(unexpected_membership_message).
 
-bump(P,Revoke) -> P#{<<"revision">> := maps:get(<<"revision">>,P)+1,
-    <<"epoch">> := maps:get(<<"epoch">>,P)+case Revoke of true -> 1;false -> 0 end}.
-changed(S,Routes) ->
-    ok = ba_buffee_desks:configure(maps:get(buffee,S),maps:get(urls,S),maps:get(primary,S),maps:get(routes,S)),
-    maps:foreach(fun(Peer,R) ->
-        case Peer =:= maps:get(id,S) of true -> ok;false ->
-            send(Peer,R,<<"policy">>,fresh(16),policy_state(S),S)
+join(Peer,R,Pair,#{participants := Ps,pairs := Pairs}=S) ->
+    publish(routes(S#{participants := Ps#{Peer => R},pairs := Pairs#{Peer => Pair}})).
+routes(S) ->
+    ok = ba_buffee_desks:configure(maps:get(buffee,S),maps:get(urls,S),maps:get(primary,S),maps:get(participants,S)),S.
+
+%% Policy exchange. A statement is trusted when its signer holds `grant` in the
+%% policy this Device already has, or when certificates lead from the creator
+%% to the signer at a revision newer than this Device has seen.
+merge(_,null,S) -> S;
+merge(Peer,State,#{policy := Cur}=S) ->
+    try
+        ba_buffee_passport:exact(State,[<<"signer">>,<<"state">>]),
+        Signer = maps:get(<<"signer">>,State),Packet = maps:get(<<"state">>,State),
+        St = ba_buffee_passport:statement(Packet,Signer),P = maps:get(<<"policy">>,St),
+        true = same_session(P,S),true = ba_session_privileges:has(grant,Signer,P),
+        CurRev = maps:get(<<"revision">>,Cur),
+        true = ba_session_privileges:has(grant,Signer,Cur) orelse
+               ba_buffee_passport:grant_revision(Signer,maps:get(authority,S),St) > CurRev,
+        case order(maps:get(<<"revision">>,P),Packet,S) of
+            newer -> self_check(publish(routes(checkpoint(adopt(Signer,Packet,St,S)))));
+            same -> S;
+            older -> tell(Peer,S),S
         end
-    end,Routes),publish(S).
-checkpoint_authority(#{role := member}=S) -> checkpoint_member(S);
-checkpoint_authority(S) ->
-    case maps:find(reusable_link,S) of
-        {ok,Link} -> {_,Invitation}=ba_buffee_passport:parse_invitation(Link),
-            ok=ba_buffee_desks:advertise(maps:get(<<"mailbox">>,maps:get(<<"route">>,Invitation)));
+    catch exit:{membership_storage_failed,_} = Reason -> exit(Reason);
+          _:_ -> S#{rejected := maps:get(rejected,S)+1} end.
+%% Equal revisions with different content resolve to the smaller statement hash,
+%% so Devices that saw concurrent changes still converge on one policy.
+order(Rev,Packet,#{policy := Cur,signed := Mine}) ->
+    CurRev = maps:get(<<"revision">>,Cur),
+    if Rev > CurRev -> newer;
+       Rev < CurRev -> older;
+       Packet =:= Mine -> same;
+       Mine =:= undefined -> newer;
+       true -> case crypto:hash(sha256,Packet) < crypto:hash(sha256,Mine) of true -> newer;false -> older end
+    end.
+adopt(Signer,Packet,St,#{participants := Ps}=S) ->
+    P = maps:get(<<"policy">>,St),Removed = maps:get(<<"removed">>,P),
+    S#{policy := P,signed := Packet,signer := Signer,delegations := maps:get(<<"delegations">>,St),
+       name := maps:get(<<"name">>,St),participants := maps:without(Removed,Ps),
+       pairs := maps:without(Removed,maps:get(pairs,S))}.
+tell(Peer,#{participants := Ps}=S) ->
+    case maps:find(Peer,Ps) of
+        {ok,R} -> send(Peer,R,<<"policy">>,fresh(16),#{<<"policy">> => policy_state(S)},S);
         error -> ok
+    end.
+self_check(#{id := Id}=S) ->
+    case lists:member(Id,removed(S)) of
+        %% Stay visible as removed; control stops and nobody is contacted.
+        true -> invalidate(),S#{state := revoked,until := 0};
+        false -> S
+    end.
+%% A grant holder's change: next revision, certificates for its grant holders.
+update(Change,#{policy := P0,id := Id,buffee := Buffee}=S) ->
+    case Change(P0) of
+        {ok,P1} ->
+            Rev = maps:get(<<"revision">>,P0)+1,P = P1#{<<"revision">> := Rev},ok = ba_buffee_passport:policy(P),
+            Creator = maps:get(authority,S),Old = maps:get(delegations,S),
+            D = maps:from_list([{H,case maps:find(H,Old) of
+                    {ok,Cert} -> Cert;
+                    error -> sign(ba_buffee_passport:delegation(Buffee,Id,H,Rev),S)
+                end} || H <- holders(P),H=/=Creator]),
+            St = #{<<"name">> => maps:get(name,S),<<"policy">> => P,<<"delegations">> => D},
+            Next = routes(checkpoint(adopt(Id,sign(St,S),St,S))),
+            %% Tell everyone present before the change, so a removed Device learns it.
+            maps:foreach(fun(Peer,_) -> tell(Peer,Next#{participants := maps:get(participants,S)}) end,
+                maps:get(participants,S)),
+            {ok,self_check(publish(Next))};
+        Error -> Error
+    end.
+member(Device,P,S) ->
+    Members = maps:get(<<"members">>,P),
+    case {maps:is_key(Device,Members),hex(Device,64),map_size(Members) < 16} of
+        {true,_,_} -> {ok,P};
+        {false,true,true} -> {ok,P#{<<"members">> := Members#{Device => #{<<"permissions">> => defaults()}},
+                                    <<"removed">> := lists:delete(Device,removed(S))}};
+        {false,false,_} -> {error,unknown_device};
+        {false,true,false} -> {error,too_many_members}
+    end.
+reply({ok,Next},_) -> {reply,ok,Next};
+reply(Error,S) -> {reply,Error,S}.
+
+checkpoint(#{buffee := Buffee,link := Link,name := Name}=S) ->
+    Saved = ba_device_store:load(buffee_sessions,#{}),
+    Record = case maps:get(signed,S) of
+        undefined -> #{link => Link};
+        Packet -> #{link => Link,signed => Packet,signer => maps:get(signer,S)}
     end,
-    ok=save(buffee_authority,maps:with([policy,invitations,routes],S)),
-    Snapshot=maps:with([policy,invitations,routes,name,urls,primary,reusable_link],S),
-    Saved=#{name => maps:get(name,S),buffee => maps:get(buffee,S),
-            config => #{mode => recover_authority,snapshot => Snapshot}},
-    ok=save(buffee_connection,Saved),ba_buffee:remember_authority(self(),Saved),ok.
+    Kept = maps:from_list(lists:sublist(lists:reverse(lists:keysort(2,
+        [{K,maps:get(at,V,0)} || {K,V} <- maps:to_list(maps:remove(Buffee,Saved))])),31)),
+    ok = save(buffee_sessions,(maps:with(maps:keys(Kept),Saved))#{Buffee => Record#{at => erlang:system_time(second)}}),
+    ba_buffee:remember(self(),#{name => Name,buffee => Buffee,config => #{mode => join,invitation => Link}}),S.
 save(Name,Data) ->
     try ba_device_store:save(Name,Data)
     catch _:_ -> exit({membership_storage_failed,Name}) end.
-view(S) -> #{device_privileges => maps:map(fun(_,M) -> maps:get(<<"permissions">>,M) end,maps:get(<<"members">>,maps:get(policy,S))),
-              local_permissions => maps:get(<<"permissions">>,maps:get(maps:get(id,S),maps:get(<<"members">>,maps:get(policy,S)))),
-              policy => ba_buffee_passport:runtime_policy(maps:get(policy,S),maps:get(id,S)),
-              routes => maps:remove(maps:get(id,S),maps:get(routes,S)),until => infinity}.
-publish(S) ->
-    P=maps:get(policy,S),
-    ba_contacts:observe(maps:get(buffee,S),maps:get(name,S),maps:keys(maps:remove(maps:get(id,S),maps:get(<<"members">>,P)))),
-    View=view(S),chat({session_privileges,maps:get(device_privileges,View)}),
-    notify({membership_authorized,View}).
+
+%% Present participants and their effective permissions for the control layer.
+view(#{id := Id,policy := P}=S) ->
+    Present = maps:put(Id,self,maps:get(participants,S)),
+    Privileges = maps:map(fun(D,_) -> permissions(D,P) end,maps:merge(maps:get(<<"members">>,P),Present)),
+    #{device_privileges => Privileges,local_permissions => permissions(Id,P),
+      policy => ba_buffee_passport:runtime_policy(P,Id,maps:with(maps:keys(Present),Privileges)),
+      routes => maps:get(participants,S),until => infinity}.
+permissions(Id,#{<<"members">> := Members}) ->
+    case maps:find(Id,Members) of {ok,#{<<"permissions">> := Perms}} -> Perms;error -> defaults() end.
+%% Participants without a policy entry; the creator's own defaults are wider.
+defaults() -> ba_settings:app(buffee_default_permissions,[]).
+publish(#{state := authorized}=S) ->
+    ba_contacts:observe(maps:get(buffee,S),maps:get(name,S),maps:keys(maps:get(participants,S))),
+    View = view(S),chat({session_privileges,maps:get(device_privileges,View)}),
+    notify({membership_authorized,View}),S;
+publish(S) -> S.
 chat(Event) -> case ba_session_scope:whereis(ba_buffee_chat) of undefined -> ok;Chat -> Chat ! Event,ok end.
 invalidate() -> notify(membership_invalidated).
 notify(Event) -> case ba_session_scope:whereis(ba_buffee_control) of undefined -> ok;Pid -> Pid ! Event end.
@@ -459,119 +408,43 @@ send(To,R,Type,Request,Payload,S) ->
              <<"buffee">> => maps:get(buffee,S),<<"request">> => Request,<<"payload">> => Payload},
     ba_buffee_desks:send_route(To,R,<<"membership">>,sign(Body,S)).
 sign(B,S) -> ba_buffee_passport:sign(B,maps:get(private,S)).
-grant_holder_present(#{policy := P,id := Self}) when is_map(P) ->
-    lists:any(fun(Id) -> Id=:=Self orelse
-        (try ba_buffee_desks:peer_online(Id) catch exit:_ -> false end) end,holders(P));
-grant_holder_present(_) -> false.
-value(_,undefined) -> null;
-value(K,P) -> maps:get(K,P).
+proof(#{secret := Secret},Parts) -> ba_buffee_passport:proof(Secret,Parts).
+equal(A,B) when is_binary(A),is_binary(B),byte_size(A)=:=byte_size(B) -> crypto:hash_equals(A,B);
+equal(_,_) -> false.
+pair(Nonce,Challenge) -> binary:part(binary:encode_hex(crypto:hash(sha256,[Nonce,Challenge])),0,32).
+policy_state(#{signed := undefined}) -> null;
+policy_state(#{signed := Packet,signer := Signer}) -> #{<<"signer">> => Signer,<<"state">> => Packet}.
+same_session(P,S) ->
+    maps:get(<<"buffee">>,P)=:=maps:get(buffee,S) andalso maps:get(<<"authority">>,P)=:=maps:get(authority,S).
+removed(#{policy := P}) -> maps:get(<<"removed">>,P).
+known(#{id := Id,policy := P,participants := Ps}) ->
+    lists:usort([Id|maps:keys(Ps)++maps:keys(maps:get(<<"members">>,P))]).
+grant_holder(#{id := Id,policy := P,state := authorized}) -> ba_session_privileges:has(grant,Id,P);
+grant_holder(_) -> false.
+grant_holder_present(#{policy := P,id := Self,participants := Ps}) ->
+    lists:any(fun(Id) -> Id=:=Self orelse (maps:is_key(Id,Ps) andalso
+        (try ba_buffee_desks:peer_online(Id) catch exit:_ -> false end)) end,holders(P)).
 fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).
 hex(B,N) -> ba_buffee_job:hex(B,N).
 now_ms() -> erlang:monotonic_time(millisecond).
-format_status(Status) -> maps:map(fun(state,S) -> maps:with([id,buffee,role,state],S);(log,_) -> [];(_,_) -> redacted end,Status).
+format_status(Status) -> maps:map(fun(state,S) -> maps:with([id,buffee,state],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
-invitations(Ids,_TTL,#{role := authority,invitations := Existing}=S)
-        when is_list(Ids),length(Ids)>0,length(Ids)=<15 ->
-    Live = Existing,
-    case map_size(Live)+length(Ids)=<32 andalso
-         lists:all(fun(Id) -> Id=:=undefined orelse hex(Id,64) end,Ids) of
-        false -> {error,invalid_invitation};
-        true ->
-            {Link,Next}=case maps:find(reusable_link,S) of
-              {ok,Shared} ->
-                %% Explicitly inviting a selected contact can undo its removal;
-                %% merely forwarding the same link does not clear that block.
-                Invites=maps:map(fun(_,E) -> E#{blocked => maps:get(blocked,E,[])--Ids} end,Existing),
-                {compact_link(Shared),S#{invitations := Invites}};
-              error ->
-                Id = fresh(16),Secret = fresh(32),
-                I = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"name">> => maps:get(name,S),
-                    <<"buffee">> => maps:get(buffee,S),<<"authority">> => maps:get(id,S),
-                    <<"invite">> => Id,<<"secret">> => Secret,<<"expires">> => null,
-                    <<"desks">> => maps:get(urls,S),<<"route">> => maps:get(maps:get(id,S),maps:get(routes,S))},
-                Entry = #{hash => crypto:hash(sha256,Secret),issuer => maps:get(id,S),blocked => []},
-                Shared=ba_buffee_passport:invitation(sign(I,S)),
-                {Shared,S#{reusable_link => Shared,invitations := Live#{Id => Entry}}}
-            end,
-            checkpoint_authority(Next),
-            {ok,[#{device => Device,invitation => Link} || Device <- Ids],Next}
-    end;
-invitations(_,_,_) -> {error,owner_or_valid_invitation_required}.
-
-compact_link(Link) ->
-    {Packet,_}=ba_buffee_passport:parse_invitation(Link),
-    ba_buffee_passport:invitation(Packet).
-
-holders(undefined) -> [];
 holders(P) -> ba_session_privileges:holders(grant,P).
-local_privileges(#{policy := P,id := Id}) when is_map(P) -> ba_session_privileges:names(ba_session_privileges:held(Id,P));
-local_privileges(_) -> [].
+local_privileges(#{policy := P,id := Id}) -> ba_session_privileges:names(permissions(Id,P)).
 %% Requests are a grant holder's local reminder, not signed Session state.
-open_requests(#{policy := P}=S) when is_map(P) ->
+open_requests(#{policy := P}=S) ->
     maps:filtermap(fun(Device,Wires) ->
-        case Wires--ba_session_privileges:held(Device,P) of [] -> false;Open -> {true,ba_session_privileges:names(Open)} end
-    end,maps:get(requests,S,#{}));
-open_requests(_) -> #{}.
+        case Wires--permissions(Device,P) of [] -> false;Open -> {true,ba_session_privileges:names(Open)} end
+    end,maps:get(requests,S)).
 %% This Device's user decides how requests for rights are answered: the on-air
 %% right, and moderator rights (giving rights, ending the Session).
 answer(Wire) ->
     Key=case Wire=:=ba_session_privileges:wire(on_air) of true -> on_air_requests;false -> moderator_requests end,
     try ba_device_config:policy(Key) catch exit:_ -> ask end.
-%% The Session's permanent invitation route: from this membership's own link,
-%% or from the Device's memory of the Session.
-stable_route(S) ->
-    Link=case maps:find(reusable_link,S) of
-        {ok,L} -> L;
-        error -> try maps:get(link,maps:get(maps:get(buffee,S),maps:get(sessions,ba_contacts:list(),#{})),null) catch _:_ -> null end
-    end,
-    try {_,I}=ba_buffee_passport:parse_invitation(Link),
-        Route=maps:get(<<"route">>,I),
-        case ba_buffee_passport:route(Route,maps:get(urls,S)) of ok -> Route;_ -> undefined end
-    catch _:_ -> undefined end.
 requested(Data) ->
     ba_buffee_passport:exact(Data,[<<"privilege">>]),Wire=maps:get(<<"privilege">>,Data),
     ok=ba_buffee_passport:permissions([Wire]),Wire.
-ask_holders(Type,Payload,#{policy := P,routes := Routes}=S) ->
-    Results=[send(Id,R,Type,fresh(16),Payload,S) || Id <- holders(P),{ok,R} <- [maps:find(Id,Routes)]],
+ask_holders(Type,Payload,#{policy := P,participants := Ps}=S) ->
+    Results=[send(Id,R,Type,fresh(16),Payload,S) || Id <- holders(P),{ok,R} <- [maps:find(Id,Ps)]],
     case lists:member(ok,Results) of true -> ok;false -> {error,grant_holder_unavailable} end.
-invitation_state(S) -> maps:map(fun(_,E) -> #{<<"hash">> => binary:encode_hex(maps:get(hash,E)),
-    <<"issuer">> => maps:get(issuer,E,maps:get(id,S)),<<"blocked">> => maps:get(blocked,E,[])} end,maps:get(invitations,S)).
-read_invitation_state(M) when is_map(M),map_size(M)=<32 -> maps:map(fun(_,E) ->
-    ba_buffee_passport:exact(E,[<<"hash">>,<<"issuer">>,<<"blocked">>]),
-    true=hex(maps:get(<<"hash">>,E),64),true=hex(maps:get(<<"issuer">>,E),64),
-    Blocked=maps:get(<<"blocked">>,E),true=is_list(Blocked) andalso length(Blocked)=<16,
-    true=lists:all(fun(D) -> hex(D,64) end,Blocked),
-    #{hash => binary:decode_hex(maps:get(<<"hash">>,E)),issuer => maps:get(<<"issuer">>,E),blocked => Blocked}
-end,M).
-
-policy_state(#{role := authority,policy := P}=S) ->
-    #{<<"signer">> => maps:get(id,S),<<"state">> => sign(owner_statement(P,S),S)};
-policy_state(S) ->
-    #{<<"signer">> => maps:get(policy_signer,S),<<"state">> => maps:get(signed_state,S)}.
-owner_statement(P,S) -> #{<<"name">> => maps:get(name,S),<<"policy">> => P,<<"routes">> => maps:get(routes,S),
-    <<"invitations">> => invitation_state(S)}.
-announce(S) -> maps:foreach(fun(Peer,R) ->
-    case Peer=:=maps:get(id,S) of true -> ok;false ->
-        send(Peer,R,<<"presence">>,fresh(16),#{<<"route">> => ba_buffee_desks:route()},S)
-    end
-end,maps:get(routes,S)).
-
-owned_update(P,S) ->
-    Role=case ba_session_privileges:has(grant,maps:get(id,S),P) of true -> authority;false -> member end,
-    S#{policy := P,role := Role,policy_signer => maps:get(id,S),signed_state => sign(owner_statement(P,S),S)}.
-checkpoint_member(#{policy := P,id := Id}=S) ->
-    Owner=case holders(P) of [First|_] -> First;[] -> maps:get(authority,S) end,
-    Route=maps:get(Owner,maps:get(routes,S),maps:get(authority_route,S,ba_buffee_desks:route())),
-    Credential=case maps:find(credential,S) of
-        {ok,Pass} -> Pass;
-        error -> sign(#{<<"v">> => 1,<<"type">> => <<"passport">>,<<"buffee">> => maps:get(buffee,S),
-            <<"authority">> => Id,<<"device">> => Id,<<"membership">> => maps:get(<<"membership">>,maps:get(Id,maps:get(<<"members">>,P))),
-            <<"epoch">> => maps:get(<<"epoch">>,P)},S)
-    end,
-    %% The saved contact is only a reconnect hint; this carries no live session.
-    Saved=#{id => Id,passport => Credential,authority => Owner,buffee => maps:get(buffee,S),
-        desks => maps:get(urls,S),primary => maps:get(primary,S),authority_route => Route,
-        floor => #{epoch => maps:get(<<"epoch">>,P),revision => maps:get(<<"revision">>,P)}},
-    ok=save(buffee_member,Saved),ba_buffee:remember(self(),maps:get(name,S),Saved),ok.
-
 valid_name(Name) -> is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128 andalso is_list(unicode:characters_to_list(Name)).

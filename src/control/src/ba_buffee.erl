@@ -1,11 +1,14 @@
 %% One active Buffee per local Session scope. Ownership survives leaving or app shutdown.
 -module(ba_buffee).
 -behaviour(gen_server).
--export([start_link/0,create/2,join/1,start/1,status/0,connection/0,disconnect/0,remember/3,remember_authority/2,leave/0,end_buffee/0,invite/2,ended/1,broadcast/0,broadcast/1,broadcast_token/0]).
+-export([start_link/0,create/2,create/3,join/1,start/1,status/0,connection/0,disconnect/0,remember/2,leave/0,end_buffee/0,invite/2,ended/1,broadcast/0,broadcast/1,broadcast_token/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
-create(Name,Desks) ->
-    Config=#{mode => create,name => Name,desks => Desks},
+create(Name,Desks) -> create(Name,Desks,undefined).
+%% A scoped Session's ID is derived from this Device's key and the scope's nonce.
+create(Name,Desks,Nonce) ->
+    Config=case Nonce of undefined -> #{mode => create,name => Name,desks => Desks};
+        _ -> #{mode => create,name => Name,desks => Desks,nonce => Nonce} end,
     start(case ba_session_scope:current() of undefined -> Config;Id -> Config#{buffee => Id} end).
 join(Link) -> start(#{mode => join,invitation => Link}).
 start(Config) -> gen_server:call(ba_session_scope:ref(?MODULE),{start,Config},15000).
@@ -15,8 +18,7 @@ broadcast(B) when is_boolean(B) -> gen_server:call(ba_session_scope:ref(?MODULE)
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 connection() -> gen_server:call(ba_session_scope:ref(?MODULE),connection).
 disconnect() -> gen_server:call(ba_session_scope:ref(?MODULE),disconnect,15000).
-remember_authority(Pid,Saved) -> gen_server:cast(ba_session_scope:ref(?MODULE),{remember_authority,Pid,Saved}).
-remember(Pid,Name,Member) -> gen_server:cast(ba_session_scope:ref(?MODULE),{remember,Pid,Name,Member}).
+remember(Pid,Saved) -> gen_server:cast(ba_session_scope:ref(?MODULE),{remember,Pid,Saved}).
 leave() -> gen_server:call(ba_session_scope:ref(?MODULE),leave,15000).
 end_buffee() -> gen_server:call(ba_session_scope:ref(?MODULE),end_buffee,15000).
 invite(Selection,TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite,Selection,TTL}).
@@ -38,7 +40,7 @@ handle_call(status,_,S) ->
     {reply,View,S};
 handle_call(connection,_,S) -> {reply,connection_view(S),S};
 handle_call({start,Input},_,#{state := idle}=S) ->
-    Config=rejoin_config(Input,maps:get(remembered,S,undefined)),
+    Config=Input,
     case valid(Config) of
         false -> {reply,{error,invalid_buffee_config},S};
         true ->
@@ -59,21 +61,21 @@ handle_call(end_buffee,_,#{state := active}=S) ->
         Error -> {reply,Error,S}
     end;
 handle_call(leave,_,#{state := active}=S) ->
-    %% Leaving never gives up the grant privilege; that Device can return.
+    %% Privileges are kept in every case (ba_buffee_membership's saved policy);
+    %% only a grant holder also keeps the intent to return on next start.
     case lists:member(<<"grant">>,maps:get(privileges,ba_buffee_membership:status(),[])) of
         true -> {reply,ok,stop(S)};
-        false -> ba_buffee_membership:depart(),{reply,ok,forget(stop(S))}
+        false -> {reply,ok,forget(stop(S))}
     end;
-handle_call(leave,_,#{remembered := #{config := #{mode := recover_authority}}}=S) ->
-    {reply,ok,stop(S)};
-handle_call(leave,_,S) -> {reply,ok,forget(stop(S))};
+handle_call(leave,_,#{remembered := Saved}=S) ->
+    case holds_grant(Saved) of
+        true -> {reply,ok,stop(S)};
+        false -> {reply,ok,forget(stop(S))}
+    end;
 handle_call(disconnect,_,S) ->
     %% App/transport closure is not an End Buffee command, including the Owner.
     {reply,ok,stop(S)};
 handle_call(_,_,S) -> {reply,{error,no_active_buffee},S}.
-handle_cast({remember_authority,Membership,Saved},#{membership := Membership}=S) ->
-    %% The membership owner persisted this before publishing its policy.
-    {noreply,S#{remembered := Saved}};
 handle_cast({peer_name,Peer,Name},#{remembered := Saved}=S) when is_map(Saved),is_binary(Name) ->
     case owner_id(Saved)=:=Peer andalso maps:get(owner_name,Saved,undefined)=/=Name of
         true -> Next=Saved#{owner_name => Name},ok=ba_device_store:save(buffee_connection,Next),
@@ -81,9 +83,8 @@ handle_cast({peer_name,Peer,Name},#{remembered := Saved}=S) when is_map(Saved),i
         false -> {noreply,S}
     end;
 handle_cast({ended,Membership},#{membership := Membership}=S) -> {noreply,forget(stop(S))};
-handle_cast({remember,Membership,Name,Member},#{membership := Membership}=S) ->
-    Saved=#{name => Name,buffee => maps:get(buffee,Member),
-        config => #{mode => rejoin,name => Name,member => Member}},
+%% Returning to a Session is joining it again with its permanent link.
+handle_cast({remember,Membership,Saved},#{membership := Membership}=S) ->
     Previous=maps:get(remembered,S,undefined),
     Named=case is_map(Previous) andalso owner_id(Previous)=:=owner_id(Saved) of
         true -> maps:merge(maps:with([owner_name],Previous),Saved);
@@ -130,10 +131,6 @@ activate(Config,S) ->
     end.
 forget(S) -> ok=ba_device_store:save(buffee_connection,undefined),
     S#{remembered := undefined,connection_state := idle}.
-description(#{mode := recover_authority,snapshot := #{name := Name,policy := P}}=C) ->
-    #{name => Name,buffee => maps:get(<<"buffee">>,P),config => C};
-description(#{mode := rejoin,name := Name,member := Member}=C) ->
-    #{name => Name,buffee => maps:get(buffee,Member),config => C};
 description(#{mode := create,name := Name}=C) -> #{name => Name,config => C};
 description(#{mode := join,invitation := Link}=C) ->
     {_,I}=ba_buffee_passport:parse_invitation(Link),
@@ -161,41 +158,33 @@ connection_view(#{remembered := Saved}=S) ->
         idle -> <<"Previous Session remembered">>
     end,
     (maps:with([name,buffee],Saved))#{state => State,message => Message,owner => Owner,owner_name => Label}.
-owner_id(#{config := #{member := #{authority := Id}}}) -> Id;
 owner_id(#{config := #{invitation := Link}}) ->
     try {_,I}=ba_buffee_passport:parse_invitation(Link),maps:get(<<"authority">>,I) catch _:_ -> <<>> end;
 owner_id(_) -> <<>>.
+%% Whether this Device holds grant in its saved policy for the remembered
+%% Session; with no signed change yet, revision 0 gives grant to the creator.
+holds_grant(#{buffee := Buffee}=Saved) ->
+    {Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
+    try maps:get(Buffee,ba_device_store:load(buffee_sessions,#{})) of
+        #{signer := Signer,signed := Packet} ->
+            St=ba_buffee_passport:statement(Packet,Signer),
+            ba_session_privileges:has(grant,Id,maps:get(<<"policy">>,St));
+        _ -> Id=:=owner_id(Saved)
+    catch _:_ -> false end;
+holds_grant(_) -> false.
 owner_fallback(<<>>) -> <<"the hosting Device">>;
 owner_fallback(Id) -> <<"Device ",(binary:part(Id,0,min(12,byte_size(Id))))/binary>>.
 membership_status() ->
     try ba_buffee_membership:status() catch exit:_ -> #{state => ending} end.
-valid(#{mode := recover_authority,snapshot := #{policy := Policy,urls := URLs,name := Name}}) ->
-    try
-        ok=ba_buffee_passport:policy(Policy),ok=ba_buffee_passport:urls(URLs),
-        {Public,_}=ba_device_store:identity(),true=ba_session_privileges:has(grant,binary:encode_hex(Public),Policy),
-        true=is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,true
-    catch _:_ -> false end;
 valid(#{mode := create,name := Name,desks := Desks}) ->
     try true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
         true = is_list(unicode:characters_to_list(Name)),ok = ba_buffee_passport:urls(Desks),true
     catch _:_ -> false end;
 valid(#{mode := join,invitation := Link}) ->
     try ba_buffee_passport:parse_invitation(Link),true catch _:_ -> false end;
-valid(#{mode := rejoin,name := Name,member := #{id := Id,passport := Passport,authority := Authority,buffee := Buffee}}) ->
-    try true=is_binary(Name),{Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
-        true = ba_buffee_job:hex(Authority,64),
-        Envelope=ba_buffee_passport:decode(Passport),Body=ba_buffee_passport:decode(base64:decode(maps:get(<<"body">>,Envelope))),
-        ba_buffee_passport:passport(Passport,maps:get(<<"authority">>,Body),Id,Buffee),true catch _:_ -> false end;
 valid(_) -> false.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([state],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
-rejoin_config(#{mode := join,invitation := Link}=Config,
-              #{buffee := Id,config := #{mode := recover_authority}=Recovery}) ->
-    try
-        {_,Invitation}=ba_buffee_passport:parse_invitation(Link),
-        case maps:get(<<"buffee">>,Invitation)=:=Id of true -> Recovery;false -> Config end
-    catch _:_ -> Config end;
-rejoin_config(Config,_) -> Config.
 
 restore_enabled() ->
     ba_session_scope:get_env(restore_buffee_on_start,false) andalso

@@ -93,7 +93,7 @@ forget_snapshots() ->
         false -> ok;
         Dir -> lists:foreach(fun(Name) ->
             case file:delete(filename:join(Dir,Name)) of ok -> ok;{error,enoent} -> ok;{error,R} -> error({snapshot_cleanup_failed,R}) end
-        end,["authority.term","policy.term","desk.term","audio_subscription.term","buffee_authority.term","buffee_member.term","buffee_desks.term","buffee_time_policy.term",
+        end,["authority.term","policy.term","desk.term","audio_subscription.term","buffee_authority.term","buffee_member.term","buffee_sessions.term","buffee_desks.term","buffee_time_policy.term",
             "buffee_time_cache.term","audio_subscriptions.term","audio_subscription.term","clock_status.json"])
     end.
 

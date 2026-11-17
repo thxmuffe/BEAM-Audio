@@ -52,7 +52,7 @@ addresses needed to communicate with their admitted peers.
 
 ## Buffee invitations and messages
 
-### Capability-scoped lookup for current v3 clients
+### Capability-scoped lookup
 
 After authentication, a client may send `op=lookup` with `request` (32 hex),
 `buffee` (32 hex) and `mailbox` (32 hex). The service returns `op=found`, the same
@@ -64,7 +64,11 @@ lookup; clients replay current registrations after reauthentication, which clear
 old registrations for that identity. Unsupported/error/disconnected requests must
 not be interpreted as a successful empty result.
 
-Reusable signed v3 link and fresh-gathering semantics are specified in
+Clients from 2026-11-17 (v5 links) use it for Session discovery: every present
+Device advertises one mailbox derived from the link's secret, and a lookup lists
+all of them. The service needed no change for this.
+
+Link and Session membership semantics are specified in
 [BUFFEE_MEMBERSHIP.md](BUFFEE_MEMBERSHIP.md). Expiry is currently disabled there;
 older signed timestamps remain metadata. The v2 format below describes legacy
 clients and is not the current Device invitation parser.

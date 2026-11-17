@@ -1,5 +1,37 @@
 # Current implementation and validation
 
+## Pairwise Session admission; passport removed — 2026-11-17
+
+Implemented the accepted admission model in `ba_buffee_passport`,
+`ba_buffee_membership` and `ba_buffee`; Reception is unchanged. The creator signs
+one permanent v5 link (Session ID derived from the creator's key and a nonce).
+Every present Device advertises a secret-derived Session mailbox; each pair
+proves the link with an HMAC handshake and exchanges the signed v2 policy. Join
+needs no creator, `grant` holder or Manager, and grants nothing. Delegation
+certificates let a newcomer trust a delegated `grant` holder while the creator
+is away; equal revisions converge by statement hash. Each Device saves its
+accepted policy per Session (`buffee_sessions`), so Leave and shutdown keep
+privileges. The passport credential, inviter route, hub handshake and
+`recover_authority`/`rejoin` records are gone. Decision: older v3/v4 links and
+saved records stop working.
+
+Validation: focused eunit (`ba_buffee_passport_tests`, `ba_buffee_tests`,
+`ba_session_privileges_tests`, `ba_app_session_tests`,
+`ba_buffee_control_protocol_tests`, `ba_session_memory_tests`) pass, 53 tests.
+New `tests/control/session-peer-admission-smoke.py` passes: creator offline,
+delegated grant accepted by a newcomer, empty Session keeps its ID and grants
+nothing, returning Device keeps `on_air`. `buffee-reconnect-smoke.py` and
+`session-restart-smoke.py` pass. `buffee-membership-smoke.py` passes every
+membership/privilege step and fails only its final contacts-group persistence
+check. Failures not caused by this change, each also failing at HEAD (run in a
+scratch copy): `ba_contacts_tests` (expects no `sessions` key),
+`session-privileges-smoke.py` (chat "is here" count) and
+`parallel-sessions-smoke.py`. Smoke fixes for stale expectations: the probe
+grants DSP consent before test jobs, an existing control session counts as
+connected, and Desk sockets outlive a Session. OpenSound WebApp link fixtures now
+say v5; `node --test` could not run (local Node is missing libsimdjson). Not
+verified on Windows, iOS or the hosted Reception; no app rebuilt.
+
 ## Planning handoff to Mac — 2026-11-17
 
 The user approved Reception-based peer discovery, Manager coordination separate
@@ -657,6 +689,30 @@ Control slider (2026-11-17): the four levels are stops on one centred track
 (Wild, Friendly, Tight, Custom) with a large balloon that travels between them
 and an explanation whose centre follows it. "Wild" is the label of the stored
 `no_control`; "Custom" of `advanced`.
+
+Control level fixes (2026-11-17): a level that both stops one grant and gives
+another (for example Custom with Microphone Always, then Friendly) was refused
+by the consent barrier (`separate_permission_changes_required`) and the error
+was hidden while Custom showed no text, so only Custom seemed to work. The core
+now applies a level in two changes: stops first, then grants. A level error is
+shown even in Custom. Choosing Wild asks first ("This will lose all control...",
+Cancel / I understand); Cancel keeps the current level. Each level has a colour
+(Wild orange, Friendly green, Tight blue, Custom purple; never red), used by the
+balloon, the selected word and the Settings button in the bottom bar. The
+invitation QR code is now SVG; the only PNG left is the apple-touch-icon, which
+iOS requires as PNG. Tests: core preset test with the mixed case, 26 frontend;
+real-pointer check on a real runtime (mixed change to Friendly, Wild Cancel and
+I understand, colours). Not rebuilt into the Mac/iOS apps.
+
+Stuck stop (2026-11-17): after Wild, the Mac app's Device refused every other
+level: `revocation_pending` held five keys while no audio helper was running.
+A helper that never acknowledged a stop was never escalated, and its own exit
+did not count. `ba_native_stop:port/3` now accepts the helper's OS exit status
+(waitpid) as proof it stopped, and kills a helper that does not acknowledge in
+1.5 s, confirming only once its exit is seen. A socket EOF (iOS) and a port
+already closed still confirm nothing; a dead Erlang executor still does not fake
+an ACK. Tests: native stop (exit, killed silent helper, closed port), revocation
+and consent pass. Not yet seen on a real Mac helper.
 
 NOT VERIFIED: the new shell against a real Device runtime or in the Mac/iOS
 hosts; no app was rebuilt. The OpenSoundKit WebKit tests still target the

@@ -133,8 +133,21 @@ handle_call({preset,Name,Options},From,S) ->
         false -> {reply,{error,invalid_configuration},S};
         true ->
             V=preset_values(Name),Auto=maps:get(auto_accept,V),Choices=case maps:get(choices,V) of keep -> maps:get(choices,S,#{});C -> C end,
-            case handle_call({edit,preset_patch(V#{choices => Choices}),Options},From,S) of
-                {reply,ok,Next} -> {reply,ok,save_gates(Next#{auto_accept => Auto,auto_grant => maps:get(auto_grant,V),choices => Choices,preset => Name})};
+            Patch=preset_patch(V#{choices => Choices}),
+            %% The barrier takes stops and grants as separate changes: stop first.
+            Stops=maps:filter(fun(K,On) -> not On andalso maps:get(K,current(S),false) end,Patch),
+            Step=case map_size(Stops) of
+                0 -> {reply,ok,S};
+                _ -> handle_call({edit,Stops,maps:remove(request_id,Options)},From,S)
+            end,
+            Again=fun(S1) -> case maps:is_key(expected_revision,Options) of
+                true -> Options#{expected_revision => maps:get(revision,S1)};false -> Options end end,
+            case Step of
+                {reply,ok,S1} ->
+                    case handle_call({edit,Patch,Again(S1)},From,S1) of
+                        {reply,ok,Next} -> {reply,ok,save_gates(Next#{auto_accept => Auto,auto_grant => maps:get(auto_grant,V),choices => Choices,preset => Name})};
+                        Other -> Other
+                    end;
                 Other -> Other
             end
     end;

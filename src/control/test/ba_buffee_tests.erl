@@ -31,12 +31,16 @@ buffee_test_() ->
       fun crash_notice_does_not_block_supervision/0]}.
 
 owner_name_in_connection() ->
-    Original=sys:get_state(ba_buffee),Id=binary:copy(<<"A">>,64),
-    Saved=#{name => <<"Test">>,config => #{member => #{authority => Id}}},
+    Original=sys:get_state(ba_buffee),
+    {Pub,Key}=crypto:generate_key(eddsa,ed25519),Id=binary:encode_hex(Pub),Nonce=binary:copy(<<"A">>,32),
+    Link=ba_buffee_passport:invitation(ba_buffee_passport:sign(#{<<"v">> => 1,<<"type">> => <<"invitation">>,
+        <<"buffee">> => ba_buffee_passport:session_id(Id,Nonce),<<"authority">> => Id,<<"nonce">> => Nonce,
+        <<"secret">> => binary:copy(<<"B">>,64),<<"desks">> => [<<"ws://127.0.0.1:4000/relay/v1">>],<<"name">> => <<"Test">>},Key)),
+    Saved=#{name => <<"Test">>,config => #{mode => join,invitation => Link}},
     sys:replace_state(ba_buffee,fun(S) -> S#{remembered := Saved,connection_state := unavailable} end),
     try
         Unknown=ba_buffee:connection(),
-        ?assertNotEqual(nomatch,binary:match(maps:get(message,Unknown),<<"Device AAAAAAAAAAAA">>)),
+        ?assertNotEqual(nomatch,binary:match(maps:get(message,Unknown),<<"Device ",(binary:part(Id,0,12))/binary>>)),
         Name = <<"MacBook Air | A1B2C3D4">>,
         gen_server:cast(ba_buffee,{peer_name,Id,Name}),
         Known=ba_buffee:connection(),
@@ -121,7 +125,7 @@ leave_and_resume_owner() ->
     ok=ba_buffee:create(<<"Remember ownership">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),
     Before=ba_buffee:status(),{ok,Link}=ba_buffee_membership:invite(null),
     ok=ba_buffee:leave(),ok=ba_buffee:leave(),?assertEqual(#{state => idle},ba_buffee:status()),
-    #{config := #{mode := recover_authority}}=ba_device_store:load(buffee_connection,undefined),
+    #{config := #{mode := join,invitation := Link}}=ba_device_store:load(buffee_connection,undefined),
     ok=ba_buffee:join(Link),After=ba_buffee:status(),
     ?assertEqual(maps:get(buffee,Before),maps:get(buffee,After)),
     ?assertEqual([],[<<"end_session">>,<<"grant">>,<<"on_air">>]--maps:get(privileges,After)),

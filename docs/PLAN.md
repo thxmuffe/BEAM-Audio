@@ -3,7 +3,12 @@
 ## Agreed next work / Mac handoff — 2026-11-17
 
 This is the user's accepted model and supersedes earlier admission proposals
-below. Planning only in this increment: the actual joining blocker is NOT fixed.
+below. Status 2026-11-17: discovery and admission are implemented (pairwise,
+link-based, no passport; see PROGRESS.md). Still open below: Manager lifecycle,
+Manager notification -> Device-local decision -> subscription, and UI state for
+reachability. Also open from the design review: whether the creator's `grant`
+should be irrevocable, and replacing End with "remove everyone and leave",
+since a permanent link can always reopen a Session.
 
 ### Required behavior
 

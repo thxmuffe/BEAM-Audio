@@ -35,6 +35,7 @@ From the core root:
 ```sh
 python3 tests/control/buffee-control-smoke.py
 python3 tests/control/buffee-membership-smoke.py
+python3 tests/control/session-peer-admission-smoke.py
 python3 tests/control/buffee-reconnect-smoke.py
 python3 tests/control/buffee-time-smoke.py
 python3 tests/control/buffee-time-smoke.py --production-cadence

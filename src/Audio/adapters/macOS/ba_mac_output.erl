@@ -17,7 +17,7 @@ permitted_open(#{sample_rate := Rate,channel_count := 2}) ->
         end
     end.
 permitted_write(#{pid := P,host_offset := Offset},Mono,Frames,PCM) -> gen_server:call(P,{write,Mono+Offset,Frames,PCM},1000).
-close(#{pid := P}) -> try gen_server:call(P,{revoke_permissions,[speaker]},2000) catch exit:_ -> {error,native_stop_unconfirmed} end.
+close(#{pid := P}) -> try gen_server:call(P,{revoke_permissions,[speaker]},4000) catch exit:_ -> {error,native_stop_unconfirmed} end.
 init(Rate) ->
     case ba_device_permission:enter(playback) of
         {ok,Token} -> case init_permitted(Rate) of {ok,S} -> {ok,S#{permission_token => Token}};Error -> Error end;

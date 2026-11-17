@@ -107,8 +107,8 @@ command(#{<<"method">> := <<"put_group">>, <<"name">> := Name, <<"ids">> := Ids}
 command(#{<<"method">> := <<"delete_group">>, <<"name">> := Name}) ->
     ba_contacts:delete_group(Name);
 %% A Session exists once its invitation link exists: creating one makes its link.
-command(#{<<"method">> := <<"create_buffee">>, <<"name">> := Name, <<"desks">> := Desks}) ->
-    case ba_buffee:create(Name, Desks) of
+command(#{<<"method">> := <<"create_buffee">>, <<"name">> := Name, <<"desks">> := Desks}=C) ->
+    case ba_buffee:create(Name, Desks, maps:get(<<"nonce">>, C, undefined)) of
         ok -> _=try remember_link(ba_buffee_membership:invite(null)) catch _:_ -> ok end,ok;
         Other -> Other
     end;

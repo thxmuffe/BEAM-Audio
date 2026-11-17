@@ -31,6 +31,10 @@ presets_test() ->
         ok=ba_device_config:preset(advanced,#{}),?assertEqual(advanced,maps:get(preset,Snap())),?assertEqual(no,Pol(moderator_requests)),
         ok=ba_device_config:preset(friendly,#{}),ok=ba_device_config:policy(microphone,always,#{}),
         ?assertEqual(advanced,maps:get(preset,Snap())),
+        %% A preset that stops one grant and gives another still applies.
+        ok=ba_device_config:preset(tight,#{}),ok=ba_device_config:policy(microphone,always,#{}),
+        ok=ba_device_config:preset(friendly,#{expected_revision => maps:get(revision,Snap()),request_id => <<"mixed">>}),
+        ?assertEqual(friendly,maps:get(preset,Snap())),?assertEqual(ask,Pol(microphone)),?assertEqual(always,Pol(speaker)),
         ?assertEqual({error,invalid_configuration},ba_device_config:preset(nope,#{})),
         %% It survives a restart.
         ok=ba_device_config:preset(friendly,#{}),Running=whereis(ba_device_config),ok=gen_server:stop(Running,shutdown,5000),

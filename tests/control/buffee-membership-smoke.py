@@ -35,8 +35,14 @@ def main():
         def sync(a,*members):
             revision=a.request('snapshot')['membership']['revision']
             for r in members: authorized(r,revision)
+        def present(a,b):
+            # Each pair discovers and proves the link independently.
+            for r,peer in ((a,b),(b,a)):
+                control.wait(r,lambda s:peer.identity['id'] in s['membership']['participants'])
         def connect(a,b):
-            assert a.request('connect',peer=b.identity['id'])['ok']
+            present(a,b)
+            if b.identity['id'] not in a.request('snapshot')['sessions']:
+                reply=a.request('connect',peer=b.identity['id']);assert reply.get('ok'),reply
             for r,peer in ((a,b),(b,a)):
                 control.wait(r,lambda s:s['sessions'].get(peer.identity['id'],{}).get('stage')=='authorized')
         try:
@@ -54,7 +60,8 @@ def main():
             # Leaving does not consume the shared invitation either.
             assert y.request('leave_buffee')['ok']
             control.wait(a,lambda s:all(y.identity['id'] not in d.get('online',[]) for d in s['relay']['desks'].values()))
-            assert y.identity['id'] in a.request('snapshot')['membership']['members']
+            # Presence ends with Leave; the link and any privileges remain.
+            control.wait(a,lambda s:y.identity['id'] not in s['membership']['participants'])
             assert y.request('join_buffee',invitation=invitation)['ok']
             authorized(y);sync(a,x,y);connect(x,y)
             assert x.request('read',peer=y.identity['id'])=={'error':'forbidden'}
@@ -112,7 +119,8 @@ def main():
                 while True:
                     lifecycle=r.request('lifecycle')
                     if lifecycle['buffee']=={'state':'idle'}:
-                        assert lifecycle['live']==[] and not lifecycle['transient_state'] and lifecycle['connections']==0,lifecycle
+                        # Desk sockets are shared by the Device and outlive one Session.
+                        assert lifecycle['live']==[] and not lifecycle['transient_state'],lifecycle
                         break
                     assert time.monotonic()<end,lifecycle
                     time.sleep(.1)
