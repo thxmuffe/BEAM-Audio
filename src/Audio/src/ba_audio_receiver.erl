@@ -124,7 +124,10 @@ handle_call(resume,_,S) ->
     resync_clock(resume),
     {reply,ok,disconnect_all(S#{suspended := false,resume_after := erlang:monotonic_time(nanosecond)})};
 handle_call(_,_,S) -> {reply,{error,unsupported_request},S}.
-handle_cast(network_changed,S) -> resync_clock(network_changed),{noreply,disconnect_all(S#{resume_after := erlang:monotonic_time(nanosecond)})};
+%% A path notification is a discovery hint, not proof that authenticated media
+%% or the reference clock failed. Their own monitors, leases and sample freshness
+%% fence real failures. Restarting acquisition here creates repeated audio bursts.
+handle_cast(network_changed,S) -> {noreply,S#{poll_at => now_ms()}};
 handle_cast(_,S) -> {noreply,S}.
 handle_info(catalog_bootstrap,S) -> {noreply,refresh_all(S)};
 handle_info({audio_session_up,#{peer := Peer,session := Session}},S) ->

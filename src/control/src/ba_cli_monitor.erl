@@ -145,9 +145,20 @@ render(Data,Color) ->
         _ -> "N/A"
     end,
     Names=[device_name(R) || R <- Rows],
-    [Header,"Response time: ",Response,"\n","  CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
+    [Header,master_clock_line(maps:get(<<"clock">>,Data,#{}),Rows),
+     "Response time: ",Response,"\n","  CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
      [row_lines(R,Color,length([N || N <- Names,N=:=device_name(R)])>1) || R <- Rows],
      "N/A = unavailable; receive_max = loudest received Source, before physical speaker output.\n"].
+master_clock_line(Clock,Rows) ->
+    try
+        #{<<"device">> := Id,<<"utc_time_ns">> := Value,<<"age_ms">> := Age,<<"state">> := State}=maps:get(<<"master_clock">>,Clock),
+        true=is_integer(Age) andalso Age>=0,
+        Ms=ba_buffee_time_protocol:integer(Value) div 1000000,
+        UTC=calendar:system_time_to_rfc3339(Ms,[{unit,millisecond},{offset,"Z"}]),
+        Name=case [R || #{<<"id">> := I}=R <- Rows,I=:=Id] of [R] -> device_name(R);_ -> device_name(#{<<"id">> => Id}) end,
+        ["Master clock: ",UTC," | ",Name," | sample age: ",integer_to_list(Age)," ms",
+            case State of <<"fresh">> -> [];_ -> " (stale)" end,"\n"]
+    catch _:_ -> "Master clock: N/A\n" end.
 row_lines(#{<<"id">> := Id,<<"state">> := State}=R,Color,Duplicate) ->
     Short=binary:part(Id,0,min(12,byte_size(Id))),Name=device_name(R),
     Title=case Duplicate of true -> [Name," (",Short,")"];false -> Name end,

@@ -43,7 +43,7 @@ reference_sample() -> {error,use_authenticated_buffee_control}.
 peer_sample(_,_) -> {error,use_authenticated_buffee_control}.
 seed_sample(_) -> {error,use_authenticated_buffee_control}.
 status() ->
-    D = snapshot(),Base = maps:without([mapping,offset,offset_until,authorization_until],D),
+    D = snapshot(),Base = maps:without([mapping,offset,offset_until,authorization_until,master_sample],D),
     M = maps:get(mapping,D,undefined),Now = mono(),
     State = case {ready(D),maps:get(role,D,waiting),M} of
         {true,_,_} -> synchronized;
@@ -55,7 +55,21 @@ status() ->
         #{filtered_utc_time => ba_buffee_clock_mapping:from_monotonic(M,Now),
           offset_ns => ba_buffee_clock_mapping:offset(M,Now),remaining_correction_ns => ba_buffee_clock_mapping:remaining(M,Now)} end,
     (maps:merge(Base,Extra))#{state => State,age_ns => age(maps:get(last_sync,D,undefined),Now),
-        offset_policy => offset_view(D),uncertainty_ns => unknown,holdover_drift_ppm => unknown}.
+        master_clock => master_clock(D,Now),offset_policy => offset_view(D),
+        uncertainty_ns => unknown,holdover_drift_ppm => unknown}.
+%% Display the actual master's reading, even before a follower's filter fills.
+%% Keep full UTC nanoseconds as a decimal string across JSON boundaries.
+master_clock(#{role := master,mapping := M,master := Id}=D,Now) when is_map(M) ->
+    case ready(D) of
+        true -> #{device => Id,utc_time_ns => ns(ba_buffee_clock_mapping:from_monotonic(M,Now)),age_ms => 0,state => fresh};
+        false -> #{}
+    end;
+master_clock(#{master := Id,master_sample := #{device := Id,utc_time_ns := UTC,received_at_ns := T}}=D,Now) ->
+    Age=age(T,Now),Fresh=maps:get(confirmed,D,false) andalso live(maps:get(authorization_until,D,undefined))
+        andalso live(maps:get(sample_authorization_until,D,undefined)) andalso Age=<2*maps:get(sample_interval_ms,D)*1000000,
+    #{device => Id,utc_time_ns => ns(UTC),age_ms => Age div 1000000,
+        state => case Fresh of true -> fresh;false -> stale end};
+master_clock(_,_) -> #{}.
 snapshot() -> try ets:lookup(ba_session_scope:table(?MODULE),clock) of [{clock,D}] -> D;_ -> #{} catch error:badarg -> #{} end.
 ready(#{role := Role,mapping := M,confirmed := true,authorization_until := Until,last_sync := Last,
         filter_ready := Filter,sample_interval_ms := I}=D) when is_map(M),is_integer(Last) ->
@@ -270,7 +284,7 @@ incoming(Context,Id,#{<<"kind">> := Kind},S)
     reply_error(Context,Id,Kind,<<"unavailable">>),S;
 incoming(_,_,_,_) -> error(unexpected_time_message).
 
-apply_sample(P,T4,Until,#{scope := {Buffee,_},clock := D0}=S0) ->
+apply_sample(P,T4,Until,#{scope := {Buffee,Provider},clock := D0}=S0) ->
     T1 = number(maps:get(<<"t1">>,P)),T2 = number(maps:get(<<"t2">>,P)),T3 = number(maps:get(<<"t3">>,P)),
     Instance = maps:get(<<"instance">>,P),Timeline = ba_buffee_time_protocol:timeline(Buffee,Instance),
     Timeline = maps:get(<<"timeline">>,P),Revision = maps:get(<<"reference_revision">>,P),
@@ -298,6 +312,7 @@ apply_sample(P,T4,Until,#{scope := {Buffee,_},clock := D0}=S0) ->
     NextD = D#{mapping := Mapping,timeline := Timeline,master_instance := Instance,reference_revision := Revision,
         last_sync := T4,confirmed := true,filter_ready := Full,filter_sample_count := ba_buffee_clock_filter:count(Filter),
         measurement_uncertainty_ns := U,round_trip_ns => maps:get(round_trip_ns,Sample),
+        master_sample => #{device => Provider,utc_time_ns => T3,received_at_ns => T4},
         sample_authorization_until => Until,last_error := null},
     S#{filter := Filter,filter_reference := Key,filter_last_slot := Slot,clock := NextD}.
 correct(#{role := member,clock := D}=S) ->

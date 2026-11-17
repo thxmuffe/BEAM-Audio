@@ -1,5 +1,42 @@
 # Current implementation and validation
 
+## Network hints interrupted playback; monitor shows master UTC — 2026-11-17
+
+The user rebuilt/ran the diagnostic code. At 20:58:49 Helsinki, iPhone instance
+17ECB4C5 reported reset reason `network_changed`, count 4 and 8/20 samples.
+Following another user-heard burst, at 21:02:08 it had 232 rendered blocks,
+four native late-buffer drops, reset count 8, filter 2/20, holdover and no Mixer
+streams or open Media Sessions. It was not suspended and had no pending native
+stop. This confirms the network hint handler caused reacquisition; NWPath
+equality alone did not prevent it. Mac capture continued throughout.
+
+Network hints now bring forward the existing discovery poll without clearing
+the filter, closing media or moving the resume fence. The control owner repairs
+missing connections; authenticated leases and normal sample freshness still
+stop invalid/stale work. Explicit resume retains its fresh-sample requirement.
+A regression covers repeated hints during acquisition and active playback,
+unchanged media state and the subsequent discovery refresh.
+
+The CLI/embedded monitor prints the master's UTC value, Device and sample age
+without requiring `--metrics`; stale readings are labelled. A local master
+reports current mapped UTC. A follower exposes the last authenticated master's
+`t3` reading before its own filter fills, without presenting a local estimate as
+the master's report. A changed provider cannot inherit an old provider's sample.
+JSON stores full UTC nanoseconds as a decimal string under `clock.master_clock`.
+No new time packet, polling path or dependency was added.
+
+Validation: 32 focused monitor, clock, network-event, diagnostic, native-output
+and subscription tests pass. Added checks cover UTC rendering, age/staleness,
+missing samples, local-master values and pre-acquisition follower readings.
+No agent-run native build or deployment. Run Both has been requested to observe
+the iPhone repair and monitor together; sustained playback remains unverified.
+
+Recorded the user's clock design: a Manager maintains one master on an ON AIR
+Device, retaining it while that broadcaster continues; several ON AIR Devices
+are allowed. Reuse existing synchronization and OTP lifecycle/delivery, with
+about 30-second distribution. Manager/placement/push changes are not implemented
+here; existing `on_air` settings-edit permission is confirmed.
+
 ## iPhone bursts followed by clock reacquisition — 2026-11-17
 
 The user ran the prior output repair, but reported silence and volume buttons

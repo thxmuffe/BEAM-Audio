@@ -8,6 +8,8 @@ production_cadence_and_single_root_anchor_test() ->
         ?assertEqual(5000,maps:get(sample_interval_ms,D)),?assertEqual(30000,maps:get(interval_ms,D)),
         ?assertEqual(20,maps:get(filter_required_samples,D)),?assertEqual(1,maps:get(filter_sample_count,D)),
         ?assertEqual(1,maps:get(upstream_acquisitions,D)),
+        #{utc_time_ns := MasterTime,age_ms := 0,state := fresh}=maps:get(master_clock,D),
+        ?assert(is_binary(MasterTime)),?assert(ba_buffee_time_protocol:integer(MasterTime)>0),
         {ok,A} = ba_buffee_clock:now(),{ok,B} = ba_buffee_clock:now(),?assert(B>=A),
         ?assertEqual({error,use_authenticated_buffee_control},ba_buffee_clock:reference_sample()),
         ?assertEqual({error,invalid_reference},ba_buffee_clock:set_reference({node,old_trusted_node}))
@@ -58,6 +60,26 @@ stale_mapping_and_expired_session_fail_without_timer_cleanup_test() ->
         ets:insert(ba_buffee_clock,{clock,D#{authorization_until := Ms-1}}),
         ?assertEqual({error,offset_unavailable},ba_buffee_clock:offset()),
         ?assertEqual({error,clock_or_offset_unavailable},ba_buffee_clock:presentation([T]))
+    after ets:delete(ba_buffee_clock) end.
+
+master_reading_is_visible_before_follower_acquisition_and_marks_stale_test() ->
+    ets:new(ba_buffee_clock,[named_table,protected]),
+    try
+        T=erlang:monotonic_time(nanosecond),Until=erlang:monotonic_time(millisecond)+10000,
+        Id=binary:copy(<<"A">>,64),UTC=1794941608123456789,
+        D=#{role => follower,master => Id,mapping => undefined,confirmed => true,
+            authorization_until => Until,sample_authorization_until => Until,sample_interval_ms => 5000,
+            master_sample => #{device => Id,utc_time_ns => UTC,received_at_ns => T-500000000}},
+        ets:insert(ba_buffee_clock,{clock,D}),
+        Status=ba_buffee_clock:status(),?assertEqual(acquiring,maps:get(state,Status)),
+        Reading=maps:get(master_clock,Status),
+        ?assertEqual(integer_to_binary(UTC),maps:get(utc_time_ns,Reading)),
+        ?assertEqual(fresh,maps:get(state,Reading)),?assert(maps:get(age_ms,Reading)>=500),
+        ?assertNot(maps:is_key(master_sample,Status)),
+        ets:insert(ba_buffee_clock,{clock,D#{sample_authorization_until := Until-20000}}),
+        ?assertEqual(stale,maps:get(state,maps:get(master_clock,ba_buffee_clock:status()))),
+        ets:insert(ba_buffee_clock,{clock,D#{master := binary:copy(<<"B">>,64)}}),
+        ?assertEqual(#{},maps:get(master_clock,ba_buffee_clock:status()))
     after ets:delete(ba_buffee_clock) end.
 
 with_clock(Role,Fun) ->

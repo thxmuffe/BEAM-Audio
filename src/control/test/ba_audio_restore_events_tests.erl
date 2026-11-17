@@ -1,7 +1,8 @@
 -module(ba_audio_restore_events_tests).
 -include_lib("eunit/include/eunit.hrl").
--export([status/0]).
+-export([status/0,resync/1]).
 status() -> get(test_clock).
+resync(Reason) -> put(test_resync,Reason),ok.
 restore_requires_fresh_clock_and_local_contract_test() ->
     fixture(fun(S,Id) ->
         put(test_clock,#{state => synchronized,filter_ready => true,last_sync => 99,age_ns => 0}),
@@ -17,6 +18,36 @@ restore_requires_fresh_clock_and_local_contract_test() ->
         {noreply,_} = ba_audio_receiver:handle_info(tick,S#{suspended := true}),no_attempt()
     end).
 no_attempt() -> receive {attempt,_,_} -> error(unexpected_attempt) after 0 -> ok end.
+
+network_hints_preserve_clock_acquisition_and_live_media_test() ->
+    fixture(fun(S,Id) ->
+        R=maps:get(Id,maps:get(subscriptions,S)),I=maps:get(intent,R),Peer=maps:get(device,I),
+        Media=spawn(fun() -> receive stop -> ok end end),
+        Membership=spawn(fun Loop() -> receive {'$gen_call',From,current} ->
+            gen_server:reply(From,{ok,#{policy => #{peers => #{Peer => []}}}}),Loop() end end),
+        true=register(ba_buffee_membership,Membership),
+        try
+            lists:foreach(fun(State) ->
+                Clock=#{state => State,filter_ready => State=:=synchronized,filter_sample_count => 14,last_sync => 101,age_ns => 0},
+                put(test_clock,Clock),erase(test_resync),
+                Live=R#{session := Media,state := active,mix_ready => true},
+                Before=S#{subscriptions := #{Id => Live},providers => #{}},
+                After=lists:foldl(fun(_,Acc) ->
+                    {noreply,Next}=ba_audio_receiver:handle_cast(network_changed,Acc),Next
+                end,Before,lists:seq(1,3)),
+                ?assertEqual(Clock,status()),?assertEqual(undefined,get(test_resync)),
+                ?assertEqual(maps:remove(poll_at,Before),maps:remove(poll_at,After)),
+                ?assert(is_process_alive(Media)),no_attempt(),
+                {noreply,_}=ba_audio_receiver:handle_info(tick,After),
+                receive {attempt,_,#{<<"kind">> := <<"catalog.read">>}} -> ok
+                    after 1000 -> error(no_discovery_refresh) end,
+                ?assert(is_process_alive(Media)),no_attempt()
+            end,[acquiring,synchronized])
+        after
+            Media ! stop,exit(Membership,kill),unregister_if_present(ba_buffee_membership),
+            erase(test_clock),erase(test_resync)
+        end
+    end).
 
 missing_opus_backend_keeps_intent_without_starting_transport_test() ->
     Saved = os:getenv("BA_GSTREAMER_PCM_HELPER"),os:unsetenv("BA_GSTREAMER_PCM_HELPER"),

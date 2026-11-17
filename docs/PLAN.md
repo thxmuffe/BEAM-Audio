@@ -1,5 +1,33 @@
 # Current plan
 
+## Confirmed iPhone reset trigger and master-clock display — 2026-11-17
+
+The diagnostic iPhone identified `network_changed` as the reset reason. Instance
+17ECB4C5 reached 232 rendered blocks while reset count rose from 4 to 8, then
+returned to holdover with an empty Mixer. NWPath equality alone did not stop it.
+
+Implemented: network hints refresh ordinary discovery instead of discarding
+clock acquisition or closing healthy media. Existing connection monitors, leases
+and clock freshness still fence actual failures; foreground resume still needs
+fresh clock state. The monitor now shows the actual master's UTC reading, Device,
+sample age and staleness, reusing existing authenticated time replies.
+32 focused tests pass. User-led Run Both is pending before sustained listening.
+
+## Agreed clock responsibilities — 2026-11-17
+
+The Manager ensures one logical Session master on an ON AIR Device. Several
+Devices may be ON AIR; keep the current broadcasting master until it stops.
+The ON AIR privilege already permits Response time edits. The master obtains
+accurate time using existing code and distributes updates about every 30 seconds;
+receivers need no provider discovery. Reuse OTP supervision, processes, timers
+and messaging and existing synchronization. No new time-transfer mechanism.
+
+This coordination/placement/push change is agreed direction, not implemented by
+this audio repair. Current selection prefers the original reference and followers
+sample every 5 seconds. A 50,000-Device target requires measuring asynchronous
+fan-out and changing the bounded all-pairs topology; do not just raise limits or
+build that scale in this increment.
+
 ## Repeated iPhone clock reacquisition — 2026-11-17
 
 The previous output repair is running: two user-heard bursts coincided with
@@ -12,10 +40,10 @@ receiver suspension/active/mix-ready counts, and actual Media Session/open count
 through CLI metrics. Distinguish resume, network notification, sample gap,
 reference change and permission loss. iOS ignores unchanged network-path
 notifications using NWPath equality, instead of resyncing on every notification.
-This is not yet proof that duplicate notifications caused the observed resets.
+Follow-up identifies network notifications as the reset path; see the repair above.
 
-Next: user-led iPhone rebuild/Run, then inspect the next reset reason and repair
-that confirmed path. The audio clock policy is unchanged. The debugger attempt
+The user ran this diagnostic build; the confirmed path is repaired above.
+The audio clock policy is unchanged. The debugger attempt
 coincided with app exit; no OpenSound crash report was present, and the existing
 app was relaunched preserving saved identity. Continue using CLI diagnostics.
 

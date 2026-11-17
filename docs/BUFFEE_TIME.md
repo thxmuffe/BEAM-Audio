@@ -1,8 +1,26 @@
 # Buffee Clock and Playback Offset
 
+## Agreed next clock coordination — 2026-11-17
+
+The Manager maintains one logical master on an ON AIR Device. Several Devices
+may broadcast; keep the current broadcasting master until it stops. The ON AIR
+privilege already permits Response time edits. Reuse existing synchronization
+and OTP supervision, processes, timers and messaging to distribute updates about
+every 30 seconds; receivers need no provider discovery. No new time-transfer
+mechanism is requested. Manager coordination, this hosting rule and periodic
+push remain unimplemented; current behavior below still uses follower sampling.
+
+At 50,000 Devices and one update per 30 seconds there are about 1,667 deliveries/s
+before other traffic. This is arithmetic, not a capacity measurement. Keep one
+time source and distribute delivery work if measurements require it. The current
+16-member/route bounds and all-pairs peer connections are not a 50,000-Device
+architecture; increasing their limits is outside this increment.
+
+## Current implementation
+
 The clock provider is independent of ownership. The original reference is
-preferred while present; otherwise an online Chef is selected deterministically.
-A Chef with a fresh acquired mapping continues that same timeline and committed
+preferred while present; otherwise an online ON AIR privilege holder is selected.
+A Device with a fresh acquired mapping continues that same timeline and committed
 Response time. Followers obtain fresh authenticated samples from the new provider;
 packet Presentation Targets are not changed. Without a usable mapping the provider
 must acquire a new timeline and report unavailability until ready. No saved clock
@@ -52,7 +70,7 @@ ok = ba_buffee_clock:set_offset(300,3).
 {ok,LocalDeadline} = ba_buffee_clock:to_monotonic(UTC).
 ```
 
-Offset remains 5–30000 ms, initially 300 ms. A local authority edit and an authorized
+Offset remains 5–30000 ms, initially 150 ms. A local authority edit and an authorized
 remote edit go through the same serialized writer. A stale expected revision
 returns `conflict`; simultaneous edits against one revision cannot both commit.
 Unchanged values do not create another revision. The writer checkpoints the

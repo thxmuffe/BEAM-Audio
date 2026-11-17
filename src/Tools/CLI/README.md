@@ -25,6 +25,13 @@ building. Standalone release distribution and Windows launch support are later.
 
 ## Generic Device API calls
 
+The terminal/embedded monitor shows `Master clock` in UTC, its Device and sample
+age, with a stale marker or N/A. A follower displays the master's last
+authenticated reading, not an extrapolated local estimate, even before its own
+clock acquisition completes. JSON carries this under `clock.master_clock`, with
+`utc_time_ns` as a decimal string. Update the monitor's hosting Device to supply
+the new reading.
+
 One command exposes the declared public Device API, including commands that
 have no dedicated CLI switches:
 

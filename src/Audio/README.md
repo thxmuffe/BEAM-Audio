@@ -34,6 +34,8 @@ Reasons distinguish `resume`, `network_changed`, `sample_gap`,
 `receiver.mix_ready_subscriptions`, `transport.sessions` and `transport.open`
 distinguish saved intent from live media work. Speaker `ready` means capability
 availability; receive/render counters alone do not prove physical output.
+Network-path hints refresh discovery without discarding clock samples or closing
+healthy media. Connection, lease and clock-freshness checks handle actual failures.
 
 Build commands belong in [BUILDING](../../docs/BUILDING.md). Product permission
 and launch instructions are in [macOS](../../../OpenSound/docs/MACOS_APP.md),

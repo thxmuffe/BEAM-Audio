@@ -1,6 +1,17 @@
 -module(ba_monitor_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+render_master_clock_value_age_and_staleness_test() ->
+    Id=binary:copy(<<"A">>,64),
+    View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,
+        <<"devices">> => [#{<<"id">> => Id,<<"name">> => <<"Broadcast Mac">>,<<"state">> => <<"ok">>}]},
+    Reading=#{<<"device">> => Id,<<"utc_time_ns">> => <<"1794941608123456789">>,<<"age_ms">> => 250,<<"state">> => <<"fresh">>},
+    Render=fun(R) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => #{<<"master_clock">> => R}})) end,
+    ?assertNotEqual(nomatch,binary:match(Render(Reading),
+        <<"Master clock: 2026-11-17T18:53:28.123Z | Broadcast Mac | sample age: 250 ms\n">>)),
+    ?assertNotEqual(nomatch,binary:match(Render(Reading#{<<"state">> := <<"stale">>}),<<"250 ms (stale)">>)),
+    ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Master clock: N/A\n">>)).
+
 render_shared_response_time_and_readiness_test() ->
     View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => []},
     Render=fun(P) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => #{<<"offset_policy">> => P}})) end,
