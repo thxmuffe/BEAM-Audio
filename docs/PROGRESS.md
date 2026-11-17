@@ -800,3 +800,13 @@ joiners learn the name. v5 links still parse. Tests: new `short_link_test`,
 224 EUnit, Reception, frontend and Swift pass; `session-restart-smoke.py`
 passes through the public Reception (101 chars, name learned, restart, chat)
 and locally (140 chars with a custom Reception).
+
+Open in web (2026-11-17): the share page has "Open in web", which opens
+`INVITE_PAGE#<invitation>` (OpenSound app.js; planned `https://opensound.onrender.com/app`)
+in the system browser; native hosts use a new `native_open` bridge method that
+opens https addresses only. The static page lives in OpenSound
+`src/Apps/InvitePage/` and is not part of the Reception, so the Reception stays
+a router. The link stays after `#` and never reaches the web server. Frontend,
+Swift and core tests pass; the page checked headless (with and without a link,
+no CSP violations). Not deployed yet; the apps do not register `beamaudio://`,
+so the page shows Copy plus steps instead of opening the app.
