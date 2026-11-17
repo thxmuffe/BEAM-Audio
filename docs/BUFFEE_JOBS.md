@@ -26,7 +26,7 @@ integers. The Contract permits only the installed `test` capability, at most
 two active Workers with durations/leases of 20–10000 ms. IDs/revisions are explicitly
 provisioned to the two proof runtimes; automatic Contract discovery/negotiation
 is not implemented. [Step-5 membership](BUFFEE_MEMBERSHIP.md) now supplies current authority policy and
-revocation checks; a Passport still never supplies local Contract/consent.
+revocation checks; Session membership still never supplies local Contract/consent.
 
 The Handler checks the verified sender against the local Contract's coordinator,
 Contract ID/revision, local

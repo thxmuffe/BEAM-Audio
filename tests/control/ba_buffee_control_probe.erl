@@ -11,7 +11,8 @@ main() ->
     emit(#{id => Id,mailbox => Cap}), loop(Id,Cap).
 loop(Id,Cap) ->
     case io:get_line("") of
-        eof -> halt(0);
+        %% Settings are written ?DELAY ms after a change; save them before halting.
+        eof -> _=catch_flush(),halt(0);
         Line ->
             try command(json:decode(unicode:characters_to_binary(Line)),Id,Cap) of
                 Result -> emit(Result)
@@ -235,3 +236,4 @@ filter_handshakes() ->
             case Drop of true -> ok;false -> ba_buffee_desks ! Message end,
             filter_handshakes()
     end.
+catch_flush() -> case whereis(ba_settings) of undefined -> ok;_ -> ba_settings:flush() end.

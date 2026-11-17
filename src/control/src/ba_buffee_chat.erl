@@ -13,7 +13,7 @@ init([]) ->
     %% One shared handler dispatches notices to the reporting Session.
 
     logger:add_handler(ba_buffee_chat,ba_buffee_log_h,#{level => error,config => #{recipient => self()}}),
-    {ok,#{messages => [],linked => [],privileges => undefined}}.
+    {ok,#{messages => [],present => [],privileges => undefined}}.
 handle_call(history,_,#{messages := M}=S) -> {reply,lists:reverse(M),S};
 handle_call({send,Text},_,S) when is_binary(Text),byte_size(Text)>0,byte_size(Text)=<4096 ->
     {Reply,M}=publish(Text,maps:get(messages,S)),{reply,Reply,S#{messages := M}};
@@ -29,13 +29,10 @@ handle_info({buffee_chat,#{peer := Peer,session := Session},Id,Text},S) ->
         {ok,#{session := Session}} -> {noreply,S#{messages := add(Id,Peer,Text,maps:get(messages,S))}};
         _ -> {noreply,S}
     end;
-%% The automatic hello: an authenticated link to a Device has come up.
-handle_info({peer_linked,Peer},#{linked := Linked}=S) ->
-    case lists:member(Peer,Linked) of
-        true -> {noreply,S};
-        false -> {noreply,info(Peer,<<"is here">>,S#{linked := [Peer|Linked]})}
-    end;
-handle_info({peer_unlinked,Peer},#{linked := Linked}=S) -> {noreply,S#{linked := lists:delete(Peer,Linked)}};
+%% The automatic hello, once per arrival: a Device has proved the Session's link
+%% to this one. Control links come and go with policy changes; presence does not.
+handle_info({participants,Ids},#{present := Present}=S) ->
+    {noreply,lists:foldl(fun(Peer,Acc) -> info(Peer,<<"is here">>,Acc) end,S#{present := Ids},Ids--Present)};
 %% Privileges affect everyone, so each signed change is shown to everyone.
 %% A request waits for an answer from a Device that can give rights.
 handle_info({privilege_requested,Device,Wire},S) ->

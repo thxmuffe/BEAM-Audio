@@ -6,6 +6,9 @@
 -behaviour(gen_server).
 -export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
+-ifdef(TEST).
+-export([order/3]).
+-endif.
 -define(LOOKUP_MS,2000).
 -define(HANDSHAKE_MS,10000).
 -define(REFUSED_MS,30000).
@@ -49,7 +52,7 @@ start(Link,I,Primary,S) ->
     Base = S#{link => Link,buffee => Buffee,authority => maps:get(<<"authority">>,I),secret => Secret,
         cap => ba_buffee_passport:mailbox(Secret),name => maps:get(<<"name">>,I),urls => URLs,primary => Primary,
         policy => ba_buffee_passport:genesis(I,ba_settings:app(buffee_default_permissions,[<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>])),signed => undefined,signer => undefined,delegations => #{},
-        participants => #{},pairs => #{},pending => #{},outgoing => #{},requests => #{},
+        participants => #{},pairs => #{},missing => #{},pending => #{},outgoing => #{},requests => #{},
         state => authorized,until => infinity,last_lookup => now_ms()-?LOOKUP_MS},
     Ready = restore(maps:get(Buffee,ba_device_store:load(buffee_sessions,#{}),undefined),Base),
     ok = ba_buffee_desks:configure(Buffee,URLs,Primary,#{}),
@@ -93,7 +96,7 @@ handle_call(end_session,_,#{state := authorized,policy := P}=S) ->
         false -> {reply,{error,end_privilege_required},S};
         true ->
             maps:foreach(fun(Peer,R) ->
-                send(Peer,R,<<"ended">>,fresh(16),#{<<"pair">> => maps:get(Peer,maps:get(pairs,S))},S)
+                send(Peer,R,<<"ended">>,fresh(16),#{<<"pair">> => hd(maps:get(Peer,maps:get(pairs,S)))},S)
             end,maps:get(participants,S)),{reply,ok,S}
     end;
 handle_call(end_session,_,S) -> {reply,{error,end_privilege_required},S};
@@ -171,7 +174,7 @@ handle_info({desk_event,_,connected},S) ->
     {noreply,discover(S)};
 handle_info({desk_event,_,_},S) -> {noreply,S};
 handle_info({lookup,URL,{ok,Owners}},S) when is_list(Owners) ->
-    {noreply,lists:foldl(fun(Owner,Acc) -> hello(Owner,URL,Acc) end,S,Owners)};
+    {noreply,lists:foldl(fun(Owner,Acc) -> hello(Owner,URL,Acc) end,absent(Owners,S),Owners)};
 handle_info({lookup,_,_},S) -> {noreply,S};
 handle_info({desk_delivery,_,From,Packet},S) ->
     try
@@ -285,12 +288,30 @@ participant(Peer,<<"privilege_request">>,Data,S) ->
     end;
 participant(Peer,<<"ended">>,Data,#{policy := P,pairs := Pairs}=S) ->
     true = ba_session_privileges:has(end_session,Peer,P),
-    ba_buffee_passport:exact(Data,[<<"pair">>]),true = maps:get(<<"pair">>,Data)=:=maps:get(Peer,Pairs),
+    ba_buffee_passport:exact(Data,[<<"pair">>]),true = lists:member(maps:get(<<"pair">>,Data),maps:get(Peer,Pairs)),
     invalidate(),ba_buffee:ended(self()),S#{state := ended,until := 0};
 participant(_,_,_,_) -> error(unexpected_membership_message).
 
+%% Both Devices may start a handshake at once; each side records every pair it
+%% completed, so End is accepted whichever handshake the sender remembers.
 join(Peer,R,Pair,#{participants := Ps,pairs := Pairs}=S) ->
-    publish(routes(S#{participants := Ps#{Peer => R},pairs := Pairs#{Peer => Pair}})).
+    Recent = lists:sublist([Pair|maps:get(Peer,Pairs,[])],4),
+    publish(routes(S#{participants := Ps#{Peer => R},pairs := Pairs#{Peer => Recent},
+                      missing := maps:remove(Peer,maps:get(missing,S))})).
+%% A Device that vanished without saying so (crash, power loss) stops being a
+%% participant once a successful lookup misses it twice in a row.
+absent(Owners,#{participants := Ps,missing := Missing}=S) ->
+    {Gone,Counts} = maps:fold(fun(Peer,_,{G,C}) ->
+        case lists:member(Peer,Owners) of
+            true -> {G,C};
+            false -> N = maps:get(Peer,Missing,0)+1,
+                case N >= 2 of true -> {[Peer|G],C};false -> {G,C#{Peer => N}} end
+        end end,{[],#{}},Ps),
+    Next = S#{missing := Counts},
+    case Gone of
+        [] -> Next;
+        _ -> publish(routes(Next#{participants := maps:without(Gone,Ps),pairs := maps:without(Gone,maps:get(pairs,S))}))
+    end.
 routes(S) ->
     ok = ba_buffee_desks:configure(maps:get(buffee,S),maps:get(urls,S),maps:get(primary,S),maps:get(participants,S)),S.
 
@@ -303,8 +324,9 @@ merge(Peer,State,#{policy := Cur}=S) ->
         ba_buffee_passport:exact(State,[<<"signer">>,<<"state">>]),
         Signer = maps:get(<<"signer">>,State),Packet = maps:get(<<"state">>,State),
         St = ba_buffee_passport:statement(Packet,Signer),P = maps:get(<<"policy">>,St),
-        true = same_session(P,S),true = ba_session_privileges:has(grant,Signer,P),
-        CurRev = maps:get(<<"revision">>,Cur),
+        %% The signer needs grant before its change, not after: a grant holder
+        %% may sign the policy in which it gives up its own grant.
+        true = same_session(P,S),CurRev = maps:get(<<"revision">>,Cur),
         true = ba_session_privileges:has(grant,Signer,Cur) orelse
                ba_buffee_passport:grant_revision(Signer,maps:get(authority,S),St) > CurRev,
         case order(maps:get(<<"revision">>,P),Packet,S) of
@@ -346,10 +368,13 @@ update(Change,#{policy := P0,id := Id,buffee := Buffee}=S) ->
         {ok,P1} ->
             Rev = maps:get(<<"revision">>,P0)+1,P = P1#{<<"revision">> := Rev},ok = ba_buffee_passport:policy(P),
             Creator = maps:get(authority,S),Old = maps:get(delegations,S),
-            D = maps:from_list([{H,case maps:find(H,Old) of
+            %% Certificates for every grant holder, and for this signer even when
+            %% it gives up grant here, so a newcomer can still verify this change.
+            Keep = maps:with([Id],Old),
+            D = maps:merge(Keep,maps:from_list([{H,case maps:find(H,Old) of
                     {ok,Cert} -> Cert;
                     error -> sign(ba_buffee_passport:delegation(Buffee,Id,H,Rev),S)
-                end} || H <- holders(P),H=/=Creator]),
+                end} || H <- holders(P),H=/=Creator])),
             St = #{<<"name">> => maps:get(name,S),<<"policy">> => P,<<"delegations">> => D},
             Next = routes(checkpoint(adopt(Id,sign(St,S),St,S))),
             %% Tell everyone present before the change, so a removed Device learns it.
@@ -397,6 +422,7 @@ permissions(Id,#{<<"members">> := Members}) ->
 defaults() -> ba_settings:app(buffee_default_permissions,[]).
 publish(#{state := authorized}=S) ->
     ba_contacts:observe(maps:get(buffee,S),maps:get(name,S),maps:keys(maps:get(participants,S))),
+    chat({participants,lists:sort(maps:keys(maps:get(participants,S)))}),
     View = view(S),chat({session_privileges,maps:get(device_privileges,View)}),
     notify({membership_authorized,View}),S;
 publish(S) -> S.

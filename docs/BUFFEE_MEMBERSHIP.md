@@ -88,6 +88,9 @@ No Device waits for a creator, a `grant` holder or a Manager, and none admits
 others on everyone's behalf. A Device arriving at an empty Session is simply its
 only participant: it keeps the Session ID, gains no privilege and is found by
 later arrivals. A Device listed as removed in the receiver's policy is refused.
+A participant that vanishes without an `offline` message (crash, power loss) is
+dropped when two successive successful lookups no longer list it; it rejoins by
+the same handshake when it returns.
 
 ### Leave and return
 

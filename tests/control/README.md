@@ -18,11 +18,11 @@ No product app or audio device is opened. Local service/socket access is require
 Use the existing compiled control, Reception and BeamTransport dependencies;
 do not launch an installed app to supply them.
 
-From `src/control`, compile and run the focused unit/protocol regression:
+From `src/control`, compile and run every unit/protocol test (223 on 2026-11-17):
 
 ```sh
 rebar3 compile
-rebar3 eunit --module=ba_buffee_control_protocol_tests,ba_buffee_passport_tests,ba_buffee_job_tests,ba_device_handler_tests,ba_device_store_tests,ba_subscription_tests,ba_audio_restore_events_tests,ba_audio_mix_tests,ba_audio_opus_tests,ba_audio_rtp_time_tests,ba_webrtc_audio_timing_tests,ba_audio_engine_tests,ba_audio_gstreamer_schedule_tests,ba_audio_gstreamer_control_tests,ba_audio_meter_tests,ba_buffee_clock_tests,ba_buffee_clock_filter_tests,ba_buffee_clock_mapping_tests,ba_buffee_time_protocol_tests,ba_backend_failures_tests,ba_contacts_tests,ba_buffee_tests
+rebar3 eunit
 ```
 
 123 checks pass including the Ephemeral Buffee review fixes. Native engine protocol checks use bounded loopback
@@ -36,6 +36,9 @@ From the core root:
 python3 tests/control/buffee-control-smoke.py
 python3 tests/control/buffee-membership-smoke.py
 python3 tests/control/session-peer-admission-smoke.py
+python3 tests/control/session-privileges-smoke.py
+python3 tests/control/session-restart-smoke.py
+python3 tests/control/parallel-sessions-smoke.py
 python3 tests/control/buffee-reconnect-smoke.py
 python3 tests/control/buffee-time-smoke.py
 python3 tests/control/buffee-time-smoke.py --production-cadence

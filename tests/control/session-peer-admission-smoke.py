@@ -55,7 +55,9 @@ def main():
             same_policy(a,b,c)
             assert 'grant' in member(b)['privileges']
             # The creator leaves; the delegated grant holder administers alone.
+            # The probe halts without telling anyone, like a crash: lookups notice.
             a.close()
+            for r in (b,c):control.wait(r,lambda s:a.identity['id'] not in s['membership']['participants'])
             assert b.request('grant_privilege',peer=c.identity['id'],privilege='on_air')['ok']
             same_policy(b,c);assert 'on_air' in member(c)['privileges']
             # A newcomer that never met the creator trusts b through the certificate chain.
@@ -77,7 +79,7 @@ def main():
             assert 'on_air' in member(c)['privileges']
             same_policy(c,e,f)
             for r in (e,f):assert c.identity['id'] in member(r)['members']
-            print('PASS: v5 link; pairwise admission without a hub; creator offline; delegated grant accepted by a newcomer; '
+            print('PASS: v5 link; pairwise admission without a hub; vanished Device pruned; creator offline; delegated grant accepted by a newcomer; '
                   'empty Session keeps its ID and grants nothing; returning Device keeps on_air')
         finally:
             for r in runtimes:r.close()

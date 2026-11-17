@@ -43,13 +43,9 @@ since a permanent link can always reopen a Session.
 
 ### Scope and order on Mac
 
-First separate Session-scoped Reception discovery from the existing
-`ba_buffee_membership:discover/1` -> grant-holder passport chain. Verify the
-invitation/Device identity with the existing security boundary while making
-ordinary participation independent of receiving an administrative grant.
-Evaluate established membership/discovery mechanisms before extending bespoke
-protocol machinery. Keep Reception small; do not silently change signed domains,
-wire/storage constants or deploy a service to hide an application-layer gate.
+Done 2026-11-17: Session-scoped Reception discovery and pairwise, link-based
+admission replaced the grant-holder passport chain; Reception was not changed
+(see BUFFEE_MEMBERSHIP.md and PROGRESS.md).
 
 Then connect peer discovery to the Manager lifecycle and independent per-peer
 connections. Make UI state report actual participation/reachability and the
@@ -63,11 +59,12 @@ already implemented; the general Manager playback-request board is not.
 
 ### Acceptance checks
 
-- Original creator and every Admin offline: two unprivileged Devices join the
-  same existing invitation, discover one another and exchange permitted basic
-  control/chat. Neither gains `grant`, `on_air` or `end_session` from joining.
-- Empty Session: first Device joins as ordinary, keeps the exact Session ID,
-  and later discovers another joiner without automatic administrative rights.
+- Done (`session-peer-admission-smoke.py`): original creator and every Admin
+  offline, two unprivileged Devices join the same link and discover one another;
+  neither gains `grant`, `on_air` or `end_session`. Chat between them is not
+  yet asserted there.
+- Done (same smoke): the first Device in an empty Session keeps the exact
+  Session ID and later discovers another joiner without administrative rights.
 - Available peers expose the Manager; hosting or moving Manager does not
   change privileges. Its discovery/recovery does not block ordinary Join.
 - One peer is unavailable/incompatible: other peer connections and a second
@@ -76,44 +73,12 @@ already implemented; the general Manager playback-request board is not.
   authority rooted in the original creator. No persistent-admin redesign is
   claimed or required for these basic guest-participation checks.
 
-### Current evidence and checkout state
+### Earlier live reproduction (resolved)
 
-BESTSESSION2: `94275F980055429F7368BCCCE0DA59BE`. Both Windows backends and an
-independent production CLI-monitor observer connected to Reception successfully,
-then stayed discovering/waiting with no admitted peers or privileges. The
-invitation's admission mailbox had zero active advertisers. This is the live
-reproduction of the gate to remove, not proof that Reception transport is down.
-
-The previous Admin badge was a UI cache leak from another Session, now fixed.
-27 frontend tests and four isolated Chromium scenarios pass. Shared frontend
-flicker/invitation-routing fixes, Windows packaging and catalogue notifications
-are already in the working trees. Windows uses shared Web assets, Build.cmd
-and one Python build backend; native Windows audio is still unintegrated.
-No running user Session/privileges were modified by the monitor or UI repair.
-
-Both BEAM-Audio and OpenSound have local uncommitted changes. This update does
-not commit, push, transfer files, rebuild Apple apps or change runtime behavior.
-Carry both checkout changes to the Mac before continuing; read this section and
-PROGRESS.md there first. Implement and validate the remaining shared-runtime
-work on Mac; do not start by rewriting the completed Windows/UI repairs.
-
-
-## Latest observed blocker — 2026-11-17
-
-The user's two Windows Devices now target the same BESTSESSION2 ID. Live
-snapshots and a real CLI-monitor observer show healthy Reception authentication,
-no backend privileges, zero admitted peers, and no active advertiser for the
-invitation admission mailbox. Fresh join remains discovering until an existing
-introduction grants membership; two pending joiners do not discover/admit each
-other. This is the central admission dependency identified below. Fixing it
-requires the agreed participation/identity/rights separation; do not relabel a
-UI-cache fix as repaired peer admission or silently create Admin privileges.
-The user explicitly leaves persistent-admin design outside this work.
-
-Fixed separately: a reused UI slot retained the previous Session's local Admin
-row. Cache rows by actual Session identity and read the local Device's privileges
-from the current snapshot. 27 frontend tests and four browser scenarios pass.
-
+BESTSESSION2 (`94275F980055429F7368BCCCE0DA59BE`) showed two Windows Devices
+waiting forever on an invitation admission mailbox with no advertiser. That gate
+is gone; its v4 link no longer parses, so recreate that Session to retest on
+Windows. Windows native audio remains unintegrated.
 
 ## Latest frontend repair — 2026-11-17
 
@@ -172,8 +137,8 @@ stalled waiting for authorized connectivity, not in the Join command itself.
 Do not describe that timeout as a proven Join-command failure or blame an old
 version without evidence.
 
-Audit findings still to address: fresh network admission depends on an online
-`grant` holder issuing a passport; a policy/routes change resets all peer links;
+Audit findings still to address (fresh admission no longer needs a `grant`
+holder, 2026-11-17): a policy/routes change resets all peer links;
 Session list/start/stop preparation can block in the shared coordinator; Web SSE
 and native polling collect Session snapshots sequentially. The request board is
 still planned, not implemented as a general board. Existing rights requests are
@@ -371,9 +336,8 @@ expanded (memory only); joining a saved Session from its menu is not built.
 4. **The approval prompt (UI).** "Allow <device> use for <use>?" with the
    duration choice, shown where the user is; pending prompts are visible state.
 5. **"Auto accept all requests"** is its own switch (see In progress above).
-6. **One machinery for rights.** Entrance and the passport (direct re-entry)
-   become privileges; Ban is taking entrance so an invitation no longer
-   re-admits. Session privileges, Device gates and Device settings share one
+6. **One machinery for rights.** Entrance is now holding the link, and Ban is
+   the signed policy's `removed` list (2026-11-17); there is no passport. Session privileges, Device gates and Device settings share one
    data shape: who, which device or resource, which use, until when, granted by
    whom. This changes security-sensitive admission code; design it first.
 7. **The Session page lists every right** with Request and Relinquish.

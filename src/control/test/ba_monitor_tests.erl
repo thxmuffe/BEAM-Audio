@@ -28,7 +28,8 @@ normal_capabilities_include_label_but_not_metrics_test() ->
             audio => #{broadcast => #{state => running,blocks => 5,frames => 100,
                 meter => #{<<"peak_db">> => -3.0,<<"rms_db">> => -6.0,<<"meter_age_ms">> => 1,<<"meter_stage">> => <<"capture">>}}}},
         {reply,Normal,_}=ba_device_handler:handle_call(capabilities,undefined,S),
-        ?assertEqual(<<"Test Device | AAAAAAAA">>,maps:get(<<"device_name">>,Normal)),
+        %% The label carries the Device type first (Mac, iPhone, ...), see ba_device_label:display/1.
+        ?assertEqual(<<(ba_device_label:display(<<"Test Device">>))/binary," | AAAAAAAA">>,maps:get(<<"device_name">>,Normal)),
         ?assertNot(maps:is_key(<<"audio_diagnostics">>,Normal)),
         Entry=maps:get(<<"broadcast">>,maps:get(<<"audio">>,Normal)),
         ?assertEqual([<<"available">>,<<"consent">>,<<"state">>],lists:sort(maps:keys(Entry))),

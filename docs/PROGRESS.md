@@ -1,5 +1,30 @@
 # Current implementation and validation
 
+## Test and documentation sweep after the join model — 2026-11-17
+
+All 223 control unit tests and the six Session smokes (`buffee-membership`,
+`session-peer-admission`, `session-privileges`, `session-restart`,
+`buffee-reconnect`, `parallel-sessions`) pass; tests/control/README now runs the
+whole eunit suite instead of an outdated module list.
+
+Real defects fixed: (1) a policy signed by a `grant` holder giving up its own
+grant was rejected everywhere; the signer now needs grant before its change and
+keeps its certificate in that statement. (2) When two Devices started the
+handshake at once, each could remember a different pair, so End was silently
+refused; each side now keeps its recent pairs. (3) A Device that vanished
+without `offline` stayed a participant forever; two successive successful
+lookups without it now drop it. (4) "is here" was repeated after every
+privilege change because control links reset; it now follows Session arrival.
+
+Stale tests updated to current decided behaviour: contacts keep Sessions as
+entries, not groups; consent is Device-wide (user rule 2026-11-16); retired
+`role` replaced by privileges; Device labels start with the Device type;
+`ba_settings` is a supervised child; the test probe flushes settings before
+halting (the app's own shutdown already flushes). New unit test: equal-revision
+policies converge. PLAN, NAMING and BUFFEE_JOBS no longer describe the passport
+or v4 links as current. Still unverified: Windows, iOS, hosted Reception and
+the OpenSound WebApp tests (local Node lacks libsimdjson).
+
 ## Pairwise Session admission; passport removed — 2026-11-17
 
 Implemented the accepted admission model in `ba_buffee_passport`,

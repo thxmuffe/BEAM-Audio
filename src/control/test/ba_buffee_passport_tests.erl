@@ -96,3 +96,19 @@ non_participant_cannot_end_the_session_test() ->
         <<"buffee">>=>Buffee,<<"request">>=>Buffee,<<"payload">>=>#{<<"pair">>=>Buffee}},
     Packet=ba_buffee_passport:sign(Body,Key),
     ?assertEqual({noreply,S#{rejected:=1}},ba_buffee_membership:handle_info({desk_delivery,unused,A,Packet},S)).
+
+%% Equal revisions with different content converge: whichever a Device holds,
+%% exactly one of the two statements wins, and the same one everywhere.
+policy_order_converges_test() ->
+    Cur=#{<<"revision">>=>2},P1 = <<"statement one">>,P2 = <<"statement two">>,
+    S1=#{policy=>Cur,signed=>P1},S2=#{policy=>Cur,signed=>P2},
+    ?assertEqual(newer,ba_buffee_membership:order(3,P2,S1)),
+    ?assertEqual(older,ba_buffee_membership:order(1,P2,S1)),
+    ?assertEqual(same,ba_buffee_membership:order(2,P1,S1)),
+    ?assertEqual(newer,ba_buffee_membership:order(2,P1,#{policy=>Cur,signed=>undefined})),
+    Winner=case crypto:hash(sha256,P1) < crypto:hash(sha256,P2) of true -> P1;false -> P2 end,
+    ?assertEqual(lists:sort([newer,older]),lists:sort([ba_buffee_membership:order(2,P2,S1),ba_buffee_membership:order(2,P1,S2)])),
+    ?assertEqual(same,ba_buffee_membership:order(2,Winner,#{policy=>Cur,signed=>Winner})),
+    Loser=hd([P1,P2]--[Winner]),
+    ?assertEqual(newer,ba_buffee_membership:order(2,Winner,#{policy=>Cur,signed=>Loser})),
+    ?assertEqual(older,ba_buffee_membership:order(2,Loser,#{policy=>Cur,signed=>Winner})).

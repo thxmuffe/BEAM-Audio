@@ -30,7 +30,7 @@ crud_and_validation() ->
     Id1 = binary:copy(<<"1">>, 64),
     Id2 = binary:copy(<<"2">>, 64),
     InvalidId = <<"short_id">>,
-    ?assertEqual(#{contacts => #{}, groups => #{}}, ba_contacts:list()),
+    ?assertEqual(#{contacts => #{}, groups => #{}, sessions => #{}}, ba_contacts:list()),
     ?assertEqual(ok, ba_contacts:put(Id1, <<"Alice">>)),
     ?assertEqual(ok, ba_contacts:put(Id2, <<"Bob">>)),
     #{contacts := Contacts} = ba_contacts:list(),
@@ -62,18 +62,22 @@ contact_deletion_cleans_groups() ->
     ?assertEqual(ok, ba_contacts:delete_group(<<"Friends">>)),
     ?assertNot(maps:is_key(<<"Friends">>, maps:get(groups, ba_contacts:list()))).
 
+%% Each Session seen is its own entry (not a group): its first name is kept,
+%% Devices are only added, and a manual contact name wins over observed names.
 automatic_collection_is_idempotent() ->
     A=binary:copy(<<"A">>,64),B=binary:copy(<<"B">>,64),Buffee=binary:copy(<<"1">>,32),
     ba_contacts:observe(Buffee,<<"10SWARNING">>,[A,A,B]),
     ba_contacts:observe_name(A,<<"MacBook Air | AABBCCDD">>),
     ba_contacts:observe(Buffee,<<"10SWARNING">>,[A,B]),
-    #{contacts := Contacts,groups := Groups}=ba_contacts:list(),
+    #{contacts := Contacts,groups := Groups,sessions := Sessions}=ba_contacts:list(),
     ?assertEqual(<<"MacBook Air | AABBCCDD">>,maps:get(A,Contacts)),
-    ?assertEqual([A,B],maps:get(<<"10SWARNING">>,Groups)),
+    ?assertNot(maps:is_key(<<"10SWARNING">>,Groups)),
+    #{name := <<"10SWARNING">>,devices := Devices}=maps:get(Buffee,Sessions),
+    ?assertEqual(#{A => member,B => member},Devices),
     ?assertEqual(ok,ba_contacts:put(A,<<"My Mac">>)),
     ba_contacts:observe_name(A,<<"MacBook Air | NEW00001">>),
     ba_contacts:observe(Buffee,<<"Renamed gathering">>,[A]),
-    #{contacts := Named,groups := Updated}=ba_contacts:list(),
+    #{contacts := Named,sessions := Updated}=ba_contacts:list(),
     ?assertEqual(<<"My Mac">>,maps:get(A,Named)),
-    ?assertEqual([A,B],maps:get(<<"10SWARNING">>,Updated)),
-    ?assertNot(maps:is_key(<<"Renamed gathering">>,Updated)).
+    #{name := <<"10SWARNING">>,devices := Same}=maps:get(Buffee,Updated),
+    ?assertEqual(Devices,Same).

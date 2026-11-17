@@ -50,14 +50,15 @@ try:
   a.req('send',session=aslots[0],text='Only One')
   b.wait(bslots[0],lambda s:any(m['text']=='Only One' for m in s['messages']))
   assert not any(m['text']=='Only One' for m in b.req('snapshot',session=bslots[1])['messages'])
+  # Consent gates are Device-wide (user rule, 2026-11-16): one Session's change applies to all.
   a.req('capability',session=aslots[0],capability='microphone',enabled=True)
-  assert not a.req('snapshot',session=aslots[1])['consent']['microphone']
+  assert a.req('snapshot',session=aslots[1])['consent']['microphone']
   a.req('close_session',session=aslots[0]);assert a.req('connections')['count']==1
   a.req('send',session=aslots[1],text='Two still works')
   b.wait(bslots[1],lambda s:any(m['text']=='Two still works' for m in s['messages']))
-  print('PASS: chat and consent isolation; closing one tab preserves delivery in another',flush=True)
-  new=a.req('new_session')['session_id'];ra=a.req('join_buffee',session=new,invitation=links[0]);assert ra['session_id']==aslots[0];a.wait(aslots[0],lambda s:s['buffee']['role']=='owner')
-  print('PASS: closed owner returns through its invitation with saved ownership',flush=True)
+  print('PASS: chat isolation; Device-wide consent; closing one tab preserves delivery in another',flush=True)
+  new=a.req('new_session')['session_id'];ra=a.req('join_buffee',session=new,invitation=links[0]);assert ra['session_id']==aslots[0];a.wait(aslots[0],lambda s:'grant' in s['buffee'].get('privileges',[]))
+  print('PASS: closed grant holder returns through its link with saved privileges',flush=True)
   a.close();a=Device(str(Path(state)/'a'),'14'*32);devices.append(a)
   a.wait(aslots[0],lambda s:'grant' in s['buffee'].get('privileges',[]));a.wait(aslots[1],lambda s:'grant' in s['buffee'].get('privileges',[]))
   assert a.req('connections')['count']==1

@@ -177,7 +177,7 @@ handle_info({desk_delivery,_,Peer,Packet},S0) ->
                             OldSession=maps:get(Peer,maps:get(sessions,maps:get(protocol,S)),#{}),
                             NewSession=maps:get(Peer,maps:get(sessions,Protocol),#{}),
                             case {maps:get(stage,OldSession,undefined),maps:get(stage,NewSession,undefined)} of
-                                {Old,authorized} when Old=/=authorized -> self() ! {discover_name,Peer},chat_notify({peer_linked,Peer});
+                                {Old,authorized} when Old=/=authorized -> self() ! {discover_name,Peer};
                                 _ -> ok
                             end,
                             {noreply,Next};
@@ -414,12 +414,10 @@ close_peer(Peer,Reason,#{protocol := Protocol} = S) ->
     end,
     fence_peer_jobs(Peer,reply(Peer,{error,Reason},S#{protocol := Protocol#{sessions := maps:remove(Peer,Sessions),rekeys => maps:remove(Peer,maps:get(rekeys,Protocol,#{}))}})).
 drop_session(Peer,Session) ->
-    chat_notify({peer_unlinked,Peer}),
     time_notify({time_session_down,Peer,Session}),
     audio_notify({audio_session_down,Peer,Session}),
     Ref = gen_server:send_request(ba_session_scope:ref(ba_device_handler),{session_down,Peer,Session}),
     try gen_server:receive_response(Ref,0) catch _:_ -> ok end, ok.
-chat_notify(Event) -> case ba_session_scope:whereis(ba_buffee_chat) of undefined -> ok;P -> P ! Event,ok end.
 ensure_handler_monitor(#{handler_monitor := undefined} = S) ->
     case ba_session_scope:whereis(ba_device_handler) of
         undefined -> S;
