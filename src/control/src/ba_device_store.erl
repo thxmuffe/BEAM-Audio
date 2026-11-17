@@ -1,7 +1,7 @@
 %% Small local checkpoints, owned by the worker writing each record.
 %% Private identity material is supplied by the platform Keychain, never stored here.
 -module(ba_device_store).
--export([identity/0, node_name/1, load/2, save/2]).
+-export([identity/0, node_name/1, load/2, save/2,forget_session/1]).
 
 identity() ->
     case ba_settings:env("BA_IDENTITY_SEED") of
@@ -73,6 +73,19 @@ save_file(Name,Data) ->
                 ok = file:close(File)
             end,
             ok = file:rename(Temp, Path)
+    end.
+
+%% Called by the Session owner after stopping its workers, or for a closed
+%% scope. Forget discards both the return link and the accepted privilege policy.
+forget_session(Session) ->
+    Saved=load(buffee_sessions,#{}),
+    case maps:is_key(Session,Saved) of
+        true -> ok=save(buffee_sessions,maps:remove(Session,Saved));
+        false -> ok
+    end,
+    case load(buffee_connection,undefined) of
+        #{buffee := Session} -> save(buffee_connection,undefined);
+        _ -> ok
     end.
 
 path(Name) ->

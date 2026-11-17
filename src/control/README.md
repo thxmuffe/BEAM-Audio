@@ -37,6 +37,13 @@ Additional Session trees share identity, contacts and Reception sockets, with
 separate membership, clock, chat and media state. Closed Owner Sessions can be
 reopened with their invitation. The open-tab manifest restores after shutdown.
 
+`forget_saved_session` removes this Device's saved Session entry, return link and
+cached privilege policy. An ID-only marker prevents observations or old return
+records from restoring it. Explicitly using its invitation remembers it again.
+Leave keeps privileges; Forget discards the local copy. Other Devices retain
+their own policies and may supply privileges on a later Join; the creator's
+inherent privileges follow from the invitation and its unchanged Device key.
+
 After compiling the core at repository root, run the focused disposable test:
 `python3 tests/control/parallel-sessions-smoke.py`. It starts a local Reception
 service using the existing compiled Phoenix artifacts; it never loads app keys.

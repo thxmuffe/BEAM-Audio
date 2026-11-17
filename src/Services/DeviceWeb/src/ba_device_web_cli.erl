@@ -13,14 +13,14 @@ main() ->
         case maps:get(local_device,Options,false) of
             true ->
                 {ok,_}=application:ensure_all_started(crypto),
-                %% Launchers may supply the Device's persistent platform identity.
+                %% Launchers own persistent identity storage. Never silently
+                %% replace a Device with a fresh key and temporary state.
                 case {ba_settings:env("BA_STATE_DIR"),ba_settings:env("BA_IDENTITY_SEED")} of
-                    {D,K} when is_list(D),is_list(K) -> ok;
+                    {D,K} when is_list(D),D=/=[],is_list(K),length(K)=:=64 ->
+                        32=byte_size(binary:decode_hex(list_to_binary(K)));
                     _ ->
-                        Temp=case os:getenv("TEMP") of false -> ".";T -> T end,
-                        Dir=filename:join(Temp,"beamaudio-web-"++binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(8)))),
-                        ok=filelib:ensure_dir(filename:join(Dir,"state")),os:putenv("BA_STATE_DIR",Dir),
-                        os:putenv("BA_IDENTITY_SEED",binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(32))))
+                        io:put_chars(standard_error,"A local Device needs persistent BA_STATE_DIR and BA_IDENTITY_SEED. Use the platform app launcher or attach with --device-record.\n"),
+                        error(missing_persistent_identity)
                 end,
                 os:putenv("BA_DEVICE_NAME",ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name())),
                 application:load(ba_core),

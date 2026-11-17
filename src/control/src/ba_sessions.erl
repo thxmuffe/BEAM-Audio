@@ -2,10 +2,20 @@
 %% identity, address book and authenticated Reception connections are shared.
 -module(ba_sessions).
 -behaviour(gen_server).
--export([start_link/0,request/1]).
+-export([start_link/0,request/1,forget/1]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 request(Command) -> gen_server:call(?MODULE,{request,Command},30000).
+%% The default scope predates Session-named scopes. Clear either copy, through
+%% its owner when running, so a late checkpoint cannot restore forgotten rights.
+forget(Session) ->
+    Scopes=lists:usort([undefined,Session|[Id || #{id := Id,buffee := B} <- ba_settings:get(open_sessions,[]),B=:=Session]]),
+    lists:foreach(fun(Scope) ->
+        in(Scope,fun() -> case ba_session_scope:whereis(ba_buffee) of
+            undefined -> ok=ba_device_store:forget_session(Session);
+            _ -> ok=ba_buffee:forget_session(Session)
+        end end)
+    end,Scopes),ok.
 init([]) ->
     Tabs=ba_settings:get(open_sessions,[#{id => <<"default">>,name => <<"Session">>,buffee => null}]),
     self() ! restore,{ok,#{tabs => Tabs}}.
@@ -129,7 +139,8 @@ blank(Id,Tabs) -> lists:any(fun(D) -> maps:get(id,D)=:=Id andalso maps:get(buffe
 dispatch(#{<<"method">> := <<"join_buffee">>,<<"invitation">> := Link}=Command) ->
     {_,I}=ba_buffee_passport:parse_invitation(Link),
     case ba_buffee:status() of
-        #{buffee := Buffee} when Buffee=:=map_get(<<"buffee">>,I) -> ba_device_api:request(#{<<"method">> => <<"snapshot">>});
+        #{buffee := Buffee} when Buffee=:=map_get(<<"buffee">>,I) ->
+            ba_contacts:link(Link),ba_device_api:request(#{<<"method">> => <<"snapshot">>});
         _ -> ba_device_api:request(maps:remove(<<"session">>,Command))
     end;
 dispatch(Command) -> ba_device_api:request(maps:remove(<<"session">>,Command)).

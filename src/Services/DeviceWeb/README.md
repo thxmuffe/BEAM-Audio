@@ -126,6 +126,11 @@ supply an explicit existing Device instead. Earlier ephemeral Web launches have
 no stable identity to recover. Source compilation does not validate Windows DPAPI
 or native audio: those platform checks still require Windows.
 
+Bare `--local-device` requires both a nonempty `BA_STATE_DIR` and a valid
+`BA_IDENTITY_SEED`; it no longer creates a temporary replacement Device. Use the
+platform launcher for identity storage, or `--device-record` to attach to an
+existing managed Device. Do not put a seed in command arguments or share it.
+
 The standalone Web launcher starts the real shared control runtime. It currently
 does not configure a Windows audio Worker or package native capture/output. Its
 audio consent switches therefore do not establish streaming or playback. Windows

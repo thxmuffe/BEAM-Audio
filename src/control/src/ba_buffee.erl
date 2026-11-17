@@ -3,6 +3,7 @@
 -behaviour(gen_server).
 -export([start_link/0,create/2,create/3,join/1,start/1,status/0,connection/0,disconnect/0,remember/2,leave/0,end_buffee/0,invite/2,ended/1,broadcast/0,broadcast/1,broadcast_token/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
+-export([forget_session/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 create(Name,Desks) -> create(Name,Desks,undefined).
 %% A scoped Session's ID is derived from this Device's key and the scope's nonce.
@@ -20,6 +21,7 @@ connection() -> gen_server:call(ba_session_scope:ref(?MODULE),connection).
 disconnect() -> gen_server:call(ba_session_scope:ref(?MODULE),disconnect,15000).
 remember(Pid,Saved) -> gen_server:cast(ba_session_scope:ref(?MODULE),{remember,Pid,Saved}).
 leave() -> gen_server:call(ba_session_scope:ref(?MODULE),leave,15000).
+forget_session(Session) -> gen_server:call(ba_session_scope:ref(?MODULE),{forget_session,Session},15000).
 end_buffee() -> gen_server:call(ba_session_scope:ref(?MODULE),end_buffee,15000).
 invite(Selection,TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite,Selection,TTL}).
 ended(Membership) -> gen_server:cast(ba_session_scope:ref(?MODULE),{ended,Membership}).
@@ -75,6 +77,12 @@ handle_call(leave,_,#{remembered := Saved}=S) ->
 handle_call(disconnect,_,S) ->
     %% App/transport closure is not an End Buffee command, including the Owner.
     {reply,ok,stop(S)};
+handle_call({forget_session,Session},_,S) ->
+    Next=case maps:get(remembered,S,undefined) of
+        #{buffee := Session} -> forget(stop(S));
+        _ -> S
+    end,
+    ok=ba_device_store:forget_session(Session),{reply,ok,Next};
 handle_call(_,_,S) -> {reply,{error,no_active_buffee},S}.
 handle_cast({peer_name,Peer,Name},#{remembered := Saved}=S) when is_map(Saved),is_binary(Name) ->
     case owner_id(Saved)=:=Peer andalso maps:get(owner_name,Saved,undefined)=/=Name of
@@ -102,16 +110,21 @@ handle_info(cleanup,S) ->
         false -> ok
     end,
     {noreply,Next};
-handle_info(restore,#{state := idle,remembered := #{config := Config}}=S) ->
+handle_info(restore,#{state := idle,remembered := #{config := Config}=Saved}=S) ->
+    case ba_contacts:forgotten(maps:get(buffee,Saved,undefined)) of
+        true -> {noreply,forget(S)};
+        false -> restore(Config,S)
+    end;
+handle_info({'DOWN',Ref,process,_,_},#{monitor := Ref}=S) -> {noreply,stop(S)};
+handle_info(_,S) -> {noreply,S}.
+restore(Config,S) ->
     case maps:get(mode,Config) of
         create -> {noreply,S#{connection_state := failed}};
         _ -> case valid(Config) of
             true -> {_,Next}=activate(Config,S),{noreply,Next};
             false -> {noreply,S#{connection_state := failed}}
         end
-    end;
-handle_info({'DOWN',Ref,process,_,_},#{monitor := Ref}=S) -> {noreply,stop(S)};
-handle_info(_,S) -> {noreply,S}.
+    end.
 stop(S) ->
     case maps:find(monitor,S) of {ok,Ref} -> demonitor(Ref,[flush]);error -> ok end,
     supervisor:terminate_child(ba_session_scope:ref(ba_sup),ba_buffee_runtime_sup),

@@ -9,7 +9,7 @@ subprocess.run([shutil.which('erlc'),'-Werror','-o',str(output),str(core/'tests/
 spec=importlib.util.spec_from_file_location('relay',core/'tests/ReceptionDesk/relay-smoke.py');relay=importlib.util.module_from_spec(spec);spec.loader.exec_module(relay);relay.ERL=Path(shutil.which('erl'))
 class Device:
  def __init__(self,state,seed):
-  self.q=queue.Queue();self.p=subprocess.Popen(['erl','+S','2','-noshell','-pa',str(output),*map(str,(core/'builds/intermediates/erlang/default/lib').glob('*/ebin')),'-s','ba_sessions_probe','main'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=dict(os.environ,BA_STATE_DIR=state,BA_IDENTITY_SEED=seed))
+  self.q=queue.Queue();self.p=subprocess.Popen(['erl','+S','2','-noshell','-pa',str(output),*map(str,(core/'builds/intermediates/control/default/lib').glob('*/ebin')),'-s','ba_sessions_probe','main'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=dict(os.environ,BA_STATE_DIR=state,BA_IDENTITY_SEED=seed))
   def read():
    for line in self.p.stdout:
     try:self.q.put(json.loads(line))
@@ -33,8 +33,9 @@ try:
   a=Device(str(Path(state)/'a'),'14'*32);b=Device(str(Path(state)/'b'),'15'*32);devices=[a,b]
   url=f'ws://127.0.0.1:{port}/relay/v1';aslots=[];bslots=[];links=[]
   for name in ['One','Two']:
-   aid='default' if name=='One' else a.req('new_session')['session_id'];aslots.append(aid)
+   aid='default' if name=='One' else a.req('new_session')['session_id']
    ra=a.req('create_buffee',session=aid,name=name,desks=[url])
+   aid=ra['session_id'];aslots.append(aid)
    if aid!='default':assert ra['buffee']['buffee']==aid
    a.wait(aid,lambda s:s['desks']['desks'][url]['connected'])
    link=a.req('invitation',session=aid)['result'];links.append(link)
@@ -63,6 +64,22 @@ try:
   a.wait(aslots[0],lambda s:'grant' in s['buffee'].get('privileges',[]));a.wait(aslots[1],lambda s:'grant' in s['buffee'].get('privileges',[]))
   assert a.req('connections')['count']==1
   print('PASS: both open Sessions restore after full runtime restart')
+  # Forget a closed named scope from another open Session. Its cached grant
+  # must disappear without disturbing that other Session or changing identity.
+  bid=b.req('snapshot',session=bslots[1])['device']
+  second=b.req('snapshot',session=bslots[1])['buffee']['buffee']
+  a.req('grant_privilege',session=aslots[1],device=bid,privilege='grant')
+  b.wait(bslots[1],lambda s:'grant' in s['buffee'].get('privileges',[]))
+  b.req('close_session',session=bslots[1])
+  b.req('forget_saved_session',session=bslots[0],entry=second)
+  assert second not in b.req('snapshot',session=bslots[0])['contacts']['sessions']
+  b.req('send',session=bslots[0],text='One survives Forget')
+  a.wait(aslots[0],lambda s:any(m['text']=='One survives Forget' for m in s['messages']))
+  a.close();b.close();b=Device(str(Path(state)/'b'),'15'*32);devices.append(b)
+  slot=b.req('new_session')['session_id'];r=b.req('join_buffee',session=slot,invitation=links[1])
+  assert r['device']==bid
+  assert 'grant' not in r['buffee']['privileges'] and r['buffee']['revision']==0
+  print('PASS: Forget clears a closed named Session and cached grant, preserves another Session and keeps Device identity')
 finally:
  for device in devices:device.close()
  desk.terminate();desk.wait(timeout=8)

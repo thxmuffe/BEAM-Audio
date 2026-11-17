@@ -1,7 +1,6 @@
-"""Two real local Devices both restart (new mailboxes on both sides) and find each other again.
-
-The member knocks through the invitation link's mailbox, which the creator
-re-registers on every start; chat flows again afterwards."""
+"""Disposable local Devices retain identity and reconnect after restarting.
+Forgetting a Session prevents automatic return; an explicit Join restores it.
+"""
 import argparse
 import importlib.util
 from pathlib import Path
@@ -56,14 +55,51 @@ def main():
             until('name learned', lambda: api(b, method='snapshot').get('buffee', {}).get('name') == 'Restart test')
             print('link length', len(link))
             # Both restart: every mailbox is new.
-            seeds = (a.seed, b.seed); a.close(); b.close(); devices.clear()
+            seeds = (a.seed, b.seed); identities = (a.identity['id'], b.identity['id'])
+            a.close(); b.close(); devices.clear()
             a = device('creator', seeds[0]); b = device('member', seeds[1])
+            assert (a.identity['id'], b.identity['id']) == identities
             until('creator back as authority', lambda: api(a, method='snapshot').get('buffee', {}).get('state') == 'authorized')
             until('member let back in', lambda: api(b, method='snapshot').get('buffee', {}).get('state') == 'authorized', 90)
             until('link after both restarted', lambda: linked(a, b) and linked(b, a), 90)
             api(a, method='send', text='after restart')
             until('chat after restart', lambda: any(m.get('text') == 'after restart' for m in api(b, method='snapshot').get('messages', [])))
-            print('PASS: both Devices restarted with new mailboxes; the member knocked via the link, was let back in, linked, and chat flows')
+            print('PASS: both Devices restarted with new mailboxes and stable identities; linked and exchanged chat', flush=True)
+            # Leave keeps a grant holder's return record. Forget must override
+            # that record without affecting another Device's participation.
+            session_id = api(a, method='snapshot')['buffee']['buffee']
+            assert api(a, method='leave_buffee').get('error') is None
+            assert api(a, method='forget_saved_session', entry=session_id).get('error') is None
+            a.close(); a = device('creator', seeds[0])
+            snap = api(a, method='snapshot')
+            assert snap['buffee']['state'] == 'idle'
+            assert session_id not in snap['contacts']['sessions']
+            assert api(b, method='snapshot')['buffee']['buffee'] == session_id
+            print('PASS: forgotten Session stays absent after a cold restart; other Device keeps its Session', flush=True)
+            assert api(a, method='join_buffee', invitation=link).get('error') is None
+            until('explicit return', lambda: linked(a, b) and linked(b, a))
+            snap = api(a, method='snapshot')
+            assert snap['device'] == a.identity['id']
+            assert 'grant' in snap['buffee']['privileges']
+            assert session_id in snap['contacts']['sessions']
+            a.close(); a = device('creator', seeds[0])
+            until('return restored after explicit Join', lambda: linked(a, b) and linked(b, a))
+            assert session_id in api(a, method='snapshot')['contacts']['sessions']
+            print('PASS: explicit Join remembers the same Session and privileges; next restart restores it', flush=True)
+            # Forget also discards delegated privileges. With every other
+            # Device offline, rejoining must not recover them from local disk.
+            assert api(a, method='grant_privilege', device=b.identity['id'], privilege='grant').get('error') is None
+            until('delegated grant', lambda: 'grant' in api(b, method='snapshot')['buffee'].get('privileges', []))
+            assert api(b, method='leave_buffee').get('error') is None
+            assert api(b, method='forget_saved_session', entry=session_id).get('error') is None
+            a.close(); b.close(); b = device('member', seeds[1])
+            assert api(b, method='snapshot')['buffee']['state'] == 'idle'
+            assert api(b, method='join_buffee', invitation=link).get('error') is None
+            snap = api(b, method='snapshot')
+            assert snap['device'] == identities[1]
+            assert not {'grant', 'on_air', 'end_session'} & set(snap['buffee']['privileges'])
+            assert snap['buffee']['revision'] == 0
+            print('PASS: Forget removes saved delegated privileges; offline rejoin uses only the initial policy', flush=True)
     finally:
         for d in devices: d.close()
         if desk: desk.terminate(); desk.wait(timeout=5)

@@ -168,6 +168,8 @@ Build `bash src/Tools/CLI/build.sh`, then:
 ```sh
 python3 tests/control/cli-smoke.py
 python3 tests/control/cli-buffee-smoke.py
+python3 tests/control/cli-config-smoke.py
+python3 tests/control/cli-session-memory-smoke.py
 ```
 
 These use temporary identities/state and local sockets. The first creates two
@@ -178,6 +180,16 @@ are not production clock/audio timing evidence. `ba_cli_tests` adds readiness,
 child-environment secret removal and supervised native-output failure checks.
 See [CLI usage/limitations](../../src/Tools/CLI/README.md) for real user-led audio
 commands and the explicitly deferred saved-configuration/undo work.
+
+`cli-session-memory-smoke.py` exercises the public CLI only, using two temporary
+Devices and a local Reception: restart identity/return, `forget session`, cold
+restart staying forgotten, another Device retaining its Session, and explicit
+Join. It also checks `monitor --metrics --once --json` with all audio OFF.
+The Session restart/parallel smokes above instead use disposable Erlang probes.
+`audio-streams-smoke.py` sends real WebRTC PCM/Opus and checks levels, pause/resume
+and teardown against a test sink; it does not exercise the public CLI or speakers.
+There is no public-CLI known-tone playback/start/stop/level test yet. Manual UI
+and listening acceptance remain with the user.
 
 ## Privileges and clock continuation (2026-11-15)
 

@@ -125,7 +125,10 @@ command(#{<<"method">> := <<"ui_set">>,<<"key">> := <<"view">>,<<"value">> := Vi
         false -> {error,<<"Unknown page.">>}
     end;
 command(#{<<"method">> := <<"forget_saved_session">>,<<"entry">> := Session}) ->
-    ba_contacts:forget_session(Session);
+    case ba_contacts:forget_session(Session) of
+        ok -> ba_sessions:forget(Session);
+        Error -> Error
+    end;
 command(#{<<"method">> := <<"rename_saved_session">>,<<"entry">> := Session,<<"name">> := Name}) ->
     ba_contacts:rename_session(Session,Name);
 command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->

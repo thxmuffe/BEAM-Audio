@@ -30,6 +30,7 @@ spec(Root) ->
       "monitor" => #{arguments => [#{name => all,long => "-all",action => {store,true},default => false},
           #{name => invitation_file,long => "-invitation-file",type => string},
           #{name => once,long => "-once",action => {store,true},default => false},
+          #{name => metrics,long => "-metrics",action => {store,true},default => false},
           #{name => interval,long => "-interval",type => {integer,[{min,500},{max,10000}]},default => 1000}],
           handler => fun(A) -> ba_cli_monitor:run(A,Root) end},
       "new" => #{commands => #{"device" => Device(fun(A) -> emit(new_device(A,Root)) end,
@@ -66,6 +67,8 @@ spec(Root) ->
       "redo" => #{commands => #{"device" => Device(fun(A) -> history_action(A,<<"redo">>) end,[])}},
       "set" => #{commands => #{"device" => Device(fun set_device/1,
           [#{name => enable,long => "-enable",type => string,default => ""},#{name => disable,long => "-disable",type => string,default => ""}])}},
+      "forget" => #{commands => #{"session" => Device(fun forget_session/1,
+          [#{name => sessionid,long => "-sessionid",type => string,required => true}])}},
       "wait" => #{commands => #{"device" => Device(fun(A) -> emit(wait(names(A),maps:get(until,A),timeout(A))) end,
           [#{name => until,long => "-until",type => {string,["endpoint","admitted","ready","audio-flowing"]},default => "ready"}])}},
       "stop" => #{commands => #{"device" => Device(fun(A) -> stop(A,<<"stop">>) end,[#{name => all,long => "-all",action => {store,true},default => false}])}},
@@ -171,6 +174,13 @@ history_action(A,Method) ->
     emit(request(N,#{<<"method">> => Method,
         <<"expected_revision">> => maps:get(<<"revision">>,maps:get(<<"configuration">>,R)),
         <<"request_id">> => binary:encode_hex(crypto:strong_rand_bytes(16))})).
+
+forget_session(A) ->
+    Id=list_to_binary(maps:get(sessionid,A)),
+    case ba_buffee_job:hex(Id,32) of
+        true -> emit(request(one_name(A),#{<<"method">> => <<"forget_saved_session">>,<<"entry">> => Id}));
+        false -> fail(2,<<"Supply a Session ID of 32 hexadecimal characters.">>)
+    end.
 
 stop(A,Method) ->
     Timeout=timeout(A),

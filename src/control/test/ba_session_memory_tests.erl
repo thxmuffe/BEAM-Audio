@@ -47,3 +47,30 @@ forget_removes_the_entry_test() -> fixture(fun() ->
     ?assertNot(maps:is_key(?S,maps:get(sessions,ba_contacts:list()))),
     ?assertEqual({error,unknown_session},ba_contacts:forget_session(?S))
 end).
+
+forget_survives_background_observation_test() -> fixture(fun() ->
+    ba_contacts:observe(?S,<<"IRON2">>,[id($A)]),sync(),
+    ok=ba_contacts:forget_session(?S),
+    %% A restored worker or a delayed peer update is not the user's Join.
+    ba_contacts:observe(?S,<<"IRON2">>,[id($A),id($B)]),sync(),
+    ?assertNot(maps:is_key(?S,maps:get(sessions,ba_contacts:list()))),
+    ?assertNot(maps:is_key(id($B),maps:get(contacts,ba_contacts:list()))),
+    gen_server:stop(ba_contacts),{ok,_}=ba_contacts:start_link(),
+    ba_contacts:observe(?S,<<"IRON2">>,[id($A)]),sync(),
+    ?assert(ba_contacts:forgotten(?S)),
+    ?assertNot(maps:is_key(?S,maps:get(sessions,ba_contacts:list())))
+end).
+
+explicit_link_remembers_a_forgotten_session_test() -> fixture(fun() ->
+    {Pub,_}=crypto:generate_key(eddsa,ed25519),
+    Link=ba_buffee_passport:link(#{<<"authority">> => binary:encode_hex(Pub),
+        <<"nonce">> => binary:copy(<<"A">>,32),<<"secret">> => binary:copy(<<"B">>,32),
+        <<"desks">> => [<<"ws://127.0.0.1:4000/relay/v1">>]}),
+    {_,I}=ba_buffee_passport:parse_invitation(Link),Session=maps:get(<<"buffee">>,I),
+    ba_contacts:link(Link),sync(),ok=ba_contacts:forget_session(Session),
+    ba_contacts:link(Link),ba_contacts:observe(Session,<<"Revisited">>,[id($A)]),sync(),
+    ?assertNot(ba_contacts:forgotten(Session)),
+    E=maps:get(Session,maps:get(sessions,ba_contacts:list())),
+    ?assertEqual(Link,maps:get(link,E)),
+    ?assertEqual(#{id($A) => member},maps:get(devices,E))
+end).

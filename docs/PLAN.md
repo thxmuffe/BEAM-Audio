@@ -1,5 +1,26 @@
 # Current plan
 
+## Device identity and forgetting Sessions — 2026-11-17
+
+Implemented: the Mac Web shortcut reopens its named Device instead of allocating
+another identity on every launch. A standalone local Web Device requires a
+persistent identity/state pair instead of silently generating temporary ones.
+Forget removes local Session memory, return links and cached privilege policies;
+an ID-only marker blocks background observations and automatic restoration until
+the person explicitly uses the link again. Leave still preserves privileges.
+
+Next: user-led restart/manual acceptance with the rebuilt Mac app and Web
+launcher. Existing independent Devices have separate keys and may hold different
+privileges; they have not been merged, stopped or deleted. Native windows and the
+Web launcher still have separate identities. No Reception deployment is needed.
+
+The public CLI now exposes the same Forget operation and scriptable meter
+diagnostics (`monitor --metrics --once --json`), covered by a high-level CLI
+regression. Keep manual UI/listening checks user-led. The next useful audio
+scenario is a known tone started/stopped by a test: assert fresh nonzero meters
+and receive/render progress, then verify stop/disable clears work. Counter-only
+`audio-flowing` can pass for silence. This playback scenario is not yet written.
+
 ## Agreed direction — 2026-11-17: boards as a replicated log
 
 User's model: every request and message goes to the Session's boards (request

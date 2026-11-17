@@ -23,7 +23,7 @@ run(A,Root) ->
             io:format(standard_error,"Monitoring through Device ~s. Audio disabled. Ctrl-C exits this view; Device stays connected.~n",[Observer]),
             Observer
     end,
-    loop(Name,A,false,#{},#{},#{}).
+    loop(Name,A,maps:get(metrics,A,false),#{},#{},#{}).
 choose(A,Root) ->
     Path=invitation_path(A,Root),
     Parsed=case file:read_file(Path) of

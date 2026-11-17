@@ -5,7 +5,7 @@
 %% Sessions memory: every Session this Device has known, by Session id, with its
 %% name, its original invitation link and the Devices seen there. It only grows:
 %% a Device is never removed, a kicked one keeps its place with status kicked.
--export([link/1,kicked/2,rename_session/2,forget_session/1]).
+-export([link/1,kicked/2,rename_session/2,forget_session/1,forgotten/1]).
 %% Only the person removes an entry; nothing is forgotten automatically.
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
 observe(Buffee,Name,Ids) -> gen_server:cast(?MODULE,{observe,Buffee,Name,Ids}).
@@ -21,6 +21,10 @@ link(Link) -> gen_server:cast(?MODULE,{link,Link}).
 kicked(Session,Device) -> gen_server:cast(?MODULE,{kicked,Session,Device}).
 rename_session(Session,Name) -> gen_server:call(?MODULE,{rename_session,Session,Name}).
 forget_session(Session) -> gen_server:call(?MODULE,{forget_session,Session}).
+%% Keep only the ID of a forgotten Session, so background observations and
+%% saved return records cannot recreate it. An explicit link remembers it again.
+forgotten(Session) -> forgotten(Session,ba_settings:get(contacts,#{})).
+forgotten(Session,S) -> maps:is_key(Session,maps:get(forgotten_sessions,S,#{})).
 init([]) ->
     S=sessions_from_groups(ba_settings:get(contacts,#{contacts => #{},groups => #{}})),
     ok=ba_settings:put(contacts,S),{ok,S}.
@@ -37,7 +41,9 @@ handle_call(list,_,S) -> {reply,maps:with([contacts,groups,sessions],S),S};
 handle_call({forget_session,Session},_,S) ->
     Sessions=maps:get(sessions,S,#{}),
     case maps:is_key(Session,Sessions) of
-        true -> Next=S#{sessions := maps:remove(Session,Sessions)},ok=ba_settings:put(contacts,Next),{reply,ok,Next};
+        true -> Forgotten=maps:get(forgotten_sessions,S,#{}),
+            Next=S#{sessions := maps:remove(Session,Sessions),forgotten_sessions => Forgotten#{Session => true}},
+            ok=ba_settings:put(contacts,Next),{reply,ok,Next};
         false -> {reply,{error,unknown_session},S}
     end;
 handle_call({rename_session,Session,Name},_,S) ->
@@ -79,6 +85,7 @@ label(_) -> false.
 handle_cast({observe,Buffee,Name,Ids},S) ->
     try
         true=ba_buffee_job:hex(Buffee,32),true=label(Name),
+        true=not forgotten(Buffee,S),
         true=is_list(Ids) andalso length(Ids)=<32,
         true=lists:all(fun(Id) -> ba_buffee_job:hex(Id,64) end,Ids),
         Collected=lists:foldl(fun(Id,Acc) -> observed_name(Id,binary:part(Id,0,12),Acc) end,S,lists:usort(Ids)),
@@ -91,7 +98,8 @@ handle_cast({link,Link},S) ->
         Session=maps:get(<<"buffee">>,I),Sessions=maps:get(sessions,S,#{}),
         E=maps:get(Session,Sessions,#{name => maps:get(<<"name">>,I),link => null,devices => #{}}),
         Linked=case maps:get(link,E) of null -> E#{link := Link};_ -> E end,
-        persist(S#{sessions => Sessions#{Session => Linked#{last => now_s()}}},S)
+        persist(S#{sessions => Sessions#{Session => Linked#{last => now_s()}},
+                   forgotten_sessions => maps:remove(Session,maps:get(forgotten_sessions,S,#{}))},S)
     catch _:_ -> {noreply,S} end;
 handle_cast({kicked,Session,Device},S) ->
     Sessions=maps:get(sessions,S,#{}),

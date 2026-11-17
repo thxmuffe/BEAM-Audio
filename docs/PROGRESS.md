@@ -1,5 +1,55 @@
 # Current implementation and validation
 
+## Public CLI regression coverage and Forget parity — 2026-11-17
+
+Added `beamaudio forget session --devicename NAME --sessionid ID`, forwarding to
+the same `forget_saved_session` Device API as the app. The backend was already
+shared, but the public CLI had no command for it. Added `monitor --metrics` to
+request the existing opt-in diagnostics in scripted JSON without an interactive
+keypress; it enables no audio.
+
+`cli-session-memory-smoke.py` uses only the public executable with two temporary
+Devices and a local Reception. Checks: metric JSON while audio is OFF, stable
+identity and Session return across restart, Forget staying absent on cold
+restart, another Device retaining its Session, and explicit Join remembering it
+again. Core compilation and this CLI regression pass. No UI, actual playback,
+listening, native rebuild or live Device changes. Existing audio transport tests
+use synthetic signals/test sinks; a public-CLI known-tone start/stop/level smoke
+remains unwritten. Visual and listening acceptance stay user-led.
+
+## Device identity and forgotten Session persistence — 2026-11-17
+
+Found three running managed Web Devices alongside the native Mac app. The Mac
+Web shortcut always used `--next-instance`, so relaunching while a previous
+Device remained running created another independent key/state directory. It now
+reuses the named Device's existing web endpoint; a fresh start uses that exact
+name and fails on an occupied/stale record instead of selecting another key.
+An attached launcher does not stop a Device it did not start. Separately,
+DeviceWeb's bare `--local-device` used a fresh temporary identity/state directory
+when the platform supplied neither; it now requires persistent settings.
+
+Forget previously removed only the contacts entry. Membership observations
+could recreate it, and a grant holder's saved return record could rejoin it
+after restart. Forget now records an ID-only suppression marker and clears the
+return link and cached accepted privilege policy in both the default and named
+Session scopes, through the running owner where present. Other Sessions and the
+Device key stay intact. Explicit use of a Session link remembers it again.
+Leave retains its existing privilege-preserving behavior. Forget is local:
+another Device can still supply its accepted signed policy on a later Join;
+the creator's inherent privileges follow from its key and the invitation.
+
+Validation: core and DeviceWeb compilation; 13 focused EUnit tests; isolated
+launcher checks for reuse, first start and stale-record failure; bare local Web
+startup rejects missing persistence before creating a Device. The extended local
+restart smoke checks stable identities, forgotten Sessions staying absent,
+explicit return and removal of saved delegated privileges. The parallel-Session
+smoke also passes: Forget clears a closed named scope and its cached grant while
+another Session still exchanges chat; offline rejoin keeps the Device ID and
+has no cached grant. Its harness now loads the current `control` build, follows
+the returned Session ID and flushes settings before orderly test restarts.
+No visual/audio review, native app rebuild, public Reception change or running
+Device cleanup.
+
 ## Test and documentation sweep after the join model — 2026-11-17
 
 All 223 control unit tests and the six Session smokes (`buffee-membership`,

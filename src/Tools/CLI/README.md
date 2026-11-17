@@ -60,6 +60,17 @@ beamaudio set device --devicename test2 --enable mic
 beamaudio set device --devicename test2 --disable mic,broadcast
 ```
 
+Forget a Session on one Device using the same operation as the app:
+
+```sh
+beamaudio forget session --devicename test2 --sessionid SESSION_ID
+```
+
+This removes its local Session entry, return link and cached privileges, and
+disconnects it if still joined. Other Devices keep their own Session state.
+Stopping/restarting the Device preserves its identity and keeps that Session
+forgotten; explicitly joining its invitation remembers it again.
+
 The same configured BEAM Audio playback-helper executable is excluded from system
 capture across local CLI VMs, including helpers started later, to avoid electronic
 feedback. This has been compiled, not checked with actual sound. Microphone to
@@ -155,6 +166,17 @@ The table groups channels under one Device name with a separator after each
 Device. Running channels are green, disabled ones grey, and failures red; disabled
 channels omit unused meter columns. Colours are used only in a terminal and can
 be disabled with `NO_COLOR=1`; JSON and redirected output remain uncoloured.
+
+Scripts can request the existing opt-in meter/diagnostic fields without an
+interactive keypress:
+
+```sh
+beamaudio monitor --all --devicename test1 --metrics --once --json
+```
+
+Meters appear only when available; check `meter_age_ms` and `meter_stage` along
+with `peak_db`/`rms_db`. This read does not enable capture or playback. Ordinary
+`wait --until audio-flowing` checks fresh counters and can pass for silence.
 
 Updated apps pass the OS Device name to OTP; named CLI Devices advertise their
 configured name and the observer advertises “Buffee monitor”. The name travels
@@ -287,6 +309,7 @@ physical alignment remain open.
 python3 tests/control/cli-smoke.py
 python3 tests/control/cli-buffee-smoke.py
 python3 tests/control/cli-config-smoke.py
+python3 tests/control/cli-session-memory-smoke.py
 ```
 
 The first checks two idle real VMs, identity isolation/reuse, protected endpoints,
@@ -305,6 +328,11 @@ undo/redo across real VM restarts. Seven configuration unit tests cover history
 bounds, no-ops, branching, stale revision/retry, internal setter ownership and save
 failure; no hardware use is implied.
 
+The Session-memory smoke uses only the public CLI executable against two real
+Devices and a temporary local Reception. It checks metric JSON with audio OFF,
+identity and Session return across restart, Forget persistence, another Device
+remaining joined, and explicit rejoining. It uses no internal probe commands.
+
 ### Independent desktop instances
 
 `beamaudio new device --devicename OpenSound --next-instance --web-assets DIR --web-port 0`
@@ -312,4 +340,8 @@ atomically reserves the first unoccupied managed name: OpenSound, OpenSound-2,
 and so on. Each name has its own identity/state and receives a separate web port.
 Without --next-instance, exact-name behavior is unchanged. Occupied/stale records
 are never overwritten; inspect/stop stale instances explicitly. This hardware CLI
-remains macOS-only. The product shortcut uses this mode for each new launch.
+remains macOS-only. The product Web shortcut instead reopens its exact named
+Device (`OpenSound` by default), starting it with the same saved identity when
+stopped. Set `OPENSOUND_DEVICE_NAME` to explicitly use another named Device.
+An attached shortcut does not stop a Device it did not start. Stale records fail
+instead of silently allocating a different identity.
