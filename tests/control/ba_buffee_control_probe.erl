@@ -31,7 +31,30 @@ command(#{<<"op">> := <<"debug_control">>},_,_) ->
     #{protocol := P}=sys:get_state(ba_session_scope:ref(ba_buffee_control)),
     #{peers => [binary:part(K,0,6) || K <- maps:keys(maps:get(peers,maps:get(policy,P,#{}),#{}))],
       deadline => maps:get(membership_deadline,P,none),now => erlang:monotonic_time(millisecond),
-      sessions => [binary:part(K,0,6) || K <- maps:keys(maps:get(sessions,P,#{}))]};
+      sessions => [binary:part(K,0,6) || K <- maps:keys(maps:get(sessions,P,#{}))],
+      control_pid => list_to_binary(pid_to_list(ba_session_scope:whereis(ba_buffee_control))),
+      rejection => list_to_binary(io_lib:format("~p",[maps:get(last_rejection,sys:get_state(ba_session_scope:ref(ba_buffee_control)),none)])),
+      diag => list_to_binary(io_lib:format("~p",[ba_diagnostics:view(sys:get_state(ba_session_scope:ref(ba_buffee_control)))])),
+      config_hash => erlang:phash2(maps:get(config,sys:get_state(ba_session_scope:ref(ba_buffee_control)))),
+      routes => erlang:phash2(maps:get(routes,maps:get(config,sys:get_state(ba_session_scope:ref(ba_buffee_control))))),
+      revision => maps:get(revision,maps:get(policy,P,#{}),none),
+      membership => case ba_buffee_membership:current() of
+          {ok,#{policy := #{peers := Peers}}} -> [binary:part(K,0,6) || K <- maps:keys(Peers)];
+          Other -> list_to_binary(io_lib:format("~p",[Other])) end};
+command(#{<<"op">> := <<"debug_trace_start">>},_,_) ->
+    Collector=spawn(fun() -> (fun Loop(Acc) -> receive {get,From} -> From ! {traced,lists:reverse(Acc)},Loop(Acc);
+        {trace,_,call,{M,F,Args}} -> Loop([{M,F,length(Args),case {F,Args} of
+            {handle_info,[Msg|_]} when is_tuple(Msg) -> element(1,Msg);{handle_info,[Msg|_]} when is_atom(Msg) -> Msg;
+            {close_peer,[_,Reason|_]} -> Reason;{rejected,[Reason|_]} -> Reason;{reset,[Reason|_]} -> Reason;_ -> x end}|Acc]);
+        _ -> Loop(Acc) end end)([]) end),
+    register(ba_debug_collector,Collector),
+    erlang:trace(ba_session_scope:whereis(ba_buffee_control),true,[call,{tracer,Collector}]),
+    erlang:trace_pattern({ba_buffee_control,'_','_'},true,[local]),
+    erlang:trace_pattern({ba_buffee_control_protocol,'_','_'},true,[local]),#{ok => true};
+command(#{<<"op">> := <<"debug_trace_get">>},_,_) ->
+    ba_debug_collector ! {get,self()},
+    receive {traced,L} -> [list_to_binary(io_lib:format("~p:~p/~p ~p",[M,F,A,X])) || {M,F,A,X} <- L,
+        not lists:member(F,[now_ms,hex,uint,exact,fresh,nonces,decode,put,format_status])] after 2000 -> [] end;
 command(#{<<"op">> := <<"api">>,<<"request">> := Request},_,_) -> ensure_started(),ba_device_api:request(Request);
 command(#{<<"op">> := <<"crash_test_worker">>},_,_) ->
     logger:set_primary_config(level,error),logger:set_handler_config(default,level,critical),

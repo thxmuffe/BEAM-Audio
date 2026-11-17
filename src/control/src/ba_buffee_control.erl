@@ -265,7 +265,15 @@ event(Peer,{capabilities_read,Request,Metrics},S) ->
                 ok -> S#{protocol := Protocol};
                 _ -> rejected(transport_failed,S)
             end;
-        {error,_,_} -> reset(capability_reply_failed,S)
+        {error,Reason,_} when Value=/=unavailable ->
+            %% Our own reply is not valid on the wire. That is a local bug, not a
+            %% reason to drop every link: say so, and tell this peer "unavailable".
+            logger:error("Capabilities reply to a peer was not valid (~p); replying unavailable.",[Reason]),
+            case ba_buffee_control_protocol:reply_capabilities(Peer,Request,unavailable,now_ms(),maps:get(protocol,S)) of
+                {ok,Packet,Protocol} -> case send(Peer,Packet,S) of ok -> S#{protocol := Protocol};_ -> rejected(transport_failed,S) end;
+                {error,_,_} -> rejected(capability_reply_failed,S)
+            end;
+        {error,_,_} -> rejected(capability_reply_failed,S)
     end;
 event(_,{chat,Id,Text,Context},S) ->
     case ba_session_scope:whereis(ba_buffee_chat) of

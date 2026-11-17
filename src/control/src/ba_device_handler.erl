@@ -176,7 +176,10 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
         false -> Base;
         true -> Base#{<<"audio">> => maps:from_list([{atom_to_binary(K),
             #{<<"consent">> => B,<<"state">> => atom_to_binary(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting)),
-              <<"available">> => B andalso lists:member(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting),[ready,running])}} || {K,B} <- maps:to_list(ba_app_session:consent())])}
+              <<"available">> => B andalso lists:member(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting),[ready,running])}} || {K,B} <- maps:to_list(ba_app_session:consent()),
+               %% The capabilities wire contract has exactly these three; local gates
+               %% (calibration, DSP) are not part of what Devices tell each other.
+               lists:member(K,[speaker,microphone,broadcast])])}
     end.
 
 capability_metrics(S) ->

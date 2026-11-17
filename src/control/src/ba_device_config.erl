@@ -2,7 +2,7 @@
 %% configuration. One serialized owner records changes from every supported client.
 -module(ba_device_config).
 -behaviour(gen_server).
--export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3,auto_accept/2,auto_grant/2]).
+-export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3,auto_accept/2,auto_grant/2,preset/2]).
 %% Device resources the Session may ask to use, and requests from other Devices
 %% that this Device answers. Each has a policy: always, ask (default) or no.
 %% PROTECTED uses still carry a consent flag; the others are recorded choices only.
@@ -23,6 +23,19 @@ policy(Key) -> gen_server:call(ba_session_scope:ref(?MODULE),{policy,Key}).
 policy(Key,Value,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{policy,Key,Value,Options}).
 auto_accept(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{auto_accept,Enabled,Options}).
 auto_grant(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{auto_grant,Enabled,Options}).
+%% A named bundle of the settings below; only `advanced` leaves them for the person to set.
+preset(Name,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{preset,Name,Options}).
+-define(PRESETS,[no_control,friendly,tight,advanced]).
+%% What each preset sets: the two top switches and the choices (anything not named asks).
+%% `keep` leaves the choices as they are (they are hidden, not changed).
+preset_values(no_control) -> #{auto_accept => true,auto_grant => true,choices => keep};
+preset_values(friendly) -> #{auto_accept => false,auto_grant => true,
+    choices => #{speaker => always,calibrate_microphone => always,calibrate_speaker => always,dsp => always,location => always}};
+preset_values(tight) -> #{auto_accept => false,auto_grant => false,
+    choices => #{moderator_requests => no,microphone => no,location => no,dsp => no}}.
+%% The consent flags a preset's values grant (always, or everything while auto accept is on).
+preset_patch(#{auto_accept := Auto,choices := Choices}) ->
+    maps:from_list([{K,Auto orelse maps:get(K,Choices,ask)=:=always} || K <- ?PROTECTED]).
 %% Read-only, fail-closed view for hot execution paths. Only this owner writes it.
 allowed(Key) ->
     case ba_settings:app(runtime_profile,legacy_apps) of
@@ -39,26 +52,45 @@ init([]) ->
     %% The Device starts from its settings: every grant, ON AIR and the standing
     %% choices. Only a first start begins with everything off. Undo history lives
     %% only while the Device runs.
-    Gates=read_gates(ba_settings:get(automation,#{})),
-    Default=case Secure of
+    Gates0=read_gates(ba_settings:get(automation,#{})),
+    %% A Device that has no preset yet: one that already has settings keeps them
+    %% (advanced); a new one starts in the default preset (tight in the apps).
+    Existing=lists:any(fun(K) -> ba_settings:get(K,undefined)=/=undefined end,[automation,consent,contacts]),
+    Preset=case maps:get(preset,Gates0,undefined) of
+        undefined -> case Existing orelse not Secure of
+            true -> advanced;
+            false -> ba_settings:app(device_default_preset,tight)
+        end;
+        P -> P
+    end,
+    {Gates,Fresh}=case {maps:is_key(preset,Gates0),Preset} of
+        {false,advanced} -> {Gates0#{preset => advanced},#{}};
+        {false,_} -> V=preset_values(Preset),
+            {Gates0#{preset => Preset,auto_accept => maps:get(auto_accept,V),auto_grant => maps:get(auto_grant,V),choices => maps:get(choices,V)},preset_patch(V)};
+        _ -> {Gates0,#{}}
+    end,
+    Default0=case Secure of
         true -> maps:from_keys([broadcast|?PROTECTED],false);
         false -> ba_settings:app(audio_consent,#{speaker => true,microphone => false,broadcast => false})
     end,
+    Default=maps:merge(Default0,Fresh),
     Saved=ba_settings:get(consent,undefined),
     Consent=case valid_config(Saved) of true -> Saved;false -> Default end,
     S=#{format => 1,revision => 0,cursor => 0,seen => [],
         states => [#{label => <<"Initial audio settings">>,config => Consent,time_ms => erlang:system_time(millisecond)}]},
     ok=validate(S),
-    Restored=S#{choices => maps:get(choices,Gates,#{}),auto_accept => maps:get(auto_accept,Gates,false),auto_grant => maps:get(auto_grant,Gates,false)},
+    Restored=S#{choices => maps:get(choices,Gates,#{}),auto_accept => maps:get(auto_accept,Gates,false),auto_grant => maps:get(auto_grant,Gates,false),preset => maps:get(preset,Gates,advanced)},
+    _=save_gates(Restored),
     publish(Restored),changed(),{ok,Restored#{permission_registry => whereis(ba_permission_pg)}}.
 %% Only well-formed choices are read back; anything else is dropped.
 read_gates(Saved) when is_map(Saved) ->
     Choices=maps:filter(fun(K,V) -> lists:member(K,?PROTECTED++?ANSWERS) andalso lists:member(V,[always,no]) end,
                         case maps:get(choices,Saved,#{}) of C when is_map(C) -> C;_ -> #{} end),
-    #{choices => Choices,auto_accept => maps:get(auto_accept,Saved,false)=:=true,auto_grant => maps:get(auto_grant,Saved,false)=:=true};
+    Base=#{choices => Choices,auto_accept => maps:get(auto_accept,Saved,false)=:=true,auto_grant => maps:get(auto_grant,Saved,false)=:=true},
+    case lists:member(maps:get(preset,Saved,undefined),?PRESETS) of true -> Base#{preset => maps:get(preset,Saved)};false -> Base end;
 read_gates(_) -> #{}.
 %% Written to the settings after every change to a standing choice.
-save_gates(S) -> ok=ba_settings:put(automation,maps:with([choices,auto_accept,auto_grant],S)),S.
+save_gates(S) -> ok=ba_settings:put(automation,maps:with([choices,auto_accept,auto_grant,preset],S)),S.
 validate(#{format := 1,revision := R,cursor := C,seen := Seen,states := States}) ->
     true=is_integer(R) andalso R>=0,true=is_list(States) andalso length(States)>0 andalso length(States)=< ?LIMIT+1,
     true=is_integer(C) andalso C>=0 andalso C<length(States),true=is_list(Seen) andalso length(Seen)=< ?LIMIT,
@@ -71,7 +103,7 @@ valid_config(C) when is_map(C) ->
 valid_config(_) -> false.
 current(#{states := States,cursor := C}) -> maps:get(config,lists:nth(C+1,States)).
 public(#{states := States,cursor := C,revision := R}=S) ->
-    #{revision => R,consent => current(S),policies => maps:from_list([{K,policy_of(K,S)} || K <- ?PROTECTED++?ANSWERS]),auto_accept => auto(S),auto_grant => maps:get(auto_grant,S,false),revocation_pending => maps:get(revocation_pending,S,[]),can_undo => C>0 andalso history_allowed(current(S),maps:get(config,lists:nth(max(1,C),States))),can_redo => C+1<length(States) andalso history_allowed(current(S),maps:get(config,lists:nth(min(length(States),C+2),States))),
+    #{revision => R,consent => current(S),policies => maps:from_list([{K,policy_of(K,S)} || K <- ?PROTECTED++?ANSWERS]),auto_accept => auto(S),auto_grant => maps:get(auto_grant,S,false),preset => maps:get(preset,S,advanced),revocation_pending => maps:get(revocation_pending,S,[]),can_undo => C>0 andalso history_allowed(current(S),maps:get(config,lists:nth(max(1,C),States))),can_redo => C+1<length(States) andalso history_allowed(current(S),maps:get(config,lists:nth(min(length(States),C+2),States))),
       undo_label => case C of 0 -> null;_ -> maps:get(label,lists:nth(C+1,States)) end,
       redo_label => case C+1<length(States) of true -> maps:get(label,lists:nth(C+2,States));false -> null end,
       cursor => C,entries => [E#{selected => I=:=C} || {I,E} <- lists:zip(lists:seq(0,length(States)-1),States)]}.
@@ -83,15 +115,28 @@ handle_call({policy,Key},_,S) ->
     Override=case lists:member(Key,?GRANTS) of true -> maps:get(auto_grant,S,false);false -> auto(S) end,
     {reply,case Override of true -> always;false -> policy_of(Key,S) end,S};
 %% Trust every Device that asks for a right. Grants nothing on this Device itself.
-handle_call({auto_grant,Enabled,_},_,S) when is_boolean(Enabled) -> {reply,ok,save_gates(S#{auto_grant => Enabled})};
+handle_call({auto_grant,Enabled,_},_,S) when is_boolean(Enabled) -> {reply,ok,save_gates(S#{auto_grant => Enabled,preset => advanced})};
 %% Accept every request. The stored choices stay as they are and are ignored
 %% while this is on. Turning it off is always recorded, even if a stop is pending.
 handle_call({auto_accept,Enabled,Options},From,S) when is_boolean(Enabled) ->
     Patch=maps:from_list([{K,Enabled orelse stored(K,S)=:=always} || K <- ?PROTECTED]),
     case handle_call({edit,Patch,Options},From,S) of
-        {reply,ok,Next} -> {reply,ok,save_gates(Next#{auto_accept => Enabled})};
-        {reply,Error,Next} when not Enabled -> {reply,Error,save_gates(Next#{auto_accept => false})};
+        {reply,ok,Next} -> {reply,ok,save_gates(Next#{auto_accept => Enabled,preset => advanced})};
+        {reply,Error,Next} when not Enabled -> {reply,Error,save_gates(Next#{auto_accept => false,preset => advanced})};
         Other -> Other
+    end;
+%% A preset writes its values as one change (grants first go through the same stop
+%% barrier as any other); advanced only marks the choice and changes nothing.
+handle_call({preset,advanced,_},_,S) -> {reply,ok,save_gates(S#{preset => advanced})};
+handle_call({preset,Name,Options},From,S) ->
+    case lists:member(Name,?PRESETS) of
+        false -> {reply,{error,invalid_configuration},S};
+        true ->
+            V=preset_values(Name),Auto=maps:get(auto_accept,V),Choices=case maps:get(choices,V) of keep -> maps:get(choices,S,#{});C -> C end,
+            case handle_call({edit,preset_patch(V#{choices => Choices}),Options},From,S) of
+                {reply,ok,Next} -> {reply,ok,save_gates(Next#{auto_accept => Auto,auto_grant => maps:get(auto_grant,V),choices => Choices,preset => Name})};
+                Other -> Other
+            end
     end;
 %% always is the standing grant; ask and no both keep the grant OFF. Nothing
 %% here approves a request: ask only records that the user wants to be asked.
@@ -222,8 +267,8 @@ policy_of(Key,S) ->
         {_,false,always,_} -> ask;
         {_,false,_,_} -> Stored
     end.
-choose(Key,ask,S) -> save_gates(S#{choices => maps:remove(Key,maps:get(choices,S,#{}))});
-choose(Key,Value,S) -> save_gates(S#{choices => (maps:get(choices,S,#{}))#{Key => Value}}).
+choose(Key,ask,S) -> save_gates(S#{choices => maps:remove(Key,maps:get(choices,S,#{})),preset => advanced});
+choose(Key,Value,S) -> save_gates(S#{choices => (maps:get(choices,S,#{}))#{Key => Value},preset => advanced}).
 handle_cast(_,S) -> {noreply,S}.
 handle_info(_,S) -> {noreply,S}.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([revision,cursor],S);(log,_) -> [];(_,_) -> redacted end,Status).

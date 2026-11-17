@@ -2,14 +2,56 @@
 -module(ba_device_consent_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+%% A new Device starts in tight; presets write real settings; advanced only reveals them.
+presets_test() ->
+    Env=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
+    Old=[{K,application:get_env(ba_core,K)} || K <- [runtime_profile,restore_buffee_on_start,device_default_preset]],
+    Dir=filename:join("/tmp","ba-presets-"++integer_to_list(erlang:unique_integer([positive]))),
+    ok=file:make_dir(Dir),os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$C)),
+    application:set_env(ba_core,runtime_profile,buffee_control),application:set_env(ba_core,restore_buffee_on_start,false),
+    application:unset_env(ba_core,device_default_preset),
+    {ok,Sup}=ba_sup:start_link(),unlink(Sup),
+    try
+        Snap=fun() -> ba_device_config:snapshot() end,Pol=fun(K) -> maps:get(K,maps:get(policies,Snap())) end,
+        ?assertEqual(tight,maps:get(preset,Snap())),
+        ?assertEqual(no,Pol(moderator_requests)),?assertEqual(no,Pol(microphone)),?assertEqual(no,Pol(location)),
+        ?assertEqual(ask,Pol(on_air_requests)),?assertEqual(ask,Pol(speaker)),?assertEqual(ask,Pol(calibrate_speaker)),
+        ?assertNot(maps:get(auto_accept,Snap())),?assertNot(maps:get(auto_grant,Snap())),
+        ok=ba_device_config:preset(friendly,#{}),
+        ?assertEqual(friendly,maps:get(preset,Snap())),?assert(maps:get(auto_grant,Snap())),?assertNot(maps:get(auto_accept,Snap())),
+        ?assertEqual(always,Pol(speaker)),?assertEqual(always,Pol(calibrate_microphone)),?assertEqual(always,Pol(location)),?assertEqual(ask,Pol(microphone)),
+        ?assert(ba_device_permission:allowed(playback)),?assertNot(ba_device_permission:allowed(record)),
+        ok=ba_device_config:preset(no_control,#{}),
+        ?assert(maps:get(auto_accept,Snap())),?assert(maps:get(auto_grant,Snap())),?assertEqual(always,ba_device_config:policy(on_air_requests)),
+        %% Choices are hidden, not changed, by no_control.
+        ?assertEqual(always,Pol(speaker)),
+        ok=ba_device_config:preset(tight,#{}),
+        ?assertNot(ba_device_permission:allowed(playback)),?assertEqual(no,Pol(moderator_requests)),
+        %% advanced reveals and changes nothing; touching a setting by hand keeps it advanced.
+        ok=ba_device_config:preset(advanced,#{}),?assertEqual(advanced,maps:get(preset,Snap())),?assertEqual(no,Pol(moderator_requests)),
+        ok=ba_device_config:preset(friendly,#{}),ok=ba_device_config:policy(microphone,always,#{}),
+        ?assertEqual(advanced,maps:get(preset,Snap())),
+        ?assertEqual({error,invalid_configuration},ba_device_config:preset(nope,#{})),
+        %% It survives a restart.
+        ok=ba_device_config:preset(friendly,#{}),Running=whereis(ba_device_config),ok=gen_server:stop(Running,shutdown,5000),
+        (fun Wait(0) -> error(not_restarted);Wait(N) -> case whereis(ba_device_config) of P when is_pid(P),P=/=Running -> ok;_ -> receive after 10 -> Wait(N-1) end end end)(100),
+        ?assertEqual(friendly,maps:get(preset,Snap())),?assert(maps:get(auto_grant,Snap()))
+    after
+        gen_server:stop(Sup,shutdown,5000),file:del_dir_r(Dir),
+        [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Env],
+        [case V of undefined -> application:unset_env(ba_core,K);{ok,X} -> application:set_env(ba_core,K,X) end || {K,V} <- Old]
+    end.
+
 device_wide_consent_test() ->
     Env=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
-    Keys=[runtime_profile,audio_consent,restore_buffee_on_start],
+    Keys=[runtime_profile,audio_consent,restore_buffee_on_start,device_default_preset],
     Old=[{K,application:get_env(ba_core,K)} || K <- Keys],
     Dir=filename:join("/tmp","ba-consent-"++integer_to_list(erlang:unique_integer([positive]))),
     ok=file:make_dir(Dir),os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$B)),
     application:set_env(ba_core,runtime_profile,buffee_control),
     application:set_env(ba_core,restore_buffee_on_start,false),
+    %% These tests start from the plain defaults; the presets have their own test below.
+    application:set_env(ba_core,device_default_preset,advanced),
     application:set_env(ba_core,audio_consent,#{speaker => true,microphone => true,broadcast => true}),
     {ok,Sup}=ba_sup:start_link(),unlink(Sup),
     try

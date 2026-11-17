@@ -4,7 +4,7 @@
 %% The one list of commands an app window may send (web, Mac, iOS, Windows).
 client_methods() ->
     [<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
-     <<"end_buffee">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
+     <<"end_buffee">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"preset">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
      <<"ui_get">>,<<"ui_set">>,<<"microphone_live">>,<<"speaker_mute">>,<<"undo">>,<<"redo">>,<<"send">>,<<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
      <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
      <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>].
@@ -53,6 +53,14 @@ command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> :
     ba_device_config:change(#{capability_key(K) => B},config_options(R));
 command(#{<<"method">> := <<"auto_accept">>,<<"enabled">> := Enabled}=R) when is_boolean(Enabled) ->
     ba_device_config:auto_accept(Enabled,config_options(R));
+command(#{<<"method">> := <<"preset">>,<<"name">> := Name}=R) ->
+    case Name of
+        <<"no_control">> -> ba_device_config:preset(no_control,config_options(R));
+        <<"friendly">> -> ba_device_config:preset(friendly,config_options(R));
+        <<"tight">> -> ba_device_config:preset(tight,config_options(R));
+        <<"advanced">> -> ba_device_config:preset(advanced,config_options(R));
+        _ -> {error,<<"Unknown preset.">>}
+    end;
 command(#{<<"method">> := <<"auto_grant">>,<<"enabled">> := Enabled}=R) when is_boolean(Enabled) ->
     ba_device_config:auto_grant(Enabled,config_options(R));
 command(#{<<"method">> := <<"decline_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->

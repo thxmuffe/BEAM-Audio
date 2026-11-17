@@ -474,6 +474,54 @@ scheduled with a timer, not an animation frame, so hidden windows stay
 current. 23 frontend tests (store: one record per Device, change-only), 6 Swift
 WebKit tests, preview and real two-Session runs pass.
 
+Links between Devices (2026-11-17). Devices were admitted but never stayed
+linked (shown "Not connected", no chat, no streams). Three causes, all fixed:
+1. `ba_device_handler:capability_snapshot/1` sent an audio entry for every
+   consent key (also `calibrate_*`, `dsp`), but the capabilities wire contract
+   allows exactly speaker/microphone/broadcast. Each Device's own reply failed
+   validation and `ba_buffee_control` answered with `reset/2`, dropping every
+   link about a second after it formed. Now only the three wire entries are
+   sent, and an invalid own reply is logged and answered "unavailable" to that
+   one peer instead of resetting all links.
+2. Mailboxes (`buffee_desks`) are new after every restart, so after both sides
+   restarted each held a stale route for the other. A waiting member now also
+   sends its hello to the invitation link's mailbox (`stable_route/1`), which
+   the creator re-registers on every start.
+3. CLI-started Devices (the web launcher uses `beamaudio new device`) never set
+   `restore_buffee_on_start`, so the default Session slot was not restored and
+   a creator never returned as authority. `ba_cli_device` now sets it (not for
+   monitors).
+New `tests/control/session-restart-smoke.py` (app path through the Device API:
+link, restart both, relink, chat) passes; 77 focused EUnit and the three-Device
+smoke pass. Note: link handshake and chat packets travel through the Reception
+relay (`ba_buffee_desks:send`), not directly between Devices.
+
+Presets (2026-11-17): Settings gets one Automation choice, saved as `preset`
+inside `automation`: No control (both top switches on, choices kept hidden),
+Friendly (trust everyone on; Playback, calibration, GPS Always; Recording Ask),
+Tight (moderator, Recording, GPS No; on-air, Playback, calibration Ask), and
+Advanced (shows every setting as it is, changes nothing). Choosing a preset
+writes its real values in one change (grants go through the same stop barrier);
+touching any single setting or switch makes it Advanced. A new Device starts in
+Tight (`device_default_preset`, apps only); a Device that already has settings
+starts in Advanced and keeps them. Tight's Ask on Playback means Session audio
+stays silent on that Device until the approval prompt exists (plan step 4);
+Playback now offers Always/Ask/No. New command `preset {name}`. Tests: core
+preset test (defaults, each preset, restart), 25 frontend, 6 Swift, CLI and
+restart smoke pass; checked in the preview at both widths and on a real runtime
+(fresh = tight; friendly survives a restart).
+
+Settings layout (2026-11-17): the Control choice (No control / Friendly /
+Tight / Custom) is first; everything else, including My status, Admin, On air,
+Kicks, Response time and Undo/Redo, is shown only in Custom. The other three
+show an explanation of the level instead. "Custom" is the label of the stored
+preset `advanced`.
+
+Control slider (2026-11-17): the four levels are stops on one centred track
+(Wild, Friendly, Tight, Custom) with a large balloon that travels between them
+and an explanation whose centre follows it. "Wild" is the label of the stored
+`no_control`; "Custom" of `advanced`.
+
 NOT VERIFIED: the new shell against a real Device runtime or in the Mac/iOS
 hosts; no app was rebuilt. The OpenSoundKit WebKit tests still target the
 earlier tab, toolbox and Settings markup and need rewriting. See PLAN.md.
