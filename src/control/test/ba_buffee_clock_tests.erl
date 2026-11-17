@@ -17,7 +17,7 @@ offset_compare_and_set_and_restart_test() ->
     with_clock(authority,fun(_) ->
         await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),
         Timeline = ba_buffee_clock:id(),
-        ?assertEqual({ok,300},ba_buffee_clock:offset()),
+        ?assertEqual({ok,150},ba_buffee_clock:offset()),
         ?assertEqual(ok,ba_buffee_clock:set_offset(250,1)),
         ?assertEqual({error,conflict},ba_buffee_clock:set_offset(500,1)),
         ?assertEqual({ok,250},ba_buffee_clock:offset()),

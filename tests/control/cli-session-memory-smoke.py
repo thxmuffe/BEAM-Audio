@@ -60,10 +60,13 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-session-memory-') as directory:
         assert not any(member['consent'].values())
         identity = member['device']
         frame = run('monitor', '--all', '--devicename', 'member', '--once', '--json', '--metrics')
+        assert frame['clock']['offset_policy']['offset_ms'] == 150
+        plain = run('monitor', '--all', '--devicename', 'member', '--once', scalar=True)
+        assert 'Response time: 150 ms' in plain
         local = next(row for row in frame['devices'] if row['id'] == identity)
         assert local['state'] == 'ok' and 'audio_diagnostics' in local['capabilities']
         assert all(not row['consent'] for row in local['capabilities']['audio'].values())
-        print('PASS: CLI exposes diagnostic JSON without enabling audio or creating an observer', flush=True)
+        print('PASS: CLI shows Session response time and diagnostic JSON without enabling audio or creating an observer', flush=True)
 
         run('stop', 'device', '--devicename', 'member')
         run('new', 'device', '--devicename', 'member')

@@ -1,5 +1,26 @@
 # Current implementation and validation
 
+## Session response time in UI and monitor — 2026-11-17
+
+New Session clock policies and frontend preview/fallbacks now default to 150 ms.
+Saved response times are retained. The former Automatic/custom-number control
+is six native radio choices: Automatic, 50ms, 150ms, 300ms, 800ms and 2s.
+Automatic is always disabled, with a visible "Not implemented" hint and native
+tooltip. The existing `grant`/`on_air` editing boundary is unchanged. Older
+custom values remain visible in the status text without silently rounding them.
+Renamed the displayed Settings profile Tight to Strict, including introduction
+text. Its existing behavior, saved `tight` key and blue colour are unchanged.
+
+The monitor prints `Response time: ... ms` from its existing shared clock
+snapshot, including "not ready" or N/A where appropriate, without `--metrics`.
+JSON already carries the policy under `clock.offset_policy`.
+
+Validation: 15 focused clock/monitor EUnit tests and 22 frontend state tests pass;
+frontend JavaScript syntax is checked. The public-CLI smoke checks 150 ms in
+both JSON and console output using disposable Devices and a local Reception.
+No automated visual review, audio playback/listening, native bundle build or
+live Session change. The suspected timing cause is not yet established.
+
 ## Public CLI regression coverage and Forget parity — 2026-11-17
 
 Added `beamaudio forget session --devicename NAME --sessionid ID`, forwarding to

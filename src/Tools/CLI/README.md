@@ -204,6 +204,11 @@ ticket and stable identity only while the ticket and gathering remain valid.
 Revoked credentials or an ended gathering require fresh admission, not
 restoration of cached permissions. A Device can start a fresh gathering from the
 same reusable link; the observer itself waits for a Device to do so.
+The console header shows the Session's shared Response time in milliseconds,
+marked "not ready" while the policy is not ready, or N/A when unavailable.
+JSON carries the same value under `clock.offset_policy.offset_ms` and readiness
+under `clock.offset_policy.ready`. New Sessions default to 150 ms; existing
+Session values are retained. This display does not require `--metrics`.
 `stop device --devicename ba-monitor-BUFFEE_ID`
 leaves the gathering; `stop device --all` includes managed observers.
 

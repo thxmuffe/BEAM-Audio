@@ -178,7 +178,7 @@ membership(S) ->
     end.
 scope({Buffee,Authority}=Scope,Role,S) ->
     Name = case Role of authority -> buffee_time_policy;member -> buffee_time_cache end,
-    Default = case Role of authority -> #{<<"revision">> => 1,<<"offset_ms">> => 300};member -> undefined end,
+    Default = case Role of authority -> #{<<"revision">> => 1,<<"offset_ms">> => 150};member -> undefined end,
     Saved = ba_device_store:load(Name,undefined),
     P = case Saved of #{buffee := Buffee,authority := Authority,policy := Policy} -> ba_buffee_time_protocol:state(Policy),Policy;_ -> Default end,
     case Role of authority -> checkpoint(Name,Scope,P);member -> ok end,

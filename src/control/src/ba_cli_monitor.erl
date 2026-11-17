@@ -138,9 +138,14 @@ show(R,Name,A,Metrics,Plain,Instances,Names,Now) ->
 render(Data) -> render(Data,false).
 render(Data,Color) ->
     Buffee=maps:get(<<"buffee">>,Data),Rows=maps:get(<<"devices">>,Data),
-    Header=io_lib:format("Buffee: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Buffee,<<>>)),safe(maps:get(<<"buffee">>,Buffee,<<>>)),safe(maps:get(<<"state">>,Data))]),
+    Header=io_lib:format("Session: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Buffee,<<>>)),safe(maps:get(<<"buffee">>,Buffee,<<>>)),safe(maps:get(<<"state">>,Data))]),
+    Policy=maps:get(<<"offset_policy">>,maps:get(<<"clock">>,Data,#{}),#{}),
+    Response=case maps:get(<<"offset_ms">>,Policy,null) of
+        Ms when is_integer(Ms) -> [integer_to_list(Ms)," ms",case maps:get(<<"ready">>,Policy,false) of true -> [];false -> " (not ready)" end];
+        _ -> "N/A"
+    end,
     Names=[device_name(R) || R <- Rows],
-    [Header,"  CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
+    [Header,"Response time: ",Response,"\n","  CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
      [row_lines(R,Color,length([N || N <- Names,N=:=device_name(R)])>1) || R <- Rows],
      "N/A = unavailable; receive_max = loudest received Source, before physical speaker output.\n"].
 row_lines(#{<<"id">> := Id,<<"state">> := State}=R,Color,Duplicate) ->

@@ -1,6 +1,13 @@
 -module(ba_monitor_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+render_shared_response_time_and_readiness_test() ->
+    View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => []},
+    Render=fun(P) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => #{<<"offset_policy">> => P}})) end,
+    ?assertNotEqual(nomatch,binary:match(Render(#{<<"offset_ms">> => 150,<<"ready">> => true}),<<"Response time: 150 ms\n">>)),
+    ?assertNotEqual(nomatch,binary:match(Render(#{<<"offset_ms">> => 800,<<"ready">> => false}),<<"Response time: 800 ms (not ready)">>)),
+    ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Response time: N/A">>)).
+
 render_missing_levels_is_not_silence_test() ->
     Id=binary:copy(<<"A">>,64),Entry=#{<<"state">> => <<"running">>,<<"consent">> => true,<<"available">> => true},
     View=#{<<"buffee">> => #{<<"name">> => <<"Test">>,<<"buffee">> => binary:copy(<<"B">>,32)},<<"state">> => <<"authorized">>,

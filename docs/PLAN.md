@@ -1,5 +1,15 @@
 # Current plan
 
+## Session response-time controls — 2026-11-17
+
+Implemented: new Sessions default to 150 ms; the shared frontend has native
+radio choices Automatic / 50ms / 150ms / 300ms / 800ms / 2s. Automatic is always
+disabled with "Not implemented". Existing values and editing privileges stay
+intact. The CLI monitor prints the shared response time and its readiness.
+The displayed Settings profile Tight is now Strict; the saved `tight` key stays.
+Next: user-led UI/listening checks after rebuilding/restarting the relevant host.
+This increment does not establish the cause of the reported audio timing issue.
+
 ## Device identity and forgetting Sessions — 2026-11-17
 
 Implemented: the Mac Web shortcut reopens its named Device instead of allocating
