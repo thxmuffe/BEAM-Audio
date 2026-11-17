@@ -54,14 +54,8 @@ handle_call({request,Command},From,#{tabs := Tabs}=S) ->
         true ->
             case prepare(Id,Command,S) of
                 {error,Message} -> {reply,metadata(Id,#{<<"error">> => Message},S,Command),S};
-                {Selected,Next} ->
-                    spawn(fun() ->
-                        Reply=try in(Selected,fun() -> dispatch(Command) end)
-                            catch _:_ -> #{<<"error">> => <<"Session unavailable.">>} end,
-                        Result=gen_server:call(?MODULE,{finished,Selected,Reply,Command},10000),
-                        gen_server:reply(From,Result)
-                    end),
-                    {noreply,Next}
+                {Selected,Next} -> run(Selected,Command,From,Next);
+                {Selected,Next,Rewritten} -> run(Selected,Rewritten,From,Next)
             end
     end;
 handle_call({finished,Id,Reply,Command},_,#{tabs := Tabs}=S) ->
@@ -72,6 +66,14 @@ handle_call({finished,Id,Reply,Command},_,#{tabs := Tabs}=S) ->
     end,
     {reply,metadata(Id,Reply,Next,Command),Next};
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
+run(Selected,Command,From,Next) ->
+    spawn(fun() ->
+        Reply=try in(Selected,fun() -> dispatch(Command) end)
+            catch _:_ -> #{<<"error">> => <<"Session unavailable.">>} end,
+        Result=gen_server:call(?MODULE,{finished,Selected,Reply,Command},10000),
+        gen_server:reply(From,Result)
+    end),
+    {noreply,Next}.
 in(<<"default">>,F) -> ba_session_scope:run(undefined,F);
 in(Id,F) -> ba_session_scope:run(Id,F).
 start(Id) ->
@@ -106,6 +108,22 @@ prepare(Id,#{<<"method">> := <<"join_buffee">>,<<"invitation">> := Link},#{tabs 
                 {Selected,Next}
         end
     catch _:_ -> {error,<<"Invalid invitation or Session unavailable.">>} end;
+%% A created Session's ID names its creator, so an empty slot takes that ID
+%% before creating in it (as new_session with create does).
+prepare(Id,#{<<"method">> := <<"create_buffee">>}=Command,#{tabs := Tabs}=S)
+        when Id=/=<<"default">>,not is_map_key(<<"nonce">>,Command) ->
+    case blank(Id,Tabs) of
+        false -> {Id,S};
+        true ->
+            Nonce=binary:encode_hex(crypto:strong_rand_bytes(16)),
+            {Pub,_}=ba_device_store:identity(),Target=ba_buffee_passport:session_id(binary:encode_hex(Pub),Nonce),
+            case start(Target) of
+                ok -> stop(Id),
+                    Next=save(S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{id := Target};false -> D end || D <- Tabs]}),
+                    {Target,Next,Command#{<<"nonce">> => Nonce}};
+                _ -> {error,<<"Could not start Session.">>}
+            end
+    end;
 prepare(Id,_,S) -> {Id,S}.
 blank(Id,Tabs) -> lists:any(fun(D) -> maps:get(id,D)=:=Id andalso maps:get(buffee,D,null)=:=null end,Tabs).
 dispatch(#{<<"method">> := <<"join_buffee">>,<<"invitation">> := Link}=Command) ->

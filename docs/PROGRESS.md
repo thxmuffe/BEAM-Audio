@@ -810,3 +810,15 @@ a router. The link stays after `#` and never reaches the web server. Frontend,
 Swift and core tests pass; the page checked headless (with and without a link,
 no CSP violations). Not deployed yet; the apps do not register `beamaudio://`,
 so the page shows Copy plus steps instead of opening the app.
+Hosting paused (2026-11-17): Render could not be given access to the private
+OpenSound repo, so the page is not deployed. `INVITE_PAGE` is empty and the
+"Open in web" button stays hidden until it is set; the page, the button and
+`native_open` remain in place.
+
+Create in a new slot (2026-11-17): creating a Session in an empty extra slot
+failed with `buffee_start_failed` (the Mac app; the browser created in its
+default slot). An empty slot has a random ID, but a created Session's ID is
+derived from the creator key and a nonce, so membership's ID check failed.
+`ba_sessions` now re-keys an empty slot to the new Session's ID before creating
+(as joining already did) and passes the nonce on. Reproduced and fixed on a copy
+of the Mac app's state; all suites pass.
