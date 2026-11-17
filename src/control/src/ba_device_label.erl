@@ -2,7 +2,9 @@
 -module(ba_device_label).
 -export([local/1,format/3,os_name/0,display/1]).
 local(Instance) ->
-    format(display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",os_name()))),
+    Name=display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",os_name()))),
+    Label=case ba_settings:app(buffee_observer,false) of true -> <<"Inspector ",Name/binary>>;false -> Name end,
+    format(Label,
            application:get_env(ba_device_web,origin,<<>>),Instance).
 format(Name,Origin,Instance) ->
     %% Bound UTF-8 labels to the existing 256-byte capability field.

@@ -29,3 +29,17 @@ ios_device_name_test() ->
         ?assertEqual(<<"iPhone | Paavo's iPhone | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>)),
         os:unsetenv("BA_DEVICE_NAME"),?assertEqual("iPhone",ba_device_label:os_name())
     after lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old) end.
+
+observer_label_is_visible_before_the_host_name_test() ->
+    Old=[{K,os:getenv(K)} || K <- ["BA_PLATFORM","BA_DEVICE_NAME"]],
+    Observer=application:get_env(ba_core,buffee_observer),
+    try
+        os:putenv("BA_PLATFORM","mac"),os:putenv("BA_DEVICE_NAME","Test Mac"),
+        application:set_env(ba_core,buffee_observer,true),
+        ?assertEqual(<<"Inspector Mac | Test Mac | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>)),
+        application:set_env(ba_core,buffee_observer,false),
+        ?assertEqual(<<"Mac | Test Mac | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>))
+    after
+        lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old),
+        case Observer of undefined -> application:unset_env(ba_core,buffee_observer);{ok,V} -> application:set_env(ba_core,buffee_observer,V) end
+    end.

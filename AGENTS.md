@@ -2,6 +2,49 @@
 
 This is a small personal project worked on directly by the owner and assistant. Use common sense and favor practical progress over corporate/team rituals, elaborate approval flows, or mechanically applying generic best practices. Make focused edits directly on `main` without creating branches or pull requests unless explicitly asked. Do not be excessively cautious about ordinary development breakage: it is acceptable for work in progress to break, and we will fix problems as we find them. Do not knowingly compromise credentials, security boundaries or user data; preserve unrelated changes.
 
+## Start with the CLI for Session diagnostics
+
+The public CLI can join an existing Session from its invitation and inspect its
+Devices from a terminal; no product UI is required. Read
+[CLI usage](src/Tools/CLI/README.md) before writing a custom probe or driving an
+app to investigate runtime/audio behavior. Use the public CLI for high-level
+regression tests where it exposes the required operation.
+
+From this repository:
+
+```sh
+bin/beamaudio monitor --all --metrics --invitation-file /private/path/session-link.txt --once --json
+bin/beamaudio inspect device --devicename DEVICE_NAME
+bin/beamaudio monitor --all --devicename DEVICE_NAME --metrics
+bin/beamaudio get methods
+bin/beamaudio call device --devicename DEVICE_NAME --request '{"method":"snapshot"}'
+```
+
+The invitation-file form joins an independent audio-disabled observer; omit
+`--once --json` for a live terminal display. It works with a valid invitation
+for the target Session, including across machines; a Session ID alone grants
+no access. `--devicename` instead attaches to an existing local Device. Build
+the core if needed; native audio helpers are unnecessary for observation.
+
+`call device` forwards any declared public Device command as JSON through the
+same Session router and API as the apps. Omit `--request` to read one object
+from stdin (including redirected files). Pass `session` to target a scope and
+preserve API fields/types; the Device validates arguments and privileges. New
+public API commands need no individual CLI wrapper. Use this path for control
+and regression tests before adding bespoke switches or internal probes. It does
+not expose arbitrary Erlang module/function calls.
+
+For an agent-created observer, use a private invitation file and a separate
+temporary `BA_CLI_HOME`, keep audio OFF, and retain the visible **Inspector Mac**
+(or Inspector + platform) label. Inspectors are ordinary Devices, with no extra
+privileges; their name must distinguish them from the user's app. At completion,
+stop only the observer you created (`stop device --devicename ba-monitor-SESSION_ID`)
+unless the user requests continued monitoring. Do not stop the user's Devices.
+Compare fresh counter samples and meter age/stage; moving meters or counters
+alone do not prove audible playback or physical speaker timing. Keep invitations
+and identity seeds out of logs, reports and commits. Visual/listening acceptance
+remains user-led.
+
 ## Session replaces Buffee — 2026-11-15
 
 **Session** is the name of the concept in UI, documentation and new code. The

@@ -1,5 +1,69 @@
 # Current implementation and validation
 
+## Generic CLI pass-through for public Device commands — 2026-11-17
+
+Added `beamaudio get methods` and `beamaudio call device --devicename NAME
+--request JSON`. Omitting `--request` reads one UTF-8 JSON object through EOF,
+so scripts can pipe or redirect a private request file. The method registry is
+in `ba_device_api:methods/0`; app-facing methods reuse `client_methods/0`, with
+owner-local configuration, diagnostics and host lifecycle commands added.
+No per-operation CLI parameter parser is needed. Existing convenience commands
+remain, as do the separate local process creation/stop/kill operations.
+
+The adapter passes named fields, types, scope IDs and request/revision IDs
+unchanged to the existing Device API over its instance-checked local socket.
+Argument validation, consent and privileges stay in Erlang. Non-public method
+names and supplied instance credentials are rejected; this does not expose
+arbitrary module/function application or a new remote-control protocol.
+
+Validation: core compilation, CLI help and `cli-api-smoke.py` pass. The smoke
+uses only the public executable with one idle temporary Device: discovery with
+no side effects, JSON/stdin/Unicode/types, real Session scope routing, rejected
+invalid input and Device API errors reaching the caller. No Reception, audio
+hardware, UI, live Device changes or native app rebuild. AGENTS.md introduces
+the generic path alongside monitor/inspect.
+
+## Live Session audio inspection; visible Inspector identity — 2026-11-17
+
+Joined the user's supplied Session using a temporary audio-disabled CLI observer
+and the existing signed diagnostic reads. During a 59-second web playback sample
+at 150 ms Response time (20:06:32–20:07:31 Helsinki), received packets increased
+by 5,530 with no new transport rejections; mixer drops increased by 40: 39
+overlapping blocks and one missed target. Rendered blocks increased by 10,981;
+clipped frames increased by 69,447. Source capture peaked around +2 dBFS.
+These establish overlap rejection and clipping, not a count of missing network
+packets: the current report does not expose packet sequence gaps. Queue readings
+were about 8–10 blocks. Later the user muted the web Device; its local CLI
+snapshot confirmed that, and its render counter stopped.
+
+The iPhone's saved settings showed playback allowed and unmuted. It completed
+the 20-sample clock acquisition, then lost readiness/reset its filter repeatedly.
+It did attempt output: the last inspected instance had 18 rendered blocks,
+eight output-write failures, one output closure and 72 clock-unavailable drops.
+The final Response time was 300 ms, changed by the user during observation.
+The generic output error does not identify the exact native failure. Native
+source review shows resume/network changes resync the clock; no particular
+observed reset trigger was proven. Older pre-restart error totals were kept
+separate from this instance. iPhone ON AIR remains a separate issue.
+
+Same-Mac native/web playback is not an independent physical-device test. Source
+review found the capture exclusion matches a configured output-helper path;
+native and CLI packaging use different paths, so recapture/feedback is a
+possibility requiring isolation, not a confirmed explanation for these readings.
+
+The user mistook the observer for a ghost app because the compact UI hid
+`Buffee monitor` inside `Mac | Buffee monitor | ID`. Observer labels now start
+with `Inspector Mac` (or Inspector + platform), preserving the purpose even in
+existing compact views. Identity/storage names and privileges are unchanged.
+The agent's observer was stopped; no automatic rejoin after the user's removal.
+The copied iPhone settings and temporary invitation were deleted. No audio
+content was recorded, no playback settings changed, and no app was deployed.
+
+Core label tests and frontend name-projection tests pass; the public-CLI
+regression checks an independent observer's visible Inspector label with audio
+OFF. Root/core/product AGENTS.md now point agents to the public CLI at startup.
+The audio faults are diagnosed observations, not fixed or playback-qualified.
+
 ## Session response time in UI and monitor — 2026-11-17
 
 New Session clock policies and frontend preview/fallbacks now default to 150 ms.

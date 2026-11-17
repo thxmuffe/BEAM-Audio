@@ -1,5 +1,33 @@
 # Current plan
 
+## Generic public Device API through CLI — 2026-11-17
+
+Implemented: `get methods` discovers the declared Device command API; `call
+device --devicename NAME --request JSON` (or stdin) forwards those commands
+through the existing owner-local socket, Session router and API validation.
+New public commands need no per-method CLI wrapper. Existing convenience and
+process-lifecycle commands remain. This exposes the Device API, not arbitrary
+Erlang functions. Public-CLI idle-Device regression passes with audio OFF.
+Use this path for the outstanding audio diagnosis/tests where applicable.
+
+## Live audio diagnosis and Inspector identification — 2026-11-17
+
+Inspected the user-supplied Session through an audio-disabled CLI observer, then
+stopped that observer. No playback, consent or response-time settings were
+changed by the agent. The user adjusted playback and response time during the
+inspection. Findings and measurement limits are in PROGRESS.md.
+
+Next audio work: expose/trace the iPhone's precise native output failure and
+clock-resync trigger; inspect the publisher's block target spans behind the web
+receiver's overlap drops. Also isolate same-Mac capture/playback feedback and
+source clipping using playback on another physical Device. Do not equate overlap
+rejections with demonstrated network loss or change the clock policy on a guess.
+
+Inspector labels now begin `Inspector Mac` (Inspector + platform) so the compact
+UI preserves their purpose. Developer instructions now introduce the existing
+CLI join/inspection path, private observer state and cleanup from the outset.
+Audio behavior itself has not been fixed by this investigation.
+
 ## Session response-time controls — 2026-11-17
 
 Implemented: new Sessions default to 150 ms; the shared frontend has native

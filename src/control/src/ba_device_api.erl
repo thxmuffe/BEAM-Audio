@@ -1,6 +1,12 @@
 %% Device-local commands shared by app bridges and CLI. Never network RPC.
 -module(ba_device_api).
--export([request/1,readiness/1,readiness/2,client_methods/0]).
+-export([request/1,readiness/1,readiness/2,client_methods/0,methods/0]).
+%% Public owner-local commands. The generic CLI uses this list directly;
+%% command arguments and their validation belong to the Device API below.
+methods() -> lists:usort(client_methods()++[
+    <<"monitor">>,<<"readiness">>,<<"configuration">>,<<"capabilities">>,
+    <<"list_contacts">>,<<"contact_from_invitation">>,<<"put_contact">>,
+    <<"network_changed">>,<<"audio_lifecycle">>]).
 %% The one list of commands an app window may send (web, Mac, iOS, Windows).
 client_methods() ->
     [<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,

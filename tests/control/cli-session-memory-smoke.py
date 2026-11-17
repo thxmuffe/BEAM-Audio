@@ -67,6 +67,14 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-session-memory-') as directory:
         assert local['state'] == 'ok' and 'audio_diagnostics' in local['capabilities']
         assert all(not row['consent'] for row in local['capabilities']['audio'].values())
         print('PASS: CLI shows Session response time and diagnostic JSON without enabling audio or creating an observer', flush=True)
+        invitation_file = Path(directory) / 'invitation.txt'
+        invitation_file.write_text(invitation + '\n')
+        invitation_file.chmod(0o600)
+        run('monitor', '--all', '--once', '--json', '--metrics', '--invitation-file', str(invitation_file))
+        observer = inspect('ba-monitor-' + session_id)
+        assert observer['managed']['observer'] and observer['device_name'].startswith('Inspector Mac | ')
+        assert not any(observer['consent'].values())
+        print('PASS: an independent CLI observer identifies itself as Inspector Mac with audio OFF', flush=True)
 
         run('stop', 'device', '--devicename', 'member')
         run('new', 'device', '--devicename', 'member')

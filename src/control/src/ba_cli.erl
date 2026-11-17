@@ -53,6 +53,7 @@ spec(Root) ->
           "buffee" => Device(fun inspect_buffee/1,[#{name => buffeeid,long => "-buffeeid",type => string,required => true}]),
           "legacy" => #{handler => fun(_) -> fail(2,<<"Use src/Tools/Inspector/run.sh; the legacy Inspector is unchanged and is not a scoped Buffee client.">>) end}}},
       "get" => #{commands => #{
+          "methods" => #{handler => fun(_) -> emit(ba_device_api:methods()) end},
           "web" => Device(fun(A) ->
               R=request(one_name(A),#{<<"method">> => <<"snapshot">>}),
               case maps:get(<<"web_url">>,maps:get(<<"managed">>,R),null) of
@@ -69,6 +70,9 @@ spec(Root) ->
           [#{name => enable,long => "-enable",type => string,default => ""},#{name => disable,long => "-disable",type => string,default => ""}])}},
       "forget" => #{commands => #{"session" => Device(fun forget_session/1,
           [#{name => sessionid,long => "-sessionid",type => string,required => true}])}},
+      "call" => #{commands => #{"device" => Device(fun call_device/1,
+          [#{name => request,long => "-request",type => string,default => "-",
+             help => "Device API JSON object; omit or use - to read standard input through EOF."}])}},
       "wait" => #{commands => #{"device" => Device(fun(A) -> emit(wait(names(A),maps:get(until,A),timeout(A))) end,
           [#{name => until,long => "-until",type => {string,["endpoint","admitted","ready","audio-flowing"]},default => "ready"}])}},
       "stop" => #{commands => #{"device" => Device(fun(A) -> stop(A,<<"stop">>) end,[#{name => all,long => "-all",action => {store,true},default => false}])}},
@@ -181,6 +185,28 @@ forget_session(A) ->
         true -> emit(request(one_name(A),#{<<"method">> => <<"forget_saved_session">>,<<"entry">> => Id}));
         false -> fail(2,<<"Supply a Session ID of 32 hexadecimal characters.">>)
     end.
+
+call_device(A) ->
+    Name=one_name(A),
+    Data=case maps:get(request,A) of
+        "-" ->
+            ok=io:setopts(standard_io,[binary,{encoding,utf8}]),
+            case io:get_chars(standard_io,"",16385) of
+                Bytes when is_binary(Bytes) -> Bytes;
+                _ -> fail(2,<<"Supply one Device API JSON object on standard input.">>)
+            end;
+        Text -> unicode:characters_to_binary(Text)
+    end,
+    case byte_size(Data)=<16384 of true -> ok;false -> fail(2,<<"Device API JSON requests are limited to 16 KiB.">>) end,
+    Command=try json:decode(Data) of
+        #{<<"method">> := Method}=R when is_binary(Method) ->
+            case lists:member(Method,ba_device_api:methods()) andalso not maps:is_key(<<"instance">>,R) of
+                true -> R;
+                false -> fail(2,<<"Use a public Device method from 'beamaudio get methods'; instance credentials are managed by the CLI.">>)
+            end;
+        _ -> fail(2,<<"Supply a JSON object with a method string.">>)
+    catch error:_ -> fail(2,<<"Invalid Device API JSON.">>) end,
+    emit(request(Name,Command)).
 
 stop(A,Method) ->
     Timeout=timeout(A),

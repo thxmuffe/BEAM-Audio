@@ -170,6 +170,7 @@ python3 tests/control/cli-smoke.py
 python3 tests/control/cli-buffee-smoke.py
 python3 tests/control/cli-config-smoke.py
 python3 tests/control/cli-session-memory-smoke.py
+python3 tests/control/cli-api-smoke.py
 ```
 
 These use temporary identities/state and local sockets. The first creates two
@@ -190,6 +191,12 @@ The Session restart/parallel smokes above instead use disposable Erlang probes.
 and teardown against a test sink; it does not exercise the public CLI or speakers.
 There is no public-CLI known-tone playback/start/stop/level test yet. Manual UI
 and listening acceptance remain with the user.
+
+`cli-api-smoke.py` uses one idle real Device through `get methods` and `call
+device`, with no Reception/audio/UI. It verifies JSON/stdin arguments, Unicode,
+booleans/arrays, request IDs, Session routing, invalid request rejection and
+Device API errors. Prefer this generic public path for new high-level checks
+instead of adding a CLI wrapper or Erlang test-probe operation for each method.
 
 ## Privileges and clock continuation (2026-11-15)
 

@@ -23,6 +23,36 @@ build may need `python3 scripts/setup-host.py` / `bash scripts/build-native.sh` 
 in the core build guide. Nothing is installed globally, launched or captured by
 building. Standalone release distribution and Windows launch support are later.
 
+## Generic Device API calls
+
+One command exposes the declared public Device API, including commands that
+have no dedicated CLI switches:
+
+```sh
+beamaudio get methods
+beamaudio call device --devicename OpenSound --request '{"method":"snapshot"}'
+beamaudio call device --devicename OpenSound --request '{"method":"speaker_mute","muted":true}'
+beamaudio call device --devicename OpenSound --request '{"method":"offset","offset_ms":150,"session":"SESSION_SCOPE_ID"}'
+beamaudio call device --devicename OpenSound < request.json
+```
+
+`get methods` lists the shared API's public method names. `call device` accepts
+one JSON object using the same fields as the app; omitting `--request` or using
+`--request -` reads stdin through EOF. Requests are limited to 16 KiB, as in
+DeviceWeb. Stdin/file redirection keeps invitations out of shell arguments and
+history. JSON output is the normal Device reply; API failures go to stderr with
+a nonzero exit code. Numbers, booleans, arrays, nested objects, `request_id` and
+`expected_revision` pass through as supplied. Omit `session` for the first open
+scope, or pass a scope ID from `list_sessions` to select it explicitly.
+
+The existing owner-local socket, instance check, Session router and Device
+argument/privilege/consent validation are reused. A new command declared by
+`ba_device_api:methods/0` is automatically callable without another CLI parser
+or wrapper. The API dispatcher in `src/control/src/ba_device_api.erl` defines
+its arguments. This is a JSON adapter to that API, not reflection over Erlang
+exports, `apply`, eval or Distributed Erlang. Process creation/stop/kill keep
+their existing lifecycle commands. Convenience commands remain available.
+
 ## Two Devices, no UI
 
 ```sh
@@ -179,7 +209,9 @@ with `peak_db`/`rms_db`. This read does not enable capture or playback. Ordinary
 `wait --until audio-flowing` checks fresh counters and can pass for silence.
 
 Updated apps pass the OS Device name to OTP; named CLI Devices advertise their
-configured name and the observer advertises “Buffee monitor”. The name travels
+configured name and the observer advertises “Inspector Mac” (Inspector plus the
+platform name on other hosts). Its prefix remains visible in compact Device
+rows, so it cannot be mistaken for a second app. The name travels
 only in the existing signed opt-in diagnostic reply. Plain capability replies
 remain unchanged. Contact labels are used when a peer has no advertised name,
 otherwise an ID appears once as a fallback. A short ID is appended only when
@@ -315,6 +347,7 @@ python3 tests/control/cli-smoke.py
 python3 tests/control/cli-buffee-smoke.py
 python3 tests/control/cli-config-smoke.py
 python3 tests/control/cli-session-memory-smoke.py
+python3 tests/control/cli-api-smoke.py
 ```
 
 The first checks two idle real VMs, identity isolation/reuse, protected endpoints,
@@ -337,6 +370,12 @@ The Session-memory smoke uses only the public CLI executable against two real
 Devices and a temporary local Reception. It checks metric JSON with audio OFF,
 identity and Session return across restart, Forget persistence, another Device
 remaining joined, and explicit rejoining. It uses no internal probe commands.
+
+The API smoke uses the public executable with one idle temporary Device and no
+Reception. It checks method discovery without creating state, generic calls,
+stdin/Unicode/type preservation, Session selection and Device API error
+propagation. Audio stays OFF. Non-public operations and caller-supplied instance
+credentials are rejected.
 
 ### Independent desktop instances
 
