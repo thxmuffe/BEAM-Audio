@@ -11,7 +11,19 @@ clock acquisition or closing healthy media. Existing connection monitors, leases
 and clock freshness still fence actual failures; foreground resume still needs
 fresh clock state. The monitor now shows the actual master's UTC reading, Device,
 sample age and staleness, reusing existing authenticated time replies.
-32 focused tests pass. User-led Run Both is pending before sustained listening.
+32 focused tests pass. The user ran Both: iPhone 781EB6CB reached synchronized
+20/20, two open/mix-ready streams and 8,275 rendered blocks. Reset count stayed
+at 3 between 21:14:27 and 21:16:19 Helsinki; the last reason was `sample_gap`.
+The user reports media-volume control now works. Sustained audible quality is
+not accepted: 2,252 native late-buffer rejections remain to investigate.
+
+Master clock N/A is explained by the existing Web monitor Device 1D354C22: its
+local clock snapshot lacks `master_clock` and the new reset fields. Run Both
+does not replace that separately managed VM. Next, stop/reopen that same named
+Web Device through the CLI/shortcut, preserving its saved identity, then verify
+the displayed reading. Do not create another Web identity or stop Mac/iPhone.
+Then measure native target lead/mapping under sustained output; do not infer
+packet loss from cumulative mixer counts or change targets on a guess.
 
 ## Agreed clock responsibilities — 2026-11-17
 

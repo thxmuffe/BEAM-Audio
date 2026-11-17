@@ -31,6 +31,10 @@ authenticated reading, not an extrapolated local estimate, even before its own
 clock acquisition completes. JSON carries this under `clock.master_clock`, with
 `utc_time_ns` as a decimal string. Update the monitor's hosting Device to supply
 the new reading.
+Run Both updates the native apps, not an already-running managed Web Device.
+To reload that Device's core code with its existing identity, stop its exact
+name (`bin/beamaudio stop device --devicename OpenSound`) and reopen the Web
+shortcut. Do not use `--next-instance` for an update.
 
 One command exposes the declared public Device API, including commands that
 have no dedicated CLI switches:

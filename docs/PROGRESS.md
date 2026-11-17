@@ -1,5 +1,32 @@
 # Current implementation and validation
 
+## Latest handoff after user Run Both — 2026-11-17
+
+The network-hint repair is now running on the user's devices. iPhone instance
+781EB6CB reported two open Media Sessions and live received levels at 21:14:27
+Helsinki while reacquiring after `sample_gap` (7/20, reset count 3). At 21:16:19,
+the same instance was synchronized at 20/20, with two active/mix-ready streams,
+21 queued blocks and 8,275 rendered blocks. Reset count remained 3, with no
+pending native stop. The user reports the volume buttons now control media
+volume. This is positive output-lifecycle evidence, not listening/quality
+acceptance. Native late-buffer failures were 2,252; Mixer also reported 149 late
+packets, 52 missed targets and 56 overlaps. The remaining timing issue is open.
+
+The monitor's master-clock N/A was traced through the public CLI to the old
+managed Web Device 1D354C22, whose local clock snapshot has neither
+`master_clock` nor reset-diagnostic fields. Native Run Both does not restart
+that independent VM. The native Mac source is BD29A553 and the iPhone 781EB6CB;
+neither needs to be stopped to update the Web monitor. Next manual step: stop
+only the named Web Device (`bin/beamaudio stop device --devicename OpenSound`),
+then reopen Start Web UI.command so it reloads current core code with the same
+saved identity. This restart was not performed by the agent. Then verify the
+master UTC/age display and capture native target-lead logs without attaching a
+debugger. No separate Inspector joined this investigation.
+
+Current source validation remains 32 passing focused tests. Clock Manager,
+ON AIR master placement/retention and approximately 30-second pushed updates
+are recorded requirements for the next increment, not implemented features.
+
 ## Network hints interrupted playback; monitor shows master UTC — 2026-11-17
 
 The user rebuilt/ran the diagnostic code. At 20:58:49 Helsinki, iPhone instance
@@ -28,8 +55,8 @@ No new time packet, polling path or dependency was added.
 Validation: 32 focused monitor, clock, network-event, diagnostic, native-output
 and subscription tests pass. Added checks cover UTC rendering, age/staleness,
 missing samples, local-master values and pre-acquisition follower readings.
-No agent-run native build or deployment. Run Both has been requested to observe
-the iPhone repair and monitor together; sustained playback remains unverified.
+No agent-run native build or deployment. The user subsequently ran Both; the
+latest handoff above records the result and the old Web monitor backend.
 
 Recorded the user's clock design: a Manager maintains one master on an ON AIR
 Device, retaining it while that broadcaster continues; several ON AIR Devices
