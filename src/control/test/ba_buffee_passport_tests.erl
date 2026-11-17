@@ -35,6 +35,27 @@ link_names_its_creator_test() ->
     ?assertException(error,_,ba_buffee_passport:parse_invitation(binary:replace(Link,<<"/v5">>,<<"/v4">>))),
     ?assertException(error,_,ba_buffee_passport:parse_invitation(binary:replace(Link,<<"beamaudio:">>,<<"https:">>))).
 
+%% v6: about 100 characters, same fields as v5 after parsing, no name or signature.
+short_link_test() ->
+    {A,_}=key(),Nonce=binary:encode_hex(crypto:strong_rand_bytes(16)),Secret=binary:encode_hex(crypto:strong_rand_bytes(16)),
+    Default=ba_settings:app(default_reception_desk_url,<<"wss://beamaudio.onrender.com/reception">>),
+    I=#{<<"authority">>=>A,<<"nonce">>=>Nonce,<<"secret">>=>Secret,<<"desks">>=>[Default]},
+    Link=ba_buffee_passport:link(I),
+    ?assertMatch(<<"beamaudio://s/",_/binary>>,Link),
+    ?assert(byte_size(Link) =< 104),
+    {Link,B}=ba_buffee_passport:parse_invitation(Link),
+    ?assertEqual(maps:merge(I,#{<<"v">>=>1,<<"type">>=><<"invitation">>,<<"name">>=><<"Session">>,
+        <<"buffee">>=>ba_buffee_passport:session_id(A,Nonce)}),B),
+    %% A non-default Reception travels in the link.
+    {_,B2}=ba_buffee_passport:parse_invitation(ba_buffee_passport:link(I#{<<"desks">>:=[?URL]})),
+    ?assertEqual([?URL],maps:get(<<"desks">>,B2)),
+    %% A cut or wrong-version link is refused.
+    ?assertException(error,_,ba_buffee_passport:parse_invitation(binary:part(Link,0,byte_size(Link)-8))),
+    <<"beamaudio://s/",T/binary>>=Link,<<_,Rest/binary>>=base64:decode(T,#{mode => urlsafe,padding => false}),
+    ?assertException(error,_,ba_buffee_passport:parse_invitation(<<"beamaudio://s/",(base64:encode(<<5,Rest/binary>>,#{mode => urlsafe,padding => false}))/binary>>)),
+    %% The 128-bit secret works for mailbox and proof.
+    ?assertEqual(32,byte_size(ba_buffee_passport:mailbox(Secret))).
+
 mailbox_and_proof_depend_on_the_secret_test() ->
     S1=binary:copy(<<"B">>,64),S2=binary:copy(<<"C">>,64),
     ?assertNotEqual(ba_buffee_passport:mailbox(S1),ba_buffee_passport:mailbox(S2)),

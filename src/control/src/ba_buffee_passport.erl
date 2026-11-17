@@ -3,7 +3,7 @@
 %% keeps its historical name; there is no separate passport credential.
 -module(ba_buffee_passport).
 -export([sign/2,verify/2,decode/1,exact/2,session_id/2,mailbox/1,proof/2,
-         invitation/1,parse_invitation/1,genesis/2,policy/1,statement/2,delegation/4,
+         invitation/1,link/1,parse_invitation/1,genesis/2,policy/1,statement/2,delegation/4,
          grant_revision/3,runtime_policy/3,urls/1,route/2,permissions/1]).
 -define(DOMAIN,<<"beamaudio-buffee-membership/v1:">>).
 -define(MAILBOX,<<"beamaudio-session-mailbox/v1:">>).
@@ -24,12 +24,14 @@ session_id(Creator,Nonce) ->
     binary:part(binary:encode_hex(crypto:hash(sha256,[binary:decode_hex(Creator),binary:decode_hex(Nonce)])),0,32).
 %% Every participant advertises this mailbox; Reception sees it, not the secret.
 mailbox(Secret) ->
-    true = hex(Secret,64),
+    true = secret(Secret),
     binary:part(binary:encode_hex(crypto:hash(sha256,[?MAILBOX,Secret])),0,32).
 %% Proof of holding the link, bound to direction, challenge and both Devices.
 proof(Secret,Parts) ->
-    true = hex(Secret,64),
+    true = secret(Secret),
     binary:encode_hex(crypto:mac(hmac,sha256,Secret,lists:join(<<":">>,Parts))).
+%% v6 links carry a 128-bit secret; v5 links carried 256 bits.
+secret(Secret) -> hex(Secret,32) orelse hex(Secret,64).
 
 %% v5 transports the exact signed JSON bytes plus the raw Ed25519 signature.
 invitation(Packet) ->
@@ -38,7 +40,28 @@ invitation(Packet) ->
     Sig=binary:decode_hex(maps:get(<<"signature">>,E)),64=byte_size(Sig),
     Ticket=base64:encode(<<Sig/binary,Data/binary>>,#{mode => urlsafe,padding => false}),
     <<"beamaudio://session/v5?ticket=",Ticket/binary>>.
-%% Only v5 links are accepted; earlier formats named the inviter, not the creator.
+%% v6: the shortest link that still identifies the Session and its creator.
+%% Raw bytes, base64url: version 6, creator key (32), nonce (16), secret (16),
+%% then the Reception addresses separated by newlines, left out when the only
+%% one is the default. No signature and no name: joiners verify every change
+%% against the creator key, and learn the name from the signed policy.
+-define(V6,<<"beamaudio://s/">>).
+link(#{<<"authority">> := Creator,<<"nonce">> := Nonce,<<"secret">> := Secret,<<"desks">> := Desks}) ->
+    true = hex(Secret,32),urls(Desks),
+    Tail = case Desks =:= [default_desk()] of true -> <<>>;false -> iolist_to_binary(lists:join(<<"\n">>,Desks)) end,
+    Bytes = <<6,(binary:decode_hex(Creator))/binary,(binary:decode_hex(Nonce))/binary,(binary:decode_hex(Secret))/binary,Tail/binary>>,
+    <<?V6/binary,(base64:encode(Bytes,#{mode => urlsafe,padding => false}))/binary>>.
+default_desk() -> ba_settings:app(default_reception_desk_url,<<"wss://beamaudio.onrender.com/reception">>).
+%% A v6 link parses to the same fields as v5, so everything after parsing is shared.
+parse_invitation(<<"beamaudio://s/",Ticket/binary>>=Link) when byte_size(Link) =< 4096 ->
+    <<6,Creator:32/binary,Nonce:16/binary,Secret:16/binary,Tail/binary>> = base64:decode(Ticket,#{mode => urlsafe,padding => false}),
+    Desks = case Tail of <<>> -> [default_desk()];_ -> binary:split(Tail,<<"\n">>,[global]) end,
+    urls(Desks),
+    [C,N] = [binary:encode_hex(X) || X <- [Creator,Nonce]],
+    Body = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"buffee">> => session_id(C,N),<<"authority">> => C,
+             <<"nonce">> => N,<<"secret">> => binary:encode_hex(Secret),<<"desks">> => Desks,<<"name">> => <<"Session">>},
+    {Link,Body};
+%% v5 links still parse, so a Session saved by an older build cannot stop a Device.
 parse_invitation(Link) when is_binary(Link),byte_size(Link) =< 32768 ->
     #{scheme := <<"beamaudio">>,host := <<"session">>,path := <<"/v5">>,query := Q} = U = uri_string:parse(Link),
     true = map_size(U) =:= 4,[{<<"ticket">>,B64}] = uri_string:dissect_query(Q),

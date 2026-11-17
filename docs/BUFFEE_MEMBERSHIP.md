@@ -67,14 +67,18 @@ ok = ba_buffee:join(Link).
 ### The link
 
 The creator writes the Session's link once; it never changes and every
-participant shares the same one. `beamaudio://session/v5?ticket=…` carries the
-creator's signature and the signed JSON body `buffee`, `authority` (the
-creator's key), `nonce`, `name`, `desks` (1–4 Reception URLs) and `secret`. The
-Session ID is the first 32 hex characters of sha256(creator key ‖ nonce), so
-anyone can check which key created a Session. The link is a bearer credential
-and is not encrypted: whoever holds it can read the name, creator and
-Receptions. Earlier v3/v4 links, which named the inviter rather than the creator,
-and their saved records are no longer accepted (2026-11-17).
+participant shares the same one. Since 2026-11-17 it is
+`beamaudio://s/<ticket>` (v6, about 100 characters): base64url of the raw bytes
+version 6, creator key (32), nonce (16), secret (16, 128-bit), then the
+Reception URLs separated by newlines, omitted when the only one is the default.
+It has no signature and no name. Joiners check every policy change against the
+creator key, so the link needs no signature; the creator signs the starting
+policy (revision 1) at creation and joiners take the Session name from it,
+showing "Session" until they meet a Device. The Session ID is the first 32 hex
+characters of sha256(creator key ‖ nonce), so anyone can check which key created
+a Session. The link is a bearer credential and is not encrypted. v5 links
+(`beamaudio://session/v5?ticket=…`, signed JSON with name) still parse so saved
+Sessions keep loading; v3/v4 links and their saved records are refused.
 
 ### Joining is pairwise
 

@@ -34,7 +34,7 @@ init([]) ->
     self() ! catalog_bootstrap,
     {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
           providers => #{},catalogs => #{},contracts => #{},control => Control,
-          suspended => false,resume_after => undefined,rejected => 0}}.
+          suspended => false,resume_after => undefined,rejected => 0,poll_at => now_ms()+5000}}.
 waiting(I) -> #{intent => I,state => waiting_for_source,session => undefined,retry_at => now_ms(),packets => 0}.
 handle_call(snapshot,_,S) ->
     View = maps:map(fun(_,R) ->
@@ -140,7 +140,12 @@ handle_info({audio_session_up,#{peer := Peer,session := Session}},S) ->
 handle_info(tick,S) ->
     erlang:send_after(250,self(),tick),
     Catalogs = maps:filter(fun(_,C) -> maps:get(deadline,C)>now_ms() end,maps:get(catalogs,S)),
-    Next = S#{catalogs := Catalogs},
+    %% Push (catalog.changed, link up) is the fast path; this re-read every 5 s
+    %% repairs a notice or reply lost on the relay. Each read is independent.
+    Next = case now_ms()>=maps:get(poll_at,S,0) of
+        true -> refresh_all(S#{catalogs := Catalogs,poll_at => now_ms()+5000});
+        false -> S#{catalogs := Catalogs}
+    end,
     Final = lists:foldl(fun(Id,Acc) -> restore_one(Id,true,Acc) end,Next,maps:keys(maps:get(subscriptions,Next))),
     Recovered=case maps:get(suspended,Final) of
         true -> Final;

@@ -39,8 +39,13 @@ boot(#{mode := create,name := Name,desks := URLs} = Config,#{id := Id} = S) ->
     Nonce = maps:get(nonce,Config,fresh(16)),Buffee = ba_buffee_passport:session_id(Id,Nonce),
     case maps:find(buffee,Config) of {ok,Wanted} -> Buffee = Wanted;error -> ok end,
     I = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"buffee">> => Buffee,<<"authority">> => Id,
-          <<"nonce">> => Nonce,<<"secret">> => fresh(32),<<"desks">> => URLs,<<"name">> => Name},
-    start(ba_buffee_passport:invitation(sign(I,S)),I,maps:get(desk,Config,hd(URLs)),S);
+          <<"nonce">> => Nonce,<<"secret">> => fresh(16),<<"desks">> => URLs,<<"name">> => Name},
+    Started = start(ba_buffee_passport:link(I),I,maps:get(desk,Config,hd(URLs)),S),
+    %% The link carries no name: sign the starting policy so joiners learn it.
+    case maps:get(signed,Started) of
+        undefined -> {ok,Signed} = update(fun(P) -> {ok,P} end,Started),Signed;
+        _ -> Started
+    end;
 boot(#{mode := join,invitation := Link} = Config,S) ->
     {_,I} = ba_buffee_passport:parse_invitation(Link),
     start(Link,I,maps:get(desk,Config,hd(maps:get(<<"desks">>,I))),S);

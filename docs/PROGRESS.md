@@ -773,3 +773,30 @@ the Docker context. Commit 9dd9f9f is live. `/health` answers, `/reception` and
 wss://beamaudio.onrender.com/reception` passes (two Devices link, both restart,
 relink, chat). `buffee-control-smoke.py` no longer matches the probe's API after
 the join-model change and was not run; `public-smoke.py` needs the Windows bundle.
+
+No playback on receivers (2026-11-17): the Mac app broadcast real audio (peak
+-28.6 dBFS) and receivers had Speaker allowed, but their offer lists stayed
+empty. Commit c42c8d9 had replaced the receiver's 5 s catalogue re-read with
+push only (`catalog.changed`, link up), so one lost or early notice/reply left a
+receiver unaware of a stream for good. `ba_audio_receiver` re-reads every
+linked peer's catalogue every 5 s again, beside the push; each read is
+independent and bounded. Likely cause, not yet confirmed on the real Devices.
+A local three-Device check (joiner granted on-air) reached active subscriptions
+when native libraries were loaded; `audio-streams-smoke.py` itself predates the
+privilege and join model (its second publisher lacks on-air) and is stale.
+
+Disabled-control hints (2026-11-17): every control the web app disables now
+says why and what to do in its native hover hint (no Session, Device not
+responding, busy, needs a right, hardware missing, auto accept on, nothing to
+undo). One helper sets `disabled` and the hint together. 27 frontend tests pass;
+checked headless on a fresh Device.
+
+Short links (2026-11-17): new Sessions get `beamaudio://s/<ticket>`, 101
+characters with the default Reception (v5 was ~565). Raw bytes instead of hex
+and JSON, a 128-bit secret, the Session ID derived instead of carried, the
+default Reception left out, and no signature or name (see
+BUFFEE_MEMBERSHIP.md). The creator now signs the starting policy at creation so
+joiners learn the name. v5 links still parse. Tests: new `short_link_test`,
+224 EUnit, Reception, frontend and Swift pass; `session-restart-smoke.py`
+passes through the public Reception (101 chars, name learned, restart, chat)
+and locally (140 chars with a custom Reception).

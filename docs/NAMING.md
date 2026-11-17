@@ -16,7 +16,7 @@ and are not rewritten by a source migration.
 - Administrative Device role: Owner. Participation roles: Chef and Guest.
   Manager and Inspector remain processes, independent of ownership.
 - UI package: `OpenSoundKit`; commercial applications: OpenSound.
-- Current invitations: `beamaudio://session/v5?ticket=...` (v3/v4 rejected since 2026-11-17).
+- Current invitations: `beamaudio://s/<ticket>` (v6, 2026-11-17); v5 `beamaudio://session/v5?ticket=...` still parses; v3/v4 rejected.
 
 ## Compatibility and installation
 

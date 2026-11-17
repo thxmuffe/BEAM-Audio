@@ -52,6 +52,9 @@ def main():
             assert api(b, method='join_buffee', invitation=link).get('error') is None
             linked = lambda d, other: any(x['id'] == other.identity['id'] and x['state'] == 'authorized' for x in api(d, method='snapshot').get('devices', []))
             until('first link', lambda: linked(a, b) and linked(b, a))
+            # The link carries no name; the joiner learns it from the creator's signed policy.
+            until('name learned', lambda: api(b, method='snapshot').get('buffee', {}).get('name') == 'Restart test')
+            print('link length', len(link))
             # Both restart: every mailbox is new.
             seeds = (a.seed, b.seed); a.close(); b.close(); devices.clear()
             a = device('creator', seeds[0]); b = device('member', seeds[1])
