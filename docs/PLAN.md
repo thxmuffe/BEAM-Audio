@@ -1,5 +1,23 @@
 # Current plan
 
+## iPhone output rejection and stalled recovery — 2026-11-17
+
+Public-CLI inspection through the existing Web Device reproduced brief iPhone
+output followed by silence. The native log identified a presentation-target
+rejection; closing TCP on that rejection left an unconfirmed stop and a dead
+handle which the Mixer repeatedly reused. Details are in PROGRESS.md.
+
+Implemented: native buffer rejections are reported individually to Erlang;
+later targets continue on the same output, without retiming. Local audio TCP
+uses NODELAY. Genuine closures with unconfirmed stop block handle reuse and
+expose `mixer.output_stop_pending`. Consent/stop acknowledgements stay intact.
+
+Next: user rebuilds/runs the iPhone in Xcode, keeps Mac broadcast on and Web
+playback off, waits for clock acquisition, then listens. Component tests and
+Swift typechecking pass; the repair is not installed or proven audible. If
+drops continue, inspect the precise native counters and logged target lead
+before changing handoff policy. Clock-filter resets and Web overlap remain open.
+
 ## Generic public Device API through CLI — 2026-11-17
 
 Implemented: `get methods` discovers the declared Device command API; `call
@@ -17,8 +35,8 @@ stopped that observer. No playback, consent or response-time settings were
 changed by the agent. The user adjusted playback and response time during the
 inspection. Findings and measurement limits are in PROGRESS.md.
 
-Next audio work: expose/trace the iPhone's precise native output failure and
-clock-resync trigger; inspect the publisher's block target spans behind the web
+The iPhone output repair above follows this initial inspection. Further audio
+work: trace the clock-resync trigger and publisher's block target spans behind the web
 receiver's overlap drops. Also isolate same-Mac capture/playback feedback and
 source clipping using playback on another physical Device. Do not equate overlap
 rejections with demonstrated network loss or change the clock policy on a guess.
@@ -26,7 +44,7 @@ rejections with demonstrated network loss or change the clock policy on a guess.
 Inspector labels now begin `Inspector Mac` (Inspector + platform) so the compact
 UI preserves their purpose. Developer instructions now introduce the existing
 CLI join/inspection path, private observer state and cleanup from the outset.
-Audio behavior itself has not been fixed by this investigation.
+This initial inspection did not itself change audio behavior.
 
 ## Session response-time controls — 2026-11-17
 

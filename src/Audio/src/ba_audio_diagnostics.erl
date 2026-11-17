@@ -10,7 +10,7 @@ snapshot(Audio,Clock) ->
     Base=#{<<"sampled_at_ms">> => erlang:system_time(millisecond),
         <<"receiver.subscriptions">> => length(Subs),<<"transport.sessions">> => length(Transports)},
     R=fields(<<"receiver">>,[rejected,publications],Audio,Base),
-    M=fields(<<"mixer">>,[dropped,rendered,queued_blocks,queued_bytes,clipped_frames,streams],Mixer,R),
+    M=fields(<<"mixer">>,[dropped,rendered,queued_blocks,queued_bytes,clipped_frames,streams,output_stop_pending],Mixer,R),
     C=fields(<<"clock">>,[state,last_error,age_ns,round_trip_ns,remaining_correction_ns,filter_sample_count,filter_required_samples],Clock,M),
     O=fields(<<"clock">>,[offset_ms,ready],maps:get(offset_policy,Clock,#{}),C),
     T=lists:foldl(fun(View,Acc) ->

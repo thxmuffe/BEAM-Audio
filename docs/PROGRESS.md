@@ -1,5 +1,43 @@
 # Current implementation and validation
 
+## iPhone native rejection and dead output handle — 2026-11-17
+
+Inspected through the existing managed Web Device's public `call device` /
+`monitor` API; no new participant or audio-setting changes. Mac capture stayed
+active with fresh nonzero levels and Web playback disabled. iPhone instance
+E46AC51F stayed at 92 rendered blocks between 20:25:09 and 20:30:14 Helsinki,
+while output-write failures rose from 2 to 13. At up to 256 frames per block and
+48 kHz, 92 blocks represent about 0.49 seconds, consistent with the user's burst,
+not a physical playback measurement. After the user's restart, instance BFA6B12B
+rendered 23 blocks, then reported a closure and two write failures by 20:34:01.
+
+Xcode's existing native console reported a late/out-of-bounds presentation target
+(the old error combines both cases). Source review confirms rejection threw out
+of the output loop and closed TCP. `close_confirmed` retained the handle without
+a stop ACK, while `open_permitted` treated it as usable, repeatedly writing to
+the dead socket. The Mixer hands off within 20 ms of the native target; local
+TCP batching is a plausible contributor, not a measured cause of the rejection.
+Clock filters also reset into acquiring/holdover; their trigger remains unknown.
+`transport.sessions` counts subscription rows even without an open worker, so
+was not taken as proof of flowing media.
+
+iOS now reports late targets, out-of-bounds targets and queue exhaustion as
+individual buffer rejections. Erlang counts `native_late_packet`,
+`native_target_out_of_bounds` or `native_output_queue_full`, rearms active-once
+TCP, and continues later targets on the same output. No target is changed. The
+native log includes target lead in milliseconds; both output TCP endpoints use
+NODELAY. A real closure with unconfirmed stop now blocks stale-handle reuse and
+exposes `mixer.output_stop_pending` in CLI metrics. EOF still is not a stop ACK.
+
+Validation: 20 focused EUnit tests pass, including four new real Mixer/iOS Erlang
+binding TCP tests and existing CLI isolation, native-stop, consent-revocation
+and diagnostic tests. Checks cover repeated rejection events, subsequent PCM
+on the same socket, exact converted targets/PCM, NODELAY, acknowledged stop and
+blocked reuse after EOF. Swift typechecking against the physical-iOS SDK passes.
+The sandbox initially blocked loopback/`ps`; checks passed with those enabled.
+No full app build, installation, audio recording or listening test. The running
+iPhone has the previous code; user-led Xcode Run/listening is next.
+
 ## Generic CLI pass-through for public Device commands — 2026-11-17
 
 Added `beamaudio get methods` and `beamaudio call device --devicename NAME

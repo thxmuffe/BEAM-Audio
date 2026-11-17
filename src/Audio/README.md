@@ -16,6 +16,16 @@ rate and clock; unsupported formats and missed/overlapping/output failures remai
 visible in diagnostics. Local consent is mandatory. Guest microphones are
 permitted; other publication requires Chef authorization.
 
+iOS output reports an individual rejected buffer to Erlang without closing the
+engine or changing later targets. `monitor --metrics` exposes
+`mixer.failure.<reason>` for `native_late_packet`, `native_target_out_of_bounds`
+and `native_output_queue_full`. Native
+logs include target lead in milliseconds. Local output TCP uses NODELAY.
+`mixer.output_stop_pending: true` means a failed output has not acknowledged
+stop; it cannot be reused as healthy. EOF alone does not confirm native stop.
+Rebuild/run the iPhone app to update both sides of the local binding protocol.
+Focused hardware-free protocol checks: `rebar3 eunit --module=ba_ios_audio_tests`.
+
 Build commands belong in [BUILDING](../../docs/BUILDING.md). Product permission
 and launch instructions are in [macOS](../../../OpenSound/docs/MACOS_APP.md),
 [iOS](../../../OpenSound/docs/iOS/README.md) and

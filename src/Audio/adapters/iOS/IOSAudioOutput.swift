@@ -20,6 +20,8 @@ final class IOSAudioOutput {
                 guard client >= 0 else { break }
                 var noSignal: Int32 = 1
                 setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout.size(ofValue: noSignal)))
+                var noDelay: Int32 = 1
+                setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &noDelay, socklen_t(MemoryLayout.size(ofValue: noDelay)))
                 lock.lock()
                 guard listener == fd else { lock.unlock(); close(client); break }
                 connection = client
@@ -94,8 +96,19 @@ final class IOSAudioOutput {
                         }
                     }
                     let nowNS = UInt64(AVAudioTime.seconds(forHostTime: mach_absolute_time()) * 1_000_000_000)
-                    guard hostNS > nowNS, hostNS - nowNS <= 35_000_000_000 else { throw OutputError.invalidTarget }
-                    guard scheduled.reserve() else { throw OutputError.queueFull }
+                    let reason: UInt8?
+                    if hostNS <= nowNS { reason = 1 }
+                    else if hostNS - nowNS > 35_000_000_000 { reason = 2 }
+                    else if !scheduled.reserve() { reason = 3 }
+                    else { reason = nil }
+                    if let reason {
+                        // Reject this buffer without retiming it or destroying the
+                        // output. OTP records the drop; later targets can still play.
+                        NSLog("BEAM Audio audio output rejected buffer: code=%d, target lead=%.3f ms",
+                              Int(reason), (Double(hostNS) - Double(nowNS)) / 1_000_000)
+                        try writePacket(fd, Data([5, reason]))
+                        continue
+                    }
                     let host = AVAudioTime.hostTime(forSeconds: Double(hostNS) / 1_000_000_000)
                     player.scheduleBuffer(buffer, at: AVAudioTime(hostTime: host), options: [], completionCallbackType: .dataPlayedBack) { _ in scheduled.complete() }
                 default: throw OutputError.failed
@@ -109,12 +122,10 @@ final class IOSAudioOutput {
     }
 
     private enum OutputError: LocalizedError {
-        case failed, invalidTarget, queueFull
+        case failed
         var errorDescription: String? {
             switch self {
             case .failed: return "Audio output closed or received an invalid local packet."
-            case .invalidTarget: return "Audio presentation target is late or beyond the scheduling bound."
-            case .queueFull: return "Native audio output scheduling queue is full."
             }
         }
     }
