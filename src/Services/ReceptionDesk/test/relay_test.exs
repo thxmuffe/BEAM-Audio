@@ -18,6 +18,21 @@ defmodule ReceptionDesk.RelayTest do
       :gun.close(conn)
     end
   end
+  test "/reception and /relay/v1 both open the relay" do
+    port = :ranch.get_port(ReceptionDesk.Endpoint.HTTP)
+    for path <- [~c"/reception", ~c"/relay/v1"] do
+      {:ok, conn} = :gun.open(~c"127.0.0.1", port, %{protocols: [:http]})
+      try do
+        {:ok, :http} = :gun.await_up(conn)
+        stream = :gun.ws_upgrade(conn, path)
+        assert_receive {:gun_upgrade, ^conn, ^stream, ["websocket"], _}, 2000
+        assert_receive {:gun_ws, ^conn, ^stream, {:text, challenge}}, 2000
+        assert %{"op" => "challenge"} = Jason.decode!(challenge)
+      after
+        :gun.close(conn)
+      end
+    end
+  end
   test "mailboxes bind authenticated sender, recipient and buffee; no offline queue" do
     owner = Base.encode16(:crypto.strong_rand_bytes(32))
     sender = Base.encode16(:crypto.strong_rand_bytes(32))

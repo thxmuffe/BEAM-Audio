@@ -1,5 +1,44 @@
 # Current plan
 
+## Agreed direction — 2026-11-17: boards as a replicated log
+
+User's model: every request and message goes to the Session's boards (request
+board, message board); the chat shows both without distinction and nothing
+writes to the chat separately; a Manager nudges Devices to look at the boards;
+an admin returning later still sees and answers requests made while offline.
+
+Mechanism (anti-entropy gossip, as in Cassandra gossip / Secure Scuttlebutt):
+
+- Each Device keeps one append-only log per Session (owner process + ETS, saved
+  to disk). Entry: author Device, author's own sequence number, time, kind
+  (`message`, `request`, `answer`), body, author's signature. Never edited.
+- Writing appends locally and pushes the entry to currently linked peers.
+- On every link, peers swap "highest sequence seen per author" and send what
+  the other lacks. Merge is union: no conflicts, no leader.
+- Boards are filters over the log: messages; requests without an answer. The
+  chat renders the whole log in time order (no locally derived lines; presence
+  and on-air state stay in the Devices list).
+- Each Device reacts to arriving entries itself under its own Always/Ask/No
+  choices; answers to privilege requests are entries plus the signed change.
+- No Device may become a bottleneck (user, 2026-11-17). Audio needs no board
+  and no Manager: the on-air Device's catalogue is its standing request.
+  `ba_audio_receiver` pushes `catalog.changed` to linked peers, every Device
+  reads a peer's catalogue when their link comes up and re-reads it every ~5 s,
+  then subscribes under its own speaker choice. New joiners and returning
+  Devices therefore find an ongoing broadcast without anyone coordinating; the
+  offer exists exactly while its source is online. (Source-read, not yet a
+  multi-Device audio test.)
+- The log above is only for messages and rights requests, where a returning
+  admin must see requests made while it was away. History is shared by whoever
+  holds it; never wait for it. A Manager, if ever added, only nudges ("sync /
+  look"); two at once just nudge more often; it holds no state.
+
+Replaces: `ask_holders` direct live-only requests, the in-memory request list,
+and `ba_buffee_chat`'s separate history.
+
+Open: the log's size bound, and whether a removed Device keeps receiving
+entries (proposed: no).
+
 ## Agreed next work / Mac handoff — 2026-11-17
 
 This is the user's accepted model and supersedes earlier admission proposals

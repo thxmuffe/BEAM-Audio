@@ -63,7 +63,7 @@ command(#{<<"method">> := <<"configure_desk">>, <<"url">> := URL}) ->
             ok = application:stop(ba_core),
             ok = application:set_env(ba_core, reception_desk_url, URL),
             {ok, _} = ba_runtime:start(), null;
-        false -> <<"Use wss://your-desk/relay/v1 (ws:// is allowed only on localhost).">>
+        false -> <<"Use wss://your-reception/reception (ws:// is allowed only on localhost).">>
     end;
 command(#{<<"method">> := <<"create_buffee">>} = Request) ->
     buffee_result(ba_buffees:create(maps:get(<<"name">>, Request, <<>>)));

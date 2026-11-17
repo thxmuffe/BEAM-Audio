@@ -17,7 +17,10 @@ defmodule ReceptionDesk.Router do
   plug :match
   plug :dispatch
 
-  get "/relay/v1" do
+  # /reception is the address apps use; /relay/v1 stays for existing clients.
+  get "/reception", do: relay(conn)
+  get "/relay/v1", do: relay(conn)
+  defp relay(conn) do
     conn
     |> WebSockAdapter.upgrade(ReceptionDesk.Socket, %{}, timeout: 45_000, max_frame_size: 131_072)
     |> halt()
@@ -31,8 +34,8 @@ defmodule ReceptionDesk.Router do
     <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
     <title>BEAM Audio Reception</title><body style="font:18px system-ui;max-width:44rem;margin:4rem auto;padding:1rem">
     <h1>BEAM Audio Reception</h1><p>Reception authenticates Devices, introduces them and routes messages over their open WebSocket connections.</p>
-    <p>In your app, set Reception’s WebSocket address (this origin with <code>/relay/v1</code>),
-    create a Buffee and share its invitation. Choose <strong>Join a Buffee</strong> in OpenSound and paste an invitation to join.</p>
+    <p>In your app, set Reception’s WebSocket address (this origin with <code>/reception</code>),
+    create a Session and share its invitation. Choose <strong>Join a Session</strong> in OpenSound and paste an invitation to join.</p>
     <p>Your Device controls its participation, audio and computing capacity. Reception introduces Devices; it does not carry audio or control their resources.</p></body></html>
     """
     conn |> put_resp_header("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")

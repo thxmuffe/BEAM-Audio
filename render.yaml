@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: buffee-reception
+    name: beamaudio
     runtime: docker
     dockerfilePath: ./src/Services/ReceptionDesk/Dockerfile
     dockerContext: .

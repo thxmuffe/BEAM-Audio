@@ -26,7 +26,7 @@ valid_url(URL) when is_binary(URL), byte_size(URL) =< 512 ->
         false = maps:is_key(userinfo, Map) orelse maps:is_key(fragment, Map) orelse maps:is_key(query, Map),
         true = Scheme =:= <<"wss">> orelse
                (Scheme =:= <<"ws">> andalso lists:member(Host, [<<"127.0.0.1">>, <<"localhost">>, <<"::1">>])),
-        true = maps:get(path, Map, <<>>) =:= <<"/relay/v1">>,
+        true = lists:member(maps:get(path, Map, <<>>), [<<"/reception">>, <<"/relay/v1">>]),
         true = maps:get(port, Map, 443) > 0 andalso maps:get(port, Map, 443) < 65536,
         true
     catch _:_ -> false end;

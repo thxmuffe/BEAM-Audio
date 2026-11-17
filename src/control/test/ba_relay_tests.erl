@@ -23,6 +23,8 @@ network_reconnect_keeps_identity_and_mailboxes_test() ->
     receive connect -> ok after 1000 -> error(no_reconnect) end.
 
 desk_url_validation_test() ->
+    ?assert(ba_relay:valid_url(<<"wss://beamaudio.onrender.com/reception">>)),
+    ?assertNot(ba_relay:valid_url(<<"wss://beamaudio.onrender.com/">>)),
     ?assert(ba_relay:valid_url(<<"wss://desk.example/relay/v1">>)),
     ?assert(ba_relay:valid_url(<<"ws://127.0.0.1:8765/relay/v1">>)),
     [?assertNot(ba_relay:valid_url(U)) || U <- [<<"ws://public.example/relay/v1">>,

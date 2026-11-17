@@ -98,8 +98,8 @@ TLS at its ingress; the container listens on `0.0.0.0:$PORT`. Other hosting can
 use an equivalent HTTPS reverse proxy with WebSocket upgrades enabled.
 
 The shared Reception runs in Frankfurt on Render's free plan:
-https://buffee-reception.onrender.com. Enter
-`wss://buffee-reception.onrender.com/relay/v1` in each native app.
+https://beamaudio.onrender.com. Enter
+`wss://beamaudio.onrender.com/reception` in each native app.
 The service ID is `srv-dbq59cmgekts73anho5g`; automatic deploys are disabled.
 Deploy a committed/pushed revision with the authorized Render CLI:
 
@@ -160,7 +160,7 @@ mix test
 cd ../..
 python tests/ReceptionDesk/relay-smoke.py --idle
 python tests/ReceptionDesk/tls-smoke.py
-python tests/ReceptionDesk/public-smoke.py wss://buffee-reception.onrender.com/relay/v1
+python tests/ReceptionDesk/public-smoke.py wss://beamaudio.onrender.com/reception
 python tests/Windows/relay-ui-smoke.py
 ```
 

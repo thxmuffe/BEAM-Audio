@@ -31,7 +31,8 @@ load_file(Name,Default) ->
             case file:read_file(Path) of
                 {error, enoent} -> Default;
                 {ok, Bytes} ->
-                    case binary_to_term(Bytes, [safe]) of
+                    case decode(Name, Bytes) of
+                        stale -> Default;
                         #{version := 2, data := Data} -> Data;
                         %% User-requested clean start for the Buffee migration.
                         %% Device identity is held separately in secure storage.
@@ -40,6 +41,16 @@ load_file(Name,Default) ->
                     end;
                 {error, Reason} -> error({device_state_read_failed, Name, Reason})
             end
+    end.
+%% A saved Session record from an older build may name things this build no
+%% longer has (e.g. `recover_authority`), which [safe] refuses. Old records are
+%% intentionally dropped (see the 2026-11-17 join model), so it starts empty
+%% instead of stopping the whole runtime. Other records still fail loudly.
+decode(Name, Bytes) ->
+    try binary_to_term(Bytes, [safe])
+    catch error:badarg when Name =:= buffee_connection ->
+        logger:warning("Ignoring an unreadable or outdated saved Session record."),
+        stale
     end.
 
 save(Name, Data) ->

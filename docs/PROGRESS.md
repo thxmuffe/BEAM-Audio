@@ -742,3 +742,25 @@ and consent pass. Not yet seen on a real Mac helper.
 NOT VERIFIED: the new shell against a real Device runtime or in the Mac/iOS
 hosts; no app was rebuilt. The OpenSoundKit WebKit tests still target the
 earlier tab, toolbox and Settings markup and need rewriting. See PLAN.md.
+
+Old saved Session records (2026-11-17): after the new join model removed
+`recover_authority`, every Device with a Session saved by an older build crashed
+on start (`binary_to_term(...,[safe])` refuses the unknown atom), so `Start Web
+UI.command` waited forever. A `buffee_connection` record that cannot be read is
+now ignored with a warning and the Device starts with no Session, as the join
+model intended for old records; other records still fail loudly. Checked by
+starting a copy of an affected Device through `beamaudio new device`. The CLI
+still waits for readiness instead of reporting a runtime that died at boot.
+New `OpenSound/scripts/test-all.sh` (and `Run Tests.command`) runs core EUnit
+(223), the web frontend and OpenSoundKit tests; all pass.
+
+Reception address (2026-11-17): the default Reception is now
+`wss://beamaudio.onrender.com/reception` (Render service `beamaudio`, created by
+cloning `buffee-reception`; render.yaml renamed). The Reception serves the relay
+at `/reception` and keeps `/relay/v1`; clients accept either path. Invitations
+carry the address they were made with, so links made against buffee-reception
+keep using it until that service is deleted. The first deploy of the new
+service failed: the clone did not carry the Dockerfile path, and the new route
+needs the commits pushed. Tests: Reception ExUnit (both paths), core, frontend
+and Swift pass; one intermittent core EUnit failure was seen once and not
+reproduced in five further runs.

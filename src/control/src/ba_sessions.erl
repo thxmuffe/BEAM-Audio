@@ -26,7 +26,7 @@ handle_call({request,#{<<"method">> := <<"new_session">>}=Command},_,#{tabs := T
         ok ->
             case maps:get(<<"create">>,Command,false) of
                 true ->
-                    Desk=ba_settings:app(default_reception_desk_url,<<"wss://buffee-reception.onrender.com/relay/v1">>),
+                    Desk=ba_settings:app(default_reception_desk_url,<<"wss://beamaudio.onrender.com/reception">>),
                     Reply=in(Id,fun() -> ba_device_api:request(#{<<"method">> => <<"create_buffee">>,<<"name">> => <<"New Session">>,<<"desks">> => [Desk],<<"nonce">> => Nonce}) end),
                     case maps:get(<<"error">>,Reply,null) of
                         null -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => Id}]}),
