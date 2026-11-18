@@ -1,9 +1,26 @@
 %% Bounded, payload-free projection of existing local audio/clock observations.
 %% Cached by the Device Handler; remote reads never poll the audio processes.
 -module(ba_audio_diagnostics).
--export([snapshot/2,validate/1]).
+-export([snapshot/2,validate/1,trace/1,validate_trace/1,meters/1,validate_meters/1,options/0,configure/1,validate_options/1,enabled/1,meter/2]).
+%% Device-wide saved switches. Turning these off never changes audio consent,
+%% packet targets, or mandatory failure accounting.
+options() -> ba_settings:get(audio_diagnostics,#{<<"meters">> => true,<<"analysis">> => true}).
+enabled(Key) -> maps:get(atom_to_binary(Key),options(),true).
+validate_options(P) ->
+    true=is_map(P) andalso map_size(P)>0 andalso map_size(P)=<2,
+    maps:foreach(fun(K,V) -> true=lists:member(K,[<<"meters">>,<<"analysis">>]),true=is_boolean(V) end,P),ok.
+configure(P) ->
+    ok=validate_options(P),
+    {ok,ba_settings:update(audio_diagnostics,fun(Old) -> maps:merge(Old,P) end,options())}.
+meter(Format,PCM) -> case enabled(meters) of
+    true -> ba_audio_meter:levels(ba_audio_meter:accumulate(Format,PCM,ba_audio_meter:new()));
+    false -> #{}
+end.
 -define(MAX_INT,9007199254740991).
 snapshot(Audio,Clock) ->
+    Flags=#{<<"diagnostics.meters">> => enabled(meters),<<"diagnostics.analysis">> => enabled(analysis)},
+    case enabled(analysis) of false -> Flags;true -> maps:merge(Flags,project(Audio,Clock)) end.
+project(Audio,Clock) ->
     Subs=maps:values(maps:get(subscriptions,Audio,#{})),
     Transports=[T || R <- Subs++maps:get(provider_status,Audio,[]),
         T <- [maps:get(transport,R,#{})],map_size(T)>0],
@@ -14,9 +31,10 @@ snapshot(Audio,Clock) ->
         <<"receiver.active_subscriptions">> => length([ok || #{state := active} <- Subs]),
         <<"receiver.mix_ready_subscriptions">> => length([ok || #{mix_ready := true} <- Subs])},
     R=fields(<<"receiver">>,[rejected,publications,suspended],Audio,Base),
-    M=fields(<<"mixer">>,[dropped,rendered,queued_blocks,queued_bytes,clipped_frames,streams,output_stop_pending],Mixer,R),
+    M=fields(<<"mixer">>,[dropped,rendered,queued_blocks,queued_bytes,clipped_frames,streams,output_stop_pending,submitted_frames,handoff_lead_ns],Mixer,R),
+    N=fields(<<"output">>,[supported,engine_running,player_running,scheduled_frames,completed_frames,queued_buffers,rejected_buffers,completion_age_ms,lead_min_ns,lead_max_ns,sample_rate,channels,latency_ns,volume_milli,route,backend,stats_age_ms,mapping_round_trip_ns],maps:get(output,Mixer,#{}),M),
     C=fields(<<"clock">>,[state,last_error,offset_error,age_ns,round_trip_ns,remaining_correction_ns,
-        filter_ready,filter_sample_count,filter_required_samples,filter_reset_count,filter_reset_reason],Clock,M),
+        filter_ready,filter_sample_count,filter_required_samples,filter_reset_count,filter_reset_reason],Clock,N),
     O=fields(<<"clock">>,[offset_ms,ready],maps:get(offset_policy,Clock,#{}),C),
     T=lists:foldl(fun(View,Acc) ->
         lists:foldl(fun(K,A) ->
@@ -31,7 +49,49 @@ snapshot(Audio,Clock) ->
     Counts=lists:foldl(fun(View,Acc) -> maps:fold(fun(K,V,A) -> A#{K => maps:get(K,A,0)+V} end,
         Acc,maps:get(counts,maps:get(diagnostics,View,#{}),#{})) end,#{},Transports),
     Result=failures(<<"transport">>,#{counts => Counts},D2),
-    maps:filter(fun(_,V) -> scalar(V) end,Result).
+    Filtered=maps:filter(fun(_,V) -> scalar(V) end,Result),
+    %% Reserve three fields for switches and cache age; preserve summaries before capped reasons.
+    {Failures,Summary}=lists:partition(fun({K,_}) -> binary:match(K,<<".failure.">>)=/=nomatch end,maps:to_list(Filtered)),
+    maps:from_list(Summary++lists:sublist(lists:sort(Failures),max(0,125-length(Summary)))).
+meters(Audio) ->
+    case enabled(meters) of
+        false -> #{};
+        true ->
+            Pairs=[{<<"receive_max">>,maps:get(receive_meter,Audio,#{})},
+                {<<"output_submitted">>,maps:get(output_meter,maps:get(mixer,Audio,#{}),#{})}],
+            maps:from_list([{K,V} || {K,V} <- Pairs,maps:is_key(<<"peak_db">>,V)])
+    end.
+validate_meters(M) ->
+    true=is_map(M) andalso map_size(M)=<2,
+    maps:foreach(fun(K,E) ->
+        true=lists:member(K,[<<"receive_max">>,<<"output_submitted">>]),
+        true=is_map(E) andalso lists:sort(maps:keys(E))=:=[<<"meter_age_ms">>,<<"meter_stage">>,<<"peak_db">>,<<"rms_db">>],
+        K=maps:get(<<"meter_stage">>,E),
+        [begin V=maps:get(F,E),true=is_number(V) andalso V>= -96 andalso V=<48 end || F <- [<<"peak_db">>,<<"rms_db">>]],
+        Age=maps:get(<<"meter_age_ms">>,E),true=is_integer(Age) andalso Age>=0 andalso scalar(Age)
+    end,M),ok.
+trace(Audio) ->
+    case enabled(analysis) of
+        false -> #{};
+        true ->
+            Mixer=maps:get(mixer,Audio,#{}),
+            Transports=[maps:get(transport,R,#{}) || R <- maps:values(maps:get(subscriptions,Audio,#{}))++maps:get(provider_status,Audio,[])],
+            Views=[{receiver,Audio},{mixer,Mixer}]++[{transport,T} || T <- Transports],
+            Now=erlang:monotonic_time(millisecond),
+            Events=[#{<<"stage">> => atom_to_binary(Stage),<<"reason">> => atom_to_binary(Reason),<<"age_ms">> => max(0,Now-At)} ||
+                {Stage,View} <- Views,#{at_ms := At,reason := Reason} <- maps:get(trace,maps:get(diagnostics,View,#{}),[]),scalar(atom_to_binary(Reason))],
+            Recent=lists:sublist(lists:sort(fun(A,B) -> maps:get(<<"age_ms">>,A)<maps:get(<<"age_ms">>,B) end,Events),16),
+            maps:from_list(lists:zip([integer_to_binary(N) || N <- lists:seq(1,length(Recent))],Recent))
+    end.
+validate_trace(Events) ->
+    true=is_map(Events) andalso map_size(Events)=<16,
+    true=lists:sort(maps:keys(Events))=:=lists:sort([integer_to_binary(N) || N <- lists:seq(1,map_size(Events))]),
+    lists:foreach(fun(E) ->
+        true=is_map(E) andalso lists:sort(maps:keys(E))=:=[<<"age_ms">>,<<"reason">>,<<"stage">>],
+        true=lists:member(maps:get(<<"stage">>,E),[<<"receiver">>,<<"mixer">>,<<"transport">>]),
+        true=scalar(maps:get(<<"reason">>,E)),true=is_binary(maps:get(<<"reason">>,E)),
+        Age=maps:get(<<"age_ms">>,E),true=is_integer(Age) andalso Age>=0 andalso scalar(Age)
+    end,maps:values(Events)),ok.
 fields(Prefix,Keys,View,Acc) -> lists:foldl(fun(K,A) ->
     case maps:find(K,View) of {ok,V} -> A#{key(Prefix,K) => wire(V)};error -> A end
 end,Acc,Keys).
@@ -55,6 +115,6 @@ validate(D) ->
     true=is_map(D) andalso map_size(D)=<128,
     maps:foreach(fun(K,V) ->
         true=is_binary(K) andalso byte_size(K)=<96,
-        true=re:run(K,<<"^(sampled_at_ms|(?:receiver|mixer|transport|clock)\\.[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?)$">>,[{capture,none}])=:=match,
+        true=re:run(K,<<"^(sampled_at_ms|(?:receiver|mixer|transport|clock|diagnostics|output)\\.[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?)$">>,[{capture,none}])=:=match,
         true=scalar(V)
     end,D),ok.

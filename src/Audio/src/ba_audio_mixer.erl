@@ -26,7 +26,8 @@ clock() ->
 init([]) ->
     process_flag(trap_exit,true),
     erlang:send_after(2,self(),render),
-    {ok,#{mix => undefined,descriptors => #{},device => undefined,dropped => 0,rendered => 0,last_error => null}}.
+    erlang:send_after(500,self(),observe_output),
+    {ok,#{mix => undefined,descriptors => #{},device => undefined,dropped => 0,rendered => 0,submitted_frames => 0,last_error => null}}.
 handle_call({revoke_permissions,_},_,S) ->
     {Result,Next}=close_confirmed(S),
     case maps:find(owner,S) of {ok,P} -> P ! {audio_output_failed,self(),consent_revoked};error -> ok end,
@@ -72,7 +73,17 @@ handle_call({enable,Id,B},_,S) ->
 handle_call({gain,Id,G},_,S) -> {reply,ok,S#{mix := ba_audio_mix:gain(Id,G,maps:get(mix,S))}};
 handle_call(status,_,S) ->
     View = case maps:get(mix,S) of undefined -> #{streams => 0,queued_blocks => 0,clipped_frames => 0};M -> ba_audio_mix:snapshot(M) end,
-    {reply,View#{dropped => maps:get(dropped,S),rendered => maps:get(rendered,S),last_error => maps:get(last_error,S),
+    Output=maps:get(output,S,#{supported => false}),
+    Binding=case maps:get(device,S) of
+        {_,D} -> maps:merge(Output,maps:with([mapping_round_trip_ns],D));_ -> Output
+    end,
+    PublicOutput=case maps:find(output_sample_at,S) of
+        {ok,T} -> Binding#{stats_age_ms => max(0,now_ms()-T)};error -> Binding end,
+    Meter=case {ba_audio_diagnostics:enabled(meters),maps:find(output_meter_at,S)} of
+        {true,{ok,At}} -> (maps:get(output_meter,S,#{}))#{<<"meter_age_ms">> => max(0,now_ms()-At),<<"meter_stage">> => <<"output_submitted">>};
+        _ -> #{}
+    end,
+    {reply,View#{handoff_lead_ns => maps:get(handoff_lead_ns,S,0),submitted_frames => maps:get(submitted_frames,S),output => PublicOutput,output_meter => Meter,dropped => maps:get(dropped,S),rendered => maps:get(rendered,S),last_error => maps:get(last_error,S),
         output_stop_pending => maps:get(output_stop_pending,S,false),diagnostics => ba_diagnostics:view(S)},S};
 handle_call(_,_,S) -> {reply,ok,S}.
 handle_cast({packet,Id,D,H,PCM,T},S) ->
@@ -93,6 +104,9 @@ accept_packet(Id,D,H,PCM,S) ->
             end;
         _ -> {noreply,drop(clock_unavailable,S)}
     end.
+handle_info(observe_output,S) ->
+    erlang:send_after(500,self(),observe_output),
+    {noreply,observe_output(S)};
 handle_info(render,S) ->
     Next = render(S),erlang:send_after(2,self(),render),{noreply,Next};
 handle_info({'DOWN',Ref,process,_,_},#{owner_monitor := Ref} = S) ->
@@ -100,6 +114,7 @@ handle_info({'DOWN',Ref,process,_,_},#{owner_monitor := Ref} = S) ->
 handle_info({tcp,Socket,_}=Message,#{device := {A,#{socket := Socket}=Device}}=S) ->
     case A:event(Device,Message) of
         {dropped,Reason} -> {noreply,drop(Reason,S)};
+        {diagnostics,Stats} -> {noreply,S#{output => Stats,output_sample_at => now_ms()}};
         {error,Reason} -> {noreply,output_failed(Reason,S)}
     end;
 handle_info({tcp_closed,Socket},#{device := {_,#{socket := Socket}}}=S) -> {noreply,output_failed(output_closed,S)};
@@ -165,12 +180,33 @@ render_authorized(Mono,Handoff,Now,A,Device,#{mix := Mix,descriptors := Ds}=S) -
                         true ->
                             Result=try A:write(Device,Handoff,Frames,Output) catch exit:_ -> {error,output_closed} end,
                             case Result of
-                                ok -> S#{mix := Next,rendered := maps:get(rendered,S)+1};
+                                ok -> submitted(PCM,Frames,Handoff-Now,S#{mix := Next,rendered := maps:get(rendered,S)+1});
                                 {error,_} -> output_failed(output_write_failed,S#{mix := Next})
                             end
                     end
             end
     end.
+submitted(PCM,Frames,Lead,S) ->
+    Base=S#{submitted_frames := maps:get(submitted_frames,S)+Frames},
+    Metered=case ba_audio_diagnostics:enabled(meters) of
+        true -> Base#{output_meter => ba_audio_diagnostics:meter(float32_le,PCM),output_meter_at => now_ms()};
+        false -> maps:without([output_meter,output_meter_at],Base)
+    end,
+    case ba_audio_diagnostics:enabled(analysis) of
+        true -> Metered#{handoff_lead_ns => Lead};false -> Metered
+    end.
+observe_output(#{device := {A,D}}=S) ->
+    %% Optional binding diagnostics: older/other outputs remain explicitly unsupported.
+    case erlang:function_exported(A,diagnostics,2) of
+        true ->
+            try A:diagnostics(D,ba_audio_diagnostics:options()) of
+                {ok,Stats} -> S#{output => Stats,output_sample_at => now_ms()};
+                pending -> S;
+                unsupported -> S#{output => #{supported => false}}
+            catch _:_ -> S#{output => #{supported => false}} end;
+        false -> S#{output => #{supported => false}}
+    end;
+observe_output(S) -> maps:without([output,output_sample_at,output_meter,output_meter_at],S).
 %% An OS sink failing is not a failed publication or transport. Fence and flush
 %% affected playback only; notify its owner to retry through normal authorization.
 output_failed(Reason,S) ->

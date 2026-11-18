@@ -8,6 +8,7 @@ import shutil
 import socket
 import subprocess
 import time
+import threading
 from pathlib import Path
 HERE=Path(__file__).resolve().parent
 
@@ -77,7 +78,7 @@ def main():
         subprocess.run([os.environ['BA_GSTREAMER_PYTHON'],str(HERE/'opus-fixture.py'),str(fixture)],check=True)
     subprocess.run([shutil.which('erlc'),'-Werror','-o',str(out),
         str(HERE/'ba_buffee_control_probe.erl'),str(HERE/'ba_audio_stream_probe.erl')],check=True)
-    runtimes=[];desk=None
+    runtimes=[];desk=None;inspector=None;monitor_stop=threading.Event();monitor_thread=None;monitor_errors=[];monitor_samples=[]
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
     try:
         desk=relay.start_desk(port);url=f'ws://127.0.0.1:{port}/relay/v1'
@@ -91,6 +92,11 @@ def main():
                        'BINDIR':str(Path(executable).parent),'EMU':'beam','PROGNAME':'erl'}
         runtimes.extend(control.Runtime([out,*paths],executable=executable,extra_env=extra_env) for _ in range(2 if args.single_source else 3))
         a,b=runtimes[:2];c=None if args.single_source else runtimes[2]
+        if args.single_source:
+            inspector=control.Runtime([out,*paths],executable=executable,extra_env={**extra_env,'BA_DEVICE_NAME':'Inspector Mac E2E'})
+            assert inspector.request('renewal_prepare',lease_ms=args.lease_ms)['ok']
+            if args.buffee_time:assert inspector.request('clock_prepare',interval_ms=250,samples=3)['ok']
+        participants=runtimes+([inspector] if inspector else [])
         publishers=[a] if args.single_source else [a,c]
         sources=[(a,'music',.75)] if args.single_source else [(a,'music',.25),(c,'microphone',.5)]
         for r in runtimes:assert r.request('renewal_prepare',lease_ms=args.lease_ms)['ok']
@@ -100,12 +106,12 @@ def main():
         control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
         invitations={}
         if args.ephemeral:
-            for r,name in zip(runtimes[1:],['Receiver','Second publisher']):
+            for r,name in zip(participants[1:],['Receiver','Inspector Mac E2E'] if args.single_source else ['Receiver','Second publisher']):
                 assert a.request('put_contact',id=r.identity['id'],name=name)['ok']
-            assert a.request('group_contacts',name='Session',ids=[r.identity['id'] for r in runtimes[1:]])['ok']
+            assert a.request('group_contacts',name='Session',ids=[r.identity['id'] for r in participants[1:]])['ok']
             links=a.request('invite_buffee',selection={'group':'Session'})['value']
             invitations={entry['device']:entry['invitation'] for entry in links}
-        for r in runtimes[1:]:
+        for r in participants[1:]:
             invitation=invitations[r.identity['id']] if args.ephemeral else a.request('invite')['value']
             assert r.request('join',invitation=invitation,desk=url)['ok']
             control.wait(r,lambda s:s['membership']['state']=='authorized')
@@ -114,13 +120,18 @@ def main():
             permissions=['offset_write',*permissions,'time_read']
             if c is not None:assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
         assert a.request('grant',peer=b.identity['id'],permissions=permissions)['ok']
+        if inspector:
+            assert a.request('grant',peer=inspector.identity['id'],permissions=['capabilities_read','status_read','time_read'])['ok']
         revision=a.request('snapshot')['membership']['revision']
-        for r in runtimes[1:]:control.wait(r,lambda s:s['membership']['state']=='authorized' and s['membership']['revision']==revision)
+        for r in participants[1:]:control.wait(r,lambda s:s['membership']['state']=='authorized' and s['membership']['revision']==revision)
         for r in publishers:
             # The control owner already initiates missing peer links. A second
             # initiator here can collide with its authenticated handshake.
             control.wait(b,lambda s:s['sessions'].get(r.identity['id'],{}).get('stage')=='authorized')
             control.wait(r,lambda s:s['sessions'].get(b.identity['id'],{}).get('stage')=='authorized')
+        if inspector:
+            for r in runtimes:
+                control.wait(inspector,lambda s:s['sessions'].get(r.identity['id'],{}).get('stage')=='authorized')
         if args.buffee_time:
             for r in runtimes:
                 deadline=time.monotonic()+20
@@ -173,6 +184,44 @@ def main():
                         assert time.monotonic()<end;time.sleep(.05)
             identities=[r.request('audio_ids') for r in runtimes]
             if args.buffee_time:assert_session_clocks(runtimes,a,args.offset_ms)
+            def monitor():
+                reply=inspector.request('api',request={'method':'monitor','metrics':True})
+                assert reply.get('error') is None,reply.get('error')
+                rows={row['id']:row for row in reply['result']['devices']}
+                for r in runtimes:
+                    assert rows[r.identity['id']]['state']=='ok',rows
+                return rows
+            def configure(r,**options):
+                reply=inspector.request('api',request={'method':'audio_diagnostics','device':r.identity['id'],'options':options})
+                if reply.get('error') is not None:
+                    local=r.request('api',request={'method':'monitor','metrics':True})
+                    caps=[row for row in local.get('result',{}).get('devices',[]) if row.get('local')]
+                    raise AssertionError({'error':reply.get('error'),'target_capabilities':caps})
+                return reply
+            if inspector:
+                # Both local and remote public APIs control real instrumentation.
+                for r in runtimes:
+                    reply=r.request('api',request={'method':'audio_diagnostics','options':{'meters':False,'analysis':False}})
+                    assert reply.get('error') is None,reply.get('error')
+                off=monitor()
+                for r in runtimes:
+                    caps=off[r.identity['id']]['capabilities']
+                    assert caps['audio_diagnostics']=={'diagnostics.meters':False,'diagnostics.analysis':False},caps
+                    assert all('peak_db' not in row for row in caps.get('audio',{}).values()) and not caps.get('audio_meters'),caps
+                    configure(r,meters=True,analysis=True)
+                deadline=time.monotonic()+5
+                while True:
+                    initial=monitor()
+                    if all('transport.sent' in initial[r.identity['id']]['capabilities']['audio_diagnostics'] for r in publishers) and 'mixer.submitted_frames' in initial[b.identity['id']]['capabilities']['audio_diagnostics']:break
+                    assert time.monotonic()<deadline,initial;time.sleep(.05)
+                monitored_before={r.identity['id']:initial[r.identity['id']]['capabilities']['audio_diagnostics'] for r in runtimes}
+                def observe_stream():
+                    try:
+                        while not monitor_stop.is_set():
+                            monitor_samples.append(monitor())
+                            monitor_stop.wait(.1)
+                    except BaseException as exc:monitor_errors.append(exc)
+                monitor_thread=threading.Thread(target=observe_stream,daemon=True);monitor_thread.start()
             before_audio=b.request('audio_snapshot');before=before_audio['mixer'];b.request('audio_reset_stats')
             sent_before=[sum(p['transport'].get('sent',0) for p in r.request('audio_snapshot')['provider_status']) for r in publishers]
             target=time.time_ns()+args.offset_ms*1_000_000
@@ -217,6 +266,39 @@ def main():
             for r,old in zip(publishers,sent_before):
                 sent=sum(p['transport'].get('sent',0) for p in r.request('audio_snapshot')['provider_status'])-old
                 assert sent==expected_packets,(sent,expected_packets)
+            if inspector:
+                monitor_stop.set();monitor_thread.join(timeout=10)
+                assert not monitor_thread.is_alive(),'Monitor did not stop'
+                assert not monitor_errors,monitor_errors
+                deadline=time.monotonic()+5
+                while True:
+                    final=monitor();reported={r.identity['id']:final[r.identity['id']]['capabilities']['audio_diagnostics'] for r in runtimes}
+                    out=reported[b.identity['id']]
+                    if out.get('output.completed_frames')==args.seconds*48000:break
+                    assert time.monotonic()<deadline,reported;time.sleep(.05)
+                for r in publishers:
+                    assert reported[r.identity['id']]['transport.sent']-monitored_before[r.identity['id']]['transport.sent']==expected_packets,reported
+                assert out['transport.received']-monitored_before[b.identity['id']]['transport.received']==expected_packets,out
+                assert out['mixer.submitted_frames']-monitored_before[b.identity['id']]['mixer.submitted_frames']==args.seconds*48000,out
+                assert out['mixer.dropped']==monitored_before[b.identity['id']]['mixer.dropped'],out
+                assert out['output.backend']=='test_sink' and out['output.queued_buffers']==0,out
+                meters=[sample[b.identity['id']]['capabilities'].get('audio_meters',{}).get('output_submitted',{}) for sample in monitor_samples]
+                received_meters=[sample[b.identity['id']]['capabilities'].get('audio_meters',{}).get('receive_max',{}) for sample in monitor_samples]
+                assert any(m.get('meter_age_ms',9999)<500 and abs(m.get('peak_db',-96)-(-2.4987747321659985))<.1 for m in received_meters),received_meters
+                assert any(m.get('meter_stage')=='output_submitted' and m.get('meter_age_ms',9999)<500 and abs(m.get('peak_db',-96)-(-2.4987747321659985))<.1 for m in meters),meters
+                for r in runtimes:
+                    assert reported[r.identity['id']]['clock.state']=='synchronized',reported
+                    assert reported[r.identity['id']]['clock.offset_ms']==args.offset_ms,reported
+                    assert reported[r.identity['id']]['clock.ready'] is True,reported
+                # Disabling observation must leave media/consent/processes intact.
+                for r in runtimes:configure(r,meters=False,analysis=False)
+                disabled=monitor()
+                for r,old in zip(runtimes,identities):
+                    assert r.request('audio_ids')==old
+                    caps=disabled[r.identity['id']]['capabilities']
+                    assert caps['audio_diagnostics']=={'diagnostics.meters':False,'diagnostics.analysis':False},caps
+                    assert all('peak_db' not in entry for entry in caps.get('audio',{}).values()) and not caps.get('audio_meters'),caps
+                print('PASS: independent Inspector remotely toggled both Devices and validated packet/frame totals, output meter, synchronized clocks and response time through signed monitor replies',flush=True)
             print(f'PASS: {expected_packets} packets/source delivered; clocks and {args.offset_ms}ms response-time assertions passed',flush=True)
             assert after['dropped']==before['dropped'],(before,after,stats)
             assert stats['frames']==args.seconds*48000 and stats['gaps']==0 and stats['bad_mix']==0 and stats['late']==0,stats
@@ -339,6 +421,39 @@ def main():
                 time.sleep(max(0,start+(n+1)*.02-time.monotonic()))
             time.sleep(1.1)
             after=b.request('audio_snapshot')['mixer'];blocks=b.request('audio_output')['blocks']
+            if inspector:
+                monitor_stop.set();monitor_thread.join(timeout=10)
+                assert not monitor_thread.is_alive(),'Monitor did not stop'
+                assert not monitor_errors,monitor_errors
+                deadline=time.monotonic()+5
+                while True:
+                    final=monitor();reported={r.identity['id']:final[r.identity['id']]['capabilities']['audio_diagnostics'] for r in runtimes}
+                    out=reported[b.identity['id']]
+                    if out.get('output.completed_frames')==args.seconds*48000:break
+                    assert time.monotonic()<deadline,reported;time.sleep(.05)
+                for r in publishers:
+                    assert reported[r.identity['id']]['transport.sent']-monitored_before[r.identity['id']]['transport.sent']==expected_packets,reported
+                assert out['transport.received']-monitored_before[b.identity['id']]['transport.received']==expected_packets,out
+                assert out['mixer.submitted_frames']-monitored_before[b.identity['id']]['mixer.submitted_frames']==args.seconds*48000,out
+                assert out['mixer.dropped']==monitored_before[b.identity['id']]['mixer.dropped'],out
+                assert out['output.backend']=='test_sink' and out['output.queued_buffers']==0,out
+                meters=[sample[b.identity['id']]['capabilities'].get('audio_meters',{}).get('output_submitted',{}) for sample in monitor_samples]
+                received_meters=[sample[b.identity['id']]['capabilities'].get('audio_meters',{}).get('receive_max',{}) for sample in monitor_samples]
+                assert any(m.get('meter_age_ms',9999)<500 and abs(m.get('peak_db',-96)-(-2.4987747321659985))<.1 for m in received_meters),received_meters
+                assert any(m.get('meter_stage')=='output_submitted' and m.get('meter_age_ms',9999)<500 and abs(m.get('peak_db',-96)-(-2.4987747321659985))<.1 for m in meters),meters
+                for r in runtimes:
+                    assert reported[r.identity['id']]['clock.state']=='synchronized',reported
+                    assert reported[r.identity['id']]['clock.offset_ms']==args.offset_ms,reported
+                    assert reported[r.identity['id']]['clock.ready'] is True,reported
+                # Disabling observation must leave media/consent/processes intact.
+                for r in runtimes:configure(r,meters=False,analysis=False)
+                disabled=monitor()
+                for r,old in zip(runtimes,identities):
+                    assert r.request('audio_ids')==old
+                    caps=disabled[r.identity['id']]['capabilities']
+                    assert caps['audio_diagnostics']=={'diagnostics.meters':False,'diagnostics.analysis':False},caps
+                    assert all('peak_db' not in entry for entry in caps.get('audio',{}).values()) and not caps.get('audio_meters'),caps
+                print('PASS: independent Inspector remotely toggled both Devices and validated packet/frame totals, output meter, synchronized clocks and response time through signed monitor replies',flush=True)
             print(f'PASS: {expected_packets} packets/source delivered; clocks and {args.offset_ms}ms response-time assertions passed',flush=True)
             assert after['dropped']==before['dropped'],(before,after)
             assert after['rendered']-before['rendered']>=600,(before,after)
@@ -396,6 +511,9 @@ def main():
         assert all(r.request('snapshot')['nodes']==[] for r in runtimes)
         print(('PASS: authenticated shared Buffee clock and Offset; ' if args.buffee_time else 'PASS: test clock; ')+('real WebRTC Opus decoded by GStreamer' if args.opus else 'real WebRTC PCM')+' from two publishers mixed at their packet targets; independent receiver/source pause and resume; disappearance and new-incarnation restore; scoped unsubscribe and Contract revocation; no OTP distribution, product apps or hardware output')
     finally:
+        monitor_stop.set()
+        if monitor_thread:monitor_thread.join(timeout=10)
+        if inspector:inspector.close()
         for r in runtimes:r.close()
         if desk is not None:desk.terminate();desk.wait(timeout=5)
 if __name__=='__main__':main()

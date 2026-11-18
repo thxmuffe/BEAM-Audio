@@ -1,5 +1,83 @@
 # Current plan
 
+## Handoff to Windows — 2026-11-18
+
+Stop point: diagnostics implementation is in source in **both checkouts** and
+has not been committed/pushed or deployed. Transfer/sync both repositories,
+including new files, before expecting this work on the Windows machine.
+
+Completed validation: final focused 65 Erlang checks, two meter/status frontend
+checks and public CLI API check pass. The full five-second monitored end-to-end
+case now passes through final revocation: 250/250 packets, 240,000 test-output
+frames, no gaps/drops/late output, both synchronized clocks and 150-ms Response
+time. Two trace serialization defects found during development are repaired:
+wire traces use a bounded map (the signed protocol still rejects arrays), and
+internal records are JSON-safe maps. Earlier intermittent Mixer deadline misses
+remain a known issue; this pass is not proof of universal reliability.
+
+Unfinished / next work:
+
+1. Run the complete test inventory on Windows after preparing its builds/tools.
+   From the workspace containing the sibling checkouts, PowerShell:
+   `python .\BEAM-Audio\scripts\run-tests.py --product-root .\OpenSound`.
+   Use `--list` first if useful. Missing prerequisites/other platforms must remain
+   UNAVAILABLE, never counted as passing. The whole inventory was not run here.
+   The audio E2E needs a working local Reception, compiled BeamTransport/WebRTC
+   and its platform-native libraries; prepared Mac artifacts are not Windows NIFs.
+2. Rebuild/run the iPhone and Mac apps with current Erlang, native iOS output and
+   frontend together. Only Swift syntax parsing was done, not an iOS build.
+   Inspect live Received versus Output meters, native scheduled/completed frames,
+   queue/rejections, completion age, engine/player, route, volume and clock/lead
+   statistics. iPhone audible playback is **still unresolved/unverified**.
+3. User-led visual checks of the new Settings diagnostics switches/meters and
+   remote changes; no automated visual review was performed.
+4. Inspection privacy Always / Ask / No is **a note only** (see below). Choose
+   default/scope and implement consent enforcement/UI later. Current diagnostic
+   switches are not a privacy barrier against an authorized monitor.
+5. The agreed Manager/broadcaster master-clock ownership and approximately
+   30-second distribution design is still open; this increment only reports
+   existing clocks. The active broadcaster should remain reference until it stops.
+6. Windows native audio remains unconnected to the shared profile as documented
+   in OpenSound/docs/Windows/README.md. Passing headless tests does not qualify
+   physical Windows or iPhone speakers. Keep backend/media transport and native
+   hardware qualification distinct.
+
+
+## Device inspection privacy policy — user note, 2026-11-18
+
+Add a Device-owned inspection choice using the existing Always / Ask / No UI
+pattern, separate from speaker/microphone/broadcast consent. Inspection includes
+remote meters, analysis, output route/state and recent diagnostic traces; these
+can reveal activity without transferring PCM. Inspector/Manager placement grants
+no bypass. Decide the default and scope of minimal presence versus detailed
+inspection before implementing this policy. For now this is a recorded product
+requirement, not an implemented UI/control. Remote instrumentation work must keep
+using authenticated, explicitly permitted operations and expose no audio content.
+
+## Switchable audio diagnostics and monitored end-to-end test — 2026-11-18
+
+Implemented Device-wide saved meter/analysis switches in the public Device API,
+local Settings and authenticated monitor control. Separate received/output meters,
+Mixer submitted frames, native iOS scheduling/completion/queue/rejection facts,
+engine/player/route/volume, handoff/native lead and calibration RTT are reported.
+A supervised observer caches bounded summaries independently of audio automation;
+remote reads do not poll media processes. Analysis includes 16 recent coded
+failures; the signed wire retains its no-arrays constraint using a bounded map.
+Disabling diagnostics preserves consent, packet targets and mandatory counters.
+
+The single-source Device/Session end-to-end case now attaches a third,
+audio-disabled Inspector. It toggles both Devices and validates exact packet and
+output-frame totals, both meter stages and synchronized clocks/150-ms Response
+time through the normal authenticated monitoring path. Test-sink acknowledgments
+are explicitly tagged `test_sink`, never native speaker evidence.
+
+Next: rebuild both apps together and use these readings to locate the iPhone
+failure, then perform user-led visual/listening checks. Swift syntax parsing is
+not an iOS build or proof of playback. Keep the existing 20-ms Mixer handoff
+policy until measurements justify a change. The Always / Ask / No inspection
+privacy control above remains a separate unimplemented requirement. No app or
+Reception deployment was performed for this increment.
+
 ## One launcher for the complete automated inventory — 2026-11-18
 
 Implemented: OpenSound Run Tests.command delegates to the shared core

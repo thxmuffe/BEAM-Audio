@@ -4,7 +4,7 @@
 crash_child() -> {ok,spawn_link(fun() -> receive crash -> exit({badmatch,<<"PRIVATE_EXCEPTION">>}) end end)}.
 
 main() ->
-    logger:set_primary_config(level,critical),
+    logger:set_primary_config(level,case os:getenv("BA_TEST_VERBOSE") of false -> critical;_ -> warning end),
     {ok,_} = application:ensure_all_started(crypto),
     {Pub,_} = ba_device_store:identity(),
     Id = binary:encode_hex(Pub), Cap = binary:encode_hex(crypto:strong_rand_bytes(16)),

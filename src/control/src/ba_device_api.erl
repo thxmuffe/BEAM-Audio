@@ -9,7 +9,7 @@ methods() -> lists:usort(client_methods()++[
     <<"network_changed">>,<<"audio_lifecycle">>]).
 %% The one list of commands an app window may send (web, Mac, iOS, Windows).
 client_methods() ->
-    [<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
+    [<<"audio_diagnostics">>,<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
      <<"end_buffee">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"preset">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
      <<"ui_get">>,<<"ui_set">>,<<"microphone_live">>,<<"speaker_mute">>,<<"undo">>,<<"redo">>,<<"send">>,<<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
      <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
@@ -35,6 +35,12 @@ printable(R) when is_binary(R) -> R;
 printable(R) when is_atom(R) -> atom_to_binary(R);
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
 
+command(#{<<"method">> := <<"audio_diagnostics">>,<<"options">> := Options}=R) ->
+    case maps:find(<<"device">>,R) of
+        {ok,Device} -> ba_buffee_monitor:configure(Device,Options);
+        error -> ba_audio_diagnostics:configure(Options)
+    end;
+command(#{<<"method">> := <<"audio_diagnostics">>}) -> {ok,ba_audio_diagnostics:options()};
 command(#{<<"method">> := <<"monitor">>}=R) -> {ok,ba_buffee_monitor:snapshot(#{metrics => maps:get(<<"metrics">>,R,false),plain => maps:get(<<"plain">>,R,[])})};
 command(#{<<"method">> := <<"readiness">>}=R) ->
     {ok,readiness(ba_app_session:snapshot(),maps:get(<<"previous">>,R,#{}))};

@@ -95,3 +95,23 @@ fixture(Fun) ->
         [case V of undefined -> application:unset_env(ba_core,K);{ok,Value} -> application:set_env(ba_core,K,Value) end || {K,V} <- Old],
         case PortEnv of false -> os:unsetenv("BA_AUDIO_PORT");_ -> os:putenv("BA_AUDIO_PORT",PortEnv) end
     end.
+
+native_output_summary_is_optional_and_rearms_socket_test() ->
+    {ok,L}=gen_tcp:listen(0,[binary,{packet,4},{active,false},{ip,{127,0,0,1}}]),
+    {ok,{_,Port}}=inet:sockname(L),
+    {ok,Client}=gen_tcp:connect({127,0,0,1},Port,[binary,{packet,4},{active,false}]),
+    {ok,Server}=gen_tcp:accept(L),
+    Handle=#{socket => Client,diagnostics_supported => true},
+    try
+        ?assertEqual(pending,ba_ios_audio:diagnostics(Handle,#{<<"analysis">> => true})),
+        ?assertEqual({ok,<<6,1>>},gen_tcp:recv(Server,0,100)),
+        ?assertEqual({ok,<<7>>},gen_tcp:recv(Server,0,100)),
+        Packet = <<7,1,1,1,500:16,48000:32,2:16,1000000:64,960:64,704:64,1:32,2:64,5:64,1000:64,2000:64>>,
+        {diagnostics,Stats}=ba_ios_audio:event(Handle,{tcp,Client,Packet}),
+        ?assertMatch(#{completed_frames := 704,queued_buffers := 1,route := speaker,volume_milli := 500},Stats),
+        ok=gen_tcp:send(Server,Packet),
+        receive {tcp,Client,Packet} -> ok after 1000 -> error(socket_not_rearmed) end,
+        ?assertMatch({ok,#{supported := true}},ba_ios_audio:diagnostics(Handle,#{<<"analysis">> => false})),
+        ?assertEqual({ok,<<6,0>>},gen_tcp:recv(Server,0,100)),
+        ?assertEqual(unsupported,ba_ios_audio:diagnostics(#{socket => Client},#{<<"analysis">> => true}))
+    after gen_tcp:close(Client),gen_tcp:close(Server),gen_tcp:close(L) end.

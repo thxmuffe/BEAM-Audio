@@ -347,3 +347,34 @@ meter_request_and_reply_are_opt_in_and_bounded_test() ->
     ?assertMatch({error,_,B1},p(reply_capabilities,[A,Id,Caps#{<<"audio_diagnostics">> := #{<<"pcm">> => <<"secret">>}},7,B1])),
     Bad=Caps#{<<"audio">> := (maps:get(<<"audio">>,Caps))#{<<"broadcast">> := E#{<<"peak_db">> := 999}}},
     ?assertMatch({error,_,B1},p(reply_capabilities,[A,Id,Bad,7,B1])).
+
+remote_diagnostics_control_is_permission_gated_and_replay_safe_test() ->
+    {A,B,KA,_,SA,SB,_,_,_,_}=handshake(),
+    Options=#{<<"meters">> => false,<<"analysis">> => true},
+    {ok,Query,A1}=p(request_capabilities,[B,Options,5,SA]),
+    {ok,[Denied],[],_}=p(receive_packet,[A,Query,6,SB]),
+    ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"forbidden">>}}],_},
+        p(receive_packet,[B,Denied,7,A1])),
+    Policy=maps:get(policy,SB),Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read]}}},
+    ?assertMatch({ok,[],[{capabilities_read,_,true,Options}],_},p(receive_packet,[A,Query,6,Granted])),
+    {ok,[],_,B1}=p(receive_packet,[A,Query,6,Granted]),
+    ?assertMatch({error,_,B1},p(receive_packet,[A,Query,7,B1])),
+    Bad=resign(Query,KA,fun(M) -> M#{<<"payload">> := #{<<"metrics">> => true,<<"diagnostics">> => #{<<"audio">> => true}}} end),
+    ?assertMatch({error,_,Granted},p(receive_packet,[A,Bad,6,Granted])).
+
+monitor_payload_roundtrip_with_dual_meters_and_trace_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Policy=maps:get(policy,SB),
+    Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read]}}},
+    {ok,Q,A1}=p(request_capabilities,[B,true,5,SA]),
+    {ok,[],[{capabilities_read,Id,true}],B1}=p(receive_packet,[A,Q,6,Granted]),
+    Meter=#{<<"peak_db">> => -3.0,<<"rms_db">> => -6.0,<<"meter_age_ms">> => 1,<<"meter_stage">> => <<"receive_max">>},
+    Base=#{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0,
+        <<"audio_diagnostics">> => ba_audio_diagnostics:snapshot(#{},#{}),
+        <<"test">> => #{<<"supported">> => true,<<"available">> => false,<<"requires_consent">> => true,
+            <<"consent">> => false,<<"capacity">> => 2,<<"active">> => 0,<<"max_duration_ms">> => 10000}},
+    lists:foreach(fun({Meters,Trace}) ->
+        Caps=Base#{<<"audio_meters">> => Meters,<<"audio_trace">> => Trace},
+        {ok,Reply,_}=p(reply_capabilities,[A,Id,Caps,7,B1]),
+        ?assertMatch({ok,[],[{reply,<<"capabilities.reply">>,Caps}],_},p(receive_packet,[B,Reply,8,A1]))
+    end,[{#{},#{}},{#{<<"receive_max">> => Meter},#{}},
+        {#{<<"receive_max">> => Meter},#{<<"1">> => #{<<"stage">> => <<"mixer">>,<<"reason">> => <<"missed_packet_target">>,<<"age_ms">> => 1}}}]).

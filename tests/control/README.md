@@ -15,6 +15,15 @@ no rejected packets, gaps, Mixer drops or late handoffs, and an empty final queu
 It also checks unchanged transports/publications across renewal, then revokes
 the receiver while an additional future buffer is queued and verifies no output.
 
+In single-source mode a third audio-disabled Inspector joins via the invitation.
+It uses public Device API `monitor` / `audio_diagnostics` calls over signed
+capabilities control. Both local and remote switch operations are checked; a
+background monitor observes live traffic without delaying capture. Signed reports
+must confirm exact sent/received packet deltas, 240,000 submitted/test-completed
+frames, fresh received/output meter levels, synchronized clocks and the Response
+time. Raw test-sink PCM checks independently verify gaps/levels; the monitor does
+not receive PCM. This does not turn the Erlang sink into an iOS output test.
+
 Clock/master assertions run before, each second during, and after transmission:
 sender is a ready master; receiver is a fully acquired fresh follower on the
 same master instance/timeline. Both must have ready **150 ms Response time** for

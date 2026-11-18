@@ -71,7 +71,7 @@ final class IOSAudioOutput {
                     shutdown(fd, SHUT_RDWR)
                 })
             }
-            try writePacket(fd, Data([1]))
+            try writePacket(fd, Data([1, 1]))
             while true {
                 let packet = try readPacket(fd)
                 switch packet.first {
@@ -82,6 +82,29 @@ final class IOSAudioOutput {
                     let host = UInt64(AVAudioTime.seconds(forHostTime: mach_absolute_time()) * 1_000_000_000)
                     let latency = UInt64(max(0, player.outputPresentationLatency) * 1_000_000_000)
                     var response = Data([3]); append(host, to: &response); append(latency, to: &response)
+                    try writePacket(fd, response)
+                case 6:
+                    guard packet.count == 2, packet[1] <= 1 else { throw OutputError.failed }
+                    scheduled.setAnalysis(packet[1] == 1)
+                case 7:
+                    guard packet.count == 1 else { throw OutputError.failed }
+                    let session = AVAudioSession.shared
+                    let route: UInt8
+                    switch session.currentRoute.outputs.first?.portType {
+                    case .builtInSpeaker: route = 1
+                    case .builtInReceiver: route = 2
+                    case nil: route = 0
+                    default: route = 3
+                    }
+                    let stats = scheduled.snapshot()
+                    var response = Data([7, engine.isRunning ? 1 : 0, player.isPlaying ? 1 : 0, route])
+                    append(UInt16(max(0, min(1000, session.outputVolume * 1000))), to: &response)
+                    append(UInt32(session.sampleRate), to: &response)
+                    append(UInt16(session.outputNumberOfChannels), to: &response)
+                    append(UInt64(max(0, player.outputPresentationLatency) * 1_000_000_000), to: &response)
+                    append(stats.scheduled, to: &response); append(stats.completed, to: &response)
+                    append(UInt32(stats.queued), to: &response); append(stats.rejected, to: &response)
+                    append(stats.ageMS, to: &response); append(stats.leadMin, to: &response); append(stats.leadMax, to: &response)
                     try writePacket(fd, response)
                 case 2:
                     guard packet.count >= 13 else { throw OutputError.failed }
@@ -104,13 +127,13 @@ final class IOSAudioOutput {
                     if let reason {
                         // Reject this buffer without retiming it or destroying the
                         // output. OTP records the drop; later targets can still play.
-                        NSLog("BEAM Audio audio output rejected buffer: code=%d, target lead=%.3f ms",
-                              Int(reason), (Double(hostNS) - Double(nowNS)) / 1_000_000)
+                        scheduled.reject()
                         try writePacket(fd, Data([5, reason]))
                         continue
                     }
+                    let tracked = scheduled.accept(frames: frames, lead: hostNS - nowNS)
                     let host = AVAudioTime.hostTime(forSeconds: Double(hostNS) / 1_000_000_000)
-                    player.scheduleBuffer(buffer, at: AVAudioTime(hostTime: host), options: [], completionCallbackType: .dataPlayedBack) { _ in scheduled.complete() }
+                    player.scheduleBuffer(buffer, at: AVAudioTime(hostTime: host), options: [], completionCallbackType: .dataPlayedBack) { _ in scheduled.complete(frames: frames, tracked: tracked) }
                 default: throw OutputError.failed
                 }
             }
@@ -171,10 +194,36 @@ final class IOSAudioOutput {
 private final class IOSOutputQueue {
     private let lock = NSLock()
     private var count = 0
+    private var analysis = false
+    private var scheduledFrames: UInt64 = 0
+    private var completedFrames: UInt64 = 0
+    private var rejectedBuffers: UInt64 = 0
+    private var completionNS: UInt64 = 0
+    private var leadMin: UInt64 = 0
+    private var leadMax: UInt64 = 0
+    private func nowNS() -> UInt64 { UInt64(AVAudioTime.seconds(forHostTime: mach_absolute_time()) * 1_000_000_000) }
+    func setAnalysis(_ value: Bool) { lock.lock(); analysis = value; lock.unlock() }
+    func accept(frames: Int, lead: UInt64) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard analysis else { return false }
+        scheduledFrames += UInt64(frames)
+        leadMin = leadMin == 0 ? lead : min(leadMin, lead); leadMax = max(leadMax, lead)
+        return true
+    }
+    func reject() { lock.lock(); if analysis { rejectedBuffers += 1 }; lock.unlock() }
+    func snapshot() -> (scheduled: UInt64, completed: UInt64, queued: Int, rejected: UInt64, ageMS: UInt64, leadMin: UInt64, leadMax: UInt64) {
+        lock.lock(); defer { lock.unlock() }
+        return (scheduledFrames, completedFrames, count, rejectedBuffers,
+                completionNS == 0 ? 9_007_199_254_740_991 : (nowNS() - completionNS) / 1_000_000, leadMin, leadMax)
+    }
     func reserve() -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard count < 2048 else { return false }
         count += 1; return true
     }
-    func complete() { lock.lock(); count = max(0, count - 1); lock.unlock() }
+    func complete(frames: Int, tracked: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        count = max(0, count - 1)
+        if analysis && tracked { completedFrames += UInt64(frames); completionNS = nowNS() }
+    }
 }

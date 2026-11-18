@@ -53,7 +53,7 @@ normal_capabilities_include_label_but_not_metrics_test() ->
         ?assertEqual([<<"available">>,<<"consent">>,<<"state">>],lists:sort(maps:keys(Entry))),
         {reply,Metrics,_}=ba_device_handler:handle_call(capability_metrics,undefined,S),
         ?assertEqual(maps:get(<<"device_name">>,Normal),maps:get(<<"device_name">>,Metrics)),
-        ?assertEqual(#{<<"mixer.dropped">> => 3},maps:get(<<"audio_diagnostics">>,Metrics)),
+        ?assertMatch(#{<<"mixer.dropped">> := 3,<<"diagnostics.analysis">> := true},maps:get(<<"audio_diagnostics">>,Metrics)),
         M=maps:get(<<"broadcast">>,maps:get(<<"audio">>,Metrics)),
         ?assertEqual(-3.0,maps:get(<<"peak_db">>,M)),?assertEqual(100,maps:get(<<"frames">>,M))
     after
@@ -96,3 +96,15 @@ render_channel_error_and_missed_targets_test() ->
     ?assertNotEqual(nomatch,binary:match(Text,<<"speaker: output_closed">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"mixer.failure.missed_packet_target: 2">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"10 rendered  2 dropped  5 queued">>)).
+
+render_output_progress_and_analysis_off_test() ->
+    View=fun(D) -> #{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
+        #{<<"id">> => binary:copy(<<"A">>,64),<<"state">> => <<"ok">>,<<"capabilities">> => #{<<"audio_diagnostics">> => D}}]} end,
+    Text=iolist_to_binary(ba_cli_monitor:render(View(#{<<"output.supported">> => true,<<"output.backend">> => <<"ios">>,
+        <<"output.engine_running">> => true,<<"output.player_running">> => true,<<"output.route">> => <<"speaker">>,
+        <<"output.scheduled_frames">> => 960,<<"output.completed_frames">> => 704}))),
+    ?assertNotEqual(nomatch,binary:match(Text,<<"engine running  player running  route speaker">>)),
+    ?assertNotEqual(nomatch,binary:match(Text,<<"960 scheduled / 704 completed frames">>)),
+    Off=iolist_to_binary(ba_cli_monitor:render(View(#{<<"diagnostics.analysis">> => false,<<"diagnostics.meters">> => false}))),
+    ?assertNotEqual(nomatch,binary:match(Off,<<"Audio analysis: OFF">>)),
+    ?assertEqual(nomatch,binary:match(Off,<<"Clock: unavailable">>)).

@@ -1,6 +1,6 @@
 %% Test-only clock and output binding. Never bundled with product apps.
 -module(ba_audio_stream_probe).
--export([command/1,id/0,now/0,status/0,to_monotonic/1,from_monotonic/1,open/1,write/4,close/1]).
+-export([command/1,id/0,now/0,status/0,to_monotonic/1,from_monotonic/1,open/1,write/4,close/1,diagnostics/2]).
 id() -> <<"headless-shared-test-clock">>.
 now() -> {ok,erlang:system_time(nanosecond)}.
 status() -> #{state => synchronized,role => master,last_sync => erlang:monotonic_time(nanosecond),filtered_utc_time => erlang:system_time(nanosecond)}.
@@ -15,6 +15,13 @@ write(#{observer := Observer},Time,Frames,PCM) ->
             Observer ! {output,#{target_ns => Target,frames => Frames,write_ns => Written},PCM},ok;
         _ -> {error,output_probe_overloaded}
     end.
+%% Same optional output diagnostic callback as a real binding. These are
+%% accepted test-sink frames, deliberately not native/physical playback evidence.
+diagnostics(_,#{<<"analysis">> := false}) -> {ok,#{supported => true,backend => test_sink}};
+diagnostics(_,_) ->
+    Stats=case ets:lookup(ba_audio_test_stats,summary) of [{_,V}] -> V;[] -> #{} end,
+    {ok,#{supported => true,backend => test_sink,scheduled_frames => maps:get(frames,Stats,0),
+        completed_frames => maps:get(frames,Stats,0),queued_buffers => 0,rejected_buffers => 0}}.
 start_observer() ->
     register(ba_audio_test_sink,spawn_link(fun observe/0)).
 observe() ->

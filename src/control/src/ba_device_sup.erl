@@ -7,4 +7,5 @@ init([]) ->
     {ok,{#{strategy => rest_for_one,intensity => 5,period => 10},[
         #{id => ba_device_handler,start => {ba_device_handler,start_link,[]}},
         #{id => ba_device_worker_sup,start => {ba_device_worker_sup,start_link,[]},
-          type => supervisor,shutdown => infinity}]}}.
+          type => supervisor,shutdown => infinity},
+        #{id => ba_audio_observer,start => {ba_audio_observer,start_link,[]}}]}}.

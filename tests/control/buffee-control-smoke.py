@@ -1,5 +1,6 @@
 """Two disposable, non-distributed BEAM runtimes over the existing Reception Desk."""
 import argparse
+from collections import deque
 import json
 import os
 from pathlib import Path
@@ -32,8 +33,18 @@ class Runtime:
              "-s", "ba_buffee_control_probe", "main"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, text=True, encoding="utf-8")
+        self.stderr_lines=deque(maxlen=32)
+        self.stderr_bytes=0
+        threading.Thread(target=self.drain_stderr,daemon=True).start()
         threading.Thread(target=self.read, daemon=True).start()
         self.identity = self.messages.get(timeout=10)
+
+    def drain_stderr(self):
+        # A child must never block because its test harness left stderr unread.
+        # Keep a bounded tail in memory; do not print transport credentials.
+        for line in self.process.stderr:
+            self.stderr_bytes+=len(line.encode('utf-8'))
+            self.stderr_lines.append(line[-512:])
 
     def read(self):
         for line in self.process.stdout:
@@ -46,7 +57,10 @@ class Runtime:
     def request(self, op, **fields):
         self.process.stdin.write(json.dumps(dict(op=op, **fields)) + "\n")
         self.process.stdin.flush()
-        reply=self.messages.get(timeout=10)
+        try:
+            reply=self.messages.get(timeout=10)
+        except queue.Empty as exc:
+            raise TimeoutError(f'No reply to {op}; runtime exit={self.process.poll()}; stderr bytes drained={self.stderr_bytes}') from exc
         if op=='snapshot':
             assert reply.get('old_core_loaded') is False,'Old core modules loaded: '+str(reply)
         return reply

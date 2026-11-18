@@ -64,7 +64,10 @@ request_status(Peer, Now, S) ->
 request_capabilities(Peer, Now, S) ->
     request(Peer,capabilities,<<"capabilities.read">>,Now,S).
 request_capabilities(Peer,true,Now,S) -> request(Peer,capabilities,<<"capabilities.read">>,#{<<"metrics">> => true},Now,S);
-request_capabilities(Peer,false,Now,S) -> request_capabilities(Peer,Now,S).
+request_capabilities(Peer,false,Now,S) -> request_capabilities(Peer,Now,S);
+request_capabilities(Peer,Options,Now,S) when is_map(Options) ->
+    ok=ba_audio_diagnostics:validate_options(Options),
+    request(Peer,capabilities,<<"capabilities.read">>,#{<<"metrics">> => true,<<"diagnostics">> => Options},Now,S).
 request(Peer,Kind,Operation,Now,S) -> request(Peer,Kind,Operation,#{},Now,S).
 request(Peer,Kind,Operation,Payload,Now,S) ->
     attempt(fun() ->
@@ -237,7 +240,10 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
             case lists:member(capabilities_read,Permissions) of
                 true ->
                     false = maps:is_key(capability_request,Session),
-                    Event=case maps:get(<<"metrics">>,Payload,false) of true -> {capabilities_read,Request,true};false -> {capabilities_read,Request} end,
+                    Event=case maps:find(<<"diagnostics">>,Payload) of
+                        {ok,Options} -> {capabilities_read,Request,true,Options};
+                        error -> case maps:get(<<"metrics">>,Payload,false) of true -> {capabilities_read,Request,true};false -> {capabilities_read,Request} end
+                    end,
                     {ok,[],[Event],put(Peer,Received#{capability_request => Request},S)};
                 false ->
                     {Packet,Next} = outgoing(Peer,<<"capabilities.error">>,Request,
@@ -364,6 +370,8 @@ payload(<<"status.reply">>,P) ->
     #{<<"protocol">> := 1,<<"session">> := <<"authorized">>} = P;
 payload(<<"status.error">>,P) ->
     exact(P,[<<"reason">>]), #{<<"reason">> := <<"forbidden">>} = P;
+payload(<<"capabilities.read">>,#{<<"metrics">> := true,<<"diagnostics">> := Options}=P) ->
+    exact(P,[<<"metrics">>,<<"diagnostics">>]),ba_audio_diagnostics:validate_options(Options);
 payload(<<"capabilities.read">>,#{<<"metrics">> := true}=P) -> exact(P,[<<"metrics">>]);
 payload(<<"capabilities.read">>,P) -> exact(P,[]);
 payload(<<"capabilities.reply">>,P) -> capability_payload(P);
@@ -379,7 +387,9 @@ payload(<<"job.report">>,P) -> ba_buffee_job:validate_report(P);
 payload(_,_) -> throw(forbidden_operation).
 
 capability_payload(P) ->
-    exact(P,[<<"instance">>,<<"revision">>,<<"test">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>],maps:is_key(K,P)]),
+    exact(P,[<<"instance">>,<<"revision">>,<<"test">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>,<<"audio_trace">>,<<"audio_meters">>],maps:is_key(K,P)]),
+    case maps:find(<<"audio_meters">>,P) of error -> ok;{ok,Meters} -> ba_audio_diagnostics:validate_meters(Meters) end,
+    case maps:find(<<"audio_trace">>,P) of error -> ok;{ok,Trace} -> ba_audio_diagnostics:validate_trace(Trace) end,
     case maps:find(<<"audio_diagnostics">>,P) of error -> ok;{ok,D} -> ba_audio_diagnostics:validate(D) end,
     case maps:find(<<"device_name">>,P) of
         error -> ok;
@@ -394,7 +404,7 @@ capability_payload(P) ->
                 exact(Entry,[<<"consent">>,<<"state">>,<<"available">>]++[K || K <- Extra,maps:is_key(K,Entry)]),
                 [begin V=maps:get(K,Entry),true=is_number(V) andalso V>= -96 andalso V=<48 end || K <- [<<"peak_db">>,<<"rms_db">>],maps:is_key(K,Entry)],
                 [true=uint(maps:get(K,Entry)) || K <- [<<"meter_age_ms">>,<<"blocks">>,<<"frames">>,<<"dropped">>],maps:is_key(K,Entry)],
-                case maps:find(<<"meter_stage">>,Entry) of error -> ok;{ok,Stage} -> true=lists:member(Stage,[<<"capture">>,<<"receive_max">>]) end,
+                case maps:find(<<"meter_stage">>,Entry) of error -> ok;{ok,Stage} -> true=lists:member(Stage,[<<"capture">>,<<"receive_max">>,<<"output_submitted">>]) end,
                 case maps:find(<<"error">>,Entry) of
                     error -> ok;
                     {ok,Error} -> true=is_binary(Error) andalso byte_size(Error)=<256,

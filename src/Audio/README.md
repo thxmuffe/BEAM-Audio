@@ -20,7 +20,7 @@ iOS output reports an individual rejected buffer to Erlang without closing the
 engine or changing later targets. `monitor --metrics` exposes
 `mixer.failure.<reason>` for `native_late_packet`, `native_target_out_of_bounds`
 and `native_output_queue_full`. Native
-logs include target lead in milliseconds. Local output TCP uses NODELAY.
+analysis reports target-lead bounds; per-buffer rejection logging is avoided. Local output TCP uses NODELAY.
 `mixer.output_stop_pending: true` means a failed output has not acknowledged
 stop; it cannot be reused as healthy. EOF alone does not confirm native stop.
 Rebuild/run the iPhone app to update both sides of the local binding protocol.
@@ -47,3 +47,17 @@ Current contracts: [streams](../../docs/BUFFEE_STREAMS.md),
 [clock](../../docs/BUFFEE_TIME.md), [architecture](../../docs/ARCHITECTURE.md).
 User listening confirms audible microphone output; quality and physical speaker
 timing remain unqualified. See [current limits](../../docs/PROGRESS.md).
+
+Optional output diagnostics use `diagnostics(Handle, Options)` on an adapter.
+It returns `{ok, Summary}`, `pending` for an asynchronous local response, or
+`unsupported`. The Mixer polls every 500 ms; a binding must not synchronously
+wait for native playback or run DSP here. iOS protocol v1 advertises readiness
+`<<1,1>>`, accepts `<<6,Enabled>>` for analysis and `<<7>>` for a fixed-size
+summary; old `<<1>>` bindings remain usable without this extension. Completion
+callbacks only update locked bounded native counters; socket replies stay on
+the binding's serial queue. Erlang retains all sample interpretation and policy.
+
+The Device's supervised `ba_audio_observer` samples existing audio/clock state
+without starting capture/playback. Its cache feeds both local UI and signed
+remote monitoring. Meter/analysis options are separate saved Device settings.
+See the CLI README for controls, field meanings and privacy/validation limits.

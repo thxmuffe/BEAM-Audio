@@ -1,5 +1,43 @@
 # Current implementation and validation
 
+## Switchable diagnostics and monitored end-to-end test — 2026-11-18
+
+Implemented Device-wide persistent meter/analysis settings through public
+`audio_diagnostics` API, local shared Settings UI and authenticated remote
+monitor configuration. A supervised observer caches observations independently
+of automation. Received and submitted-output meters are distinct. Optional iOS
+native summaries report scheduling/completion/queue/rejections, engine/player,
+route/volume, rate/channels/latency, accepted-target lead bounds and mapping RTT.
+Erlang owns meters/policy; native callbacks update bounded counters only.
+Analysis includes 16 coded recent failures. OFF preserves audio consent and
+mandatory counters; no PCM or credentials are sent through diagnostics.
+
+The single-source E2E attaches an independent audio-disabled Inspector and uses
+normal signed monitoring replies to validate packet/frame totals, both meter
+stages, clocks/Response time and local/remote switches. During implementation,
+it caught an array-rejection mismatch in the signed protocol and a non-JSON
+internal trace representation; both are fixed and covered by regressions.
+The test harness now drains child stderr with a bounded in-memory tail rather
+than risking pipe backpressure, and reports runtime exit on request timeout.
+
+Final validation: 65 focused Erlang tests pass (diagnostic projection/limits,
+protocol authentication/replay/round-trip, iOS TCP binding and supervision/jobs).
+Two new frontend checks and the public generic CLI API integration check pass.
+Core compiles; Swift syntax and frontend JS syntax checks pass. The final full
+five-second E2E passes: 250/250 packets, 240,000 output frames, no gap/drop/late
+output, both clocks synchronized, Response time 150 ms, renewal continuity and
+buffer revocation. Test output is explicitly tagged `test_sink`; its accepted
+frames are not native/physical playback evidence. Earlier intermittent Mixer
+handoff misses are not declared repaired by this pass.
+
+Not done: full test inventory, Windows execution/build, iOS compilation/deployment,
+visual acceptance or live iPhone listening. The original iPhone silence still
+needs a live run with the new measurements. No user app/Reception restart or
+live Session changes were made. Changes are local and uncommitted in both repos.
+See the Windows handoff at the top of PLAN.md. Inspection privacy remains a
+recorded requirement, separate from the implemented diagnostic switches.
+
+
 ## Run Tests.command includes the automated inventory — 2026-11-18
 
 Replaced the four-suite shell list with a shared core Python catalog/runner;

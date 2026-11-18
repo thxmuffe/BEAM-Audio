@@ -63,7 +63,7 @@ snapshot() ->
         desks => safe(fun ba_buffee_desks:status/0,#{}),
         default_desk => ba_settings:app(default_reception_desk_url,<<>>),
         configuration => maps:without([entries],Config),consent => consent(),excluded => exclusions(),messages => [],devices => [],jobs => [],
-        audio => #{},clock => #{state => idle},passport => #{}},
+        audio_diagnostics => ba_audio_diagnostics:options(),audio => #{},clock => #{state => idle},passport => #{}},
     case maps:get(state,Buffee) of
         idle -> Base;
         _ ->

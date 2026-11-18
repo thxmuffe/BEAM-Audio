@@ -124,7 +124,7 @@ handle_call({job_command,Command,Id},_,#{jobs := Jobs} = S) ->
 handle_call({connect,Peer},_,S) ->
     case ba_app_session:excluded(Peer) of true -> {reply,{error,peer_excluded},S};false -> connect_peer(Peer,S) end;
 
-handle_call({read_capabilities,Peer,Metrics},From,S) when is_boolean(Metrics) ->
+handle_call({read_capabilities,Peer,Metrics},From,S) when is_boolean(Metrics);is_map(Metrics) ->
     read_capabilities_call(Peer,Metrics,From,S);
 handle_call({Operation,Peer},From,#{callers := Callers} = S)
         when Operation =:= read_status; Operation =:= read_capabilities ->
@@ -256,6 +256,9 @@ event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->
 event(Peer,{reply,<<"capabilities.error">>,#{<<"reason">> := Reason}},S) ->
     Error = case Reason of <<"forbidden">> -> forbidden; <<"unavailable">> -> unavailable end,
     reply(Peer,{error,Error},S);
+event(Peer,{capabilities_read,Request,true,Options},S) ->
+    {ok,_}=ba_audio_diagnostics:configure(Options),
+    event(Peer,{capabilities_read,Request,true},S);
 event(Peer,{capabilities_read,Request},S) -> event(Peer,{capabilities_read,Request,false},S);
 event(Peer,{capabilities_read,Request,Metrics},S) ->
     Value = try ba_device_handler:capabilities(Metrics) catch exit:_ -> unavailable end,

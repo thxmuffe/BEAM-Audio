@@ -1,7 +1,14 @@
-%% Read-only Buffee-wide observation using existing signed capability permissions.
+%% Session observation and explicit diagnostic switches through signed capability permissions.
 %% No audio subscription, hardware access or remote code execution.
 -module(ba_buffee_monitor).
--export([snapshot/1]).
+-export([snapshot/1,configure/2]).
+configure(Device,Options) ->
+    ok=ba_audio_diagnostics:validate_options(Options),
+    #{device := Self}=ba_app_session:snapshot(),
+    case Device of
+        Self -> ba_audio_diagnostics:configure(Options);
+        _ -> ba_buffee_control:read_capabilities(Device,Options)
+    end.
 snapshot(#{metrics := Metrics,plain := Plain}) when is_boolean(Metrics),is_list(Plain),length(Plain)=<32 ->
     Local=ba_app_session:snapshot(),Buffee=maps:get(buffee,Local),Self=maps:get(device,Local),
     Peers=lists:usort([Self|maps:get(members,Buffee,[])]),Parent=self(),Ref=make_ref(),

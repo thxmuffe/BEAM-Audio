@@ -214,7 +214,7 @@ handle_info({audio_pcm,Pid,H,PCM},S) ->
             end,
             Next = case Delivery of {error,playback_not_enabled} -> S;{error,R0} -> ba_diagnostics:count(R0,S);_ -> S end,
             Format=maps:get(sample_format,ba_audio_opus:descriptor(D)),
-            Meter=ba_audio_meter:levels(ba_audio_meter:accumulate(Format,PCM,ba_audio_meter:new())),
+            Meter=ba_audio_diagnostics:meter(Format,PCM),
             {noreply,put_sub(Id,R#{packets := maps:get(packets,R)+1,meter => Meter,meter_at => now_ms()},Next)};
         _ -> {noreply,reject(S)}
     end;
@@ -265,9 +265,10 @@ handle_info({'DOWN',Ref,process,Pid,Reason},S) ->
 handle_info(_,S) -> {noreply,S}.
 
 %% Max individual received-Source level, not a mixed/native speaker measurement.
-receive_meter(Items) ->
+receive_meter(Items) -> case ba_audio_diagnostics:enabled(meters) of false -> #{};true -> receive_levels(Items) end.
+receive_levels(Items) ->
     Now=now_ms(),Fresh=[{maps:get(meter,R),Now-T} || R <- maps:values(Items),
-        {ok,T} <- [maps:find(meter_at,R)],Now-T=<250,maps:is_key(meter,R)],
+        {ok,T} <- [maps:find(meter_at,R)],Now-T=<250,map_size(maps:get(meter,R,#{}))>0],
     case Fresh of
         [] -> #{};
         _ -> #{<<"peak_db">> => lists:max([maps:get(<<"peak_db">>,M) || {M,_} <- Fresh]),

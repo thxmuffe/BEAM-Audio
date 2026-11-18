@@ -264,8 +264,8 @@ are not per-second rates or proof of an active fault. Transport rejection counts
 are not a measurement of RTP network loss, and these reports do not measure
 physical speaker underruns or speaker alignment.
 
-The audio Worker projects its existing receiver snapshot and clock state during
-its normal update; the Handler serves this cache. Monitor requests do not add
+A supervised audio observer projects the receiver snapshot and clock state every
+250 ms; the Handler serves this cache even when audio automation is disabled. Monitor requests do not add
 synchronous calls to the audio processes. Only opt-in extended replies carry it;
 ordinary capability replies keep their shape. Reports contain bounded counters
 and reason codes, never PCM, credentials, descriptors or arbitrary process state.
@@ -284,6 +284,57 @@ shape. Permission denial/disconnection also remains visible, never fake silence.
 
 Native capture/playback and physical timing are not enabled or qualified merely
 by running this command. A “running” state alone is not proof of sound.
+
+## Switch Device audio diagnostics
+
+Settings in the shared OpenSound UI has **Audio meters** and **Audio analysis**
+switches, Received/Output meters and an output-progress message. These settings
+are Device-wide, persisted through `ba_settings`, and initially enabled to retain
+existing diagnostics. Each switch is independent. Disabling them does not revoke
+speaker/microphone/ON AIR consent or change audio scheduling. Native analysis
+switches take effect on the next bounded output poll (up to 500 ms).
+
+The same public API works locally or through an admitted Inspector:
+
+```sh
+beamaudio call device --devicename OpenSound --request '{"method":"audio_diagnostics","options":{"meters":true,"analysis":true}}'
+beamaudio call device --devicename ba-monitor-SESSION_ID --request '{"method":"audio_diagnostics","device":"PUBLIC_DEVICE_ID","options":{"meters":false,"analysis":false}}'
+```
+
+Omit `options` to read this Device's switches. A partial options map changes only
+that switch. Remote configuration uses the signed capabilities request/reply,
+requires `capabilities_read` on the target and never grants audio consent. It is
+an explicit configuration request, not an effect of an ordinary `monitor` read.
+Inspection privacy choices (Always / Ask / No, with a separate default to decide)
+are recorded in PLAN.md and are **not enforced yet**. An Inspector/Manager label
+grants no privilege. Diagnostics OFF is not a privacy block: an authorized monitor
+can enable them again under the current permission model.
+
+`monitor --metrics` now exposes `audio_meters.receive_max` and
+`audio_meters.output_submitted` separately. The latter is Erlang's mixed PCM
+successfully handed to the binding, before physical output. Missing/stale levels
+are unavailable/waiting, not proof of silence. The channel's speaker meter prefers
+submitted output; `audio_meters` retains both stages. Check ages and the Handler
+cache age (`audio_diagnostics["diagnostics.age_ms"]`).
+
+Updated iOS bindings also report engine/player running state, coarse output route,
+volume in thousandths, rate/channels/latency, scheduled/completed frames, queued
+and rejected buffers, completion age and native target-lead bounds. The Mixer
+reports submitted frames and last handoff lead; the binding reports clock-mapping
+round-trip time. These are allowlisted summaries, not PCM or arbitrary runtime
+state. Software `.dataPlayedBack` callbacks do not prove acoustic output.
+Older/other bindings explicitly report unsupported; no native counters are
+invented. Rebuild **both native and Erlang parts** of iOS together for the new
+versioned local output handshake. The observer/runtime also needs current code.
+
+`audio_trace` holds up to 16 recent failures under keys `"1"` to `"16"`, each
+with stage, coded reason and age. It contains no PCM, credentials or packet
+payloads. Analysis OFF omits traces and optional summaries, stops native progress
+collection and new trace recording; essential safety/failure counters remain.
+Meters OFF bypasses Erlang sample metering and omits meter values immediately.
+Counters may include earlier enabled periods; compare fresh deltas within one
+binding/process lifetime. The headless test sink is tagged `output.backend:
+test_sink` and measures accepted test output, not hardware playback.
 
 ## Lifetime and local state
 

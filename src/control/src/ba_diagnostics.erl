@@ -5,7 +5,12 @@ view(S) -> maps:get(diagnostics,S,#{counts => #{},last_error => null}).
 count(Reason,S) ->
     D = view(S),Counts = maps:get(counts,D),R0 = reason(Reason),
     R = case is_map_key(R0,Counts) orelse map_size(Counts)<31 of true -> R0;false -> other end,
-    S#{diagnostics => D#{counts := Counts#{R => maps:get(R,Counts,0)+1},last_error := R}}.
+    Next=D#{counts := Counts#{R => maps:get(R,Counts,0)+1},last_error := R},
+    Observed=case ba_audio_diagnostics:enabled(analysis) of
+        true -> Next#{trace => lists:sublist([#{at_ms => erlang:monotonic_time(millisecond),reason => R}|maps:get(trace,D,[])],16)};
+        false -> maps:remove(trace,Next)
+    end,
+    S#{diagnostics => Observed}.
 reason(R) when is_atom(R) -> R;
 reason({R,Stack}) when is_atom(R),is_list(Stack) -> R;
 reason(<<"decoded_packet_target_missing">>) -> decoded_packet_target_missing;

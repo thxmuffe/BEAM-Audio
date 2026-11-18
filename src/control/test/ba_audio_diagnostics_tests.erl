@@ -41,3 +41,38 @@ wire_rejects_unbounded_or_nested_diagnostics_test() ->
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"mixer.dropped">> => 9007199254740992})),
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"secret">> => <<"private">>})),
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"clock.state">> => <<27,"[2J">>})).
+
+switches_disable_work_and_never_report_stale_levels_test() ->
+    {ok,Settings}=ba_settings:start_link(),
+    try
+        {ok,_}=ba_audio_diagnostics:configure(#{<<"meters">> => false,<<"analysis">> => false}),
+        %% Invalid PCM proves the expensive sample parser is actually bypassed.
+        ?assertEqual(#{},ba_audio_diagnostics:meter(float32_le,<<1>>)),
+        ?assertEqual(#{<<"diagnostics.meters">> => false,<<"diagnostics.analysis">> => false},
+            ba_audio_diagnostics:snapshot(#{mixer => #{rendered => 10}},#{state => synchronized})),
+        ?assertNot(maps:is_key(meter,ba_audio_input:status((ba_audio_input:new())#{meter => #{<<"peak_db">> => -1.0}}))),
+        {ok,_}=ba_audio_diagnostics:configure(#{<<"meters">> => true}),
+        ?assertEqual(false,ba_audio_diagnostics:enabled(analysis)),
+        ?assertEqual(0.0,maps:get(<<"peak_db">>,ba_audio_diagnostics:meter(float32_le,<<1.0:32/little-float>>))),
+        ?assertException(error,_,ba_audio_diagnostics:validate_options(#{<<"meters">> => <<"yes">>})),
+        ?assertException(error,_,ba_audio_diagnostics:validate_options(#{<<"pcm">> => true}))
+    after gen_server:stop(Settings) end.
+
+native_summary_is_allowlisted_not_arbitrary_state_test() ->
+    D=ba_audio_diagnostics:snapshot(#{mixer => #{submitted_frames => 48000,output => #{
+        supported => true,backend => ios,completed_frames => 47900,route => speaker,
+        engine_running => true,player_running => true,private => <<"SECRET">>}}},#{}),
+    ?assertEqual(ok,ba_audio_diagnostics:validate(D)),
+    ?assertEqual(47900,maps:get(<<"output.completed_frames">>,D)),
+    ?assertEqual(48000,maps:get(<<"mixer.submitted_frames">>,D)),
+    ?assertNot(maps:is_key(<<"output.private">>,D)).
+
+recent_failures_are_bounded_and_payload_free_test() ->
+    S=lists:foldl(fun(_,Acc) -> ba_diagnostics:count(missed_packet_target,Acc) end,#{},lists:seq(1,100)),
+    %% The shared local snapshots also serialize this view, not just the signed projection.
+    ?assert(is_list(json:encode(ba_diagnostics:view(S)))),
+    Trace=ba_audio_diagnostics:trace(#{mixer => #{diagnostics => ba_diagnostics:view(S)}}),
+    ?assertEqual(16,map_size(Trace)),?assertEqual(ok,ba_audio_diagnostics:validate_trace(Trace)),
+    ?assertMatch(#{<<"1">> := #{<<"stage">> := <<"mixer">>,<<"reason">> := <<"missed_packet_target">>}},Trace),
+    ?assertException(error,_,ba_audio_diagnostics:validate_trace(Trace#{<<"17">> => maps:get(<<"1">>,Trace)})),
+    ?assertException(error,_,ba_audio_diagnostics:validate_trace(#{<<"1">> => #{<<"stage">> => <<"mixer">>,<<"reason">> => <<"bad">>,<<"age_ms">> => 0,<<"pcm">> => <<0>>}})).

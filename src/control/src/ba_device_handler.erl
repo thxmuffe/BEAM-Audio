@@ -31,7 +31,7 @@ handle_call(capabilities,_,S) -> {reply,capability_snapshot(S),S};
 handle_call(status,_,S) ->
     {reply,#{capabilities => capability_snapshot(S),active =>
         maps:map(fun(_,W) -> public(W) end,maps:get(active,S)),history => maps:get(history,S),
-        jobs => maps:map(fun(_,J) -> maps:get(report,J) end,maps:get(jobs,S)),contract => maps:get(contract,S),audio => maps:get(audio,S,#{})},S};
+        jobs => maps:map(fun(_,J) -> maps:get(report,J) end,maps:get(jobs,S)),contract => maps:get(contract,S),monitor => capability_metrics(S),audio => maps:get(audio,S,#{})},S};
 handle_call({test_contract,Manager,Id,Revision},_,S) ->
     case ba_buffee_job:hex(Manager,64) andalso ba_buffee_job:hex(Id,32) andalso
          is_integer(Revision) andalso Revision > 0 andalso Revision =< 9007199254740991 of
@@ -88,6 +88,11 @@ handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(audio_changed,#{audio_worker := P}=S) -> ba_device_audio:changed(P),{noreply,changed(S)};
 handle_cast(_,S) -> {noreply,S}.
 
+handle_info({audio_observation,P,View,Diagnostics,Trace},S) ->
+    case P=:=ba_session_scope:whereis(ba_audio_observer) of
+        true -> {noreply,S#{audio_view => View,audio_diagnostics => Diagnostics,audio_trace => Trace,audio_observed_at => erlang:monotonic_time(millisecond)}};
+        false -> {noreply,S}
+    end;
 handle_info(audio_worker,S) ->
     case ba_session_scope:whereis(ba_device_worker_sup) of
         undefined -> erlang:send_after(50,self(),audio_worker),{noreply,S};
@@ -98,8 +103,8 @@ handle_info(audio_worker,S) ->
                 _ -> erlang:send_after(250,self(),audio_worker),{noreply,S}
             end
     end;
-handle_info({audio_state,P,Audio,Diagnostics},#{audio_worker := P}=S) ->
-    {noreply,changed(S#{audio => Audio,audio_diagnostics => Diagnostics})};
+handle_info({audio_state,P,Audio},#{audio_worker := P}=S) ->
+    {noreply,changed(S#{audio => Audio})};
 handle_info({'DOWN',_,process,P,_},#{audio_worker := P}=S) ->
     erlang:send_after(250,self(),audio_worker),{noreply,maps:remove(audio_worker,S#{audio => #{},audio_diagnostics => #{}})};
 handle_info({'DOWN',Ref,process,_,_},#{control_monitor := Ref} = S) ->
@@ -172,7 +177,7 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
             is_pid(ba_session_scope:whereis(ba_device_worker_sup)),
         <<"requires_consent">> => true,<<"consent">> => Enabled,
         <<"capacity">> => ?CAPACITY,<<"active">> => Count,<<"max_duration_ms">> => 10000}},
-    case ba_settings:app(audio_automation,false) of
+    case ba_settings:app(audio_automation,false) orelse maps:is_key(audio_view,S) of
         false -> Base;
         true -> Base#{<<"audio">> => maps:from_list([{atom_to_binary(K),
             #{<<"consent">> => B,<<"state">> => atom_to_binary(maps:get(state,maps:get(K,maps:get(audio,S,#{}),#{}),waiting)),
@@ -183,16 +188,35 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
     end.
 
 capability_metrics(S) ->
-    Named=capability_snapshot(S),
-    Base=case maps:find(audio_diagnostics,S) of
-        {ok,D} -> Named#{<<"audio_diagnostics">> => D};error -> Named end,
-    case maps:find(<<"audio">>,Base) of
-        error -> Base;
-        {ok,Audio} -> Base#{<<"audio">> := maps:map(fun(K,Entry) ->
+    View=maps:get(audio_view,S,#{}),
+    Mixer=maps:get(mixer,View,#{}),
+    Speaker=maps:get(speaker,maps:get(audio,S,#{}),#{state => case maps:get(streams,Mixer,0)>0 of true -> running;false -> ready end}),
+    OutputMeter=maps:get(output_meter,Mixer,#{}),
+    Meter=case map_size(OutputMeter) of 0 -> maps:get(receive_meter,View,#{});_ -> OutputMeter end,
+    Audio=(maps:get(audio,S,#{}))#{speaker => Speaker#{meter => Meter}},
+    MetricsState=S#{audio => Audio},
+    Named0=capability_snapshot(MetricsState),
+    Named=case ba_audio_diagnostics:enabled(meters) of
+        true -> Named0#{<<"audio_meters">> => ba_audio_diagnostics:meters(View)};false -> Named0
+    end,
+    SampleAge=case maps:find(audio_observed_at,S) of
+        {ok,At} -> #{<<"diagnostics.age_ms">> => max(0,erlang:monotonic_time(millisecond)-At)};
+        error -> #{}
+    end,
+    Base=case ba_audio_diagnostics:enabled(analysis) of
+        true -> Named#{<<"audio_diagnostics">> => maps:merge(maps:merge(maps:get(audio_diagnostics,S,#{}),SampleAge),diagnostic_flags())};
+        false -> Named#{<<"audio_diagnostics">> => diagnostic_flags()}
+    end,
+    WithTrace=case ba_audio_diagnostics:enabled(analysis) of
+        true -> Base#{<<"audio_trace">> => maps:get(audio_trace,S,#{})};false -> Base
+    end,
+    case maps:find(<<"audio">>,WithTrace) of
+        error -> WithTrace;
+        {ok,WireAudio} -> WithTrace#{<<"audio">> := maps:map(fun(K,Entry) ->
             %% Every consent key, including calibration and DSP; K came from atom_to_binary above.
             Key=binary_to_existing_atom(K),
-            Row=maps:get(Key,maps:get(audio,S,#{}),#{}),
-            Meter=maps:get(meter,Row,#{}),
+            Row=maps:get(Key,Audio,#{}),
+            EntryMeter=case ba_audio_diagnostics:enabled(meters) of true -> maps:get(meter,Row,#{});false -> #{} end,
             Counts=maps:from_list([{Wire,V} || {Field,Wire} <- [{blocks,<<"blocks">>},{frames,<<"frames">>},{dropped_callbacks,<<"dropped">>}],
                 {ok,V} <- [maps:find(Field,Row)],is_integer(V),V>=0]),
             Error=case maps:get(error,Row,undefined) of
@@ -200,10 +224,12 @@ capability_metrics(S) ->
                 TextError when is_binary(TextError),byte_size(TextError)=<256 -> #{<<"error">> => TextError};
                 _ -> #{}
             end,
-            maps:merge(maps:merge(Entry,Error),maps:merge(Counts,maps:with([<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>],Meter)))
-        end,Audio)}
+            maps:merge(maps:merge(Entry,Error),maps:merge(Counts,maps:with([<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>],EntryMeter)))
+        end,WireAudio)}
     end.
 
+diagnostic_flags() -> #{<<"diagnostics.meters">> => ba_audio_diagnostics:enabled(meters),
+    <<"diagnostics.analysis">> => ba_audio_diagnostics:enabled(analysis)}.
 fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
 
 watch_control(Pid,#{control := undefined} = S) ->
