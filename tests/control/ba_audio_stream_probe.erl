@@ -58,6 +58,11 @@ command(#{<<"op">> := <<"audio_prepare">>}) ->
     application:set_env(ba_core,audio_clock_adapter,?MODULE),
     application:set_env(ba_core,audio_output_adapter,?MODULE),
     result(ba_audio_sup:ensure_started());
+%% Real Windows speaker output instead of the test sink (ba_windows_output).
+command(#{<<"op">> := <<"use_windows_output">>,<<"helper">> := Helper}) ->
+    os:putenv("BA_WINDOWS_AUDIO_OUTPUT_HELPER",binary_to_list(Helper)),
+    application:set_env(ba_core,audio_output_adapter,ba_windows_output),
+    #{ok => ba_windows_output:available()};
 command(#{<<"op">> := <<"audio_restart_receiver">>}) ->
     Old = whereis(ba_audio_receiver),Ref = monitor(process,Old),exit(Old,kill),
     receive {'DOWN',Ref,process,Old,_} -> ok after 1000 -> error(receiver_not_down) end,

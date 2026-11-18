@@ -10,14 +10,15 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / 'bin/beamaudio'
+# The same escript on every platform; Windows starts it through the .cmd launcher.
+CLI = ROOT / ('bin/beamaudio.cmd' if os.name == 'nt' else 'bin/beamaudio')
 
 with tempfile.TemporaryDirectory(prefix='ba-cli-api-') as directory:
     env = dict(os.environ, BA_CLI_HOME=directory)
 
     def run(*args, stdin=None, code=0):
         result = subprocess.run([str(CLI), *args], env=env, cwd=ROOT,
-                                input=stdin, capture_output=True, text=True, timeout=30)
+                                input=stdin, capture_output=True, text=True, encoding='utf-8', timeout=30)
         assert result.returncode == code, (args[:2], result.stderr)
         return json.loads(result.stdout if code == 0 else result.stderr)
 

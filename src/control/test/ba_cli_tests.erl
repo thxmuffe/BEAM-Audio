@@ -31,10 +31,11 @@ readiness_needs_real_work_and_fresh_progress_test() ->
 helper_environment_does_not_receive_seed_test() ->
     Old=os:getenv("BA_IDENTITY_SEED"),os:putenv("BA_IDENTITY_SEED","must-stay-in-parent"),
     try
-        Python=os:find_executable("python3"),
+        Python=case os:find_executable("python3") of false -> os:find_executable("python");P -> P end,
         Port=open_port({spawn_executable,Python},[binary,exit_status,{env,ba_native_env:without_secrets()},
             {args,["-c","import os; assert 'BA_IDENTITY_SEED' not in os.environ; print('scrubbed')"]}]),
-        receive {Port,{data,<<"scrubbed\n">>}} -> ok after 3000 -> error(helper_environment_failed) end,
+        %% Windows Python ends the line with \r\n.
+        receive {Port,{data,<<"scrubbed",_/binary>>}} -> ok after 3000 -> error(helper_environment_failed) end,
         receive {Port,{exit_status,0}} -> ok after 3000 -> error(helper_failed) end,
         ?assertEqual("must-stay-in-parent",os:getenv("BA_IDENTITY_SEED"))
     after case Old of false -> os:unsetenv("BA_IDENTITY_SEED");_ -> os:putenv("BA_IDENTITY_SEED",Old) end end.

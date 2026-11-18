@@ -5,10 +5,16 @@ configure() ->
     case ba_settings:env("BA_PLATFORM") of
         "mac" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => mac}),forget_snapshots();
         "ios" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => ios}),forget_snapshots();
+        %% Speaker playback through the WASAPI helper; capture reports unavailable.
+        "windows" -> configure(#{platform => windows});
         _ -> ok
     end.
 configure(#{platform := Platform}=Options) ->
-    {Capture,Output}=case Platform of mac -> {ba_mac_audio,ba_mac_output};ios -> {ba_ios_input,ba_ios_audio} end,
+    {Capture,Output}=case Platform of
+        mac -> {ba_mac_audio,ba_mac_output};
+        ios -> {ba_ios_input,ba_ios_audio};
+        windows -> {ba_windows_input,ba_windows_output}
+    end,
     application:set_env(ba_core,audio_automation,true),
     application:set_env(ba_core,audio_capture_adapter,Capture),
     application:set_env(ba_core,audio_output_adapter,Output),

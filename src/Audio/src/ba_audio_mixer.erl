@@ -165,9 +165,9 @@ render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
                 {ok,Mono} ->
                     Handoff = Mono-maps:get(latency_ns,Device,0),Now = erlang:monotonic_time(nanosecond),
                     %% Queue against absolute host targets with enough lead for
-                    %% a coarse OS timer plus one delayed wakeup. This changes
+                    %% a coarse OS timer plus delayed wakeups. This changes
                     %% submission time only, never the audible presentation time.
-                    case Handoff-Now=<50000000 of
+                    case Handoff-Now=<submission_lead_ns() of
                         false -> S;
                         true ->
                             render_authorized(Mono,Handoff,Now,A,Device,S)
@@ -178,6 +178,14 @@ render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
         _ -> drop(clock_unavailable,flush(S))
     end;
 render_live(S) -> S.
+%% How far ahead of its handoff a block may be submitted: a quarter of the
+%% Session's Response time, between 50 and 500 ms. Short Response times keep
+%% 50 ms so slower sources' packets are not committed (and made late) sooner;
+%% long ones absorb OS scheduling stalls (measured up to ~200 ms on a loaded
+%% Windows host, with no Erlang process or GC holding a scheduler).
+submission_lead_ns() ->
+    Ms=try ba_buffee_clock:offset() of {ok,V} when is_integer(V) -> V;_ -> 0 catch _:_ -> 0 end,
+    max(50,min(500,Ms div 4))*1000000.
 render_authorized(Mono,Handoff,Now,A,Device,#{mix := Mix,descriptors := Ds}=S) ->
     Rate = maps:get(rate,Mix),
     Expired = [Id || {Id,D} <- maps:to_list(Ds),

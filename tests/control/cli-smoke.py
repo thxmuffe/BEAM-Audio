@@ -8,7 +8,8 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / 'bin/beam-audio'
+# The same escript on every platform; Windows starts it through the .cmd launcher.
+CLI = ROOT / ('bin/beam-audio.cmd' if os.name == 'nt' else 'bin/beam-audio')
 
 with tempfile.TemporaryDirectory(prefix='ba-cli-check-') as directory:
     env = dict(os.environ, BA_CLI_HOME=directory)
@@ -42,12 +43,18 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-check-') as directory:
             assert view['buffee']['state'] == 'idle'
             assert not any(view['consent'].values())
             record_path = Path(directory, name, 'running.json')
-            assert record_path.stat().st_mode & 0o077 == 0
-            assert Path(directory, name, 'identity.seed').stat().st_mode & 0o077 == 0
             record = json.loads(record_path.read_text())
-            assert Path(record['socket']).stat().st_mode & 0o777 == 0o600
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            if os.name == 'nt':
+                # Windows: loopback port from the private record; the profile ACL
+                # protects the files, and every request needs the instance secret.
+                connection = socket.create_connection(('127.0.0.1', record['port']), timeout=5)
+            else:
+                assert record_path.stat().st_mode & 0o077 == 0
+                assert Path(directory, name, 'identity.seed').stat().st_mode & 0o077 == 0
+                assert Path(record['socket']).stat().st_mode & 0o777 == 0o600
+                connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 connection.connect(record['socket'])
+            with connection:
                 connection.sendall(b'{"instance":"wrong","method":"stop"}\n')
                 assert json.loads(connection.recv(4096))['error'] == 'Device instance mismatch.'
         assert one['device'] != two['device']

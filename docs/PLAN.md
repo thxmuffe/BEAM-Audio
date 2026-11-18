@@ -69,9 +69,14 @@ Unfinished / next work:
    hardware qualification distinct. Root cause of "Windows never subscribes"
    (2026-11-18): `ba_app_session:configure/0` enables audio automation only for
    mac/ios, so no Windows Worker reads catalogues or subscribes. Its speaker now
-   reports `unsupported` with an error instead of `ready`. Next: a Windows
-   output adapter (open/write/close, like `ba_mac_output`) and capture adapter
-   with `start/1`/`stop/1`/`status/1`, then a `windows` branch in configure/0.
+   reports `unsupported` with an error instead of `ready`. Done the same day:
+   `ba_windows_output` + WASAPI helper `ba_audio_output.exe` and a `windows`
+   branch in configure/0; headless e2e `--windows-output` passes on the real
+   device. Open: user listening check; Windows capture (`ba_windows_input`
+   reports unavailable).
+8. Mixer submission lead is now Response time / 4, clamped 50–500 ms (was fixed
+   50 ms). OS stalls up to ~200 ms on a loaded Windows host dropped blocks at
+   long Response times; default 150 ms keeps 50 ms.
 7. Mac→iPhone media never opened (setup_timeout every ~11 s, 0 bytes). Only
    iOS configured STUN; Mac/Windows/CLI Media Sessions had no ICE servers.
    2026-11-18: all platforms now use `ba_media_session:ice_servers/0`. Not yet

@@ -434,18 +434,21 @@ catalog(Peer,#{catalogs := Cs} = S) ->
         _ -> {{error,no_session_or_pending},S}
     end.
 announce_catalog(S) ->
-    case ba_buffee_membership:current() of
+    case membership() of
         {ok,#{policy := #{peers := Peers}}} ->
             [send(Peer,fresh(),#{<<"kind">> => <<"catalog.changed">>}) ||
                 {Peer,Permissions} <- maps:to_list(Peers),lists:member(stream_read,Permissions),
                 not ba_app_session:excluded(Peer)],S;
         _ -> S
     end.
+%% No membership process (yet, or restarting) means no peers to read, not a
+%% receiver crash that would also drop every live subscription.
 refresh_all(S) ->
-    case ba_buffee_membership:current() of
+    case membership() of
         {ok,#{policy := #{peers := Peers}}} -> maps:fold(fun(Peer,_,Acc) -> {_,Next}=catalog(Peer,Acc),Next end,S,Peers);
         _ -> S
     end.
+membership() -> try ba_buffee_membership:current() catch exit:_ -> {error,unavailable} end.
 context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
 send(Peer,Id,P) -> ba_buffee_control:audio_message(Peer,Id,P).
 wire(#{context := #{peer := Peer,session := Session,deadline := Deadline}},Id,P) ->
@@ -550,7 +553,7 @@ publication_allowed(Peer,Key) ->
         _ -> true
     end.
 buffee_publication_allowed(Peer,Key) ->
-    case ba_buffee_membership:current() of
+    case membership() of
         {ok,#{device_privileges := Privileges}} ->
             case maps:find(Peer,Privileges) of
                 {ok,Held} -> ba_session_privileges:may_publish(Held,Key);

@@ -33,8 +33,10 @@ The same escript runs on Windows; only the launcher differs. `bin\beamaudio.cmd`
 .\bin\beamaudio.cmd monitor --all --metrics --invitation-file C:\private\session-link.txt
 ```
 
-Monitor, inspect, call, wait, get, history and stop work as on macOS. CLI audio
-capabilities (`--enable speaker|mic|broadcast`) still need the macOS helpers.
+Monitor, inspect, call, wait, get, history, stop and kill work as on macOS
+(`cli-smoke.py`, `cli-api-smoke.py`). CLI audio capabilities
+(`--enable speaker|mic|broadcast`) still need the macOS helpers; the Windows
+app itself plays through WASAPI.
 Windows OTP has no Unix-domain sockets in `gen_tcp`, so each Device listens on a
 127.0.0.1 port that it writes into its `running.json`; every request must still
 carry the random instance secret from that per-user record. Files rely on the

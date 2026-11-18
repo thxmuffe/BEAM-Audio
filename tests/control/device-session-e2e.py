@@ -64,6 +64,7 @@ def main():
     parser.add_argument('--seconds',type=int,default=12)
     parser.add_argument('--offset-ms',type=int,default=None)
     parser.add_argument('--lease-ms',type=int,default=60000)
+    parser.add_argument('--windows-output',metavar='HELPER',help='Receiver plays through this ba_audio_output.exe (real WASAPI device) instead of the test sink; needs --renewal --single-source')
     parser.add_argument('--deny-renewal',action='store_true',help='Test-only packet filter withholds control proofs while keeping the test clock fresh')
     args=parser.parse_args()
     if args.offset_ms is None:args.offset_ms=150 if args.single_source else 1000
@@ -152,6 +153,7 @@ def main():
                     time.sleep(.05)
                 else:raise AssertionError('Offset did not reach publisher')
         for r in runtimes:assert r.request('buffee_audio_prepare' if args.buffee_time else 'audio_prepare')['ok']
+        if args.windows_output:assert b.request('use_windows_output',helper=str(Path(args.windows_output).resolve()))['ok']
         consent=b.request('api',request={'method':'capability','capability':'speaker','enabled':True})
         assert consent.get('consent',{}).get('speaker') is True,consent.get('error')
         on_air=a.request('api',request={'method':'capability','capability':'broadcast','enabled':True})
@@ -259,6 +261,19 @@ def main():
                 if args.offset_ms>args.seconds*1000+args.lease_ms+1000:
                     assert b.request('audio_stats')['frames']==0
                 print('PASS: withheld nonce proofs stop Media Sessions and discard future buffers at authorization expiry, with an independently healthy test clock')
+                return
+            time.sleep(args.offset_ms/1000+.2)
+            if args.windows_output:
+                # Real device: Mixer submitted every frame and the WASAPI helper
+                # played them on its timeline with no late blocks. Software
+                # scheduling evidence only; audibility is a listening check.
+                time.sleep(.5)
+                mixer=b.request('audio_snapshot')['mixer'];out=mixer['output']
+                assert mixer['submitted_frames']-before['submitted_frames']==args.seconds*48000,mixer
+                assert mixer['dropped']==before['dropped'],mixer
+                assert out.get('backend')=='wasapi' and out['rejected_buffers']==0,out
+                assert out['completed_frames']==out['scheduled_frames']==args.seconds*48000 and out['queued_buffers']==0,out
+                print(f"PASS: WASAPI output played {out['completed_frames']} frames at their targets; 0 late, {out['clock_reanchors']} clock re-anchors, lead {out['latency_ns']/1e6:.1f} ms",flush=True)
                 return
             time.sleep(args.offset_ms/1000+.2)
             after_audio=b.request('audio_snapshot');after=after_audio['mixer'];stats=b.request('audio_stats')

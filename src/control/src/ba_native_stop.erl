@@ -22,7 +22,10 @@ port_reply(Port,Ack,Deadline) ->
         {'EXIT',Port,_} -> {error,native_stop_unconfirmed}
     after Remaining -> {error,native_stop_timeout} end end.
 kill(Port,OsPid) ->
-    _=os:cmd("kill -9 "++integer_to_list(OsPid)),
+    _=os:cmd(case os:type() of
+        {win32,_} -> "taskkill /F /PID "++integer_to_list(OsPid);
+        _ -> "kill -9 "++integer_to_list(OsPid)
+    end),
     receive {Port,{exit_status,_}} -> ok after 1500 -> {error,native_stop_timeout} end.
 socket(Socket,Command,Ack) ->
     try ok=inet:setopts(Socket,[{active,false}]),ok=gen_tcp:send(Socket,Command),socket_reply(Socket,Ack,deadline())

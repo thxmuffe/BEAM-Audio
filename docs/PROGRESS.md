@@ -1,5 +1,22 @@
 # Current implementation and validation
 
+## Windows playback, CLI and test portability — 2026-11-18
+
+- Windows speaker playback through the shared pipeline: `ba_windows_output` and
+  WASAPI helper `audio_output.cpp` (same port protocol as macOS plus stats).
+  `device-session-e2e.py --windows-output HELPER` passed: 240,000 frames played
+  at their targets, 0 late, 28.5 ms output lead. Not yet listened to.
+- `beamaudio` runs on Windows (`bineamaudio.cmd`); loopback endpoint guarded by
+  the instance secret. `cli-smoke.py` and `cli-api-smoke.py` pass on Windows.
+- Formerly Unix-only unit tests pass on Windows; `ba_native_stop` now kills a
+  stuck helper with `taskkill` there. Receiver no longer crashes when
+  membership is unavailable.
+- Mixer lead scales with Response time (50–500 ms); the 30 s scenario passed
+  3/3 after dropping blocks under ~200 ms OS stalls. New diagnostics:
+  `mixer.max_wakeup_gap_ms`, `mixer.long_wakeup_gaps`, connection-setup stages.
+- `buffee-time-smoke.py` line 85 (clock recovery after control restart) failed
+  once in three runs on this loaded host; intermittent, not yet explained.
+
 ## Live iPhone inspection — 2026-11-18
 
 User confirmed iOS 26.6.1 and OpenSound foregrounded. Defer ON AIR system-audio
