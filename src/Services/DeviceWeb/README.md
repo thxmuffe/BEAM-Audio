@@ -131,10 +131,12 @@ Bare `--local-device` requires both a nonempty `BA_STATE_DIR` and a valid
 platform launcher for identity storage, or `--device-record` to attach to an
 existing managed Device. Do not put a seed in command arguments or share it.
 
-The standalone Web launcher starts the real shared control runtime. It currently
-does not configure a Windows audio Worker or package native capture/output. Its
-audio consent switches therefore do not establish streaming or playback. Windows
-audio integration is the next concrete work item, separate from web control.
+The standalone Windows Web launcher starts through
+`ba_device_web_cli:windows_main/0`, configuring the shared Windows audio binding
+before starting the control runtime. Supply `BA_WINDOWS_AUDIO_HELPER_DIR` with
+the built WASAPI helpers (the product Web launcher selects its Windows build).
+Capture and playback still follow Device consent. Web startup stays in this
+optional service so native Mac/iPhone runtimes need no DeviceWeb dependency.
 
 The web shell uses `list_sessions`, `new_session` and `close_session`. Existing
 commands carry `session` to select a local runtime tree; closing invokes Leave.
@@ -154,5 +156,5 @@ unnamed `buffee_control` VM. `--app` implies `--open` and uses
 stops the local Device and flushes settings. It cannot combine with `--monitor`.
 The browser does not inherit `BA_IDENTITY_SEED`. The Windows host keeps existing
 Credential Manager keys/leases/state; Web development DPAPI slots stay separate.
-Native Windows audio is still unconfigured. No public Reception deployment is
-part of this migration.
+The native host configures the same Windows audio binding with its packaged
+helpers. No public Reception deployment is part of this migration.

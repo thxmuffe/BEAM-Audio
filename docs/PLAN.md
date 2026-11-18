@@ -52,7 +52,10 @@ Mac→iPhone `setup_timeout`). Unverified on the physical Mac/iPhone.
 
 ## Next 5 steps
 
-1. **Rebuild Mac and iPhone; listen on all three.** (Owner, on the Mac.) Then one
+1. **Rebuild Mac and iPhone; listen on all three.** (Owner, on the Mac.)
+   Windows Web startup no longer adds a DeviceWeb dependency to the core;
+   iPhone runtime preparation and its import check pass after that build fix.
+   Full app rebuilds and listening remain pending. Then take one
    `beamaudio monitor --all --metrics --once` snapshot. `Transport setup: open`
    means media flows; `ice_checking` across networks means a TURN relay is needed
    (owner decision). This decides what audio work is next.

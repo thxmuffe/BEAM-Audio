@@ -1,5 +1,21 @@
 # Current implementation and validation
 
+## Apple runtime packaging dependency fix — 2026-11-18
+
+Reproduced the iPhone build failure in `check-runtime-calls.escript`: the new
+core `ba_windows_device:boot/0` imported `ba_device_web_cli:main/0`, but native
+Apple runtimes do not bundle DeviceWeb. Moved Windows Web startup to
+`ba_device_web_cli:windows_main/0` and updated its PowerShell launcher. The
+shared Windows binding keeps `configure/1`, used by both native and Web hosts;
+the core no longer depends on the optional Web service. Import checks remain
+unchanged.
+
+Validation: core and DeviceWeb compile; full native iPhone runtime preparation
+passes with 110 core modules, 800 unique imports and zero unresolved calls.
+The initial sandboxed preparation could not read macOS public trust anchors;
+the rerun with host certificate access passed. Full Mac/iPhone app builds,
+Windows launcher execution and physical playback were not performed.
+
 ## Windows Web audio, moderation and Settings — 2026-11-18
 
 Windows native and source Web launches now share `ba_windows_device` binding
