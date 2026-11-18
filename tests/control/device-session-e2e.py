@@ -65,6 +65,8 @@ def main():
     parser.add_argument('--offset-ms',type=int,default=None)
     parser.add_argument('--lease-ms',type=int,default=60000)
     parser.add_argument('--windows-output',metavar='HELPER',help='Receiver plays through this ba_audio_output.exe (real WASAPI device) instead of the test sink; needs --renewal --single-source')
+    parser.add_argument('--windows-capture',metavar='HELPER',help='Publisher captures its real microphone through ba_audio_capture.exe (WASAPI); requires --buffee-time')
+    parser.add_argument('--windows-capture-kind',choices=['microphone','broadcast'],default='microphone',help='broadcast = system audio (process loopback); needs --windows-output to keep the device playing')
     parser.add_argument('--deny-renewal',action='store_true',help='Test-only packet filter withholds control proofs while keeping the test clock fresh')
     args=parser.parse_args()
     if args.offset_ms is None:args.offset_ms=150 if args.single_source else 1000
@@ -153,7 +155,8 @@ def main():
                     time.sleep(.05)
                 else:raise AssertionError('Offset did not reach publisher')
         for r in runtimes:assert r.request('buffee_audio_prepare' if args.buffee_time else 'audio_prepare')['ok']
-        if args.windows_output:assert b.request('use_windows_output',helper=str(Path(args.windows_output).resolve()))['ok']
+        # In capture mode the output helper only keeps the device playing silence.
+        if args.windows_output and not args.windows_capture:assert b.request('use_windows_output',helper=str(Path(args.windows_output).resolve()))['ok']
         consent=b.request('api',request={'method':'capability','capability':'speaker','enabled':True})
         assert consent.get('consent',{}).get('speaker') is True,consent.get('error')
         on_air=a.request('api',request={'method':'capability','capability':'broadcast','enabled':True})
@@ -161,6 +164,55 @@ def main():
         if c is not None:
             mic=c.request('api',request={'method':'capability','capability':'microphone','enabled':True})
             assert mic.get('consent',{}).get('microphone') is True,mic.get('error')
+        if args.windows_capture:
+            # Real microphone on a, production adapter/publication/timing; b receives over WebRTC.
+            assert args.buffee_time,'Windows capture uses the Session clock'
+            kind=args.windows_capture_kind;key='microphone' if kind=='microphone' else 'default-output'
+            if kind=='microphone':
+                mic=a.request('api',request={'method':'capability','capability':'microphone','enabled':True})
+                assert mic.get('consent',{}).get('microphone') is True,mic.get('error')
+            else:
+                # Loopback delivers packets only while the device plays: stream silence
+                # from a helper outside a's process tree (a's own tree is excluded).
+                assert args.windows_output,'--windows-capture-kind broadcast needs --windows-output'
+                player=subprocess.Popen([str(Path(args.windows_output).resolve()),'output','48000'],stdin=subprocess.PIPE,stdout=subprocess.PIPE)
+                def play_silence():
+                    import struct
+                    def frame(b):return struct.pack('>I',len(b))+b
+                    player.stdout.read(5)
+                    player.stdin.write(frame(b''));player.stdin.flush();n=struct.unpack('>I',player.stdout.read(4))[0];host,_=struct.unpack('>QQ',player.stdout.read(n)[1:])
+                    offset=host-time.perf_counter_ns();t0=time.perf_counter_ns()+100_000_000
+                    for i in range(1000):
+                        try:player.stdin.write(frame(b''+struct.pack('>QI',t0+offset+i*20_000_000,960)+bytes(960*8)));player.stdin.flush()
+                        except OSError:return
+                        time.sleep(max(0,(t0+i*20_000_000-60_000_000-time.perf_counter_ns())/1e9))
+                threading.Thread(target=play_silence,daemon=True).start()
+            started=a.request('windows_capture_start',kind=kind,helper=str(Path(args.windows_capture).resolve()))
+            assert started.get('ok'),started
+            wait_audio(b,lambda s:any(o['source_key']==key for o in s['offers']))
+            contract=secrets.token_hex(16).upper()
+            assert a.request('audio_contract',direction='publish',peer=b.identity['id'],source=key,contract=contract)['ok']
+            assert b.request('audio_contract',direction='receive',peer=a.identity['id'],source=key,contract=contract)['ok']
+            sub=b.request('audio_subscribe',peer=a.identity['id'],source=key);assert sub.get('ok'),sub
+            wait_audio(b,lambda s:s['subscriptions'][sub['value']]['state']=='active')
+            assert b.request('audio_play',id=sub['value'],playing=True).get('ok')
+            time.sleep(1)  # connection setup: blocks before the media path opened are not counted
+            b.request('audio_reset_stats');before=b.request('audio_snapshot')['mixer']
+            first=a.request('windows_capture_status',kind=kind)
+            time.sleep(4)
+            status=a.request('windows_capture_status',kind=kind)
+            after=b.request('audio_snapshot');mixer=after['mixer'];stats=b.request('audio_stats')
+            received=after['subscriptions'][sub['value']]['transport']['received']
+            steady={k:status[k]-first[k] for k in ('blocks','frames','send_errors','skipped_frames')}
+            assert status['state']=='running' and steady['blocks']>300 and steady['send_errors']==0 and steady['skipped_frames']==0,(first,status)
+            assert received>300,after['subscriptions'][sub['value']]
+            assert mixer['submitted_frames']-before['submitted_frames']>3*48000,mixer
+            # Real sound, so no fixed-value mix check: contiguous (0 gaps) and on time (0 late).
+            assert mixer['dropped']==before['dropped'] and stats['late']==0 and stats['gaps']==0,(mixer,stats)
+            assert a.request('windows_capture_stop',kind=kind).get('ok')
+            print(f"PASS: Windows {kind} steady 4 s: {steady['frames']} frames in {steady['blocks']} blocks, 0 skipped, 0 send errors (clock mapping +/-{status.get('capture_clock_uncertainty_ns',0)/1000:.0f} us); receiver got {received} packets and played {mixer['submitted_frames']-before['submitted_frames']} frames contiguously, 0 late, 0 dropped; {status.get('clock_reanchors',0)} clock re-anchors; confirmed stop",flush=True)
+            if kind=='broadcast':player.kill()
+            return
         def publish(r,key,format,channels):
             return r.request('publish_opus',source=key,fixture=str(fixture)) if args.opus else r.request('publish',source=key,format=format,channels=channels)
         assert publish(a,'music','pcm16_le',1)['ok']

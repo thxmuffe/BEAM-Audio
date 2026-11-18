@@ -1,5 +1,17 @@
 # Current implementation and validation
 
+## Windows capture — 2026-11-18
+
+- `ba_windows_input` + WASAPI helper `audio_capture.cpp`: microphone (48 kHz
+  mono) and ON AIR system audio via process loopback excluding this VM's tree.
+  QPC capture time per packet from the helper's own frame count (raw WASAPI
+  stamps jitter ~1 frame and caused overlapping-packet drops; device position is
+  unusable for process loopback). Clock mapping +/-51-102 us.
+- e2e (`--windows-capture`): 4 s steady, exactly 192,000 frames published and
+  played contiguously on a second Device, 0 late, 0 dropped, confirmed stop;
+  microphone 3/3, system audio 4/5 (the failure was a 66 ms receiver mixer stall
+  at the 50 ms lead). Capture is unavailable (greyed) only without the helper.
+
 ## Windows playback, CLI and test portability — 2026-11-18
 
 - Windows speaker playback through the shared pipeline: `ba_windows_output` and

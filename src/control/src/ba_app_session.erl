@@ -1,6 +1,9 @@
 %% Local app boundary. Consent is device-local; no remote caller can enable it.
 -module(ba_app_session).
 -export([configure/0,configure/1,consent/0,capability/2,snapshot/0,exclude/2,excluded/1,exclusions/0,contract/3,permissions/0]).
+-ifdef(TEST).
+-export([unavailable_capabilities/0]).
+-endif.
 configure() ->
     case ba_settings:env("BA_PLATFORM") of
         "mac" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => mac}),forget_snapshots();
@@ -69,7 +72,8 @@ snapshot() ->
         desks => safe(fun ba_buffee_desks:status/0,#{}),
         default_desk => ba_settings:app(default_reception_desk_url,<<>>),
         configuration => maps:without([entries],Config),consent => consent(),excluded => exclusions(),messages => [],devices => [],jobs => [],
-        audio_diagnostics => ba_audio_diagnostics:options(),audio => #{},clock => #{state => idle},passport => #{}},
+        audio_diagnostics => ba_audio_diagnostics:options(),audio => #{},clock => #{state => idle},passport => #{},
+        unavailable_capabilities => unavailable_capabilities()},
     case maps:get(state,Buffee) of
         idle -> Base;
         _ ->
@@ -93,6 +97,16 @@ snapshot() ->
                 passport := maps:with([buffee,owner,grant_holders,membership,privileges,state,epoch,revision],Buffee)}
     end.
 safe(F,Default) -> try F() catch exit:_ -> Default end.
+%% Capabilities this platform's capture binding cannot provide, with the reason
+%% shown to the user (#{<<"microphone">> | <<"broadcast">> => Text}). Optional
+%% adapter callback; native hosts may add their own (iOS sharing picker).
+unavailable_capabilities() ->
+    Adapter=ba_settings:app(audio_capture_adapter,undefined),
+    case is_atom(Adapter) andalso Adapter=/=undefined andalso code:ensure_loaded(Adapter)=:={module,Adapter}
+            andalso erlang:function_exported(Adapter,unavailable,0) of
+        true -> Adapter:unavailable();
+        false -> #{}
+    end.
 forget_snapshots() ->
     %% Explicit migration: never touch Keychain identity or contacts.term.
     case ba_settings:env("BA_STATE_DIR") of

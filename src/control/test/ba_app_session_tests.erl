@@ -55,3 +55,19 @@ ios_configuration_discards_only_old_buffee_snapshots_test() ->
         [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- [{"BA_PLATFORM",Platform},{"BA_STATE_DIR",State}]],
         file:del_dir_r(Dir)
     end.
+
+%% Capture the platform cannot provide is reported up front for every UI.
+unavailable_capabilities_from_capture_adapter_test() ->
+    Old=application:get_env(ba_core,audio_capture_adapter),
+    try
+        %% Without its helper, Windows capture is reported unavailable up front.
+        OldHelper=os:getenv("BA_WINDOWS_AUDIO_CAPTURE_HELPER"),os:unsetenv("BA_WINDOWS_AUDIO_CAPTURE_HELPER"),
+        application:set_env(ba_core,audio_capture_adapter,ba_windows_input),
+        U=ba_app_session:unavailable_capabilities(),
+        case OldHelper of false -> ok;_ -> os:putenv("BA_WINDOWS_AUDIO_CAPTURE_HELPER",OldHelper) end,
+        ?assertEqual([<<"broadcast">>,<<"microphone">>],lists:sort(maps:keys(U))),
+        application:set_env(ba_core,audio_capture_adapter,ba_mac_audio),
+        ?assertEqual(#{},ba_app_session:unavailable_capabilities()),
+        application:unset_env(ba_core,audio_capture_adapter),
+        ?assertEqual(#{},ba_app_session:unavailable_capabilities())
+    after case Old of undefined -> application:unset_env(ba_core,audio_capture_adapter);{ok,V} -> application:set_env(ba_core,audio_capture_adapter,V) end end.

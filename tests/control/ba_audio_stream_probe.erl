@@ -58,6 +58,15 @@ command(#{<<"op">> := <<"audio_prepare">>}) ->
     application:set_env(ba_core,audio_clock_adapter,?MODULE),
     application:set_env(ba_core,audio_output_adapter,?MODULE),
     result(ba_audio_sup:ensure_started());
+%% Real Windows capture through the production adapter and ba_audio_input.
+command(#{<<"op">> := <<"windows_capture_start">>,<<"kind">> := Kind,<<"helper">> := Helper}) ->
+    os:putenv("BA_WINDOWS_AUDIO_CAPTURE_HELPER",binary_to_list(Helper)),
+    result(ba_windows_input:start(binary_to_existing_atom(Kind)));
+command(#{<<"op">> := <<"windows_capture_status">>,<<"kind">> := Kind}) ->
+    maps:with([state,blocks,frames,skipped_frames,send_errors,error,capture_clock_uncertainty_ns,silent_packets,clock_reanchors],
+        ba_windows_input:status(binary_to_existing_atom(Kind)));
+command(#{<<"op">> := <<"windows_capture_stop">>,<<"kind">> := Kind}) ->
+    result(ba_windows_input:stop(binary_to_existing_atom(Kind)));
 %% Real Windows speaker output instead of the test sink (ba_windows_output).
 command(#{<<"op">> := <<"use_windows_output">>,<<"helper">> := Helper}) ->
     os:putenv("BA_WINDOWS_AUDIO_OUTPUT_HELPER",binary_to_list(Helper)),

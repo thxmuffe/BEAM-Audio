@@ -72,8 +72,12 @@ Unfinished / next work:
    reports `unsupported` with an error instead of `ready`. Done the same day:
    `ba_windows_output` + WASAPI helper `ba_audio_output.exe` and a `windows`
    branch in configure/0; headless e2e `--windows-output` passes on the real
-   device. Open: user listening check; Windows capture (`ba_windows_input`
-   reports unavailable).
+   device. Windows capture done the same day (`ba_audio_capture.exe`, mic +
+   process loopback excluding own tree); headless e2e
+   `--windows-capture HELPER [--windows-capture-kind broadcast --windows-output OUT]`
+   passes. Open: user listening checks. At the default 150 ms Response time the
+   receiver's 50 ms lead still loses blocks to OS stalls over ~50 ms on a
+   loaded Windows host (seen once in three loopback runs).
 8. Mixer submission lead is now Response time / 4, clamped 50–500 ms (was fixed
    50 ms). OS stalls up to ~200 ms on a loaded Windows host dropped blocks at
    long Response times; default 150 ms keeps 50 ms.
