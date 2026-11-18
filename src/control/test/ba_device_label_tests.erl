@@ -36,9 +36,10 @@ native_app_hosting_device_web_is_not_web_test() ->
     try
         os:putenv("BA_PLATFORM","windows"),os:putenv("BA_DEVICE_NAME","PC"),
         application:set_env(ba_device_web,origin,<<"http://127.0.0.1:57528">>),
-        ?assertEqual(<<"Windows | PC | Web | 57528 | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>)),
+        Type=ba_device_label:display(<<"PC">>),
+        ?assertEqual(<<Type/binary," | Web | 57528 | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>)),
         os:putenv("BA_NATIVE_APP","1"),
-        ?assertEqual(<<"Windows | PC | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>))
+        ?assertEqual(<<Type/binary," | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>))
     after
         lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old),
         case Origin of undefined -> application:unset_env(ba_device_web,origin);{ok,V} -> application:set_env(ba_device_web,origin,V) end
@@ -57,3 +58,11 @@ observer_label_is_visible_before_the_host_name_test() ->
         lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old),
         case Observer of undefined -> application:unset_env(ba_core,buffee_observer);{ok,V} -> application:set_env(ba_core,buffee_observer,V) end
     end.
+
+windows_family_type_test() ->
+    Reg=fun(V) -> "\r\nHKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\BIOS\r\n    SystemFamily    REG_SZ    "++V++"\r\n\r\n" end,
+    ?assertEqual(<<"ThinkPad">>,ba_device_label:family_type(Reg("ThinkPad E14 Gen 3"))),
+    ?assertEqual(<<"Latitude">>,ba_device_label:family_type(Reg("Latitude"))),
+    ?assertEqual(<<"Windows">>,ba_device_label:family_type(Reg("To be filled by O.E.M."))),
+    ?assertEqual(<<"Windows">>,ba_device_label:family_type(Reg("Default string"))),
+    ?assertEqual(<<"Windows">>,ba_device_label:family_type("ERROR: The system was unable to find the specified registry key or value.")).

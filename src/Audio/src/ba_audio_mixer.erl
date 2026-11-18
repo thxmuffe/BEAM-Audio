@@ -84,7 +84,8 @@ handle_call(status,_,S) ->
         _ -> #{}
     end,
     {reply,View#{handoff_lead_ns => maps:get(handoff_lead_ns,S,0),submitted_frames => maps:get(submitted_frames,S),output => PublicOutput,output_meter => Meter,dropped => maps:get(dropped,S),rendered => maps:get(rendered,S),last_error => maps:get(last_error,S),
-        output_stop_pending => maps:get(output_stop_pending,S,false),diagnostics => ba_diagnostics:view(S)},S};
+        output_stop_pending => maps:get(output_stop_pending,S,false),diagnostics => ba_diagnostics:view(S),
+        max_wakeup_gap_ms => maps:get(max_wakeup_gap_ms,S,0),long_wakeup_gaps => maps:get(long_wakeup_gaps,S,0)},S};
 handle_call(_,_,S) -> {reply,ok,S}.
 handle_cast({packet,Id,D,H,PCM,T},S) ->
     case ba_device_permission:valid(playback,T) of true -> accept_packet(Id,D,H,PCM,S);false -> {noreply,drop(stale_permission,S)} end;
@@ -108,7 +109,7 @@ handle_info(observe_output,S) ->
     erlang:send_after(500,self(),observe_output),
     {noreply,observe_output(S)};
 handle_info(render,S) ->
-    Next = render(S),erlang:send_after(2,self(),render),{noreply,Next};
+    Next = render(wakeup(S)),erlang:send_after(2,self(),render),{noreply,Next};
 handle_info({'DOWN',Ref,process,_,_},#{owner_monitor := Ref} = S) ->
     {noreply,(maps:without([owner,owner_monitor],close(S)))#{mix := undefined,descriptors := #{}}};
 handle_info({tcp,Socket,_}=Message,#{device := {A,#{socket := Socket}=Device}}=S) ->
@@ -133,6 +134,18 @@ open_permitted(#{device := undefined,mix := Mix} = S) ->
     end;
 open_permitted(#{output_stop_pending := true}) -> {error,native_stop_unconfirmed};
 open_permitted(S) -> {ok,S}.
+%% Scheduling evidence: a missed target after a long gap means this process (or
+%% its VM) was not running, not that a packet arrived late. Only while mixing.
+wakeup(#{mix := undefined}=S) -> maps:remove(last_wakeup,S);
+wakeup(S) ->
+    Now = erlang:monotonic_time(millisecond),
+    case maps:find(last_wakeup,S) of
+        {ok,Last} ->
+            Gap = Now-Last,
+            S#{last_wakeup => Now,max_wakeup_gap_ms => max(Gap,maps:get(max_wakeup_gap_ms,S,0)),
+               long_wakeup_gaps => maps:get(long_wakeup_gaps,S,0)+case Gap>20 of true -> 1;false -> 0 end};
+        error -> S#{last_wakeup => Now}
+    end.
 render(S) -> case ba_device_permission:allowed(playback) of
     true -> render_ready(16,expire_inputs(S));
     false -> (close(S))#{mix := undefined,descriptors := #{}}

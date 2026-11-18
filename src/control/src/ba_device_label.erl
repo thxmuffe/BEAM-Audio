@@ -1,6 +1,9 @@
 %% Display metadata only: never used for identity, routing or admission.
 -module(ba_device_label).
 -export([local/1,format/3,os_name/0,display/1]).
+-ifdef(TEST).
+-export([family_type/1]).
+-endif.
 local(Instance) ->
     Name=display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",os_name()))),
     Label=case ba_settings:app(buffee_observer,false) of true -> <<"Inspector ",Name/binary>>;false -> Name end,
@@ -45,7 +48,28 @@ display(Name) ->
     Type=case ba_settings:env("BA_PLATFORM") of
         "ios" -> <<"iPhone">>;
         "mac" -> <<"Mac">>;
-        "windows" -> <<"Windows">>;
-        _ -> case os:type() of {unix,darwin} -> <<"Mac">>;{win32,_} -> <<"Windows">>;_ -> <<"Linux">> end
+        "windows" -> windows_type();
+        _ -> case os:type() of {unix,darwin} -> <<"Mac">>;{win32,_} -> windows_type();_ -> <<"Linux">> end
     end,
     <<Type/binary," | ",Name/binary>>.
+
+%% A PC's product family ("ThinkPad E14 Gen 3" -> "ThinkPad") reads better than
+%% "Windows". Read once per VM from the BIOS description; OEM placeholders fall
+%% back to "Windows".
+windows_type() ->
+    case persistent_term:get({?MODULE,windows_type},undefined) of
+        undefined ->
+            Type=try family_type(os:cmd("reg query HKLM\\HARDWARE\\DESCRIPTION\\System\\BIOS /v SystemFamily"))
+                 catch _:_ -> <<"Windows">> end,
+            persistent_term:put({?MODULE,windows_type},Type),Type;
+        Type -> Type
+    end.
+family_type(Output) ->
+    case re:run(Output,"SystemFamily\\s+REG_SZ\\s+([A-Za-z][A-Za-z0-9-]{2,23})",[{capture,all_but_first,binary}]) of
+        {match,[Word]} ->
+            case lists:member(string:lowercase(Word),[<<"default">>,<<"system">>,<<"none">>,<<"not">>,<<"type">>,<<"oem">>,<<"to">>,<<"undefined">>]) of
+                true -> <<"Windows">>;
+                false -> Word
+            end;
+        _ -> <<"Windows">>
+    end.

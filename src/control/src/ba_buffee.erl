@@ -59,7 +59,7 @@ handle_call({invite,Selection,TTL},_,#{state := active}=S) ->
     end,{reply,Result,S};
 handle_call(end_buffee,_,#{state := active}=S) ->
     case ba_buffee_membership:end_session() of
-        ok -> {reply,ok,forget(stop(S))};
+        ok -> {reply,ok,ended_session(S)};
         Error -> {reply,Error,S}
     end;
 handle_call(leave,_,#{state := active}=S) ->
@@ -90,7 +90,7 @@ handle_cast({peer_name,Peer,Name},#{remembered := Saved}=S) when is_map(Saved),i
             {noreply,S#{remembered := Next}};
         false -> {noreply,S}
     end;
-handle_cast({ended,Membership},#{membership := Membership}=S) -> {noreply,forget(stop(S))};
+handle_cast({ended,Membership},#{membership := Membership}=S) -> {noreply,ended_session(S)};
 %% Returning to a Session is joining it again with its permanent link.
 handle_cast({remember,Membership,Saved},#{membership := Membership}=S) ->
     Previous=maps:get(remembered,S,undefined),
@@ -144,6 +144,13 @@ activate(Config,S) ->
     end.
 forget(S) -> ok=ba_device_store:save(buffee_connection,undefined),
     S#{remembered := undefined,connection_state := idle}.
+%% End clears all saved return intent: the return link and the ended Session's
+%% saved privilege policy (Leave keeps the policy so a Device can return).
+ended_session(S) ->
+    Session=try maps:get(buffee,ba_buffee_membership:status(),undefined) catch _:_ -> undefined end,
+    Next=forget(stop(S)),
+    case is_binary(Session) of true -> ok=ba_device_store:forget_session(Session);false -> ok end,
+    Next.
 description(#{mode := create,name := Name}=C) -> #{name => Name,config => C};
 description(#{mode := join,invitation := Link}=C) ->
     {_,I}=ba_buffee_passport:parse_invitation(Link),

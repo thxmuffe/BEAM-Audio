@@ -86,9 +86,29 @@ command(#{<<"op">> := <<"lifecycle">>},_,_) ->
     ensure_started(),
     #{buffee => ba_buffee:status(),transient_state => ets:whereis(ba_buffee_state)=/=undefined,
       connections => map_size(ba_desk_connections_sup:connections()),
+      %% The shared Reception socket may stay after Leave; its Session mailboxes may not.
+      mailboxes => lists:sum([try map_size(maps:get(boxes,sys:get_state(P,1000),#{})) catch exit:_ -> 0 end
+          || P <- maps:values(ba_desk_connections_sup:connections())]),
       live => [atom_to_binary(N) || N <- [ba_buffee_runtime_sup,ba_buffee_membership,
         ba_device_sup,ba_buffee_control,ba_buffee_clock_sup,ba_buffee_clock,
         ba_audio_sup,ba_audio_receiver,ba_audio_mixer],is_pid(whereis(N))]};
+%% Scheduler evidence (OTP system_monitor): which processes/ports held a
+%% scheduler or garbage-collected for longer than 40 ms. Test diagnostics only.
+command(#{<<"op">> := <<"vm_monitor">>},_,_) ->
+    case whereis(ba_probe_vm_monitor) of
+        undefined ->
+            Pid=spawn(fun() -> vm_monitor(#{}) end),register(ba_probe_vm_monitor,Pid),
+            erlang:system_monitor(Pid,[{long_schedule,40},{long_gc,40},busy_port]);
+        _ -> ok
+    end,#{ok => true};
+command(#{<<"op">> := <<"vm_report">>},_,_) ->
+    Ref=make_ref(),ba_probe_vm_monitor ! {report,self(),Ref},
+    receive {Ref,R} -> R after 2000 -> #{error => timeout} end;
+%% Saved return intent: End must leave no return link and no saved policy for it.
+command(#{<<"op">> := <<"saved_sessions">>},_,_) ->
+    ensure_started(),
+    #{return_link => ba_device_store:load(buffee_connection,undefined)=/=undefined,
+      sessions => maps:keys(ba_device_store:load(buffee_sessions,#{}))};
 command(#{<<"op">> := <<"crash_buffee">>},_,_) -> exit(whereis(ba_buffee_membership),kill),#{ok => true};
 command(#{<<"op">> := <<"list_contacts">>},_,_) -> ensure_started(),ba_contacts:list();
 command(#{<<"op">> := <<"put_contact">>,<<"id">> := Id,<<"name">> := Name},_,_) ->
@@ -192,8 +212,15 @@ command(#{<<"op">> := <<"renewal_prepare">>,<<"lease_ms">> := Lease},_,_) when L
 command(#{<<"op">> := <<"block_handshakes">>},_,_) ->
     %% Test-only network fault: keep membership/time/data traffic, drop control
     %% handshakes and renewal proofs. Production code has no such bypass/switch.
-    Filter = spawn(fun filter_handshakes/0),
-    [sys:replace_state(P,fun(S) -> S#{owner := Filter} end) || P <- maps:values(ba_desk_connections_sup:connections())],
+    %% Deliveries go to the per-mailbox owner (one per Session scope) when one is
+    %% registered, else to the connection's default owner; wrap every recipient.
+    [sys:replace_state(P,fun(S) ->
+        Owners=maps:get(mailbox_owners,S,#{}),
+        Filters=maps:from_list([{O,spawn(fun() -> filter_handshakes(O) end)} || O <- lists:usort(maps:values(Owners))]),
+        Default=maps:get(owner,S),
+        S#{owner := spawn(fun() -> filter_handshakes(Default) end),
+           mailbox_owners => maps:map(fun(_,O) -> maps:get(O,Filters) end,Owners)}
+     end) || P <- maps:values(ba_desk_connections_sup:connections())],
     #{ok => true};
 command(Other,_,_) -> ba_audio_stream_probe:command(Other).
 ensure_started() ->
@@ -224,7 +251,7 @@ await_owner(Module,Old,N) ->
         _ -> receive after 10 -> await_owner(Module,Old,N-1) end
     end.
 
-filter_handshakes() ->
+filter_handshakes(Target) ->
     receive
         Message ->
             Drop = try
@@ -233,7 +260,31 @@ filter_handshakes() ->
                 lists:member(Op,[<<"hello">>,<<"challenge">>,<<"proof">>,<<"ready">>,
                     <<"lease.request">>,<<"lease.challenge">>,<<"lease.proof">>,<<"lease.ready">>])
             catch _:_ -> false end,
-            case Drop of true -> ok;false -> ba_buffee_desks ! Message end,
-            filter_handshakes()
+            case Drop of true -> ok;false -> Target ! Message end,
+            filter_handshakes(Target)
     end.
+vm_monitor(Seen) ->
+    receive
+        {monitor,Who,Kind,Info} ->
+            Key=iolist_to_binary([atom_to_list(Kind),":",culprit(Who),":",location(Kind,Info)]),
+            Ms=case Kind of long_schedule -> proplists:get_value(timeout,Info,0);long_gc -> proplists:get_value(timeout,Info,0);_ -> 0 end,
+            #{count := C,max_ms := M}=maps:get(Key,Seen,#{count => 0,max_ms => 0}),
+            vm_monitor(Seen#{Key => #{count => C+1,max_ms => max(M,Ms)}});
+        {report,From,Ref} -> From ! {Ref,Seen},vm_monitor(Seen)
+    end.
+culprit(P) when is_pid(P) ->
+    case process_info(P,[registered_name,initial_call,dictionary]) of
+        undefined -> "exited";
+        I -> case proplists:get_value(registered_name,I) of
+            N when is_atom(N),N=/=[] -> atom_to_list(N);
+            _ -> {M,F,A}=case proplists:get_value('$initial_call',proplists:get_value(dictionary,I,[])) of
+                     undefined -> proplists:get_value(initial_call,I);IC -> IC end,
+                 io_lib:format("~p:~p/~p",[M,F,A])
+        end
+    end;
+culprit(P) when is_port(P) -> case erlang:port_info(P,name) of {name,N} -> "port " ++ N;_ -> "port" end;
+culprit(_) -> "other".
+location(long_schedule,Info) ->
+    case proplists:get_value(in,Info) of {M,F,A} -> io_lib:format("~p:~p/~p",[M,F,A]);_ -> "" end;
+location(_,_) -> "".
 catch_flush() -> case whereis(ba_settings) of undefined -> ok;_ -> ba_settings:flush() end.

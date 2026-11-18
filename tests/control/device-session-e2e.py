@@ -224,6 +224,7 @@ def main():
                             monitor_stop.wait(.1)
                     except BaseException as exc:monitor_errors.append(exc)
                 monitor_thread=threading.Thread(target=observe_stream,daemon=True);monitor_thread.start()
+            for r in runtimes:r.request('vm_monitor')
             before_audio=b.request('audio_snapshot');before=before_audio['mixer'];b.request('audio_reset_stats')
             sent_before=[sum(p['transport'].get('sent',0) for p in r.request('audio_snapshot')['provider_status']) for r in publishers]
             target=time.time_ns()+args.offset_ms*1_000_000
@@ -302,6 +303,9 @@ def main():
                     assert all('peak_db' not in entry for entry in caps.get('audio',{}).values()) and not caps.get('audio_meters'),caps
                 print('PASS: independent Inspector remotely toggled both Devices and validated packet/frame totals, output meter, synchronized clocks and response time through signed monitor replies',flush=True)
             print(f'PASS: {expected_packets} packets/source delivered; clocks and {args.offset_ms}ms response-time assertions passed',flush=True)
+            if after['dropped']!=before['dropped']:
+                print('VM scheduler report (receiver):',b.request('vm_report'),flush=True)
+                for r in publishers:print('VM scheduler report (publisher):',r.request('vm_report'),flush=True)
             assert after['dropped']==before['dropped'],(before,after,stats)
             assert stats['frames']==args.seconds*48000 and stats['gaps']==0 and stats['bad_mix']==0 and stats['late']==0,stats
             assert abs(stats['first_target']-target)<22000,stats
@@ -363,52 +367,75 @@ def main():
                 while time.monotonic()<end:
                     state=r.request('lifecycle')
                     if state['buffee']=={'state':'idle'}:
-                        assert state['live']==[] and not state['transient_state'] and state['connections']==0,state
+                        # The Device's shared Reception socket may stay open; no Session mailbox may.
+                        assert state['live']==[] and not state['transient_state'] and state['connections']<=1 and state['mailboxes']==0,state
                         return
                     time.sleep(.1)
                 raise AssertionError(('Buffee did not terminate',state))
+            def stable_book(book):
+                # A saved Session's 'last' seen time moves on every visit.
+                return {**book,'sessions':{k:{f:v for f,v in e.items() if f!='last'} for k,e in book.get('sessions',{}).items()}}
             buffee=a.request('buffee_status')['buffee']
             address_book=a.request('list_contacts')
-            assert b.request('end_buffee')=={'error':'owner_only'}
+            assert b.request('end_buffee')=={'error':'end_privilege_required'}
             assert b.request('leave_buffee')['ok'];idle(b)
-            control.wait(a,lambda s:b.identity['id'] not in s['membership']['members'])
+            # Leave preserves membership and privileges (2026-11-15): b can return.
+            time.sleep(.5)
+            assert b.identity['id'] in a.request('snapshot')['membership']['members']
             assert a.request('buffee_status')['buffee']==buffee
             # A new invitation allows an explicit return to the still-live gathering.
             link=a.request('invite_buffee',selection=[b.identity['id']])['value'][0]['invitation']
             assert b.request('join_buffee',invitation=link)['ok']
             control.wait(b,lambda s:s['membership']['state']=='authorized')
+            # End reaches only currently paired participants (documented limit);
+            # wait until the returning Device is paired again.
+            control.wait(a,lambda s:b.identity['id'] in s['membership']['participants'])
             assert a.request('end_buffee')['ok']
             for r in runtimes:idle(r)
-            assert a.request('list_contacts')==address_book
+            after_end=a.request('list_contacts');assert stable_book(after_end)==stable_book(address_book),(address_book,after_end)
+            # End clears saved return intent: no return link and no saved policy
+            # for the ended Session (files may remain with other contents).
             for r in runtimes:
-                directory=Path(r.state.name)
-                assert sorted(p.name for p in directory.glob('*.term'))==(['contacts.term'] if r is a else []),list(directory.iterdir())
+                saved=r.request('saved_sessions')
+                assert not saved['return_link'] and buffee not in saved['sessions'],(saved,buffee)
             # Same identity/storage, new VM: contacts survive, gathering does not.
             directory=a.state.name;seed=a.seed;identity=a.identity['id'];a.close()
             a=control.Runtime([out,*paths],seed=seed,state=directory,executable=executable,extra_env=extra_env)
             runtimes.append(a);idle(a)
-            assert a.identity['id']==identity and a.request('list_contacts')==address_book
+            assert a.identity['id']==identity and stable_book(a.request('list_contacts'))==stable_book(address_book)
             assert a.request('create',desks=[url])['ok']
             assert a.request('buffee_status')['buffee']!=buffee
             control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
-            # A ticket from the ended gathering never restores its old identity.
+            # Join model (2026-11-17): holding the link is enough to participate,
+            # so the ended Session's link still opens an empty Session with that
+            # ID. End cleared the saved policy, so no old privilege returns.
             assert b.request('join_buffee',invitation=link)['ok']
             assert b.request('buffee_status')['buffee']==buffee
             time.sleep(.5)
-            assert b.request('buffee_status')['state']!='authorized'
+            returned=b.request('buffee_status')
+            assert not set(returned.get('privileges',[]))&{'grant','owner','on_air','stream_publish','end_session'},returned
             assert b.request('leave_buffee')['ok'];idle(b)
             link=a.request('invite_buffee',selection=[b.identity['id']])['value'][0]['invitation']
             assert b.request('join_buffee',invitation=link)['ok']
             control.wait(b,lambda s:s['membership']['state']=='authorized')
-            # Loss of the Owner is terminal: no election or restored snapshot.
+            # Losing the grant holder ends nothing (BUFFEE_MEMBERSHIP.md): the other
+            # Device stays in the Session with its own privileges, none gained.
+            before=set(b.request('buffee_status').get('privileges',[]))
             assert a.request('crash_buffee')['ok'];idle(a)
-            idle(b,70)
-            assert a.request('list_contacts')==address_book
-            print('PASS: saved group invitations, voluntary join/leave and return, real two-source PCM, Owner end and crash/lease expiry, full process/ETS/Desk teardown, new Buffee ID and contacts surviving cold restart; no apps or hardware')
+            time.sleep(2)
+            kept=b.request('buffee_status')
+            assert kept['state']=='authorized' and set(kept.get('privileges',[]))==before,kept
+            assert b.request('leave_buffee')['ok'];idle(b)
+            final=a.request('list_contacts')
+            # Contacts and groups survive; the saved-Session list follows later visits.
+            assert {k:final[k] for k in ('contacts','groups')}=={k:address_book[k] for k in ('contacts','groups')},(address_book,final)
+            print('PASS: saved group invitations, voluntary leave and return keeping privileges, real two-source PCM, End clearing return link and saved policy, grant-holder loss ending nothing, process/ETS/mailbox teardown, new Session ID and contacts surviving cold restart; no apps or hardware')
             return
         if args.sustained:
             assert args.buffee_time and not args.opus
-            assert b.request('offset_set',offset_ms=1000)['ok']
+            # Response time is a setting: grant or on_air holders only (privileges model).
+            assert b.request('offset_set',offset_ms=1000)=={'error':'forbidden'}
+            assert a.request('offset_set',offset_ms=1000)['ok']
             for r in runtimes:
                 end=time.monotonic()+10
                 while r.request('clock_snapshot')['offset_policy']['offset_ms']!=1000:
@@ -456,14 +483,13 @@ def main():
                     assert caps['audio_diagnostics']=={'diagnostics.meters':False,'diagnostics.analysis':False},caps
                     assert all('peak_db' not in entry for entry in caps.get('audio',{}).values()) and not caps.get('audio_meters'),caps
                 print('PASS: independent Inspector remotely toggled both Devices and validated packet/frame totals, output meter, synchronized clocks and response time through signed monitor replies',flush=True)
-            print(f'PASS: {expected_packets} packets/source delivered; clocks and {args.offset_ms}ms response-time assertions passed',flush=True)
             assert after['dropped']==before['dropped'],(before,after)
             assert after['rendered']-before['rendered']>=600,(before,after)
             assert blocks and max(x['peak'] for x in blocks)==.75,blocks
             assert after['queued_bytes']==0,after
             # Restore the short fixture Offset, restart the reference and exercise
             # production capture's automatic incarnation/descriptor rebind.
-            assert b.request('offset_set',offset_ms=250)['ok']
+            assert a.request('offset_set',offset_ms=250)['ok']
             previous=a.request('clock_snapshot')['timeline']
             assert a.request('clock_restart')['ok']
             for r in runtimes:
