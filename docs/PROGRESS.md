@@ -1,5 +1,14 @@
 # Current implementation and validation
 
+## iOS diagnostics compilation repair — 2026-11-18
+
+Corrected the new output diagnostics call from nonexistent `AVAudioSession.shared`
+to Apple's `AVAudioSession.sharedInstance()`. Both IOSAudioOutput.swift and
+IOSAudioSession.swift now pass Swift type-checking against the installed iPhoneOS
+27.1 SDK, targeting arm64/iOS 17 with the real ba_beam.h bridge header. Earlier
+syntax-only parsing could not detect this API mistake. Full Xcode app build and
+physical playback remain user checks; no deployment was performed.
+
 ## Switchable diagnostics and monitored end-to-end test — 2026-11-18
 
 Implemented Device-wide persistent meter/analysis settings through public

@@ -25,7 +25,8 @@ Unfinished / next work:
    The audio E2E needs a working local Reception, compiled BeamTransport/WebRTC
    and its platform-native libraries; prepared Mac artifacts are not Windows NIFs.
 2. Rebuild/run the iPhone and Mac apps with current Erlang, native iOS output and
-   frontend together. Only Swift syntax parsing was done, not an iOS build.
+   frontend together. The output/session Swift files now pass iPhone SDK type-checking after fixing
+   the AVAudioSession accessor; a full Xcode app build is still pending.
    Inspect live Received versus Output meters, native scheduled/completed frames,
    queue/rejections, completion age, engine/player, route, volume and clock/lead
    statistics. iPhone audible playback is **still unresolved/unverified**.
@@ -72,8 +73,8 @@ time through the normal authenticated monitoring path. Test-sink acknowledgments
 are explicitly tagged `test_sink`, never native speaker evidence.
 
 Next: rebuild both apps together and use these readings to locate the iPhone
-failure, then perform user-led visual/listening checks. Swift syntax parsing is
-not an iOS build or proof of playback. Keep the existing 20-ms Mixer handoff
+failure, then perform user-led visual/listening checks. The output/session Swift files pass iPhone SDK type-checking; this is
+not a full app build or proof of playback. Keep the existing 20-ms Mixer handoff
 policy until measurements justify a change. The Always / Ask / No inspection
 privacy control above remains a separate unimplemented requirement. No app or
 Reception deployment was performed for this increment.

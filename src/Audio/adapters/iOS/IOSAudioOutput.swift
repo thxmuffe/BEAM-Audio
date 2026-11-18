@@ -88,7 +88,7 @@ final class IOSAudioOutput {
                     scheduled.setAnalysis(packet[1] == 1)
                 case 7:
                     guard packet.count == 1 else { throw OutputError.failed }
-                    let session = AVAudioSession.shared
+                    let session = AVAudioSession.sharedInstance()
                     let route: UInt8
                     switch session.currentRoute.outputs.first?.portType {
                     case .builtInSpeaker: route = 1
