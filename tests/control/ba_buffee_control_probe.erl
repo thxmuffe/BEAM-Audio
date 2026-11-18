@@ -189,6 +189,9 @@ command(#{<<"op">> := <<"clock_prepare">>,<<"interval_ms">> := I,<<"samples">> :
 command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value,<<"revision">> := Rev},_,_) ->
     result(ba_buffee_clock:set_offset(Value,Rev));
 command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value},_,_) -> result(ba_buffee_clock:set_offset(Value));
+command(#{<<"op">> := <<"offset_automatic">>,<<"enabled">> := Enabled},_,_) -> result(ba_buffee_clock:set_automatic(Enabled));
+command(#{<<"op">> := <<"offset_required">>,<<"offset_ms">> := Value,<<"revision">> := Rev},_,_) ->
+    ba_buffee_clock:require_offset(Value,Rev),#{ok => true};
 command(#{<<"op">> := <<"clock_resync">>},_,_) -> result(ba_buffee_clock:resync());
 command(#{<<"op">> := <<"clock_reference">>},_,_) -> result(ba_buffee_clock:set_reference(system));
 command(#{<<"op">> := <<"clock_restart">>},_,_) ->

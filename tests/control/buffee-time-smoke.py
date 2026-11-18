@@ -53,7 +53,7 @@ def main():
         assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
         if args.production_cadence:
             start=time.monotonic()
-            states=[clock(r,lambda s:s['state']=='synchronized' and s['offset_policy']['ready'],120) for r in runtimes]
+            states=[clock(r,lambda s:s['state']=='synchronized' and s['offset_policy']['ready'] and s['filter_ready'],120) for r in runtimes]
             assert time.monotonic()-start>=90,'Production window was not exercised'
             assert all(s['sample_interval_ms']==5000 and s['filter_required_samples']==20 for s in states)
             assert all(s['filter_sample_count']==20 for s in states[1:]),states
@@ -86,7 +86,7 @@ def main():
         assert a.request('clock_restart')['ok']
         root_state=ready(a);assert root_state['timeline']!=timeline and root_state['offset_policy']['revision']==3
         for r in (b,c):
-            s=clock(r,lambda s:s['state']=='synchronized' and s['timeline']==root_state['timeline'] and s['offset_policy']['ready'])
+            s=clock(r,lambda s:s['state']=='synchronized' and s['timeline']==root_state['timeline'] and s['offset_policy']['ready'] and s['filter_ready'])
             assert s['filter_sample_count']>=3 and s['offset_policy']['offset_ms']==values[0]
         snapshots=[r.request('snapshot') for r in runtimes]
         assert all(s['node']=='nonode@nohost' and s['nodes']==[] and not s['legacy_started'] for s in snapshots)

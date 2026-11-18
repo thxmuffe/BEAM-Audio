@@ -30,6 +30,17 @@ handle_info({ba_crash_notice,Text},S) ->
     %% does. Lost membership/transport simply drops this one attempt.
     M=try publish(Text,maps:get(messages,S)) of {_,Messages} -> Messages catch _:_ -> maps:get(messages,S) end,
     {noreply,S#{messages := M}};
+handle_info({audio_lateness,Report},S) ->
+    %% The Mixer only sends a five-second summary, never a message per packet.
+    %% Sustained problems produce at most one shared warning every 30 seconds.
+    Now=erlang:monotonic_time(millisecond),
+    case Now-maps:get(last_audio_warning,S,Now-30000)>=30000 of
+        false -> {noreply,S};
+        true ->
+            Text=ba_audio_response_time:text(Report),
+            M=try publish(Text,maps:get(messages,S)) of {_,Messages} -> Messages catch _:_ -> maps:get(messages,S) end,
+            {noreply,S#{messages := M,last_audio_warning => Now}}
+    end;
 handle_info({buffee_chat,#{peer := Peer,session := Session},Id,Text},S) ->
     case ba_buffee_control:audio_context(Peer) of
         {ok,#{session := Session}} -> {noreply,S#{messages := add(Id,Peer,Text,maps:get(messages,S))}};

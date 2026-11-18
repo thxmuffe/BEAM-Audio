@@ -257,6 +257,16 @@ time_permission_is_not_implied_by_status_or_membership_test() ->
     Granted = SB#{policy := Policy#{peers := #{A => [stream_publish]}}},
     ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Granted])).
 
+ordinary_time_reader_can_request_more_time_but_cannot_enable_automatic_test() ->
+    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Id=binary:copy(<<"E">>,32),
+    Policy=maps:get(policy,SB),Reader=SB#{policy := Policy#{peers := #{A => [time_read]}}},
+    Required=#{<<"kind">> => <<"offset.required">>,<<"revision">> => 2,<<"offset_ms">> => 450},
+    {ok,Packet,_}=p(time_message,[B,Id,Required,5,SA]),
+    ?assertMatch({ok,[],[{time,Id,Required,_}],_},p(receive_packet,[A,Packet,6,Reader])),
+    Auto=#{<<"kind">> => <<"offset.set">>,<<"revision">> => 2,<<"offset_ms">> => 300,<<"automatic">> => true},
+    {ok,Change,_}=p(time_message,[B,Id,Auto,5,SA]),
+    ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Change,6,Reader])).
+
 new_handshake_after_expiry_discards_an_older_candidate_test() ->
     {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
     {ok,FirstHello,_} = p(connect,[B,59000,p(reset,[SA])]),

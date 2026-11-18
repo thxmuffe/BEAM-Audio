@@ -14,25 +14,32 @@ validate(#{<<"kind">> := Kind} = P) ->
             T = maps:get(<<"timeline">>,P),true = is_binary(T) andalso byte_size(T)=:=72,
             case maps:get(<<"uncertainty_ns">>,P) of null -> ok;B -> true = integer(B)>=0 end;
         <<"offset.get">> -> exact(P,[<<"kind">>]);
-        <<"offset.set">> -> exact(P,[<<"kind">>,<<"revision">>,<<"offset_ms">>]),state(P);
+        <<"offset.set">> -> policy_shape(P),state(P);
+        <<"offset.required">> -> exact(P,[<<"kind">>,<<"revision">>,<<"offset_ms">>]),state(P);
         _ when Kind=:= <<"offset.state">>;Kind=:= <<"offset.changed">> ->
-            exact(P,[<<"kind">>,<<"revision">>,<<"offset_ms">>]),state(P);
+            policy_shape(P),state(P);
         <<"error">> ->
             exact(P,[<<"kind">>,<<"operation">>,<<"reason">>]),
-            true = lists:member(maps:get(<<"operation">>,P),[<<"sample.request">>,<<"offset.get">>,<<"offset.set">>]),
+            true = lists:member(maps:get(<<"operation">>,P),[<<"sample.request">>,<<"offset.get">>,<<"offset.set">>,<<"offset.required">>]),
             true = lists:member(maps:get(<<"reason">>,P),[<<"forbidden">>,<<"unavailable">>,<<"conflict">>])
     end,ok.
 permission(<<"sample.request">>) -> time_read;
 permission(<<"offset.get">>) -> time_read;
 permission(<<"offset.set">>) -> offset_write;
+permission(<<"offset.required">>) -> time_read;
 permission(_) -> none.
 state(P) ->
     positive(maps:get(<<"revision">>,P)),D = maps:get(<<"offset_ms">>,P),
-    true = is_integer(D) andalso D>=5 andalso D=<30000,ok.
+    true = is_integer(D) andalso D>=5 andalso D=<30000,
+    true = is_boolean(maps:get(<<"automatic">>,P,false)),ok.
 accept(New,undefined) -> state(New),New;
-accept(#{<<"revision">> := N,<<"offset_ms">> := V} = New,#{<<"revision">> := O,<<"offset_ms">> := Old}) ->
+accept(#{<<"revision">> := N,<<"offset_ms">> := V} = New,#{<<"revision">> := O,<<"offset_ms">> := Old}=Previous) ->
     state(New),true = N>=O,
-    case N=:=O andalso V=/=Old of true -> error(conflicting_revision);false -> New end.
+    case N=:=O andalso (V=/=Old orelse maps:get(<<"automatic">>,New,false)=/=maps:get(<<"automatic">>,Previous,false)) of
+        true -> error(conflicting_revision);false -> New end.
+policy_shape(P) ->
+    Keys=[<<"kind">>,<<"revision">>,<<"offset_ms">>],
+    exact(P,case maps:is_key(<<"automatic">>,P) of true -> [<<"automatic">>|Keys];false -> Keys end).
 positive(N) -> true = is_integer(N) andalso N>0 andalso N=<9007199254740991,ok.
 integer(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<20 ->
     N = binary_to_integer(B),B = integer_to_binary(N),

@@ -15,6 +15,7 @@ run(A,Root) ->
     Name=case maps:find(devicename,A) of
         {ok,Selected} ->
             _=ba_cli:request(Selected,#{<<"method">> => <<"snapshot">>}),
+            remember_local(Selected,A),
             io:format(standard_error,"Monitoring local Device ~s and its current Buffee. Ctrl-C exits this view.~n",[Selected]),
             Selected;
         error ->
@@ -25,16 +26,16 @@ run(A,Root) ->
     end,
     loop(Name,A,maps:get(metrics,A,false),#{},#{},#{}).
 choose(A,Root) ->
-    Path=invitation_path(A,Root),
-    Parsed=case file:read_file(Path) of
-        {ok,B} -> Link=string:trim(B),try {_,I}=ba_buffee_passport:parse_invitation(Link),{Link,I} catch _:_ -> invalid end;
-        _ -> invalid
-    end,
+    Parsed=invitation(A,Root),
     case Parsed of
         {Invitation,Body} ->
             Id=maps:get(<<"buffee">>,Body),Name="ba-monitor-"++binary_to_list(Id),
-            ensure(Name,Invitation,Id,A,Root),Name;
+            ensure(Name,Invitation,Id,A,Root),remember(Invitation,A),Name;
         invalid ->
+            case maps:get(no_user_state,A,false) of
+                true -> fail(<<"With --no-user-state, supply --invitation-file or --devicename.">>);
+                false -> ok
+            end,
             Candidates=case maps:find(devicename,A) of {ok,Selected} -> [Selected];error -> [Candidate || Candidate <- ba_cli_store:names(),lists:prefix("ba-monitor-",Candidate)] end,
             Live=[N || N <- Candidates,live_observer(N)],
             case Live of
@@ -42,6 +43,35 @@ choose(A,Root) ->
                 [] -> fail(<<"No active observer or valid saved invitation. Supply a fresh --invitation-file. No Buffee was created.">>);
                 _ -> fail(<<"Several observers are active. Select one with --devicename or a valid --invitation-file.">>)
             end
+    end.
+invitation(A,Root) ->
+    Saved=case maps:is_key(invitation_file,A) orelse maps:get(no_user_state,A,false) of
+        true -> {error,not_selected};false -> ba_cli_store:last_session()
+    end,
+    Data=case Saved of
+        {ok,_} -> Saved;
+        _ -> case maps:get(no_user_state,A,false) andalso not maps:is_key(invitation_file,A) of
+            true -> {error,not_selected};false -> file:read_file(invitation_path(A,Root))
+        end
+    end,
+    case Data of
+        {ok,B} -> Link=string:trim(B),try {_,I}=ba_buffee_passport:parse_invitation(Link),{Link,I} catch _:_ -> invalid end;
+        _ -> invalid
+    end.
+remember(Link,A) ->
+    case maps:get(no_user_state,A,false) of
+        true -> ok;
+        false -> case ba_cli_store:remember_session(Link) of
+            ok -> ok;_ -> io:put_chars(standard_error,"Could not save the monitor's last Session.\n")
+        end
+    end.
+remember_local(Name,A) ->
+    case maps:get(no_user_state,A,false) of
+        true -> ok;
+        false -> try ba_cli:request(Name,#{<<"method">> => <<"invitation">>}) of
+            #{<<"result">> := Link} when is_binary(Link) -> remember(Link,A);
+            _ -> ok
+        catch throw:{cli_error,_,_} -> ok end
     end.
 live_observer(Name) ->
     try

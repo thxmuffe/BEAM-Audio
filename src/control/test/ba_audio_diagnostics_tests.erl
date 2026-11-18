@@ -42,6 +42,13 @@ wire_rejects_unbounded_or_nested_diagnostics_test() ->
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"secret">> => <<"private">>})),
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"clock.state">> => <<27,"[2J">>})).
 
+raw_clock_offset_retains_nanoseconds_as_a_canonical_string_test() ->
+    D=ba_audio_diagnostics:snapshot(#{},#{raw_offset_ns => <<"2371425727177476982">>,estimate_quality => provisional}),
+    ?assertEqual(<<"2371425727177476982">>,maps:get(<<"clock.raw_offset_ns">>,D)),
+    ?assertEqual(<<"provisional">>,maps:get(<<"clock.estimate_quality">>,D)),
+    ?assertEqual(ok,ba_audio_diagnostics:validate(D)),
+    ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"clock.raw_offset_ns">> => <<"01">>})).
+
 %% Inspection follows calibration consent; without it no work is done and no
 %% stale levels are reported. (The secure profile with no consent granted.)
 calibration_consent_gates_inspection_test() ->

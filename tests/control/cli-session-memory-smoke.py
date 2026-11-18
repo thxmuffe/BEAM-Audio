@@ -76,6 +76,20 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-session-memory-') as directory:
         assert not any(observer['consent'].values())
         print('PASS: an independent CLI observer identifies itself as Inspector Mac with audio OFF', flush=True)
 
+        memory = Path(directory) / 'monitor.json'
+        assert memory.stat().st_mode & 0o077 == 0
+        saved = memory.read_bytes(), memory.stat().st_mtime_ns
+        run('monitor', '--all', '--once', '--json', '--no-user-state', ok=False)
+        run('monitor', '--all', '--once', '--json', '--no-user-state', '--invitation-file', str(invitation_file))
+        assert (memory.read_bytes(), memory.stat().st_mtime_ns) == saved
+        run('stop', 'device', '--devicename', 'ba-monitor-' + session_id)
+        invitation_file.unlink()
+        restored = run('monitor', '--all', '--once', '--json')
+        assert restored['buffee']['buffee'] == session_id
+        again = inspect('ba-monitor-' + session_id)
+        assert again['device'] == observer['device'] and not any(again['consent'].values())
+        print('PASS: monitor remembers and rejoins its last Session; --no-user-state skips selection memory without overwriting it', flush=True)
+
         run('stop', 'device', '--devicename', 'member')
         run('new', 'device', '--devicename', 'member')
         assert joined('member', session_id, creator['device'])['device'] == identity

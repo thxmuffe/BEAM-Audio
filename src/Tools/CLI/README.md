@@ -63,6 +63,7 @@ beamaudio get methods
 beamaudio call device --devicename OpenSound --request '{"method":"snapshot"}'
 beamaudio call device --devicename OpenSound --request '{"method":"speaker_mute","muted":true}'
 beamaudio call device --devicename OpenSound --request '{"method":"offset","offset_ms":150,"session":"SESSION_SCOPE_ID"}'
+beamaudio call device --devicename OpenSound --request '{"method":"offset","automatic":true,"session":"SESSION_SCOPE_ID"}'
 beamaudio call device --devicename OpenSound < request.json
 ```
 
@@ -82,6 +83,13 @@ or wrapper. The API dispatcher in `src/control/src/ba_device_api.erl` defines
 its arguments. This is a JSON adapter to that API, not reflection over Erlang
 exports, `apply`, eval or Distributed Erlang. Process creation/stop/kill keep
 their existing lifecycle commands. Convenience commands remain available.
+
+Automatic Response time is a Session setting: an editor enables it, then Devices
+can request measured increases from the clock authority. Increases taper below
+3 seconds; a numeric `offset_ms` disables Automatic. Chat warnings show the
+number of discarded late blocks, average measured overshoot and estimated full
+Response time. The estimate can exceed the smaller automatic adjustment.
+Update participating clients before enabling this new policy mode.
 
 ## Two Devices, no UI
 
@@ -203,7 +211,22 @@ the invitation/independent-observer workflow below remains available.
 beamaudio monitor --all
 ```
 
-The default invitation file is `builds/CLI/private/monitor-invitation.txt`, private
+The monitor remembers its last Session by default in owner-only `monitor.json`
+under `BA_CLI_HOME` (the normal Device-state directory when unset). Monitoring
+with `--devicename` remembers that Device's current invitation when available;
+`--invitation-file PATH` selects and remembers another Session. Next time,
+`beamaudio monitor --all` rejoins the remembered Session, even if its Inspector
+was stopped. No audio is enabled. An ended or unavailable Session is reported
+as such; the monitor never creates a replacement.
+
+Use `--no-user-state` to skip remembered monitor selection and automatic
+observer discovery for this invocation. Supply `--invitation-file PATH` or
+`--devicename NAME` explicitly; the previous selection is not overwritten.
+This switch does not reset the explicitly selected Device's identity, saved
+consent or configuration. Set a separate `BA_CLI_HOME` for fully isolated Devices.
+
+When no Session has been remembered, the legacy default invitation file is
+`builds/CLI/private/monitor-invitation.txt`, private
 mode 0600 under an ignored mode-0700 directory. Invitations are forwardable: the same valid link can admit multiple Devices
 and the monitor into the live Buffee. Time expiry is currently disabled, including
 for old signed links. Using a link does not consume it. You can instead supply `--invitation-file PATH`. Do not commit invitation

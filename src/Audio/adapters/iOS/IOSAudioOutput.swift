@@ -46,13 +46,21 @@ final class IOSAudioOutput {
         var sessionToken: UUID?
         let scheduled = IOSOutputQueue()
         var observers: [NSObjectProtocol] = []
-        defer {
+        func cleanup() {
             observers.forEach(NotificationCenter.default.removeObserver)
+            observers.removeAll()
             player.stop(); engine.stop()
             IOSAudioSession.shared.release(sessionToken)
+            sessionToken = nil
         }
+        defer { cleanup() }
         do {
             let config = try readPacket(fd)
+            // Connections are served serially: reaching this ACK proves the
+            // previous connection's engine and session have finished cleanup.
+            if config == Data([4]) {
+                try writePacket(fd, Data([4])); return
+            }
             guard config.count == 7, config[0] == 1 else { throw OutputError.failed }
             let rate = Int(integer(config, 1, 4)), channels = Int(integer(config, 5, 2))
             guard (1...2).contains(channels), (8000...192000).contains(rate),
@@ -71,12 +79,12 @@ final class IOSAudioOutput {
                     shutdown(fd, SHUT_RDWR)
                 })
             }
-            try writePacket(fd, Data([1, 1]))
+            try writePacket(fd, Data([1, 3]))
             while true {
                 let packet = try readPacket(fd)
                 switch packet.first {
                 case 4:
-                    player.stop(); engine.stop()
+                    cleanup()
                     try writePacket(fd, Data([4])); return
                 case 3:
                     let host = UInt64(AVAudioTime.seconds(forHostTime: mach_absolute_time()) * 1_000_000_000)
@@ -128,7 +136,9 @@ final class IOSAudioOutput {
                         // Reject this buffer without retiming it or destroying the
                         // output. OTP records the drop; later targets can still play.
                         scheduled.reject()
-                        try writePacket(fd, Data([5, reason]))
+                        var rejection = Data([5, reason])
+                        if reason == 1 { append(nowNS - hostNS, to: &rejection) }
+                        try writePacket(fd, rejection)
                         continue
                     }
                     let tracked = scheduled.accept(frames: frames, lead: hostNS - nowNS)

@@ -102,6 +102,7 @@ command(#{<<"method">> := <<"grant_privilege">>,<<"device">> := Device,<<"privil
 command(#{<<"method">> := <<"take_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->
     ba_buffee_membership:take_privilege(Device,ba_session_privileges:parse(Name));
 command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_buffee_chat:send(Text);
+command(#{<<"method">> := <<"offset">>,<<"automatic">> := Automatic}) when is_boolean(Automatic) -> ba_buffee_clock:set_automatic(Automatic);
 command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_buffee_clock:set_offset(Offset);
 command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
     {Pub,_}=ba_device_store:identity(),

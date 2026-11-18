@@ -12,6 +12,12 @@ twenty_samples_required_test() ->
     Full = ba_buffee_clock_filter:add(#{offset_ns => 20},F),
     ?assertEqual({ok,10},ba_buffee_clock_filter:estimate(Full)).
 
+partial_estimate_is_available_before_the_window_is_full_test() ->
+    ?assertEqual({error,no_samples},ba_buffee_clock_filter:current(window([]))),
+    ?assertEqual({ok,100},ba_buffee_clock_filter:current(window([100]))),
+    ?assertEqual({ok,150},ba_buffee_clock_filter:current(window([100,200]))),
+    ?assertEqual({error,warming_up},ba_buffee_clock_filter:estimate(window([100,200]))).
+
 isolated_spikes_do_not_move_the_median_test() ->
     F = window([100000000 | lists:duplicate(18,1000)] ++ [-100000000]),
     ?assertEqual({ok,1000},ba_buffee_clock_filter:estimate(F)).

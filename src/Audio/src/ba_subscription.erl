@@ -28,7 +28,7 @@ validate(Items) ->
     end,Items),ok.
 clock_ready(#{state := synchronized,role := master,filtered_utc_time := UTC,last_sync := Sync},After)
         when is_integer(UTC),is_integer(Sync) -> After=:=undefined orelse Sync>=After;
-clock_ready(#{state := synchronized,filter_ready := true,last_sync := Sync,age_ns := Age},After)
+clock_ready(#{state := synchronized,last_sync := Sync,age_ns := Age},After)
         when is_integer(Sync),is_integer(Age),Age >= 0,Age =< 10000000000 ->
     After =:= undefined orelse Sync >= After;
 clock_ready(_,_) -> false.

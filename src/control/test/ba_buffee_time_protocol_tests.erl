@@ -17,3 +17,13 @@ strict_time_shapes_and_permissions_test() ->
     ?assertException(error,_,ba_buffee_time_protocol:validate(#{<<"kind">> => <<"offset.set">>,<<"revision">> => 1,<<"offset_ms">> => 0})),
     ?assertException(error,_,ba_buffee_time_protocol:validate(#{<<"kind">> => <<"sample.request">>,<<"t1">> => 123})),
     ?assertException(error,_,ba_buffee_time_protocol:validate(#{<<"kind">> => <<"offset.get">>,<<"rpc">> => <<"anything">>})).
+
+automatic_policy_and_minimum_request_are_revisioned_test() ->
+    Old=#{<<"revision">> => 1,<<"offset_ms">> => 300},
+    Auto=Old#{<<"revision">> := 2,<<"automatic">> => true},
+    ?assertEqual(ok,ba_buffee_time_protocol:validate(Auto#{<<"kind">> => <<"offset.state">>})),
+    ?assertEqual(Auto,ba_buffee_time_protocol:accept(Auto,Auto)),
+    ?assertException(error,conflicting_revision,ba_buffee_time_protocol:accept(maps:remove(<<"automatic">>,Auto),Auto)),
+    ?assertException(error,_,ba_buffee_time_protocol:validate(Auto#{<<"kind">> => <<"offset.set">>,<<"automatic">> := <<"yes">>})),
+    ?assertEqual(time_read,ba_buffee_time_protocol:permission(<<"offset.required">>)),
+    ?assertEqual(ok,ba_buffee_time_protocol:validate(#{<<"kind">> => <<"offset.required">>,<<"revision">> => 2,<<"offset_ms">> => 450})).

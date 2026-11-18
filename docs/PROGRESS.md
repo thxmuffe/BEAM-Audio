@@ -1,5 +1,184 @@
 # Current implementation and validation
 
+## Raw clock availability and reproduced clock-slew drops — 2026-11-18
+
+The master now seeds its host clock immediately, including cold provider
+handover; configured SNTP can refine it through the existing slew. External
+reference failure remains visible but no longer removes a usable host mapping.
+A follower creates a mapping from its first authenticated four-timestamp sample.
+Filter fullness is separate: `estimate_quality: provisional` identifies a warming
+window, and `raw_offset_ns` exposes the raw measurement as a canonical decimal
+string. Partial medians refine the existing mapping without stepping it.
+Membership, sample freshness, authorization and post-resume fresh-sample barriers
+still apply. Received packet targets are neither reconstructed nor rewritten.
+Legacy `filtered_utc_time` names the mapped estimate even while provisional.
+
+Validation: 33 focused clock/filter/subscription/restore/diagnostic checks pass.
+A two-Device signed-control check with production 5-second sampling and a
+20-sample filter obtained usable raw time after 0.28 seconds while still warming.
+This is local software evidence; no app rebuild/deployment was performed.
+Provider selection still prefers the original reference. Authoritative placement
+on a broadcasting Device and periodic push remain unfinished.
+
+A deterministic exercise of the real clock mapping and PCM mixer found another
+concrete cause: 100 contiguous 512-frame/48-kHz blocks had zero drops under a
+steady mapping, but 25 `overlapping_packet` drops during a -500 ppm source-clock
+slew. PCM bytes and transport were unchanged. Mapped start intervals shorten
+while block durations remain nominal; tiny overlaps discard entire blocks.
+This proves a mechanism, not its fraction of the live phone's failures. Core
+Audio callback timestamp jitter and native clock-map uncertainty remain suspects.
+
+The owner's proposed timestamped audio regions fit overlap-add, crossfading and
+continuous resampling. Proposed direction: continuous per-source rendering state
+feeding steady hardware-rate output, independent sounds summed, deliberate
+splices crossfaded. Fading every packet would modulate continuous audio; summing
+duplicate parts of one source can boost amplitude or cause interference. Start
+targets remain explicit; rate-correction duration must also be defined. This
+rendering change is not implemented.
+
+Primary references: [GStreamer audiomixer](https://gstreamer.freedesktop.org/documentation/audiomixer/audiomixer.html)
+supports synchronized live mixing; [libsamplerate streaming API](https://github.com/libsndfile/libsamplerate/blob/master/docs/api_full.md)
+smooths ratio changes while retaining state; [WebRTC NetEq](https://webrtc.googlesource.com/src/+/refs/heads/main/modules/audio_coding/neteq/g3doc/index.md)
+provides time stretching and recovery merging, but its adaptive playout must
+not silently replace assigned targets. No backend was selected or substituted.
+
+## Monitored iPhone cold start — 2026-11-18, 21:41–21:44 Helsinki
+
+At the user's request, recorded one-second signed CLI observations through one
+audio-disabled Inspector while the Mac kept broadcasting and the iPhone app
+was restarted. No playback settings or runtime code were changed during the
+experiment. The recorder and exact Inspector were stopped at the end; user
+Devices remained running.
+
+The new iPhone runtime first appeared at 21:41:31 with 1/20 clock samples.
+At 21:41:36 its speaker reported `output_or_clock_unavailable`, still acquiring
+the clock. Repeated speaker toggles produced disabled → ready → error states
+while samples accumulated; the clock was never reset again (reset count stayed
+2). At 21:43:07 the 20th sample made the clock ready and speaker running;
+completed native output was observed at 21:43:08. The startup wait was about
+95–100 seconds, rather than a failure to maintain the native output engine.
+
+By the final 21:44:08 sample, the same runtime had completed 2,827,264 frames,
+with fresh 7-ms completion age, speaker volume 650/1000, an open transport,
+no suspension and no pending output stop. The owner confirmed audible playback.
+Automatic Response time rose from 532 to 630 ms. There were 133 discarded blocks:
+92 late arrivals, 39 overlaps, one native late block and one handoff miss.
+This confirms about a minute of software playback progress after acquisition;
+it does not qualify acoustic synchronization or all recovery paths.
+
+Confirmed UI/control mismatch: `speakerStatus` presents a row error as muted,
+but the click handler toggles saved `live.muted`, which can still be false.
+The first click therefore mutes an already muted-looking icon; the second
+unmutes it. The UI also depicts an unmuted desired state as active before
+output is actually ready. Pending correction: preserve the saved speaker
+choice across startup, represent clock acquisition as waiting, and settle
+genuine start failure/timeout to a retryable muted state with one-click retry.
+The experiment identified this behavior; that correction is not implemented yet.
+
+## iPhone speaker recheck: system volume zero — 2026-11-18
+
+The public CLI joined the remembered Session as an independent audio-disabled
+Inspector. Two fresh samples of the same iPhone runtime, 15.6 seconds apart,
+showed Playback consent and speaker `running`, engine/player running, fresh
+non-silent submitted-output levels, and completed frames increasing from
+151,808 to 885,504. The native route was `speaker`, suspension was false and
+stop was not pending. Both samples reported system output volume **0/1000**.
+The user was asked to raise iPhone media volume while OpenSound is foregrounded;
+audibility after that action remains unconfirmed. No audio settings, consent or
+runtime code were changed during this recheck.
+
+Automatic was active and shared Response time rose from 155 to 175 ms between
+samples. Some late/overlap drops continued; software counters do not establish
+acoustic playback or qualify the automatic curve. The exact Inspector created
+for this check was stopped afterward; user Devices were left running.
+
+## Audible iPhone playback; Automatic Response time — 2026-11-18
+
+The owner confirmed that Mac→iPhone audio plays at 800 ms Response time, after
+shorter settings caused intermittent playback. Fresh CLI observations showed
+the updated iPhone's native engine/player running on the speaker route, volume
+600/1000 and advancing native scheduled/completed frames. Prior missed-target
+and native-late drops were present. This is user-confirmed audible playback;
+sustained quality and acoustic synchronization remain unqualified. The exact
+Inspector created for the recheck was stopped; user Devices were not changed.
+
+Implemented the owner's follow-up: the shared Mixer summarizes missed output
+times over five seconds. Two or more discarded blocks trigger a signed chat
+warning, at most once per 30 seconds per Device. Measured lateness is averaged
+and added to the observed Response time to estimate the full requirement.
+Incoming late packets, Erlang handoff misses and iOS native late rejections are
+covered. Unknown lateness is reported without a guessed recommendation. iOS
+handshake v3 adds the native overshoot in nanoseconds; v1/v2 replies remain
+accepted. Other native backends retain their existing diagnostic limitations.
+
+The existing Automatic radio choice is enabled. Settings editors (`grant` or
+`on_air`) opt the Session in; an ordinary Device with `time_read` can then submit
+an authenticated absolute minimum, not change the mode or choose the policy.
+The existing clock authority alone commits and broadcasts a revisioned shared
+Response time. Manual values turn Automatic off. It raises future source targets
+only; it neither retimes assigned packets nor decreases the delay.
+
+For current delay C and measured deficit D (ms), the increase is floored from
+`D * 300 / (max(300,C)+D) * (min(2700,3000-C)/2700)^2`.
+This limits single large spikes and increasingly resists growth around 300,
+600 and 1000 ms. A 100 ms deficit adds 75, 33, 14 and 1 ms at C=300, 600, 1000
+and 2000 respectively; it adds zero near 3 s. Automatic never raises beyond
+2999 ms; existing larger manual settings are not silently lowered. The chat
+warning still shows the full measured requirement, including when weighting
+prevents an increase. This curve is an initial policy, not a listening-qualified
+estimator or proof that additional delay will cure every playback failure.
+
+Validation: 58 focused Erlang checks and 26 frontend state checks pass; shared
+frontend syntax and iOS Swift type-checking pass. Prepared iPhone runtime
+refresh passes with 111 core modules, 809 imports and no unresolved calls.
+A two-Device local integration
+check confirms an ordinary reader's signed request raises the shared Automatic
+value from 150 to 330 ms, cannot enable the mode, and cannot override manual
+800 ms. It uses disposable Devices and no audio hardware. No new build was
+deployed and Automatic was not enabled in the user's live Session. Rebuild all
+participating apps (and restart Web) before testing the new policy messages;
+manual-mode wire payloads keep their previous shape.
+
+## iPhone output recovery and CLI Session memory — 2026-11-18
+
+An independent audio-disabled Inspector joined the user's live Session through
+the public CLI. Mac system capture was running with non-silent capture levels.
+The iPhone had Playback consent, a synchronized clock and an open media
+transport, but reported `native_stop_unconfirmed`, `output_stop_pending: true`
+and a previous `output_closed` failure. Its submitted-output meter was about
+15 minutes old: historical rendered frames did not mean ongoing playback.
+The original output closure's OS cause remains unknown. Historical native-late,
+late-packet and overlap drops remain separate timing problems.
+
+iOS output now advertises local handshake version 2. If its original socket
+cannot acknowledge stop, Erlang closes that socket and requests an explicit
+stop acknowledgement on a fresh connection to the same native listener. The
+listener serves connections serially and acknowledges only after the previous
+engine/session cleanup has returned. Missing acknowledgements and older
+bindings remain fenced; EOF is still not accepted as stop confirmation. Normal
+stop also releases the audio session before acknowledging. Targets, Playback
+consent and buffer policy are unchanged.
+
+The CLI monitor now privately remembers its last selected Session under
+`BA_CLI_HOME` (the normal Device-state directory by default). Both an explicit
+invitation and monitoring a named Device remember the selection. A later
+`beamaudio monitor --all` rejoins it, including after its observer was stopped.
+`--invitation-file` selects another Session. `--no-user-state` skips remembered
+monitor selection and automatic observer discovery, requires an explicit
+invitation file or Device name, and does not overwrite the saved selection.
+It does not erase or reset a named Device's identity, consent or configuration;
+use a separate `BA_CLI_HOME` for fully isolated Devices.
+
+Validation: seven iOS TCP/output regression checks pass, including fresh-ACK
+recovery, missing-ACK refusal and old-binding EOF refusal. The two Swift
+output/session sources type-check against iPhoneOS 27.1 for arm64/iOS 17.
+Native iPhone runtime preparation passes with zero unresolved core imports. Six
+focused CLI checks and the public CLI Session-memory integration check pass,
+including restart/rejoin, opt-out, retained identity, Forget and explicit Join.
+The live Inspector was stopped by its exact name; user Devices were not
+stopped or reconfigured. The user's current Session was remembered for CLI
+monitoring. Full app rebuild/deployment and physical playback remain user checks.
+
 ## Apple runtime packaging dependency fix — 2026-11-18
 
 Reproduced the iPhone build failure in `check-runtime-calls.escript`: the new

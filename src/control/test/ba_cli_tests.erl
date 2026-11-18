@@ -12,6 +12,8 @@ command_parser_and_no_restore_command_test() ->
         argparse:parse(["new","device","--devicename","one","--web-assets","/tmp","--web-port","0"],Spec,#{progname => "beamaudio"})),
     ?assertMatch({ok,#{devicename := "one",all := true},_,_},
         argparse:parse(["monitor","--all","--devicename","one"],Spec,#{progname => "beamaudio"})),
+    ?assertMatch({ok,#{no_user_state := true,all := true},_,_},
+        argparse:parse(["monitor","--all","--no-user-state"],Spec,#{progname => "beamaudio"})),
     ?assertNot(ba_cli_store:valid_name("../other")),?assert(ba_cli_store:valid_name("test-1")).
 
 readiness_needs_real_work_and_fresh_progress_test() ->

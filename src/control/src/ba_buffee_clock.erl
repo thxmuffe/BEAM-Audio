@@ -4,7 +4,7 @@
 -compile({no_auto_import,[now/0]}).
 -export([start_link/0,id/0,now/0,filtered_utc_time/0,from_monotonic/1,to_monotonic/1,map_times/1,
          presentation/1,status/0,set_reference/1,resync/0,resync/1,offset/0,offset_status/0,set_offset/1,set_offset/2,
-         reference_sample/0,peer_sample/2,seed_sample/1]).
+         reference_sample/0,peer_sample/2,seed_sample/1,set_automatic/1,require_offset/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 id() -> maps:get(timeline,snapshot(),undefined).
@@ -35,6 +35,8 @@ offset() -> D = snapshot(),case offset_ready(D) of
 offset_status() -> offset_view(snapshot()).
 set_offset(Value) -> gen_server:call(ba_session_scope:ref(?MODULE),{offset,Value,current},6000).
 set_offset(Value,Revision) -> gen_server:call(ba_session_scope:ref(?MODULE),{offset,Value,Revision},6000).
+set_automatic(Enabled) when is_boolean(Enabled) -> gen_server:call(ba_session_scope:ref(?MODULE),{automatic,Enabled},6000).
+require_offset(Value,Revision) -> gen_server:cast(ba_session_scope:ref(?MODULE),{required,Value,Revision}).
 set_reference(Mode) -> gen_server:call(ba_session_scope:ref(?MODULE),{reference,Mode}).
 resync() -> resync(explicit).
 resync(Reason) when Reason=:=explicit;Reason=:=resume;Reason=:=network_changed ->
@@ -54,7 +56,14 @@ status() ->
     Extra = case M of undefined -> #{};_ ->
         #{filtered_utc_time => ba_buffee_clock_mapping:from_monotonic(M,Now),
           offset_ns => ba_buffee_clock_mapping:offset(M,Now),remaining_correction_ns => ba_buffee_clock_mapping:remaining(M,Now)} end,
+    Quality=case {M,maps:get(role,D,waiting),maps:get(filter_ready,D,false)} of
+        {undefined,_,_} -> unavailable;
+        {_,master,_} -> reference;
+        {_,_,true} -> filtered;
+        _ -> provisional
+    end,
     (maps:merge(Base,Extra))#{state => State,age_ns => age(maps:get(last_sync,D,undefined),Now),
+        estimate_quality => Quality,
         master_clock => master_clock(D,Now),offset_policy => offset_view(D),
         uncertainty_ns => unknown,holdover_drift_ppm => unknown}.
 %% Display the actual master's reading, even before a follower's filter fills.
@@ -72,8 +81,8 @@ master_clock(#{master := Id,master_sample := #{device := Id,utc_time_ns := UTC,r
 master_clock(_,_) -> #{}.
 snapshot() -> try ets:lookup(ba_session_scope:table(?MODULE),clock) of [{clock,D}] -> D;_ -> #{} catch error:badarg -> #{} end.
 ready(#{role := Role,mapping := M,confirmed := true,authorization_until := Until,last_sync := Last,
-        filter_ready := Filter,sample_interval_ms := I}=D) when is_map(M),is_integer(Last) ->
-    live(Until) andalso (Role=:=master orelse (Role=:=follower andalso Filter andalso
+        sample_interval_ms := I}=D) when is_map(M),is_integer(Last) ->
+    live(Until) andalso (Role=:=master orelse (Role=:=follower andalso
         live(maps:get(sample_authorization_until,D,undefined)) andalso mono()-Last=<2*I*1000000));
 ready(_) -> false.
 offset_ready(#{offset := P,offset_until := Until,authorization_until := Auth}) ->
@@ -81,7 +90,8 @@ offset_ready(#{offset := P,offset_until := Until,authorization_until := Auth}) -
 offset_ready(_) -> false.
 offset_view(D) ->
     P = case maps:get(offset,D,undefined) of undefined -> #{};Value -> Value end,
-    #{revision => maps:get(<<"revision">>,P,null),offset_ms => maps:get(<<"offset_ms">>,P,null),ready => offset_ready(D)}.
+    #{revision => maps:get(<<"revision">>,P,null),offset_ms => maps:get(<<"offset_ms">>,P,null),
+      automatic => maps:get(<<"automatic">>,P,false),ready => offset_ready(D)}.
 
 init([]) ->
     ba_session_scope:new_table(?MODULE,[named_table,protected,{read_concurrency,true}]),
@@ -109,19 +119,9 @@ init([]) ->
         born => now_ms(),filter_last_slot => undefined,sample_due => now_ms(),offset_due => now_ms(),phase_due => now_ms()+Phase},
     erlang:send_after(100,self(),tick),{ok,save(S)}.
 handle_call({offset,Value,Expected},From,S) when is_integer(Value),Value>=5,Value=<30000 ->
-    case {maps:get(role,S),ba_session_privileges:may_edit_settings(maps:get(local_permissions,maps:get(view,S,#{}),[])),revision(Expected,S)} of
-        {waiting,_,_} -> {reply,{error,membership_unavailable},S};
-        {_,false,_} -> {reply,{error,forbidden},S};
-        {_,_,{error,R}} -> {reply,{error,R},S};
-        {authority,true,Revision} ->
-            {Result,Next} = commit(Value,Revision,S),{reply,Result,save(Next)};
-        {member,true,Revision} ->
-            P = #{<<"kind">> => <<"offset.set">>,<<"revision">> => Revision,<<"offset_ms">> => Value},
-            case request(P,#{caller => From},S) of
-                {ok,Next} -> {noreply,save(Next)};
-                {error,R} -> {reply,{error,R},S}
-            end
-    end;
+    change_offset(Value,false,Expected,From,S);
+handle_call({automatic,Enabled},From,#{clock := #{offset := P}}=S) when is_map(P),is_boolean(Enabled) ->
+    change_offset(maps:get(<<"offset_ms">>,P),Enabled,current,From,S);
 handle_call({reference,Mode},_,#{role := authority} = S) ->
     R = case Mode of auto -> ba_settings:app(clock_upstream,{ntp,"ntp.metas.ch"});_ -> Mode end,
     case valid_reference(R) of
@@ -133,9 +133,9 @@ handle_call({reference,Mode},_,#{role := authority} = S) ->
                 false ->
                     application:set_env(ba_core,clock_reference,R),
                     Next = cancel_upstream(S),
-                    {reply,ok,save(Next#{reference := R,blocked := false,next_external := now_ms(),
+                    {reply,ok,save(host_reference(Next#{reference := R,blocked := false,next_external := now_ms(),
                         clock := D#{instance := fresh(),timeline := undefined,mapping := undefined,
-                                    reference_revision := 0,confirmed := false}})}
+                                    reference_revision := 0,confirmed := false}}))}
             end
     end;
 handle_call({reference,_},_,S) -> {reply,{error,authority_reference_only},S};
@@ -145,10 +145,38 @@ handle_call({resync,_},_,#{role := authority} = S) ->
         {system,_} -> now_ms();{_,undefined} -> now_ms();{_,Started} -> max(now_ms(),Started+15000)
     end,
     D = maps:get(clock,S),
-    {reply,ok,save(S#{blocked := false,next_external := Due,clock := D#{confirmed := false}})};
+    Fresh=host_reference(S#{blocked := false,clock := D}),
+    {reply,ok,save(Fresh#{next_external := case maps:get(reference,S) of system -> infinity;_ -> Due end})};
 handle_call({resync,Reason},_,S) ->
     {reply,ok,save(reset_filter(Reason,invalidate(S#{sample_due := now_ms(),offset_due := now_ms()})))};
 handle_call(_,_,S) -> {reply,{error,invalid_request},S}.
+
+change_offset(Value,Automatic,Expected,From,S) ->
+    case {maps:get(role,S),ba_session_privileges:may_edit_settings(maps:get(local_permissions,maps:get(view,S,#{}),[])),revision(Expected,S)} of
+        {waiting,_,_} -> {reply,{error,membership_unavailable},S};
+        {_,false,_} -> {reply,{error,forbidden},S};
+        {_,_,{error,R}} -> {reply,{error,R},S};
+        {authority,true,Revision} ->
+            {Result,Next} = commit(Value,Automatic,Revision,S),{reply,Result,save(Next)};
+        {member,true,Revision} ->
+            P = with_automatic(Automatic,#{<<"kind">> => <<"offset.set">>,<<"revision">> => Revision,<<"offset_ms">> => Value}),
+            case request(P,#{caller => From},S) of
+                {ok,Next} -> {noreply,save(Next)};
+                {error,R} -> {reply,{error,R},S}
+            end
+    end.
+handle_cast({required,Value,Revision},#{clock := #{offset := P}=D}=S)
+        when is_map(P),is_integer(Value),Value>=5,is_integer(Revision) ->
+    case offset_ready(D) andalso maps:get(<<"automatic">>,P,false) andalso maps:get(<<"revision">>,P)=:=Revision of
+        false -> {noreply,S};
+        true ->
+            case maps:get(role,S) of
+                authority -> {noreply,save(required(Value,S))};
+                member ->
+                    Payload=#{<<"kind">> => <<"offset.required">>,<<"revision">> => Revision,<<"offset_ms">> => min(30000,Value)},
+                    case request(Payload,#{},S) of {ok,Next} -> {noreply,save(Next)};_ -> {noreply,S} end
+            end
+    end;
 handle_cast(_,S) -> {noreply,S}.
 handle_info(tick,S0) ->
     erlang:send_after(100,self(),tick),S1 = membership(S0),S2 = expire(S1),
@@ -201,7 +229,14 @@ scope({Buffee,Authority}=Scope,Role,S) ->
     P = case Saved of #{buffee := Buffee,authority := Authority,policy := Policy} -> ba_buffee_time_protocol:state(Policy),Policy;_ -> Default end,
     case Role of authority -> checkpoint(Name,Scope,P);member -> ok end,
     Next = reset_filter(scope_changed,invalidate(S)),D = maps:get(clock,Next),
-    Next#{scope := Scope,clock := D#{offset := P,offset_until := undefined}}.
+    Scoped=Next#{scope := Scope,clock := D#{offset := P,offset_until := undefined}},
+    case Role of
+        authority ->
+            %% A Session clock exists without external UTC acquisition. Use the
+            %% master's host clock now; configured SNTP may refine it by slewing.
+            host_reference(Scoped);
+        member -> Scoped
+    end.
 follow(#{view := V} = S) ->
     case lists:member(<<"time_read">>,maps:get(local_permissions,V,[])) of
         false ->
@@ -262,11 +297,16 @@ incoming(Context,Id,#{<<"kind">> := <<"sample.request">>,<<"t1">> := T1},#{role 
     end;
 incoming(Context,Id,#{<<"kind">> := <<"offset.get">>},#{role := authority}=S) ->
     reply(Context,Id,offset_payload(<<"offset.state">>,S)),S;
-incoming(Context,Id,#{<<"kind">> := <<"offset.set">>,<<"revision">> := Revision,<<"offset_ms">> := Value},#{role := authority}=S) ->
-    case commit(Value,Revision,S) of
+incoming(Context,Id,#{<<"kind">> := <<"offset.set">>,<<"revision">> := Revision,<<"offset_ms">> := Value}=P,#{role := authority}=S) ->
+    case commit(Value,maps:get(<<"automatic">>,P,false),Revision,S) of
         {ok,Next} -> reply(Context,Id,offset_payload(<<"offset.state">>,Next)),Next;
         {{error,conflict},_} -> reply_error(Context,Id,<<"offset.set">>,<<"conflict">>),S
     end;
+incoming(Context,Id,#{<<"kind">> := <<"offset.required">>,<<"revision">> := Revision,<<"offset_ms">> := Value},#{role := authority,clock := #{offset := P}}=S) ->
+    %% Requirements are absolute minima, so concurrent reports from an older
+    %% revision cannot add the same delta repeatedly. Manual mode ignores them.
+    true=Revision=<maps:get(<<"revision">>,P),
+    Next=required(Value,S),reply(Context,Id,offset_payload(<<"offset.state">>,Next)),Next;
 incoming(#{peer := Authority}=Context,_,#{<<"kind">> := <<"offset.changed">>}=P,#{role := member,scope := {_,Authority}}=S) ->
     adopt(P,min(maps:get(deadline,Context),now_ms()+freshness(S)),S);
 incoming(#{peer := Authority,session := Session}=Context,Id,P,#{role := member,scope := {_,Authority},pending := Pending}=S) ->
@@ -278,14 +318,14 @@ incoming(#{peer := Authority,session := Session}=Context,Id,P,#{role := member,s
             Echo = maps:get(<<"t1">>,maps:get(payload,R)),Echo = maps:get(<<"t1">>,P),
             apply_sample(P,maps:get(received_at_ns,Context),Until,Clean);
         <<"offset.state">> ->
-            true = Kind=:= <<"offset.get">> orelse Kind=:= <<"offset.set">>,
+            true = Kind=:= <<"offset.get">> orelse Kind=:= <<"offset.set">> orelse Kind=:= <<"offset.required">>,
             Next = adopt(P,Until,Clean),answer(R,ok),Next;
         <<"error">> ->
             Kind = maps:get(<<"operation">>,P),Reason = maps:get(<<"reason">>,P),answer(R,{error,Reason}),
             case Kind of <<"sample.request">> -> fail(Reason,Clean);_ -> Clean end
     end;
 incoming(Context,Id,#{<<"kind">> := Kind},S)
-        when Kind=:= <<"sample.request">>;Kind=:= <<"offset.get">>;Kind=:= <<"offset.set">> ->
+        when Kind=:= <<"sample.request">>;Kind=:= <<"offset.get">>;Kind=:= <<"offset.set">>;Kind=:= <<"offset.required">> ->
     reply_error(Context,Id,Kind,<<"unavailable">>),S;
 incoming(_,_,_,_) -> error(unexpected_time_message).
 
@@ -318,11 +358,14 @@ apply_sample(P,T4,Until,#{scope := {Buffee,Provider},clock := D0}=S0) ->
     Estimate = ba_buffee_clock_filter:estimate(Filter),
     Full = element(1,Estimate)=:=ok,
     Old = case maps:get(timeline,D)=:=Timeline of true -> maps:get(mapping,D);false -> undefined end,
-    Mapping = case {Full,Old,Estimate} of {true,undefined,{ok,Offset}} -> ba_buffee_clock_mapping:new(T4,Offset);_ -> Old end,
+    %% The authenticated raw sample establishes a usable mapping immediately.
+    %% Later estimates slew this same mapping; a warming filter cannot gate time.
+    Mapping = case Old of undefined -> ba_buffee_clock_mapping:new(T4,maps:get(offset_ns,Sample));_ -> Old end,
     U = case maps:get(<<"uncertainty_ns">>,P) of null -> unknown;B -> number(B)+maps:get(round_trip_ns,Sample) div 2 end,
     NextD = D#{mapping := Mapping,timeline := Timeline,master_instance := Instance,reference_revision := Revision,
         last_sync := T4,confirmed := true,filter_ready := Full,filter_sample_count := ba_buffee_clock_filter:count(Filter),
         measurement_uncertainty_ns := U,round_trip_ns => maps:get(round_trip_ns,Sample),
+        raw_offset_ns => ns(maps:get(offset_ns,Sample)),
         master_sample => #{device => Provider,utc_time_ns => T3,received_at_ns => T4},
         sample_authorization_until => Until,last_error := null},
     S#{filter := Filter,filter_reference := Key,filter_last_slot := Slot,clock := NextD}.
@@ -331,7 +374,7 @@ correct(#{role := member,clock := D}=S) ->
         false -> S;
         true ->
             Next = S#{phase_due := now_ms()+maps:get(interval_ms,D)},
-            case {ready(D),ba_buffee_clock_filter:estimate(maps:get(filter,S))} of
+            case {ready(D),ba_buffee_clock_filter:current(maps:get(filter,S))} of
                 {true,{ok,Target}} ->
                     {M,_,Changed} = ba_buffee_clock_sync:correct(maps:get(mapping,D),mono(),Target,2000000,maps:get(slew_ppm,D)),
                     Next#{clock := D#{mapping := M,revision := maps:get(revision,D)+case Changed of true -> 1;false -> 0 end}};
@@ -360,29 +403,47 @@ apply_upstream({ok,#{offset_ns := Offset,sampled_at := T,uncertainty_ns := U}},#
         master_instance := maps:get(instance,D),reference_revision := maps:get(reference_revision,D)+1,
         revision := maps:get(revision,D)+1,last_sync := T,confirmed := true,filter_ready := true,
         filter_sample_count := 1,last_error := null,measurement_uncertainty_ns := U,
+        raw_offset_ns => ns(Offset),
         upstream_acquisitions := maps:get(upstream_acquisitions,D)+1}};
-apply_upstream({error,{kiss_of_death,_}},S) -> fail(kiss_of_death,S#{blocked := true,next_external := infinity});
+apply_upstream({error,{kiss_of_death,_}},S) -> reference_failed(kiss_of_death,S#{blocked := true,next_external := infinity});
 apply_upstream(_,S) -> upstream_failed(S).
 upstream_failed(S) -> Backoff = min(600000,maps:get(backoff_ms,S)*2),
-    fail(upstream_unavailable,S#{next_external := now_ms()+Backoff,backoff_ms := Backoff}).
+    reference_failed(upstream_unavailable,S#{next_external := now_ms()+Backoff,backoff_ms := Backoff}).
+reference_failed(Reason,#{role := authority,clock := #{mapping := M}=D}=S) when is_map(M) ->
+    S#{clock := D#{last_error := Reason}};
+reference_failed(Reason,S) -> fail(Reason,S).
+host_reference(S) ->
+    Seeded=apply_upstream(measure(system),S),
+    case maps:get(reference,S) of system -> Seeded;_ -> Seeded#{next_external := now_ms()} end.
 measure(system) -> A = mono(),UTC = erlang:system_time(nanosecond),B = mono(),
     {ok,#{offset_ns => UTC-(A+B) div 2,sampled_at => B,uncertainty_ns => unknown}};
 measure({ntp,Host}) -> ba_sntp:query(Host,123,2000);
 measure({ntp,Host,Port}) -> ba_sntp:query(Host,Port,2000).
 
-commit(Value,Revision,#{clock := #{offset := P}=D,scope := Scope}=S) ->
+commit(Value,Automatic,Revision,#{clock := #{offset := P}=D,scope := Scope}=S) ->
     case maps:get(<<"revision">>,P)=:=Revision of
         false -> {{error,conflict},S};
         true ->
-            NextP = case maps:get(<<"offset_ms">>,P)=:=Value of
+            NextP = case maps:get(<<"offset_ms">>,P)=:=Value andalso maps:get(<<"automatic">>,P,false)=:=Automatic of
                 true -> P;
-                false -> P#{<<"revision">> := Revision+1,<<"offset_ms">> := Value}
+                false -> with_automatic(Automatic,P#{<<"revision">> := Revision+1,<<"offset_ms">> := Value})
             end,
             ba_buffee_time_protocol:state(NextP),checkpoint(buffee_time_policy,Scope,NextP),
             Next = S#{clock := D#{offset := NextP,offset_until := infinity}},broadcast(Next),{ok,Next}
     end.
+with_automatic(true,P) -> P#{<<"automatic">> => true};
+with_automatic(false,P) -> maps:remove(<<"automatic">>,P).
+required(Value,#{clock := #{offset := P}}=S) ->
+    Current=maps:get(<<"offset_ms">>,P),
+    Next=case maps:get(<<"automatic">>,P,false) of
+        true -> ba_audio_response_time:increase(Current,Value);false -> Current
+    end,
+    case Next>Current of
+        true -> {ok,Updated}=commit(Next,true,maps:get(<<"revision">>,P),S),Updated;
+        false -> S
+    end.
 adopt(P,Until,#{clock := #{offset := Old}=D,scope := Scope}=S) ->
-    New = ba_buffee_time_protocol:accept(maps:with([<<"revision">>,<<"offset_ms">>],P),Old),
+    New = ba_buffee_time_protocol:accept(maps:with([<<"revision">>,<<"offset_ms">>,<<"automatic">>],P),Old),
     checkpoint(buffee_time_cache,Scope,New),S#{clock := D#{offset := New,offset_until := Until,offset_error := null}}.
 broadcast(#{view := #{policy := #{peers := Peers}}}=S) ->
     P = offset_payload(<<"offset.changed">>,S),
@@ -474,8 +535,8 @@ change_provider({Buffee,_}=Scope,Role,#{scope := {Buffee,_},clock := D}=S) ->
             %% No fresh mapping means no handover claim: acquire a new timeline
             %% and retain only the last known delay policy, never old clock data.
             Next=scope(Scope,Role,S),Cold=maps:get(clock,Next),
-            Next#{clock := Cold#{offset := maps:get(offset,D),mapping := undefined,timeline := undefined,
-                confirmed := false,master_instance := undefined,instance := fresh(),reference_revision := 0},next_external := now_ms()}
+            host_reference(Next#{clock := Cold#{offset := maps:get(offset,D),mapping := undefined,timeline := undefined,
+                confirmed := false,master_instance := undefined,instance := fresh(),reference_revision := 0},next_external := now_ms()})
     end;
 change_provider(Scope,Role,S) -> scope(Scope,Role,S).
 

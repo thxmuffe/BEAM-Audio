@@ -68,17 +68,61 @@ eof_does_not_fake_stop_or_reuse_dead_output_test() -> fixture(fun(L,Mixer,D) ->
     receive {'DOWN',Ref,process,Peer,normal} -> ok after 2000 -> error(peer_failed) end
 end).
 
+closed_output_recovers_only_after_fresh_native_stop_ack_test() -> fixture(fun(L,Mixer,D) ->
+    Parent=self(),
+    {Peer,Ref}=spawn_monitor(fun() ->
+        {ok,S}=gen_tcp:accept(L,2000),handshake(S,<<1,2>>),
+        receive close_peer -> gen_tcp:close(S) end,
+        {ok,Barrier}=gen_tcp:accept(L,2000),
+        {ok,<<4>>}=gen_tcp:recv(Barrier,0,2000),Parent ! stop_requested,
+        %% No ACK until native teardown is complete; the mixer must wait.
+        receive stopped -> ok end,
+        ok=gen_tcp:send(Barrier,<<4>>),gen_tcp:close(Barrier),
+        {ok,Next}=gen_tcp:accept(L,2000),handshake(Next),
+        {ok,<<4>>}=gen_tcp:recv(Next,0,2000),ok=gen_tcp:send(Next,<<4>>),gen_tcp:close(Next)
+    end),
+    ok=ba_audio_mixer:add(music,D,1.0),ok=ba_audio_mixer:enable(music,true),
+    Peer ! close_peer,
+    receive stop_requested -> ok after 2000 -> error(no_stop_barrier) end,
+    %% The failed-output notification precedes the synchronous close barrier.
+    receive {audio_output_failed,Mixer,output_closed} -> ok after 2000 -> error(no_closure) end,
+    Peer ! stopped,
+    ?assertNot(maps:get(output_stop_pending,ba_audio_mixer:status())),
+    ok=ba_audio_mixer:add(music,D,1.0),
+    ?assertEqual(ok,ba_audio_mixer:enable(music,true)),
+    ok=ba_audio_mixer:remove(music),
+    receive {'DOWN',Ref,process,Peer,normal} -> ok after 2000 -> error(peer_failed) end
+end).
+
+fresh_connection_without_stop_ack_keeps_output_fenced_test() -> fixture(fun(L,Mixer,D) ->
+    {Peer,Ref}=spawn_monitor(fun() ->
+        {ok,S}=gen_tcp:accept(L,2000),handshake(S,<<1,2>>),
+        receive close_peer -> gen_tcp:close(S) end,
+        {ok,Barrier}=gen_tcp:accept(L,2000),
+        {ok,<<4>>}=gen_tcp:recv(Barrier,0,2000),gen_tcp:close(Barrier)
+    end),
+    ok=ba_audio_mixer:add(music,D,1.0),ok=ba_audio_mixer:enable(music,true),
+    Peer ! close_peer,
+    receive {audio_output_failed,Mixer,output_closed} -> ok after 2000 -> error(no_closure) end,
+    ?assert(maps:get(output_stop_pending,ba_audio_mixer:status())),
+    ok=ba_audio_mixer:add(music,D,1.0),
+    ?assertEqual({error,native_stop_unconfirmed},ba_audio_mixer:enable(music,true)),
+    receive {'DOWN',Ref,process,Peer,normal} -> ok after 2000 -> error(peer_failed) end
+end).
+
 wait_drops(_,_,0) -> error(no_native_drop);
 wait_drops(N,Reason,Tries) ->
     case ba_audio_mixer:status() of
         #{diagnostics := #{counts := #{Reason := N}}} -> ok;
         _ -> receive after 5 -> wait_drops(N,Reason,Tries-1) end
     end.
-handshake(S) ->
-    {ok,<<1,48000:32,2:16>>}=gen_tcp:recv(S,0,2000),ok=gen_tcp:send(S,<<1>>),
+handshake(S) -> handshake(S,<<1>>).
+handshake(S,Ready) ->
+    {ok,<<1,48000:32,2:16>>}=gen_tcp:recv(S,0,2000),ok=gen_tcp:send(S,Ready),
     {ok,<<3>>}=gen_tcp:recv(S,0,2000),
     Host=erlang:monotonic_time(nanosecond)+1000000000000000000,
-    ok=gen_tcp:send(S,<<3,Host:64,0:64>>).
+    ok=gen_tcp:send(S,<<3,Host:64,0:64>>),
+    case Ready of <<1>> -> ok;_ -> {ok,<<6,_>>}=gen_tcp:recv(S,0,2000),ok end.
 fixture(Fun) ->
     Old=[{K,application:get_env(ba_core,K)} || K <- [runtime_profile,audio_clock_adapter,audio_output_adapter]],
     PortEnv=os:getenv("BA_AUDIO_PORT"),
@@ -115,3 +159,14 @@ native_output_summary_is_optional_and_rearms_socket_test() ->
         ?assertEqual({ok,<<6,0>>},gen_tcp:recv(Server,0,100)),
         ?assertEqual(unsupported,ba_ios_audio:diagnostics(#{socket => Client},#{<<"analysis">> => true}))
     after gen_tcp:close(Client),gen_tcp:close(Server),gen_tcp:close(L) end.
+
+native_late_rejection_reports_measured_overshoot_test() ->
+    {ok,L}=gen_tcp:listen(0,[binary,{packet,4},{active,false},{ip,{127,0,0,1}}]),
+    {ok,{_,Port}}=inet:sockname(L),
+    {ok,C}=gen_tcp:connect({127,0,0,1},Port,[binary,{packet,4},{active,false}]),
+    {ok,S}=gen_tcp:accept(L),
+    try
+        ?assertEqual({dropped,native_late_packet,12345678},ba_ios_audio:event(#{socket => C},{tcp,C,<<5,1,12345678:64>>})),
+        ok=gen_tcp:send(S,<<5,1,42:64>>),
+        receive {tcp,C,<<5,1,42:64>>} -> ok after 1000 -> error(socket_not_rearmed) end
+    after gen_tcp:close(C),gen_tcp:close(S),gen_tcp:close(L) end.

@@ -31,10 +31,14 @@ cleanup waits until then.
 - **Every packet carries its broadcaster-assigned target;** receivers execute it
   or report a failure. Native bindings may convert clocks linearly (e.g. the
   Windows capture frame count → host time), never infer targets from neighbours.
-- **Overlapping audio is the long-term default** (long audio objects mixed with
-  others at their targets). Today the Mixer rejects overlaps; changing that is
-  long-term, not now.
-- **Buffers and timing tuning wait for listening results** (owner, 2026-11-18).
+- **Timestamped audio regions may overlap.** Investigate continuous resampling
+  for clock-rate correction and short crossfades at deliberate splices. Do not
+  fade every packet independently. Regions retain their assigned targets;
+  packet transfer boundaries must not dictate audible joins. The current Mixer
+  still rejects same-source overlaps; this rendering work is not implemented.
+- **Automatic Response time is opt-in.** Devices report averaged deadline
+  overshoot; the clock authority applies diminishing increases, tapering below
+  3 s. Manual values disable Automatic. Targets already assigned are preserved.
 - Crash notices stay visible in chat; presence/reconnect/removal lines are
   debug-level. Version on every home page: `0.<OpenSound commit count>`.
 - Reception stays a small opaque service; nothing here needs a Reception update.
@@ -44,22 +48,37 @@ cleanup waits until then.
 | Platform | Playback | Microphone | ON AIR (system audio) | Verified |
 |---|---|---|---|---|
 | Windows | WASAPI helper | WASAPI helper | process loopback, own tree excluded | headless e2e; user saw mic + ON AIR active, listening pending |
-| macOS | AVAudioEngine | Core Audio | Core Audio tap | needs rebuild with today's core |
-| iOS | AVAudioEngine | yes | needs iOS 27 (phone has 26.6.1) | needs rebuild; background stops receiving |
+| macOS | AVAudioEngine | Core Audio | Core Audio tap | owner reports broadcasting after rebuild; Inspector confirmed active non-silent capture |
+| iOS | AVAudioEngine | yes | needs iOS 27 (phone has 26.6.1) | audible at 800 ms; rebuilt Automatic observed live; latest recheck ran at system volume zero; background stops receiving |
 
-STUN is now configured on every platform (Mac had none, which explains the
-Mac→iPhone `setup_timeout`). Unverified on the physical Mac/iPhone.
+STUN is configured on every platform. The owner confirmed Mac→iPhone playback
+at 800 ms after shorter Response times caused dropouts. Sustained quality and
+physical synchronization remain unqualified.
 
 ## Next 5 steps
 
-1. **Rebuild Mac and iPhone; listen on all three.** (Owner, on the Mac.)
-   Windows Web startup no longer adds a DeviceWeb dependency to the core;
-   iPhone runtime preparation and its import check pass after that build fix.
-   Full app rebuilds and listening remain pending. Then take one
+1. **Fix speaker startup state, then continue listening tests.**
+   The monitored iPhone cold start took about 100 s to acquire 20 clock samples;
+   output then ran for about a minute with the owner confirming sound. Preserve
+   saved speaker intent, show clock acquisition as waiting, and make a genuine
+   start failure/timeout settle to muted with one-click retry. Current error
+   rendering disagrees with `live.muted`, causing the two-click retry observed
+   by the owner. Automatic grew 532 → 630 ms; late/overlap drops still occurred.
+   The older managed Web Device still needs a restart for new policy messages.
+   Keep manual 800 ms available. Then take one
    `beamaudio monitor --all --metrics --once` snapshot. `Transport setup: open`
    means media flows; `ice_checking` across networks means a TURN relay is needed
    (owner decision). This decides what audio work is next.
-2. **Clock reliability (started 2026-11-18).** Short sample gaps (up to 12
+2. **Clock availability and rate correction (2026-11-18).** Source now seeds a
+   master's host clock immediately and uses a follower's first authenticated raw
+   sample while the filter warms; 33 focused checks and a production-cadence
+   startup check pass. Not rebuilt/deployed to apps. A deterministic reproduction
+   drops 25/100 contiguous 512-frame blocks during a -500 ppm clock slew, versus
+   zero with a steady clock: start-time mapping and nominal duration diverge,
+   and the Mixer rejects small overlaps as whole-block failures. Resolve sample/
+   time conversion and continuous rendering before relying on more buffering.
+   One announced master on the active broadcaster remains unfinished; current
+   selection still prefers the original reference. Short sample gaps (up to 12
    intervals) now keep the filter and readiness, counted as `clock.sample_gaps`;
    remaining: the three intermittent clock test failures. Before: one late time sample (> 2 sample intervals,
    10 s in production) resets the follower filter and the clock reports *not

@@ -27,6 +27,7 @@ init([]) ->
     process_flag(trap_exit,true),
     erlang:send_after(2,self(),render),
     erlang:send_after(500,self(),observe_output),
+    erlang:send_after(5000,self(),report_lateness),
     {ok,#{mix => undefined,descriptors => #{},device => undefined,dropped => 0,rendered => 0,submitted_frames => 0,last_error => null}}.
 handle_call({revoke_permissions,_},_,S) ->
     {Result,Next}=close_confirmed(S),
@@ -99,6 +100,9 @@ accept_packet(Id,D,H,PCM,S) ->
                 true ->
                     case ba_audio_mix:push(Id,D,H,PCM,Now,Mix) of
                         {ok,Next} -> {noreply,S#{mix := Next}};
+                        {error,late_packet,_} ->
+                            Late=case maps:get(playback_time,H) of Target when Target=<Now -> Now-Target;_ -> unknown end,
+                            {noreply,late_drop(late_packet,Late,S)};
                         {error,R,_} -> {noreply,drop(R,S)}
                     end;
                 false -> {noreply,drop(authorization_deadline,S)}
@@ -108,12 +112,26 @@ accept_packet(Id,D,H,PCM,S) ->
 handle_info(observe_output,S) ->
     erlang:send_after(500,self(),observe_output),
     {noreply,observe_output(S)};
+handle_info(report_lateness,S) ->
+    erlang:send_after(5000,self(),report_lateness),
+    case ba_audio_response_time:summary(maps:get(lateness,S,#{})) of
+        none -> ok;
+        Report ->
+            case ba_session_scope:whereis(ba_buffee_chat) of undefined -> ok;Chat -> Chat ! {audio_lateness,Report} end,
+            case Report of
+                #{required_ms := Required,revision := Revision} -> ba_buffee_clock:require_offset(Required,Revision);
+                _ -> ok
+            end
+    end,
+    {noreply,maps:remove(lateness,S)};
 handle_info(render,S) ->
     Next = render(wakeup(S)),erlang:send_after(2,self(),render),{noreply,Next};
 handle_info({'DOWN',Ref,process,_,_},#{owner_monitor := Ref} = S) ->
     {noreply,(maps:without([owner,owner_monitor],close(S)))#{mix := undefined,descriptors := #{}}};
 handle_info({tcp,Socket,_}=Message,#{device := {A,#{socket := Socket}=Device}}=S) ->
     case A:event(Device,Message) of
+        {dropped,Reason,Late} -> {noreply,late_drop(Reason,Late,S)};
+        {dropped,native_late_packet} -> {noreply,late_drop(native_late_packet,unknown,S)};
         {dropped,Reason} -> {noreply,drop(Reason,S)};
         {diagnostics,Stats} -> {noreply,S#{output => Stats,output_sample_at => now_ms()}};
         {error,Reason} -> {noreply,output_failed(Reason,S)}
@@ -199,15 +217,16 @@ render_authorized(Mono,Handoff,Now,A,Device,#{mix := Mix,descriptors := Ds}=S) -
             Max = lists:min([256|[(maps:get(authorization_deadline,D)*1000000-Mono)*Rate div 1000000000 || D <- maps:values(Ds)]]),
             {H,PCM,Next} = ba_audio_mix:take(Max,Mix),
             case Handoff>Now of
-                false -> drop(missed_packet_target,S#{mix := Next});
+                false -> late_drop(missed_packet_target,Now-Handoff,S#{mix := Next});
                 true ->
                     Frames = maps:get(frame_count,H),
                     %% Platform binding consumes stereo planar float32.
                     Left = [<<L:32/little-float>> || <<L:32/little-float,_:32/little-float>> <= PCM],
                     Right = [<<R:32/little-float>> || <<_:32/little-float,R:32/little-float>> <= PCM],
                     Output = iolist_to_binary([Left,Right]),
-                    case Handoff>erlang:monotonic_time(nanosecond) of
-                        false -> drop(missed_packet_target,S#{mix := Next});
+                    BeforeWrite=erlang:monotonic_time(nanosecond),
+                    case Handoff>BeforeWrite of
+                        false -> late_drop(missed_packet_target,BeforeWrite-Handoff,S#{mix := Next});
                         true ->
                             Result=try A:write(Device,Handoff,Frames,Output) catch exit:_ -> {error,output_closed} end,
                             case Result of
@@ -265,6 +284,10 @@ flush(#{mix := undefined}=S) -> S;
 flush(#{mix := Mix} = S) ->
     Next = maps:fold(fun(Id,I,Acc) -> ba_audio_mix:enable(Id,maps:get(enabled,I),Acc) end,Mix,maps:get(streams,Mix)),S#{mix := Next}.
 drop(R,S) -> ba_diagnostics:count(R,S#{dropped := maps:get(dropped,S)+1,last_error := R}).
+late_drop(Reason,Late,S) ->
+    Policy=ba_buffee_clock:offset_status(),
+    Stats=ba_audio_response_time:add(Late,Policy,maps:get(lateness,S,#{})),
+    (drop(Reason,S))#{lateness => Stats}.
 close(#{device := {_,_}} = S) -> {_,Next}=close_confirmed(S),Next;
 close(S) -> maps:remove(output_stop_pending,S).
 terminate(_,S) -> close(S),ok.

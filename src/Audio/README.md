@@ -16,6 +16,14 @@ rate and clock; unsupported formats and missed/overlapping/output failures remai
 visible in diagnostics. Local consent is mandatory. Guest microphones are
 permitted; other publication requires Chef authorization.
 
+Fresh authenticated raw clock time is usable before the median window fills.
+`clock.estimate_quality` distinguishes provisional/reference/filtered estimates;
+`clock.raw_offset_ns` carries the raw measurement as a decimal string. Filter
+fullness no longer blocks playback startup, while authorization, freshness and
+post-resume observation checks remain. Same-source overlap is still rejected:
+clock-rate correction with continuous resampling and deliberate-splice crossfades
+is proposed work, not part of this startup change.
+
 iOS output reports an individual rejected buffer to Erlang without closing the
 engine or changing later targets. `monitor --metrics` exposes
 `mixer.failure.<reason>` for `native_late_packet`, `native_target_out_of_bounds`
@@ -23,6 +31,20 @@ and `native_output_queue_full`. Native
 analysis reports target-lead bounds; per-buffer rejection logging is avoided. Local output TCP uses NODELAY.
 `mixer.output_stop_pending: true` means a failed output has not acknowledged
 stop; it cannot be reused as healthy. EOF alone does not confirm native stop.
+iOS output handshake v2 (`<<1,2>>`) supports stop confirmation on a fresh
+connection after a broken output socket: its serial listener acknowledges
+`<<4>>` only after the previous engine and audio session have finished cleanup.
+Erlang reopens output only after that acknowledgement. Older bindings and
+missing acknowledgements remain fenced; no packet target is changed.
+
+Missed-output-time drops are summarized over five seconds and announced in
+Session chat, at most once per 30 seconds per Device. With measured overshoot,
+the warning gives mean lateness and the estimated required Response time.
+iOS handshake v3 (`<<1,3>>`) reports native late rejection as
+`<<5,1,LatenessNanoseconds:64>>`; older rejections have no measured overshoot.
+In Automatic mode, the clock authority applies increasingly weighted increases
+from these reports, never raising to 3 seconds. Manual mode only reports advice.
+This changes future source targets, never an assigned packet's playback time.
 Rebuild/run the iPhone app to update both sides of the local binding protocol.
 Focused hardware-free protocol checks: `rebar3 eunit --module=ba_ios_audio_tests`.
 
@@ -59,5 +81,5 @@ the binding's serial queue. Erlang retains all sample interpretation and policy.
 
 The Device's supervised `ba_audio_observer` samples existing audio/clock state
 without starting capture/playback. Its cache feeds both local UI and signed
-remote monitoring. Meter/analysis options are separate saved Device settings.
+remote monitoring. Meter/analysis options follow the Device's calibration consent.
 See the CLI README for controls, field meanings and privacy/validation limits.

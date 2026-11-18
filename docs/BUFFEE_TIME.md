@@ -103,9 +103,25 @@ request deadline and echoed first timestamp.
 | `sample.reply` | Echoed `t1`, reference UTC `t2/t3`, reference instance, revision, timeline and measurement uncertainty. |
 | `offset.get` | Current authoritative policy query. |
 | `offset.set` | Expected revision and requested milliseconds. |
+| `offset.required` | An ordinary time reader's measured absolute minimum; acted on only in Automatic mode. |
 | `offset.state` | Correlated committed revision/value. |
 | `offset.changed` | Writer's current revision/value over a live session. |
 | `error` | Correlated operation and fixed forbidden/unavailable/conflict reason. |
+
+Automatic mode is an optional boolean `automatic` in the revisioned policy and
+`offset.set`, `offset.state` and `offset.changed` messages. Absence means false;
+manual-mode payloads retain their existing shape. The public Device API uses
+`{"method":"offset","automatic":true}` to enable it at the current delay;
+selecting a numeric `offset_ms` disables it. Both actions retain the existing
+settings-edit privilege check. An `offset.required` request needs only
+`time_read`, carries `revision` and `offset_ms`, and cannot enable Automatic.
+The authority treats the request as an absolute minimum, applies the shared
+`ba_audio_response_time` diminishing-gain curve and commits any increase itself.
+It never decreases the value or raises beyond 2999 ms. Old requirements cannot
+add the same relative delta repeatedly; manual mode ignores them. Audio warnings
+show the complete measured estimate even when automatic growth is limited.
+Update participating clients before enabling Automatic: older clients cannot
+interpret the added policy field. Reception remains unchanged.
 
 Timestamp strings are canonical signed 64-bit decimal integers. This preserves
 full nanosecond precision without relying on JSON/JavaScript's exact integer
@@ -123,10 +139,14 @@ network asymmetry and Reception/TLS latency remain real uncertainty.
 Production defaults retain 5-second sampling, a 20-observation median window,
 30-second correction checks, strict 2 ms correction deadband and at most 500 ppm
 slew. At most one observation per sampling period enters the filter. The initial
-follower mapping is available only once the real window fills; corrections reuse
+follower mapping is available from its first authenticated raw sample; partial
+median estimates refine it while the window fills. Corrections reuse
 the existing monotonic mapping/inverse and never step an established mapping
 backward. Headless checks explicitly accelerate cadence/window, not production
-quality requirements. Upstream acquisition happens once at startup or explicit
+quality requirements. `estimate_quality` distinguishes provisional and filtered
+estimates; `filter_ready` reports window fullness rather than gating time.
+The master seeds its host clock immediately, so external SNTP availability does
+not prevent Session time. Upstream acquisition happens at startup or explicit
 resync, not on every follower request. SNTP retains request spacing, bounded
 failure backoff and kiss-of-death blocking until explicit operator resync/change.
 
@@ -134,8 +154,9 @@ failure backoff and kiss-of-death blocking until explicit operator resync/change
 
 ## Freshness, changes and recovery
 
-Mapping reads check membership authorization, sample-session authorization, filter
-readiness and a last-sample age of at most two sampling periods synchronously.
+Mapping reads check membership authorization, sample-session authorization and
+a last-sample age of at most two sampling periods synchronously. Filter quality
+is reported separately; it does not prevent using fresh authenticated raw time.
 Offset reads also require a fresh writer observation and live authorization.
 Absent deadlines use explicit unavailable state, never numeric zero (Erlang
 monotonic values can be negative). Stale mappings remain diagnostic holdover;
@@ -143,8 +164,9 @@ they do not authorize new scheduling. Public status keeps measurement uncertaint
 RTT, age, reference identity/revision and filter counts, while current absolute
 uncertainty and unmeasured oscillator drift remain unknown.
 
-Explicit clock resync invalidates readiness until fresh evidence returns. Audio
-resume/handover asks for resync and requires a sample after its resume barrier.
+Follower resync invalidates readiness until fresh evidence returns. A master
+refreshes its host-clock observation immediately and can refine it externally.
+Audio resume/handover requires an observation after its resume barrier.
 Master status alone, cached UTC values or holdover do not bypass this gate.
 Clock process restart destroys its ETS mapping; it restores only declarative
 Offset state/version floor, then reauthorizes/reacquires.

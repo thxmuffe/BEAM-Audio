@@ -1,11 +1,23 @@
-%% Local CLI process records and persistent identity, never saved Buffee state.
+%% Local CLI process records, persistent identity and last monitor selection.
 -module(ba_cli_store).
 -include_lib("kernel/include/file.hrl").
--export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,replace/2,remove/1,names/0,valid_name/1,reserve/3]).
+-export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,replace/2,remove/1,names/0,valid_name/1,reserve/3,
+         last_session/0,remember_session/1]).
 %% POSIX mode bits are the owner-only check on Unix. On Windows the per-user
 %% profile directory's ACL protects these files; OTP reports only read-only there.
 posix() -> element(1,os:type())=:=unix.
 home() -> case ba_settings:env("BA_CLI_HOME") of false -> filename:join(filename:basedir(user_data,"beam-audio"),"devices");P -> filename:absname(P) end.
+%% Monitor selection is private CLI state, independent of any Device's consent.
+last_session() ->
+    case file:read_file(filename:join(home(),"monitor.json")) of
+        {ok,B} -> try json:decode(B) of
+            #{<<"invitation">> := Link} when is_binary(Link) -> {ok,Link};
+            _ -> {error,invalid_session}
+        catch _:_ -> {error,invalid_session} end;
+        Error -> Error
+    end.
+remember_session(Link) ->
+    ok=private_dir(home()),replace(filename:join(home(),"monitor.json"),#{invitation => Link}).
 valid_name(N) -> re:run(N,"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$",[{capture,none}])=:=match.
 dir(N) -> case valid_name(N) of true -> filename:join(home(),N);false -> error(invalid_device_name) end.
 private_dir(D) ->

@@ -29,6 +29,8 @@ spec(Root) ->
     #{help => "Real headless BEAM Audio Devices; no UI or Distributed Erlang.",arguments => Common,commands => #{
       "monitor" => #{arguments => [#{name => all,long => "-all",action => {store,true},default => false},
           #{name => invitation_file,long => "-invitation-file",type => string},
+          #{name => no_user_state,long => "-no-user-state",action => {store,true},default => false,
+            help => "Ignore remembered monitor Session and automatic observer selection; do not save this selection."},
           #{name => once,long => "-once",action => {store,true},default => false},
           #{name => metrics,long => "-metrics",action => {store,true},default => false},
           #{name => interval,long => "-interval",type => {integer,[{min,500},{max,10000}]},default => 1000}],

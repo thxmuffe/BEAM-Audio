@@ -32,6 +32,26 @@ offset_compare_and_set_and_restart_test() ->
         ?assertEqual(2,maps:get(revision,ba_buffee_clock:offset_status()))
     end).
 
+automatic_mode_applies_weighted_requirements_only_while_enabled_test() ->
+    with_clock(authority,fun(_) ->
+        await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),
+        ba_buffee_clock:require_offset(600,1),_=sys:get_state(ba_buffee_clock),
+        ?assertEqual({ok,150},ba_buffee_clock:offset()),
+        ok=ba_buffee_clock:set_automatic(true),
+        #{revision := Rev,automatic := true}=ba_buffee_clock:offset_status(),
+        ba_buffee_clock:require_offset(600,Rev),_=sys:get_state(ba_buffee_clock),
+        ?assertEqual({ok,ba_audio_response_time:increase(150,600)},ba_buffee_clock:offset()),
+        %% A window measured under an old local policy is discarded.
+        Before=ba_buffee_clock:offset_status(),
+        ba_buffee_clock:require_offset(2000,Rev),_=sys:get_state(ba_buffee_clock),
+        ?assertEqual(Before,ba_buffee_clock:offset_status()),
+        ok=ba_buffee_clock:set_offset(800),
+        ?assertMatch(#{automatic := false,offset_ms := 800},ba_buffee_clock:offset_status()),
+        ok=gen_server:stop(ba_buffee_clock),{ok,_}=ba_buffee_clock:start_link(),
+        await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),
+        ?assertMatch(#{automatic := false,offset_ms := 800},ba_buffee_clock:offset_status())
+    end).
+
 returning_member_does_not_promote_itself_or_trust_cached_offset_test() ->
     with_clock(member,fun({Buffee,Authority}) ->
         ok = gen_server:stop(ba_buffee_clock),
@@ -133,14 +153,40 @@ source_packets_use_one_current_clock_and_offset_snapshot_test() ->
         receive {capture_target,_} -> error(stale_policy_used_for_capture) after 0 -> ok end
     after exit(Source,kill),ets:delete(ba_buffee_clock) end.
 
-explicit_resync_invalidates_readiness_until_a_fresh_anchor_test() ->
+master_resync_refreshes_its_host_anchor_without_losing_time_test() ->
     with_clock(authority,fun(_) ->
         await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),
         Revision = maps:get(reference_revision,ba_buffee_clock:status()),Id = ba_buffee_clock:id(),
-        ok = ba_buffee_clock:resync(),?assertEqual({error,clock_unavailable},ba_buffee_clock:now()),
+        ok = ba_buffee_clock:resync(),?assertMatch({ok,_},ba_buffee_clock:now()),
         await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),
         ?assertEqual(Id,ba_buffee_clock:id()),?assert(maps:get(reference_revision,ba_buffee_clock:status())>Revision)
     end).
+
+external_reference_failure_does_not_remove_the_masters_host_clock_test() ->
+    with_clock(authority,fun(_) ->
+        await(fun() -> maps:get(state,ba_buffee_clock:status())=:=synchronized end),
+        sys:replace_state(ba_buffee_clock,fun(S) ->
+            Worker=self(),Ref=make_ref(),
+            {noreply,Next}=ba_buffee_clock:handle_info({upstream_result,Worker,{error,timeout}},
+                S#{upstream := #{pid => Worker,monitor => Ref}}),Next
+        end),
+        ?assertMatch({ok,_},ba_buffee_clock:now()),
+        ?assertEqual(upstream_unavailable,maps:get(last_error,ba_buffee_clock:status())),
+        ?assertMatch(#{state := fresh,utc_time_ns := _},maps:get(master_clock,ba_buffee_clock:status()))
+    end).
+
+fresh_raw_mapping_is_usable_while_filter_is_warming_test() ->
+    ets:new(ba_buffee_clock,[named_table,protected]),
+    try
+        T=erlang:monotonic_time(nanosecond),Until=erlang:monotonic_time(millisecond)+10000,
+        D=#{role => follower,mapping => ba_buffee_clock_mapping:new(T,1000000000000000000),
+            timeline => <<"raw-test">>,confirmed => true,authorization_until => Until,
+            sample_authorization_until => Until,last_sync => T,filter_ready => false,filter_sample_count => 1,
+            sample_interval_ms => 5000,raw_offset_ns => <<"1000000000000000000">>},
+        ets:insert(ba_buffee_clock,{clock,D}),
+        ?assertMatch({ok,_},ba_buffee_clock:now()),
+        ?assertMatch(#{state := synchronized,filter_ready := false,estimate_quality := provisional},ba_buffee_clock:status())
+    after ets:delete(ba_buffee_clock) end.
 
 session_renewal_retains_filter_but_invalidates_readiness_test() ->
     with_clock(member,fun({_,Authority}) ->

@@ -57,7 +57,8 @@ project(Audio,Clock) ->
     N=fields(<<"output">>,[supported,engine_running,player_running,scheduled_frames,completed_frames,queued_buffers,rejected_buffers,completion_age_ms,lead_min_ns,lead_max_ns,sample_rate,channels,latency_ns,volume_milli,route,backend,stats_age_ms,mapping_round_trip_ns,
         silence_frames,clock_reanchors],maps:get(output,Mixer,#{}),M),
     C=fields(<<"clock">>,[state,last_error,offset_error,age_ns,round_trip_ns,remaining_correction_ns,
-        filter_ready,filter_sample_count,filter_required_samples,filter_reset_count,filter_reset_reason,sample_gaps,last_sample_gap_ms],Clock,N),
+        filter_ready,filter_sample_count,filter_required_samples,filter_reset_count,filter_reset_reason,sample_gaps,last_sample_gap_ms,
+        estimate_quality,raw_offset_ns],Clock,N),
     O=fields(<<"clock">>,[offset_ms,ready],maps:get(offset_policy,Clock,#{}),C),
     T=lists:foldl(fun(View,Acc) ->
         lists:foldl(fun(K,A) ->
@@ -73,7 +74,7 @@ project(Audio,Clock) ->
     Counts=lists:foldl(fun(View,Acc) -> maps:fold(fun(K,V,A) -> A#{K => maps:get(K,A,0)+V} end,
         Acc,maps:get(counts,maps:get(diagnostics,View,#{}),#{})) end,#{},Transports),
     Result=failures(<<"transport">>,#{counts => Counts},D2),
-    Filtered=maps:filter(fun(_,V) -> scalar(V) end,Result),
+    Filtered=maps:filter(fun field_scalar/2,Result),
     %% Reserve three fields for switches and cache age; preserve summaries before capped reasons.
     {Failures,Summary}=lists:partition(fun({K,_}) -> binary:match(K,<<".failure.">>)=/=nomatch end,maps:to_list(Filtered)),
     maps:from_list(Summary++lists:sublist(lists:sort(Failures),max(0,125-length(Summary)))).
@@ -154,10 +155,13 @@ scalar(V) when is_boolean(V) -> true;
 scalar(V) when is_binary(V),byte_size(V)>0,byte_size(V)=<64 ->
     re:run(V,<<"^[a-z][a-z0-9_]*$">>,[{capture,none}])=:=match;
 scalar(_) -> false.
+field_scalar(<<"clock.raw_offset_ns">>,V) ->
+    try _=ba_buffee_time_protocol:integer(V),true catch _:_ -> false end;
+field_scalar(_,V) -> scalar(V).
 validate(D) ->
     true=is_map(D) andalso map_size(D)=<128,
     maps:foreach(fun(K,V) ->
         true=is_binary(K) andalso byte_size(K)=<96,
         true=re:run(K,<<"^(sampled_at_ms|(?:receiver|mixer|transport|clock|diagnostics|output)\\.[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?)$">>,[{capture,none}])=:=match,
-        true=scalar(V)
+        true=field_scalar(K,V)
     end,D),ok.
