@@ -300,10 +300,16 @@ apply_sample(P,T4,Until,#{scope := {Buffee,Provider},clock := D0}=S0) ->
     {ok,Sample} = ba_buffee_clock_sync:measure(T1,T2,T3,T4),true = maps:get(round_trip_ns,Sample)=<4000000000,
     Key = {Timeline,Instance,Revision},Stale = age(maps:get(last_sync,D0),T4),
     Reference=maps:get(filter_reference,S0),
-    S = case {Reference,Reference=/=Key,is_integer(Stale) andalso Stale>freshness(S0)*1000000} of
-        {undefined,_,_} -> S0; % Already empty; retain the reason that cleared it.
-        {_,true,_} -> reset_filter(reference_changed,S0);
-        {_,false,true} -> reset_filter(sample_gap,S0);
+    %% A gap means samples are missing, not that earlier ones were wrong: within
+    %% the holdover limit keep the filter (and readiness) and let new samples
+    %% replace old ones; drift over such a gap stays within the slewed correction.
+    %% Only a longer gap, or a changed reference, starts acquisition again.
+    Gap = is_integer(Stale) andalso Stale>freshness(S0)*1000000,
+    S = case {Reference,Reference=/=Key,Gap,Gap andalso Stale>holdover_limit(S0)*1000000} of
+        {undefined,_,_,_} -> S0; % Already empty; retain the reason that cleared it.
+        {_,true,_,_} -> reset_filter(reference_changed,S0);
+        {_,false,_,true} -> reset_filter(sample_gap,S0);
+        {_,false,true,false} -> gap(Stale,S0);
         _ -> S0
     end,D = maps:get(clock,S),
     Slot = (mono_ms(T4)-maps:get(born,S)) div maps:get(sample_interval_ms,D),
@@ -416,6 +422,11 @@ fail(Reason,#{clock := D}=S) -> S#{clock := D#{confirmed := false,last_error := 
 cancel_upstream(#{upstream := undefined}=S) -> S;
 cancel_upstream(#{upstream := #{pid := Pid,monitor := Ref}}=S) -> demonitor(Ref,[flush]),exit(Pid,kill),S#{upstream := undefined}.
 freshness(#{clock := D}) -> 2*maps:get(sample_interval_ms,D).
+%% Longest sample gap bridged without discarding the filter (60 s at the
+%% production 5 s interval).
+holdover_limit(#{clock := D}) -> 12*maps:get(sample_interval_ms,D).
+gap(Stale,#{clock := D}=S) ->
+    S#{clock := D#{sample_gaps => maps:get(sample_gaps,D,0)+1,last_sample_gap_ms => Stale div 1000000}}.
 save(#{clock := D}=S) -> ets:insert(ba_session_scope:table(?MODULE),{clock,D}),S.
 valid_reference(system) -> true;
 valid_reference({ntp,H}) -> valid_host(H);
