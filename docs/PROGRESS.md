@@ -1,5 +1,34 @@
 # Current implementation and validation
 
+## Native backend selection and control contract — 2026-11-18
+
+Selected GStreamer for the first complete native stream integration after
+inspecting the existing GStreamer/libwebrtc bindings, isolated scheduling and
+receiver experiments, production Media Session and OTP consent/stop machinery.
+The selection is based on explicit media timeline/lifecycle control, not a claim
+that the earlier tone comparison proves superior music quality. NetEq's current
+binding does not execute Session presentation or explicit rate correction.
+
+Recorded the replacement control contract in AUDIO_ENGINE_INTERFACE.md, with the
+older per-packet receiver interface marked legacy. OTP remains the authority:
+streams must stop on owner/supervisor/authority/runtime loss, including forced
+native termination after bounded cleanup. Endpoint loss triggers teardown but
+is not a stop acknowledgement. Variable native buffering is supported by design
+up to ten seconds, not a fixed ten-second prefill, and must be flushed on stop.
+
+Concrete gaps found: iOS GStreamer close returns after queuing teardown; Windows
+receiver teardown and helper exit depend on the GLib loop; the shared native
+binding closes its socket without confirmed stop and refuses the current
+profile. The receiver engine abstraction has no production session caller in
+this checkout. Existing prototypes cannot be described as an integrated path.
+
+Validation: source inspection and primary OTP/GStreamer/NetEq documentation;
+documentation diff/links checked. No runtime sources changed, backend enabled,
+compilation, automated tests, app build, deployment or live Device operation.
+Step 1's assessment/contract are recorded; its lifecycle implementation is still
+open, beginning with a disposable endpoint and native crash/stop enforcement.
+The five implementation steps and retained legacy issues are in PLAN.md.
+
 ## Native media boundary and buffering audit — 2026-11-18
 
 The owner explicitly clarified that Erlang is the piping/control system and

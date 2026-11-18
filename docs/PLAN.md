@@ -15,9 +15,14 @@ cleanup waits until then.
   commands, receiving only metadata and bounded summaries. This supersedes the
   earlier Erlang-first media implementation direction. Existing Erlang Mixer
   findings below diagnose the legacy path, not a mandate to extend it.
-- **Quality before low latency.** Three-second Response time may be normal;
-  assess ten-second native buffering as well. The previous Automatic taper
-  toward 3 s remains implemented policy, not a quality target or native limit.
+- **OTP ownership is mandatory.** Native streams stop when their owning OTP
+  process, required supervisor, authority or runtime stops or crashes. Independent
+  native teardown and forced termination must prevent orphan media connections;
+  terminate callbacks and queued cleanup alone do not meet this requirement.
+- **Quality before low latency.** Native buffering varies on demand up to ten
+  seconds; ten seconds is a maximum, not a fixed delay or prefill. The previous
+  Automatic taper toward 3 s remains implemented policy, not a quality target
+  or native limit.
   The owner accepted continuous native streams with periodic global-time
   mappings, packet recovery and smooth sample-rate correction. Prefer standard
   RTP/RTCP and established native libraries. Send an initial mapping promptly,
@@ -76,91 +81,77 @@ physical synchronization remain unqualified.
 
 ## Next 5 steps
 
-1. **Establish the native media path, then continue listening tests.**
-   Reuse the existing native GStreamer/libwebrtc work where suitable, keeping
-   audio payloads out of Erlang throughout capture-to-speaker transport. Current
-   prototypes are not a complete replacement: `ba_audio_native_engine` rejects
-   the current control profile pending its native revocation protocol, and the
-   current encoded Mac path still passes Opus payloads through Erlang. Resolve
-   the smallest complete native integration before adding more Erlang rendering.
-   Evaluate standard RTP/RTCP sample/global-time mapping, early native buffering,
-   deadline-aware recovery and native continuous sample-rate correction. Keep
-   Session timing and consent control in Erlang.
-   After rebuilding the initial clock burst, owner confirmed immediate playback.
-   Quality was initially odd and reportedly worsened/recovered on speaker restart,
-   then stabilized. Latest recording did not capture growing queues or silence;
-   clock reset count stayed fixed. Native output calibration RTT improved from
-   26.163 ms to 2.451 ms on reopen. Investigate that conversion alongside regular
-   same-source overlaps and late packets; gradual deterioration is not yet explained.
-   Owner now confirms a quick automatic resume after an iPhone restart, but
-   Mac ON AIR off/on still needed a speaker mute/unmute to recover. Trace that
-   source-return path with saved playback intent retained; automatic recovery is
-   intended by the receiver's existing 250 ms retry loop.
-   Latest rebuilt-app listening recheck (22:12–22:16): owner reports an approximately
-   three-minute silent start, then fragmented audio. Startup cause was not
-   captured. During one bad minute the Mac had zero new capture drops, while
-   the iPhone counted 1,016 late input packets, 115 output deadline failures
-   and 33 overlaps; maximum Mixer wakeup gap reached 2,663 ms. Response time
-   was manual 150 ms. Investigate receiver scheduling stalls and packet timing
-   before treating a larger capture queue as the fix; distinguish native capture
-   ring overflow from try-lock contention if capture drops recur. A controlled
-   comparison at the previously successful 800 ms remains useful.
-   The monitored iPhone cold start took about 100 s to acquire 20 clock samples;
-   output then ran for about a minute with the owner confirming sound. Preserve
-   saved speaker intent, show clock acquisition as waiting, and make a genuine
-   start failure/timeout settle to muted with one-click retry. Current error
-   rendering disagrees with `live.muted`, causing the two-click retry observed
-   by the owner. Automatic grew 532 → 630 ms; late/overlap drops still occurred.
-   The older managed Web Device still needs a restart for new policy messages.
-   Keep manual 800 ms available. Then take one
-   `beamaudio monitor --all --metrics --once` snapshot. `Transport setup: open`
-   means media flows; `ice_checking` across networks means a TURN relay is needed
-   (owner decision). This decides what audio work is next.
-2. **Clock availability and rate correction (2026-11-18).** Source now seeds a
-   master's host clock immediately and uses a follower's first authenticated raw
-   sample while the filter warms. An initial five-sample burst now runs on join
-   before audio scheduling; its lowest-RTT measurement sets the mapping directly,
-   bounded to two seconds after the first valid reply. Local idle-join check:
-   raw time 0.17 s, calibration complete 1.37 s; 35 focused checks pass. Core
-   compiled, apps not rebuilt/deployed for this increment. A deterministic reproduction
-   drops 25/100 contiguous 512-frame blocks during a -500 ppm clock slew, versus
-   zero with a steady clock: start-time mapping and nominal duration diverge,
-   and the Mixer rejects small overlaps as whole-block failures. Resolve sample/
-   time conversion and continuous rendering before relying on more buffering.
-   One announced master on the active broadcaster remains unfinished; current
-   selection still prefers the original reference. Short sample gaps (up to 12
-   intervals) now keep the filter, counted as `clock.sample_gaps`, but readiness
-   still expires after two intervals. `synchronized` does not bound clock error:
-   at 500 ppm a 100 ms initial error takes 200 s to remove. Establish measured
-   alignment/error reporting without reinstating a full-filter startup gate;
-   remaining: the three intermittent clock test failures. Before: one late time sample (> 2 sample intervals,
-   10 s in production) resets the follower filter and the clock reports *not
-   ready* until 20 new samples arrive (≈ 100 s), stopping audio. Keep using the
-   established mapping in holdover while the filter refills, bounded by drift
-   uncertainty, and make sync loss visible. Then make the three intermittent
-   clock test failures deterministic (control-restart recovery in
-   `buffee-time-smoke.py`, convergence timeout in `session-privileges-smoke.py`,
-   `sample_gap` resets under OS stalls).
-3. **Same Device everywhere.** Allow `monitor` (and `readiness`) through the app
-   command list (`ba_device_api:client_methods/0`), so app and headless Devices
-   expose the same API. One `runtime.log` in every Device's state folder,
-   configured by the runtime itself rather than per host (Windows app has none
-   today). CLI audio (`--enable`) on Windows through the same adapters.
-4. **Diagnostics blind spot.** Per peer, show the stream stages between "speaker
-   ready" and "transport": linked → catalogue read → offers → contract →
-   subscribe → transport → mixer → output, with the last error of each.
-   Replace the catch-all `invalid_control_or_attempt` with stage + message kind.
-5. **Mac capture timestamps.** The Mac Web receiver showed 263
-   `overlapping_packet` drops; likely the same cause fixed on Windows (per-packet
-   host-time jitter). Check Core Audio capture times for contiguity and, if
-   needed, derive them from the frame position like the Windows helper.
+1. **GStreamer backend and enforced control lifetime — in progress.**
+   Backend assessment and replacement control contract are recorded in
+   [AUDIO_ENGINE_INTERFACE.md](AUDIO_ENGINE_INTERFACE.md#native-stream-decision--2026-11-18).
+   GStreamer is selected for the first integration; no runtime backend was
+   switched. Next implement the lifecycle handshake, native lifetime guard,
+   confirmed stop/flush, and OTP owner/permission monitoring. Owner or supervisor
+   death must trigger teardown independently of the media loop, with forced
+   native termination if cleanup stalls. Keep the current profile rejection
+   until disposable crash/stop checks establish this boundary.
+2. **One complete native Mac → iPhone stream.**
+   Integrate capture, media transport and output without PCM or encoded packets
+   crossing Erlang. Reuse existing native components and authenticated
+   signalling; preserve source formats. Do not extend the legacy Erlang Mixer.
+3. **Sample positions mapped to Session time.**
+   Acquire the initial RTP/RTCP media/shared-clock mapping promptly and refresh
+   it periodically. Native execution follows the Session schedule without
+   per-packet Erlang decisions. Keep clock accuracy/uncertainty visible and
+   preserve the existing rapid initial calibration work.
+4. **Continuous, resilient native playback under OTP control.**
+   Variable buffering on demand up to ten seconds, packet reordering, recovery
+   before deadlines and smooth rate correction. Buffer capacity is distinct
+   from Response time and actual occupancy. Stop flushes queues immediately;
+   buffering never extends a dead owner's stream or permits autonomous restart.
+5. **Recovery/listening checks, then remaining platforms and inputs.**
+   Check startup, ON AIR off/on, receiver restart, owner/supervisor crash and
+   fresh consent after recovery. Report each stream stage and its last error.
+   With the first path proven, extend to Windows and other inputs and retire
+   the replaced Erlang media path. Listening acceptance remains user-led;
+   software counters do not prove acoustic synchronization.
+
+### Existing runtime issues to retain during migration
+
+These are outstanding observations, not a reason to expand the Erlang media
+path. Dated recordings, counters and validation limits remain in PROGRESS.md.
+
+- Source return after Mac ON AIR off/on still needed a speaker toggle despite
+  the receiver's 250 ms retry loop. Preserve saved playback intent; show clock
+  acquisition as waiting and fix the error/muted-state mismatch for one-click
+  retry. The older managed Web Device needs a restart for new policy messages.
+- The initial clock burst restored immediate playback in the owner's latest
+  report. Earlier 150 ms listening failed with late/overlap drops and Mixer
+  stalls up to 2,663 ms. A manual 800 ms comparison remains useful. Reopening
+  native output improved host-clock calibration RTT from 26.163 to 2.451 ms;
+  its contribution to sound recovery remains unproven. If capture drops recur,
+  distinguish ring overflow from try-lock contention before increasing queues.
+- A -500 ppm clock slew reproducibly discarded 25/100 contiguous legacy blocks;
+  fixed nominal durations and mapped start times diverge. Check Mac capture
+  sample continuity/host-time jitter too (263 overlaps observed on a receiver).
+  Resolve continuity in the native replacement, rather than tolerating arbitrary
+  overlaps or fading every packet.
+- Announced master placement on the active broadcaster, bounded clock holdover,
+  measured alignment/error reporting and visible sync loss remain unfinished.
+  A ready clock does not bound error: a 100 ms correction at 500 ppm takes
+  200 s. Make the intermittent clock checks deterministic: control restart in
+  buffee-time-smoke.py, session-privileges-smoke.py convergence and sample-gap
+  behavior under OS stalls. Do not restore the full-filter startup gate.
+- Expose monitor/readiness through ba_device_api:client_methods/0; put one
+  runtime.log in every Device state folder, configured by the runtime; enable
+  Windows CLI audio through the same adapters. Show linked → catalogue → offers
+  → contract → subscribe → transport → render → output with a last error;
+  replace invalid_control_or_attempt with stage and message kind.
+- Use one public CLI metrics snapshot to establish setup state before network
+  troubleshooting. An open transport does not prove sound or good timing;
+  ice_checking alone does not establish that TURN is necessary.
 
 ## Open questions for the owner
 
 - Is approving an Ask request a standing yes (current: the use stays on and
   Settings shows Always) or "allow for now"?
 - Should iPhone playback continue in the background?
-- TURN relay: only if step 1 shows it is needed.
+- TURN relay: only if actual cross-network connectivity checks show it is needed.
 
 ## Backlog (after the next steps)
 

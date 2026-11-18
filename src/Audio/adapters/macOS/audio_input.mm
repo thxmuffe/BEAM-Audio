@@ -85,7 +85,9 @@ static void wirePacket(uint8_t type, const void *data, uint32_t bytes) {
     writeBytes(header, sizeof(header)); writeBytes(data, bytes);
 }
 
-#ifdef BA_OPUS_COMPARISON
+#if defined(BA_NATIVE_STREAM)
+#include "native_stream_capture.inc"
+#elif defined(BA_OPUS_COMPARISON)
 #include "opus_capture.inc"
 #else
 static void packet(uint8_t type, const void *data, uint32_t bytes) { wirePacket(type, data, bytes); }
@@ -197,9 +199,25 @@ public:
         packet(1, metadata.data(), uint32_t(p - metadata.data())); fflush(stdout);
         Slot scratch;
         uint8_t command[5];
+#ifdef BA_NATIVE_STREAM
+        for (;;) {
+            pollfd owner={STDIN_FILENO,POLLIN,0};
+            int ready=poll(&owner,1,10);
+            if(ready<0 && errno==EINTR)continue;
+            if(ready<0 || (ready>0 && (owner.revents&(POLLHUP|POLLERR|POLLNVAL))))return false;
+            if(ready>0) {
+                if(fread(command,1,sizeof(command),stdin)!=sizeof(command))return false;
+                if(!memcmp(command,"\0\0\0\1s",5))return true;
+                if(memcmp(command,"\0\0\0\1h",5))throw Failure{-1,"Invalid native capture command"};
+                captureOwnerContact=nativeNowMS();
+            }
+#else
         while (fread(command, 1, sizeof(command), stdin) == sizeof(command)) {
+#endif
             if (!memcmp(command, "\0\0\0\1s", 5)) return true;
+#ifndef BA_NATIVE_STREAM
             if (memcmp(command, "\0\0\0\1r", 5)) throw Failure{-1, "Invalid capture command"};
+#endif
             if (changed.load()) throw Failure{-1, "Default audio device or capture format changed; toggle capture off and on"};
             if (!microphone && processesChanged.exchange(false)) {
                 CATapDescription *description = CFBridgingRelease(property<CFTypeRef>(tap, kAudioTapPropertyDescription));
@@ -231,7 +249,22 @@ int main(int argc, const char **argv) {
     @autoreleasepool {
         try {
             if (@available(macOS 14.2, *)) {
+#ifdef BA_NATIVE_STREAM
+                nativeStart();
+                if(argc>1 && strcmp(argv[1],"--protocol-test")==0){
+                    uint8_t command[5];
+                    while(fread(command,1,5,stdin)==5){
+                        captureOwnerContact=nativeNowMS();
+                        if(!memcmp(command,"\0\0\0\1s",5)){[nativeStreams stop];packet(6,nullptr,0);return 0;}
+                        if(memcmp(command,"\0\0\0\1h",5))return 65;
+                    }
+                    [nativeStreams stop];return 0;
+                }
+#endif
                 auto capture = std::make_unique<Capture>(); bool stopped = capture->run(argc > 1 && strcmp(argv[1], "mic") == 0); capture.reset();
+#ifdef BA_NATIVE_STREAM
+                [nativeStreams stop];
+#endif
                 if (stopped) { packet(6, nullptr, 0); fflush(stdout); } return 0;
             }
             throw Failure{-1, "System audio capture requires macOS 14.2 or newer"};

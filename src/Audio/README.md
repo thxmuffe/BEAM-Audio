@@ -10,6 +10,12 @@ The accepted replacement uses continuous native streams with sample positions
 and periodic shared-clock mappings, preferably RTP/RTCP, rather than requiring
 independent absolute targets on every packet. Acquire an initial mapping promptly;
 native buffering/recovery and smooth rate correction follow Session policy.
+GStreamer is selected for the first complete native integration; the
+[replacement control contract](../../docs/AUDIO_ENGINE_INTERFACE.md#native-stream-decision--2026-11-18)
+requires streams to stop on OTP owner/supervisor loss, including forced native
+termination if teardown stalls. Native buffering varies on demand up to ten
+seconds. This selection is documented only: lifecycle enforcement and the new
+stream path are not implemented or enabled yet.
 The remaining sections describe existing implementation until that migration.
 
 Shared Erlang modules in `src/` own publication, metering, interpretation,
