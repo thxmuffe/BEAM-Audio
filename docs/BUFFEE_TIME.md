@@ -173,7 +173,7 @@ From the core root:
 ```sh
 python3 tests/control/buffee-time-smoke.py
 python3 tests/control/buffee-time-smoke.py --production-cadence
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time
 ```
 
 The first proof uses two independent temporary Reception services and three unnamed

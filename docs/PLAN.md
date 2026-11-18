@@ -1,5 +1,54 @@
 # Current plan
 
+## One launcher for the complete automated inventory — 2026-11-18
+
+Implemented: OpenSound Run Tests.command delegates to the shared core
+`scripts/run-tests.py`. It discovers 54 unit/integration/end-to-end/platform
+suites/scenarios across both repositories, including all named audio modes.
+It continues after failures, reports unavailable tests explicitly and writes
+machine-readable results. A run cannot claim everything passed when a platform
+or dependency prevented execution. `--list` inspects coverage; `--match` is partial.
+
+Validation: launcher inventory, runner coverage/failure-continuation/exit-status
+checks and the real five-second 150-ms end-to-end case pass through the launcher.
+That audio case passed in this run; previously observed intermittent Mixer
+deadline misses remain unresolved. Full 54-scenario execution has not been done
+by the agent; user-led full execution is next. Windows-only cases require Windows.
+
+## Device/Session end-to-end test name — 2026-11-18
+
+The canonical runner is `tests/control/device-session-e2e.py`, reflecting
+Session joining, privileges, master/follower clocks, shared response time and
+audio delivery/output. Repository references are updated. This rename changes
+no test behavior or known failures; Python syntax and references were checked.
+
+
+## Clock/policy assertions in backend end-to-end test — 2026-11-18
+
+Renamed the audio scenario `device-session-e2e.py`; two-Device mode supports
+`--ephemeral` contact/group invitations and defaults to 150 ms. It asserts
+ready shared Response time on both Devices before/during/after playback,
+master readiness, full follower filtering/freshness, shared master/timeline,
+and mapped host-system UTC within a bracketed 5 ms tolerance.
+
+Clock and 250-packet delivery assertions passed in the stricter runs, but output
+was not lossless: 512 frames missed at 150 ms, and 256 at 1,000 ms. Keep these
+failures visible and trace Mixer handoff deadlines next. Exact external UTC
+accuracy and physical speaker output are not proven by this local fixture.
+
+## Five-second audio delivery baseline — 2026-11-18
+
+Implemented and run: the existing real-WebRTC integration harness now supports
+two Devices and one synthetic ON AIR source (`--renewal --single-source
+--seconds 5`). At both 150 ms and 1,000 ms Response time, all 250 packets and
+240,000 frames are accounted for with no transport rejection, Mixer drops,
+gaps or late test-sink handoffs. Receiver revocation also fences a future buffer.
+See tests/control/README.md for the exact command and accelerated fixture timing.
+
+Next: isolate native capture, clock mapping and iPhone output scheduling against
+this passing backend baseline. This does not prove physical speaker playback,
+WAN reliability, Opus decoding or the public CLI's full audio-control flow.
+
 ## Confirmed iPhone reset trigger and master-clock display — 2026-11-17
 
 The diagnostic iPhone identified `network_changed` as the reset reason. Instance

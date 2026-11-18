@@ -91,7 +91,8 @@ command(#{<<"op">> := <<"pause_source">>,<<"source">> := Key,<<"paused">> := B})
 command(#{<<"op">> := <<"capture_source">>,<<"source">> := Key,<<"capture_ns">> := Capture,<<"value">> := Value,<<"frames">> := Frames}) ->
     D = get({descriptor,Key}),PCM = pcm(Key,Value,Frames),
     {ok,Mono} = ba_buffee_clock:to_monotonic(Capture),
-    Input = (ba_audio_input:new())#{descriptor => D,source => get({source,Key}),handler => ba_stream_handler_pcm},
+    Input = (ba_audio_input:new())#{descriptor => D,source => get({source,Key}),handler => ba_stream_handler_pcm,
+        permission => case Key of <<"microphone">> -> record;_ -> broadcast end},
     Next = ba_audio_input:captured(PCM,Mono,Input),
     put({descriptor,Key},maps:get(descriptor,Next)),
     #{ok => true,blocks => maps:get(blocks,Next),send_errors => maps:get(send_errors,Next)};

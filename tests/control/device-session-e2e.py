@@ -1,4 +1,4 @@
-"""Three unnamed BEAM devices, real Desk signaling and real WebRTC PCM, test clock/sink."""
+"""Device/Session end-to-end test: joining, privileges, clocks and real WebRTC audio with test output."""
 import importlib.util
 import argparse
 import secrets
@@ -27,17 +27,45 @@ def wait_audio(r,predicate):
         time.sleep(.05)
     raise AssertionError('Audio did not converge: '+str(s))
 
+def assert_session_clocks(runtimes,master,expected_offset_ms):
+    """The fixture uses this host's system UTC, not an independent UTC oracle."""
+    readings=[]
+    for r in runtimes:
+        before=time.time_ns();clock=r.request('clock_snapshot');after=time.time_ns()
+        assert clock['state']=='synchronized' and clock['filter_ready'],clock
+        assert clock['offset_policy']['ready'],clock
+        assert clock['offset_policy']['offset_ms']==expected_offset_ms,clock
+        assert clock['master']==master.identity['id'],clock
+        # Explicit 5ms loopback tolerance, with RPC duration bracketed out.
+        assert before-5_000_000<=clock['filtered_utc_time']<=after+5_000_000,clock
+        if r is master:
+            assert clock['role']=='master' and clock['upstream_acquisitions']>=1,clock
+            assert clock['master_instance']==clock['instance'],clock
+        else:
+            assert clock['role']=='follower',clock
+            assert clock['filter_sample_count']==clock['filter_required_samples'],clock
+            assert clock['age_ns']<=2*clock['sample_interval_ms']*1_000_000,clock
+            assert clock['master_clock']['state']=='fresh',clock
+            assert clock['master_clock']['device']==master.identity['id'],clock
+        readings.append(clock)
+    assert len({c['timeline'] for c in readings})==1,readings
+    assert len({c['master_instance'] for c in readings})==1,readings
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--buffee-time",action="store_true")
     parser.add_argument('--ephemeral',action='store_true',help='Contacts/group invitations, live PCM, leave/end, cold restart and Owner-loss teardown')
     parser.add_argument('--opus',action='store_true',help='Exercise the configured GStreamer decoder, no hardware')
     parser.add_argument('--sustained',action='store_true',help='Continuous PCM capture at the default 1000ms Offset, then reference restart/rebind')
     parser.add_argument('--renewal',action='store_true',help='Continuous two-source lease renewal proof; returns before lifecycle checks')
+    parser.add_argument('--single-source',action='store_true',help='Two Devices, one publisher; requires --renewal')
     parser.add_argument('--seconds',type=int,default=12)
-    parser.add_argument('--offset-ms',type=int,default=1000)
+    parser.add_argument('--offset-ms',type=int,default=None)
     parser.add_argument('--lease-ms',type=int,default=60000)
     parser.add_argument('--deny-renewal',action='store_true',help='Test-only packet filter withholds control proofs while keeping the test clock fresh')
     args=parser.parse_args()
+    if args.offset_ms is None:args.offset_ms=150 if args.single_source else 1000
+    if args.single_source and (not args.renewal or args.opus):
+        parser.error('--single-source requires --renewal and PCM')
     root=control.ROOT
     paths=list((root/'builds/intermediates/control/default/lib').glob('*/ebin'))
     paths+=list((root/'builds/intermediates/BeamTransport/dev/lib').glob('*/ebin'))
@@ -61,8 +89,10 @@ def main():
             executable=str(next(erl_root.glob('erts-*/bin/erlexec')))
             extra_env={'DYLD_LIBRARY_PATH':native_lib,'ROOTDIR':str(erl_root),
                        'BINDIR':str(Path(executable).parent),'EMU':'beam','PROGNAME':'erl'}
-        a,b,c=[control.Runtime([out,*paths],executable=executable,extra_env=extra_env) for _ in range(3)]
-        runtimes.extend([a,b,c])
+        runtimes.extend(control.Runtime([out,*paths],executable=executable,extra_env=extra_env) for _ in range(2 if args.single_source else 3))
+        a,b=runtimes[:2];c=None if args.single_source else runtimes[2]
+        publishers=[a] if args.single_source else [a,c]
+        sources=[(a,'music',.75)] if args.single_source else [(a,'music',.25),(c,'microphone',.5)]
         for r in runtimes:assert r.request('renewal_prepare',lease_ms=args.lease_ms)['ok']
         if args.buffee_time:
             for r in runtimes:assert r.request('clock_prepare',interval_ms=250,samples=3)['ok']
@@ -70,26 +100,25 @@ def main():
         control.wait(a,lambda s:all(d['connected'] for d in s['relay']['desks'].values()))
         invitations={}
         if args.ephemeral:
-            for r,name in ((b,'Receiver'),(c,'Second publisher')):
+            for r,name in zip(runtimes[1:],['Receiver','Second publisher']):
                 assert a.request('put_contact',id=r.identity['id'],name=name)['ok']
-            assert a.request('group_contacts',name='Session',ids=[b.identity['id'],c.identity['id']])['ok']
+            assert a.request('group_contacts',name='Session',ids=[r.identity['id'] for r in runtimes[1:]])['ok']
             links=a.request('invite_buffee',selection={'group':'Session'})['value']
             invitations={entry['device']:entry['invitation'] for entry in links}
-        for r in (b,c):
+        for r in runtimes[1:]:
             invitation=invitations[r.identity['id']] if args.ephemeral else a.request('invite')['value']
             assert r.request('join',invitation=invitation,desk=url)['ok']
             control.wait(r,lambda s:s['membership']['state']=='authorized')
         permissions=['status_read','stream_read','stream_subscribe']
         if args.buffee_time:
             permissions=['offset_write',*permissions,'time_read']
-            assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
+            if c is not None:assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
         assert a.request('grant',peer=b.identity['id'],permissions=permissions)['ok']
         revision=a.request('snapshot')['membership']['revision']
-        for r in (b,c):control.wait(r,lambda s:s['membership']['state']=='authorized' and s['membership']['revision']==revision)
-        for r in (a,c):
-            current=b.request('snapshot')['sessions'].get(r.identity['id'],{}).get('stage')
-            if current!='authorized':
-                assert b.request('connect',peer=r.identity['id'])['ok']
+        for r in runtimes[1:]:control.wait(r,lambda s:s['membership']['state']=='authorized' and s['membership']['revision']==revision)
+        for r in publishers:
+            # The control owner already initiates missing peer links. A second
+            # initiator here can collide with its authenticated handshake.
             control.wait(b,lambda s:s['sessions'].get(r.identity['id'],{}).get('stage')=='authorized')
             control.wait(r,lambda s:s['sessions'].get(b.identity['id'],{}).get('stage')=='authorized')
         if args.buffee_time:
@@ -100,7 +129,7 @@ def main():
                     if clock['state']=='synchronized' and clock['offset_policy']['ready']:break
                     time.sleep(.05)
                 else:raise AssertionError(clock)
-            assert b.request('offset_set',offset_ms=250)['ok']
+            assert a.request('offset_set',offset_ms=250)['ok']
             for r in runtimes:
                 deadline=time.monotonic()+10
                 while time.monotonic()<deadline:
@@ -108,13 +137,20 @@ def main():
                     time.sleep(.05)
                 else:raise AssertionError('Offset did not reach publisher')
         for r in runtimes:assert r.request('buffee_audio_prepare' if args.buffee_time else 'audio_prepare')['ok']
+        consent=b.request('api',request={'method':'capability','capability':'speaker','enabled':True})
+        assert consent.get('consent',{}).get('speaker') is True,consent.get('error')
+        on_air=a.request('api',request={'method':'capability','capability':'broadcast','enabled':True})
+        assert on_air.get('consent',{}).get('broadcast') is True,on_air.get('error')
+        if c is not None:
+            mic=c.request('api',request={'method':'capability','capability':'microphone','enabled':True})
+            assert mic.get('consent',{}).get('microphone') is True,mic.get('error')
         def publish(r,key,format,channels):
             return r.request('publish_opus',source=key,fixture=str(fixture)) if args.opus else r.request('publish',source=key,format=format,channels=channels)
         assert publish(a,'music','pcm16_le',1)['ok']
-        assert publish(c,'microphone','float32_le',2)['ok']
-        wait_audio(b,lambda s:len(s['offers'])==2)
+        if c is not None:assert publish(c,'microphone','float32_le',2)['ok']
+        wait_audio(b,lambda s:len(s['offers'])==len(sources))
         subscriptions=[];contracts=[]
-        for r,key in ((a,'music'),(c,'microphone')):
+        for r,key,_ in sources:
             contract=secrets.token_hex(16).upper()
             assert r.request('audio_contract',direction='publish',peer=b.identity['id'],source=key,contract=contract)['ok']
             assert b.request('audio_contract',direction='receive',peer=r.identity['id'],source=key,contract=contract)['ok']
@@ -122,30 +158,35 @@ def main():
             assert result.get('ok'),result
             subscriptions.append(result['value'])
             contracts.append((r,key,contract))
-        x,y=subscriptions
+        x=subscriptions[0];y=None if args.single_source else subscriptions[1]
         wait_audio(b,lambda s:all(s['subscriptions'][i]['state']=='active' for i in subscriptions))
-        for i in subscriptions:assert b.request('audio_play',id=i,playing=True)['ok']
+        for i in subscriptions:
+            reply=b.request('audio_play',id=i,playing=True)
+            assert reply.get('ok'),reply
         if args.renewal:
             assert not args.opus,'PCM is used for exact continuous frame/mix accounting'
             if args.buffee_time:
-                assert b.request('offset_set',offset_ms=args.offset_ms)['ok']
+                assert a.request('offset_set',offset_ms=args.offset_ms)['ok']
                 for r in runtimes:
                     end=time.monotonic()+10
                     while r.request('clock_snapshot')['offset_policy']['offset_ms']!=args.offset_ms:
                         assert time.monotonic()<end;time.sleep(.05)
             identities=[r.request('audio_ids') for r in runtimes]
-            before=b.request('audio_snapshot')['mixer'];b.request('audio_reset_stats')
+            if args.buffee_time:assert_session_clocks(runtimes,a,args.offset_ms)
+            before_audio=b.request('audio_snapshot');before=before_audio['mixer'];b.request('audio_reset_stats')
+            sent_before=[sum(p['transport'].get('sent',0) for p in r.request('audio_snapshot')['provider_status']) for r in publishers]
             target=time.time_ns()+args.offset_ms*1_000_000
             start=time.monotonic()
             for n in range(args.seconds*50):
-                for r,key,value in ((a,'music',.25),(c,'microphone',.5)):
+                for r,key,value in sources:
                     if args.buffee_time:
                         reply=r.request('capture_source',source=key,capture_ns=target-args.offset_ms*1_000_000+n*20_000_000,value=value,frames=960)
-                        assert reply['send_errors']==0,reply
+                        assert reply.get('send_errors')==0,reply
                     else:
                         reply=r.request('push_source',source=key,target_ns=target+n*20_000_000,value=value,frames=960)
                         assert reply['deliveries']==1,reply
                 if n%50==0:
+                    if args.buffee_time:assert_session_clocks(runtimes,a,args.offset_ms)
                     for r,old in zip(runtimes,identities):assert r.request('audio_ids')==old
                     # Reinstall exactly the same Contracts during live playback.
                     for r,key,contract in contracts:
@@ -166,19 +207,29 @@ def main():
                 print('PASS: withheld nonce proofs stop Media Sessions and discard future buffers at authorization expiry, with an independently healthy test clock')
                 return
             time.sleep(args.offset_ms/1000+.2)
-            after=b.request('audio_snapshot')['mixer'];stats=b.request('audio_stats')
+            after_audio=b.request('audio_snapshot');after=after_audio['mixer'];stats=b.request('audio_stats')
+            if args.buffee_time:assert_session_clocks(runtimes,a,args.offset_ms)
+            expected_packets=args.seconds*50
+            for sub in subscriptions:
+                old=before_audio['subscriptions'][sub]['transport'];new=after_audio['subscriptions'][sub]['transport']
+                assert new['received']-old['received']==expected_packets,(sub,old,new)
+                assert new['rejected']==old['rejected'],(sub,old,new)
+            for r,old in zip(publishers,sent_before):
+                sent=sum(p['transport'].get('sent',0) for p in r.request('audio_snapshot')['provider_status'])-old
+                assert sent==expected_packets,(sent,expected_packets)
+            print(f'PASS: {expected_packets} packets/source delivered; clocks and {args.offset_ms}ms response-time assertions passed',flush=True)
             assert after['dropped']==before['dropped'],(before,after,stats)
             assert stats['frames']==args.seconds*48000 and stats['gaps']==0 and stats['bad_mix']==0 and stats['late']==0,stats
             assert abs(stats['first_target']-target)<22000,stats
             assert after['queued_bytes']==0,after
             for r,old in zip(runtimes,identities):assert r.request('audio_ids')==old
-            for r in (a,c):
+            for r in publishers:
                 session=b.request('snapshot')['sessions'][r.identity['id']]
                 assert session.get('renewals',0)>=2,session
             # Revocation must still invalidate authorized media and future
             # buffers after successful in-place renewal.
             frames_before=b.request('audio_stats')['frames'];future=time.time_ns()+700_000_000
-            for r,key,value in ((a,'music',.25),(c,'microphone',.5)):
+            for r,key,value in sources:
                 assert r.request('push_source',source=key,target_ns=future,value=value,frames=960)['deliveries']==1
             end=time.monotonic()+2
             while b.request('audio_snapshot')['mixer']['queued_bytes']==0:
@@ -187,7 +238,7 @@ def main():
             wait_audio(b,lambda s:s['mixer']['streams']==0 and all(v['state']!='active' for v in s['subscriptions'].values()))
             time.sleep(.75)
             assert b.request('audio_stats')['frames']==frames_before,'Revoked future PCM was rendered'
-            print(f'PASS: {args.seconds}s continuous two-source PCM at {args.offset_ms}ms Offset; exact frame/mix/target accounting, no gaps/drops, unchanged Media Sessions and publications across authenticated renewal and repeated identical Contracts')
+            print(f'PASS: {len(runtimes)} Devices, {len(sources)} source(s), {args.seconds}s PCM: {expected_packets} packets/source sent and received; {stats["frames"]} frames, no gaps/drops/late output, unchanged media across renewal; stop/revocation verified')
             return
         def mixed(expected,first=True):
             b.request('audio_clear_output')
@@ -288,6 +339,7 @@ def main():
                 time.sleep(max(0,start+(n+1)*.02-time.monotonic()))
             time.sleep(1.1)
             after=b.request('audio_snapshot')['mixer'];blocks=b.request('audio_output')['blocks']
+            print(f'PASS: {expected_packets} packets/source delivered; clocks and {args.offset_ms}ms response-time assertions passed',flush=True)
             assert after['dropped']==before['dropped'],(before,after)
             assert after['rendered']-before['rendered']>=600,(before,after)
             assert blocks and max(x['peak'] for x in blocks)==.75,blocks

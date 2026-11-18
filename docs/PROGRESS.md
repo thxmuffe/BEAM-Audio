@@ -1,5 +1,88 @@
 # Current implementation and validation
 
+## Run Tests.command includes the automated inventory — 2026-11-18
+
+Replaced the four-suite shell list with a shared core Python catalog/runner;
+the product launcher forwards arguments and its existing exit status/Return
+prompt. Discovery includes EUnit projects (including DeviceWeb and legacy
+Reception), ExUnit, both Swift packages, frontend Node tests, standalone Python
+checks/experiments and test escripts. Existing Device/Session audio scenarios and
+production clock cadence are explicitly enumerated. Inventory is 54 entries.
+
+Execution is sequential, continues after failures, reports every selected case,
+and writes a JSON summary under ignored core builds/test-results. Missing builds,
+dependencies and wrong-platform cases are UNAVAILABLE with a reason. Exit codes
+are 0 for a fully passing selection, 1 for any failure, 2 for otherwise incomplete;
+partial selections never claim all tests passed. There are no invented iPhone
+hardware tests, and Windows tests cannot run on this Mac.
+
+Validation: the actual Run Tests.command --list path inventories 54/54 without
+execution. Two runner tests pass, checking coverage and a real subprocess chain
+that fails, encounters an unavailable prerequisite, and still executes a later
+passing test, including summary exit codes. A real launcher-selected five-second
+end-to-end run passed 250/250 packets, all clock/150-ms checks, 240,000 frames,
+and revocation. This single pass does not erase earlier intermittent deadline
+failures. Full cross-platform/54-scenario execution was not performed; the
+launcher is ready for the user's full run. Shell/Python syntax and diff checks
+pass. The core default profile compiles before EUnit/integration so standalone
+scripts use current modules; project caches remain under core builds/.
+
+## Device/Session end-to-end test name — 2026-11-18
+
+The canonical runner is `tests/control/device-session-e2e.py`, reflecting
+Session joining, privileges, master/follower clocks, shared response time and
+audio delivery/output. Repository references are updated. This rename changes
+no test behavior or known failures; Python syntax and references were checked.
+
+
+## Backend end-to-end clock and Session policy assertions — 2026-11-18
+
+Renamed the test `device-session-e2e.py` and updated references. The two-Device
+scenario now supports `--ephemeral`: contact/group invitations, not a different
+Session runtime. Renewal mode returns before the later full lifecycle scenario.
+
+Checks before transmission, every second during, and after drain now assert:
+sender hosts a ready master with an upstream anchor; receiver is fully filtered
+and fresh; both share the same master instance/timeline; their mapped UTC is
+within a bracketed 5 ms tolerance of the fixture host's system UTC. This does
+not prove zero error or externally verified UTC. The reference needs no follower
+filtering. Added matching ready Response time assertions on both Devices;
+the canonical test and two-Device default use 150 ms.
+
+The first stricter ephemeral run passed clock and all 250-packet delivery checks
+but lost 512 rendered frames at 150 ms (two missed targets); the 1,000 ms
+comparison lost 256 frames (one missed target). Rendered values were correct,
+with one output gap in each run. Earlier passing runs do not prove reliability;
+no lossless assertion was weakened. The final explicit-150-ms run also passed
+all clock/policy and 250-packet assertions, then failed with two missed targets
+and 239,488/240,000 rendered frames. Native capture/speakers remain outside
+this test.
+
+## Exact five-second two-Device audio baseline — 2026-11-18
+
+The old audio regression was not currently passing: its explicit peer connect
+collided with automatic admission, response-time writes relied on obsolete
+`offset_write` authorization, and receiver consent was not enabled. Its synthetic
+capture input also defaulted to `legacy_capture`, which the secure profile denies.
+Updated the fixture to use automatic control connection, the authorized sender
+for Response time edits, explicit Device API speaker/ON AIR consent and the
+appropriate broadcast/microphone input permission. No production gates changed.
+
+Added `--single-source` to the existing renewal scenario: exactly two independent
+Devices create/join via local Reception, one sends known synthetic PCM for five
+seconds over real WebRTC, and the other uses the production Mixer with a test
+output binding. Added exact per-transport sent/received packet deltas and
+rejection checks alongside existing frame/value/target/queue assertions.
+
+Both 1,000 ms and normal 150 ms runs passed: 250 packets sent and received,
+240,000 frames, no rejected packets, gaps, Mixer drops or late sink writes.
+Transport/publication identities remained stable through shortened lease renewal;
+the final receiver revocation prevented a separately queued future buffer playing.
+All temporary runtimes/Reception were cleaned up. Clock warmup uses three samples
+at 250 ms and leases are four seconds; production defaults are unchanged.
+No native audio hardware, iPhone, live Session or public-CLI-only playback test.
+The longer three-Device/Opus/lifecycle scenarios were not fully rerun.
+
 ## Latest handoff after user Run Both — 2026-11-17
 
 The network-hint repair is now running on the user's devices. iPhone instance
@@ -1057,7 +1140,7 @@ receiver unaware of a stream for good. `ba_audio_receiver` re-reads every
 linked peer's catalogue every 5 s again, beside the push; each read is
 independent and bounded. Likely cause, not yet confirmed on the real Devices.
 A local three-Device check (joiner granted on-air) reached active subscriptions
-when native libraries were loaded; `audio-streams-smoke.py` itself predates the
+when native libraries were loaded; `device-session-e2e.py` itself predates the
 privilege and join model (its second publisher lacks on-air) and is stale.
 
 Disabled-control hints (2026-11-17): every control the web app disables now

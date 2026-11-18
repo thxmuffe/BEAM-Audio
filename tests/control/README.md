@@ -1,5 +1,43 @@
 # Headless backend checks — step 8
 
+## Device/Session end-to-end test
+
+```sh
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --ephemeral --renewal --single-source --seconds 5 --lease-ms 4000 --offset-ms 150
+```
+
+Two disposable Devices create/join a Session through a local Reception. The
+sender enables ON AIR and the receiver enables speaker consent through the
+Device API. Synthetic known PCM passes through the shared input policy, real
+WebRTC and the shared Mixer into a test sink. The five-second window must send
+and receive exactly 250 packets and render 240,000 frames, with correct levels,
+no rejected packets, gaps, Mixer drops or late handoffs, and an empty final queue.
+It also checks unchanged transports/publications across renewal, then revokes
+the receiver while an additional future buffer is queued and verifies no output.
+
+Clock/master assertions run before, each second during, and after transmission:
+sender is a ready master; receiver is a fully acquired fresh follower on the
+same master instance/timeline. Both must have ready **150 ms Response time** for
+the command above. Two-Device mode defaults to 150 ms; an explicit `--offset-ms`
+selects a comparison value, asserted identically on both Devices.
+Mapped UTC is checked against the fixture host's system time with a bracketed
+5 ms tolerance. This is not an independent external UTC-accuracy measurement.
+
+`--ephemeral` uses contact/group-generated invitations, while the direct mode
+uses the same Session runtime with a direct invitation. `--renewal` returns
+before the later full leave/end/cold-restart scenario.
+
+Initial runs passed at 150 ms and 1,000 ms, but subsequent clock-asserting runs
+received all 250 packets and still missed two output targets/512 frames at
+150 ms, and one target/256 frames at 1,000 ms. Lossless rendering is therefore
+not reliable yet; the strict output assertions remain. Clock acquisition is
+accelerated to three samples/250 ms; leases are shortened to four seconds.
+This is a backend integration test using Erlang probes and public Device API
+actions, not a public-CLI-only or native capture/speaker test. No live Session,
+physical audio hardware or iPhone playback is exercised. Omit/adapt the native
+library variable outside this Mac environment. The longer three-Device scenario
+remains available without `--single-source` and was not fully revalidated here.
+
 Core APIs now use `ba_`, application `ba_core` and environment `BA_*`.
 See [naming/migration](../../docs/NAMING.md) and
 [canonical terminology](../../docs/TERMINOLOGY.md). Check source naming with:
@@ -42,7 +80,7 @@ python3 tests/control/parallel-sessions-smoke.py
 python3 tests/control/buffee-reconnect-smoke.py
 python3 tests/control/buffee-time-smoke.py
 python3 tests/control/buffee-time-smoke.py --production-cadence
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time --sustained
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --sustained
 ```
 
 The first uses the existing public WSS Reception for signed status/capabilities,
@@ -61,7 +99,7 @@ omit or adapt it on other systems.
 ## Ephemeral Buffees — step 9
 
 ```sh
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --ephemeral --buffee-time
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --ephemeral --buffee-time
 ```
 
 This passes the lifecycle exit: saved contacts/group generate recipient-bound
@@ -90,8 +128,8 @@ continues the existing rejoin/revocation checks.
 Exact continuous PCM proofs, using actual 60 s control and membership leases:
 
 ```sh
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time --renewal --seconds 125 --offset-ms 1000
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time --renewal --seconds 85 --offset-ms 30000
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --renewal --seconds 125 --offset-ms 1000
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --renewal --seconds 85 --offset-ms 30000
 ```
 
 The test sink timestamps handoff before forwarding PCM to a bounded observer;
@@ -114,7 +152,7 @@ To isolate expiry from clock loss, keep the test clock healthy and withhold
 control handshakes/renewal proofs using a test-only relay filter:
 
 ```sh
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --renewal --lease-ms 4000 --seconds 2 --offset-ms 30000 --deny-renewal
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --renewal --lease-ms 4000 --seconds 2 --offset-ms 30000 --deny-renewal
 ```
 
 That check passes: sessions stop and future queues disappear without output.
@@ -130,7 +168,7 @@ For the real native codec/handoff proof on the existing Mac GStreamer runtime:
 export BA_GSTREAMER_RUNTIME="$PWD/builds/intermediates/gstreamer/runtime"
 export BA_GSTREAMER_PCM_HELPER="$PWD/src/Audio/adapters/gstreamer/pcm_bridge.py"
 export BA_GSTREAMER_PYTHON=/usr/bin/python3
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/audio-streams-smoke.py --buffee-time --opus
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --opus
 ```
 
 Use a Python/GI installation matching that runtime (the bundled Mac GI is Python
@@ -187,7 +225,7 @@ Devices and a local Reception: restart identity/return, `forget session`, cold
 restart staying forgotten, another Device retaining its Session, and explicit
 Join. It also checks `monitor --metrics --once --json` with all audio OFF.
 The Session restart/parallel smokes above instead use disposable Erlang probes.
-`audio-streams-smoke.py` sends real WebRTC PCM/Opus and checks levels, pause/resume
+`device-session-e2e.py` sends real WebRTC PCM/Opus and checks levels, pause/resume
 and teardown against a test sink; it does not exercise the public CLI or speakers.
 There is no public-CLI known-tone playback/start/stop/level test yet. Manual UI
 and listening acceptance remain with the user.
