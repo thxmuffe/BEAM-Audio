@@ -1,5 +1,30 @@
 # Current plan
 
+## Windows investigation — 2026-11-18
+
+Complete baseline inventory executed: 11 passed, 19 failed, 24 unavailable.
+See [Windows audio investigation](WINDOWS-AUDIO-2026-11-18.md) for reports and
+the individual remaining failures. Windows runner tool/path discovery and
+audio E2E transport lookup are repaired; missing Apple/Opus prerequisites still
+must not count as passes.
+
+A real mixer drain-rate defect was reproduced and repaired with bounded batches
+and 50-ms submission lead, preserving presentation targets and authorization.
+The monitored five-second case now passes all 250 packets/240,000 frames with no
+drops, gaps or late output. Nineteen focused Erlang checks, 29 Node checks, six
+Chromium scenarios, four Reception ExUnit checks and runner checks pass.
+ON AIR now explains native unavailability/errors on tap.
+
+The phone is confirmed on iOS 26.6.1; user asked to defer ON AIR rather than add
+duplicate capture code. Live audio-disabled observation reaches both Mac
+Devices and Windows Web, but member `0C15DC65` is disconnected. Confirm that
+this is the phone and that its active Session matches the supplied invitation.
+
+Next: rebuild the iPhone app on Mac with both updated checkouts and inspect
+its live Received/Output/native counters once reachable. Audible
+iPhone playback and native capture remain unverified. Investigate remaining
+full-suite failures and long-duration audio results; do not call the suite green.
+
 ## Handoff to Windows — 2026-11-18
 
 Stop point: diagnostics implementation is in source in **both checkouts** and

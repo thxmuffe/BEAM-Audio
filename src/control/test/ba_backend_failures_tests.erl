@@ -6,8 +6,34 @@ id() -> <<"test">>.
 now() -> {ok,erlang:system_time(nanosecond)}.
 to_monotonic(T) -> {ok,T-erlang:time_offset(nanosecond)}.
 from_monotonic(T) -> {ok,T+erlang:time_offset(nanosecond)}.
-write(_,Time,Frames,_) -> put(written_span,{Time,Frames}),ok.
+write(_,Time,Frames,_) ->
+    put(written_span,{Time,Frames}),put(written_spans,[{Time,Frames}|case get(written_spans) of undefined -> [];Spans -> Spans end]),ok.
 close(_) -> ok.
+
+one_wakeup_drains_due_blocks_without_retiming_test_() -> {spawn,fun() ->
+    Old=application:get_env(ba_core,audio_clock_adapter),application:set_env(ba_core,audio_clock_adapter,?MODULE),
+    erase(written_spans),
+    try
+        {ok,UTC}=now(),Target=UTC+25000000,
+        D=#{encoding => pcm,sample_format => float32_le,sample_rate => 48000,channel_count => 2,
+            clock => id(),authorization_deadline => erlang:monotonic_time(millisecond)+1000},
+        Mix=ba_audio_mix:enable(a,true,ba_audio_mix:add(a,1.0,ba_audio_mix:new(48000,id()))),
+        S=#{mix => Mix,descriptors => #{a => D},device => {?MODULE,#{latency_ns => 0}},
+            dropped => 0,rendered => 0,submitted_frames => 0,last_error => null},
+        PCM=binary:copy(<<0.25:32/little-float>>,1536),
+        {noreply,Buffered}=ba_audio_mixer:handle_cast({packet,a,D,#{playback_time => Target,frame_count => 768},PCM},S),
+        {noreply,Next}=ba_audio_mixer:handle_info(render,Buffered),
+        Spans=lists:reverse(get(written_spans)),
+        ?assertEqual([256,256,256],[F || {_,F} <- Spans]),
+        Grid=(Target*48000+500000000) div 1000000000,
+        Expected=[begin {ok,T}=to_monotonic((Grid+N*256)*1000000000 div 48000),T end || N <- lists:seq(0,2)],
+        ?assertEqual(Expected,[T || {T,_} <- Spans]),
+        ?assertEqual(768,maps:get(submitted_frames,Next)),?assertEqual(0,maps:get(dropped,Next))
+    after
+        erase(written_spans),erase(written_span),
+        case Old of undefined -> application:unset_env(ba_core,audio_clock_adapter);{ok,V} -> application:set_env(ba_core,audio_clock_adapter,V) end
+    end
+end}.
 
 same_contract_is_a_noop_and_stale_revision_is_rejected_test() ->
     Peer = binary:copy(<<"A">>,64),Id = binary:copy(<<"B">>,32),Key = {receive_audio,Peer,<<"music">>},
@@ -17,7 +43,10 @@ same_contract_is_a_noop_and_stale_revision_is_rejected_test() ->
 
 failure_counters_are_bounded_and_payload_free_test() ->
     S = lists:foldl(fun(N,Acc) -> ba_diagnostics:count({malformed,<<N:32>>},Acc) end,#{},lists:seq(1,100)),
-    ?assertEqual(#{counts => #{invalid_or_unsupported => 100},last_error => invalid_or_unsupported},ba_diagnostics:view(S)),
+    View=ba_diagnostics:view(S),
+    ?assertEqual(#{counts => #{invalid_or_unsupported => 100},last_error => invalid_or_unsupported},maps:without([trace],View)),
+    ?assert(length(maps:get(trace,View,[]))=<16),
+    [?assertEqual([at_ms,reason],lists:sort(maps:keys(Event))) || Event <- maps:get(trace,View,[])],
     T = ba_diagnostics:count(missed_packet_target,S),
     ?assertMatch(#{counts := #{missed_packet_target := 1},last_error := missed_packet_target},ba_diagnostics:view(T)).
 
@@ -59,7 +88,7 @@ future_buffering_does_not_allow_output_past_authorization_test() ->
         Deadline = erlang:monotonic_time(millisecond)+1004,
         D = #{encoding => pcm,sample_format => float32_le,sample_rate => 48000,channel_count => 2,clock => id(),authorization_deadline => Deadline},
         Mix = ba_audio_mix:enable(a,true,ba_audio_mix:add(a,1.0,ba_audio_mix:new(48000,id()))),
-        S = #{mix => Mix,descriptors => #{a => D},device => {?MODULE,#{latency_ns => 985000000}},dropped => 0,rendered => 0,last_error => null},
+        S = #{mix => Mix,descriptors => #{a => D},device => {?MODULE,#{latency_ns => 985000000}},dropped => 0,rendered => 0,submitted_frames => 0,last_error => null},
         H = #{playback_time => Target,frame_count => 960},PCM = binary:copy(<<0.25:32/little-float>>,1920),
         {noreply,Buffered} = ba_audio_mixer:handle_cast({packet,a,D,H,PCM},S),
         ?assertEqual(0,maps:get(dropped,Buffered)),

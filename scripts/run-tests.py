@@ -15,6 +15,16 @@ import time
 CORE = Path(__file__).resolve().parents[1]
 
 
+def prepare_tools():
+    """Use the same repository-local Windows tools as the product build."""
+    if sys.platform == 'win32':
+        tools = CORE/'builds/intermediates/tools'
+        bins = [CORE/'builds/intermediates/Windows/otp/bin', tools/'elixir/bin']
+        os.environ['PATH'] = os.pathsep.join([*(str(p) for p in bins if p.is_dir()), os.environ.get('PATH', '')])
+        for name, path in [('MIX_HOME', tools/'mix'), ('HEX_HOME', tools/'hex'), ('MIX_REBAR3', tools/'rebar3')]:
+            os.environ.setdefault(name, str(path))
+
+
 def files(root):
     for directory, names, filenames in os.walk(root):
         names[:] = sorted(n for n in names if n not in
@@ -55,19 +65,25 @@ def catalog(product):
     for root in (CORE, product):
         paths = list(files(root))
         for p in paths:
-            label = f'{root.name}/{p.relative_to(root)}'
+            label = f'{root.name}/{p.relative_to(root).as_posix()}'
             if p.name == 'rebar.config' and (p.parent/'test').is_dir():
-                result.append(Test(label+' (EUnit)', ['rebar3', 'do', 'compile,', 'eunit'], p.parent))
+                rebar = CORE/'builds/intermediates/tools/rebar3'
+                command = ['escript', str(rebar)] if sys.platform == 'win32' and rebar.is_file() else ['rebar3']
+                result.append(Test(label+' (EUnit)', command + ['do', 'compile,', 'eunit'], p.parent))
             elif p.name == 'mix.exs' and (p.parent/'test').is_dir():
-                result.append(Test(label+' (ExUnit)', ['mix', 'test'], p.parent))
+                result.append(Test(label+' (ExUnit)', [shutil.which('mix') or 'mix', 'test'], p.parent))
             elif p.name == 'Package.swift' and (p.parent/'Tests').is_dir():
                 result.append(Test(label+' (Swift)', ['swift', 'test', '--package-path', str(p.parent),
                     '--scratch-path', str(root/'builds/test-artifacts'/p.parent.name)], p.parent, 'darwin'))
         for directory in sorted({p.parent for p in paths if p.name.endswith('.test.mjs')}):
-            result.append(Test(f'{root.name}/{directory.relative_to(root)} (Node)',
+            result.append(Test(f'{root.name}/{directory.relative_to(root).as_posix()} (Node)',
                 [node, '--test', *map(str, sorted(directory.glob('*.test.mjs')))], directory))
         for p in paths:
             relative = p.relative_to(root).as_posix()
+            if relative == 'src/Apps/WebApp/tests/device-view-browser.mjs':
+                chrome = os.environ.get('BA_TEST_CHROME') or 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+                result.append(Test(f'{root.name}/{relative} (Chromium)',
+                    [node, str(p)], root, required=(Path(chrome),)))
             python = p.suffix == '.py' and (p.name.startswith('test_') or
                 (relative.startswith('tests/') and (p.name.endswith(('-smoke.py', '-e2e.py'))
                  or p.name in {'smoke.py', 'naming-check.py'})))
@@ -97,7 +113,8 @@ def catalog(product):
                 modules = ('numpy',)
             variants = [('default', [])]
             if p.name == 'device-session-e2e.py':
-                required.append(CORE/'builds/intermediates/BeamTransport/dev/lib/ex_webrtc')
+                required.append(CORE/('builds/intermediates/Windows/transport/beam/dev/lib/ex_webrtc'
+                    if sys.platform == 'win32' else 'builds/intermediates/BeamTransport/dev/lib/ex_webrtc'))
                 variants += [
                     ('two Devices, 5s, ephemeral, 150ms', ['--buffee-time', '--ephemeral', '--renewal', '--single-source', '--seconds', '5', '--lease-ms', '4000', '--offset-ms', '150']),
                     ('shared clock', ['--buffee-time']),
@@ -156,6 +173,7 @@ def main():
     product = args.product_root.resolve()
     if not (product/'src/Apps').is_dir():
         parser.error(f'OpenSound product checkout not found: {product}')
+    prepare_tools()
     tests = catalog(product)
     selected = [t for t in tests if not args.match or args.match in t.name]
     if not selected:

@@ -32,7 +32,7 @@ class RunnerTests(unittest.TestCase):
     def test_inventory_contains_all_discovered_runners_and_audio_cases(self):
         tests = runner.catalog(runner.CORE.parent/'OpenSound')
         self.assertIn('/src/control/rebar.config', tests[0].name)
-        self.assertEqual(['rebar3', 'do', 'compile,', 'eunit'], tests[0].command)
+        self.assertEqual(['do', 'compile,', 'eunit'], tests[0].command[-3:])
         paths = {str(Path(t.command[1]).resolve()) for t in tests if len(t.command)>1}
         for p in runner.files(runner.CORE/'tests'):
             if p.name.endswith(('-smoke.py', '-e2e.py', '.escript')) or p.name in {'smoke.py', 'naming-check.py'}:

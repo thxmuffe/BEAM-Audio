@@ -134,9 +134,16 @@ open_permitted(#{device := undefined,mix := Mix} = S) ->
 open_permitted(#{output_stop_pending := true}) -> {error,native_stop_unconfirmed};
 open_permitted(S) -> {ok,S}.
 render(S) -> case ba_device_permission:allowed(playback) of
-    true -> render_live(expire_inputs(S));
+    true -> render_ready(16,expire_inputs(S));
     false -> (close(S))#{mix := undefined,descriptors := #{}}
 end.
+%% Timers are wakeups, not an audio clock: one wakeup may cover several PCM
+%% blocks (notably on Windows). Drain the existing handoff window in a bounded
+%% batch, preserving every target and all authorization/late-output checks.
+render_ready(0,S) -> S;
+render_ready(N,S) ->
+    Next=render_live(S),
+    case Next=:=S of true -> S;false -> render_ready(N-1,Next) end.
 render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
     Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
     case {ba_audio_mix:next_time(Mix),clock()} of
@@ -144,7 +151,10 @@ render_live(#{mix := Mix,device := {A,Device}} = S) when Mix=/=undefined ->
             case Module:to_monotonic(Time) of
                 {ok,Mono} ->
                     Handoff = Mono-maps:get(latency_ns,Device,0),Now = erlang:monotonic_time(nanosecond),
-                    case Handoff-Now=<20000000 of
+                    %% Queue against absolute host targets with enough lead for
+                    %% a coarse OS timer plus one delayed wakeup. This changes
+                    %% submission time only, never the audible presentation time.
+                    case Handoff-Now=<50000000 of
                         false -> S;
                         true ->
                             render_authorized(Mono,Handoff,Now,A,Device,S)

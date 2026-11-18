@@ -1,5 +1,60 @@
 # Current implementation and validation
 
+## Live iPhone inspection — 2026-11-18
+
+User confirmed iOS 26.6.1 and OpenSound foregrounded. Defer ON AIR system-audio
+capture on that release; do not add a duplicate capture implementation. Speaker
+playback remains a separate supported path.
+
+Joined the supplied live Session using an independent audio-disabled Windows
+Inspector. The managed CLI correctly reported macOS-only launch support; an
+isolated launcher used the existing public Device API monitor implementation
+instead. Both observer runs left the Session and stopped; no user Device was
+stopped or reconfigured, and no capture/playback was enabled.
+
+Twenty follow-up samples read the native Mac, Windows Web and Mac Web Devices.
+One member, ID prefix `0C15DC65`, stayed disconnected/connecting and provided no
+capabilities. Its identity as the iPhone still needs user confirmation; saved
+membership is not live connectivity. The native Mac captured two Sources but
+reported zero open media transports; system-output samples were silent (-96
+dBFS). Historical setup_timeout/invalid_control_or_attempt failures were present
+but did not increase during observation. These samples do not establish the
+iPhone's native output state. Verify its Session and self Device ID next, then
+inspect routing/presence or native counters as indicated by that result.
+
+## Windows mixer and iPhone ON AIR investigation — 2026-11-18
+
+Ran the complete original 54-scenario inventory: 11 passed, 19 failed,
+24 unavailable. Fixed Windows bundled-tool discovery, Mix/rebar invocation,
+inventory path normalization and Windows audio transport lookup. Added the
+headless Chromium regression to the inventory (now 55 scenarios). Reception
+ExUnit subsequently passed four checks; runner checks pass.
+
+Reproduced a real audio drain-rate failure: 250 packets received but only
+2,816 output frames submitted. The mixer now drains bounded batches of up to
+16 blocks within a 50-ms submission window. Absolute presentation targets,
+Session Response time, consent and per-block authorization checks remain.
+The monitored five-second/150-ms case passed twice after the final change:
+250 packets, 240,000 frames, no drops/gaps/late output. The 125-second two-source
+renewal case passed 6,250 packets/source and 6,000,000 mixed frames, with no
+drops/gaps/late output and verified final revocation. Nineteen focused Erlang
+checks, 29 Node checks and six real headless Chromium scenarios passed.
+
+ON AIR previously disabled itself with a Mac-specific hover hint when iOS
+reported capture unavailable. A tap now opens the native availability reason;
+permission/cancellation/start errors also open a visible dialog. The current
+system capture implementation requires iOS 27; this is independent of playback.
+
+The complete suite remains failing/incomplete. Final audio rerun: 3 passed,
+5 failed, 1 unavailable. Maximum-delay playback still had 12 dropped blocks
+and a gap; receiver-restart timing, offset/privilege expectations and the
+authorization-expiry fault test also failed. Several general tests are Unix-
+specific or refer to retired Windows wx behavior; others need investigation.
+See [full report](WINDOWS-AUDIO-2026-11-18.md) and its saved JSON report paths.
+No physical iPhone was observed, rebuilt or deployed from Windows. Its exact
+playback failure remains unconfirmed; sync both checkouts and rebuild on Mac,
+then inspect the live native output/clock/consent counters and OS version.
+
 ## iOS diagnostics compilation repair — 2026-11-18
 
 Corrected the new output diagnostics call from nonexistent `AVAudioSession.shared`

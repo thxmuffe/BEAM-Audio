@@ -69,7 +69,9 @@ def main():
         parser.error('--single-source requires --renewal and PCM')
     root=control.ROOT
     paths=list((root/'builds/intermediates/control/default/lib').glob('*/ebin'))
-    paths+=list((root/'builds/intermediates/BeamTransport/dev/lib').glob('*/ebin'))
+    transport=root/('builds/intermediates/Windows/transport/beam/dev/lib' if sys.platform=='win32'
+                    else 'builds/intermediates/BeamTransport/dev/lib')
+    paths+=list(transport.glob('*/ebin'))
     paths+=list((root/'builds/intermediates/tools/elixir/lib').glob('*/ebin'))
     assert any(p.parent.name=='ex_webrtc' for p in paths),'Compile the existing BeamTransport first'
     out=root/'builds/intermediates/buffee-control-check';out.mkdir(parents=True,exist_ok=True)
