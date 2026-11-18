@@ -58,7 +58,7 @@ project(Audio,Clock) ->
         silence_frames,clock_reanchors],maps:get(output,Mixer,#{}),M),
     C=fields(<<"clock">>,[state,last_error,offset_error,age_ns,round_trip_ns,remaining_correction_ns,
         filter_ready,filter_sample_count,filter_required_samples,filter_reset_count,filter_reset_reason,sample_gaps,last_sample_gap_ms,
-        estimate_quality,raw_offset_ns],Clock,N),
+        estimate_quality,raw_offset_ns,initial_sync_complete,initial_sync_samples,initial_sync_round_trip_ns],Clock,N),
     O=fields(<<"clock">>,[offset_ms,ready],maps:get(offset_policy,Clock,#{}),C),
     T=lists:foldl(fun(View,Acc) ->
         lists:foldl(fun(K,A) ->

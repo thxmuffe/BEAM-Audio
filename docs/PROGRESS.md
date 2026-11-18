@@ -1,5 +1,78 @@
 # Current implementation and validation
 
+## Rapid initial clock calibration on idle join — 2026-11-18
+
+Clock acquisition already started on membership; subsequent measurements now
+use a bounded initial burst instead of five-second spacing. The existing
+supervised clock worker requests up to five samples at 250 ms spacing, keeping
+one request in flight, and completes two seconds after the first valid reply
+if fewer arrive. The lowest-RTT observation directly sets the initial mapping
+before audio scheduling is allowed and seeds the ordinary median filter.
+Raw time remains visible from the first authenticated reply. `presentation/1`,
+`to_monotonic/1` and automatic subscription restoration wait for initial
+calibration, not for the full 20-sample window. Later corrections retain the
+existing slew; already assigned targets are not rewritten. Diagnostics expose
+initial completion, sample count and selected RTT. No wire protocol change.
+
+Validation: core compiled; 35 focused clock/filter/mapping/subscription/diagnostic
+checks pass. Tests cover raw-time visibility with audio fenced, direct removal
+of a provisional 100 ms error without a long slew, and completion on the sample
+count or timeout. The signed two-Device idle-join check with production tracking
+cadence observed raw time at 0.17 s and five-sample completion at 1.37 s, with
+zero pending correction and audio scheduling then enabled while the median
+window remained warming. These are local software checks,
+not a measured acoustic alignment guarantee. Mac/iPhone apps were not rebuilt
+or deployed. ON AIR return recovery, receiver stalls, master placement and
+same-source overlap rendering remain separate unfinished work.
+
+## Clock audit and recovery report — 2026-11-18
+
+The owner reports that restarting the iPhone now restores playback quickly
+without pressing buttons, but Mac ON AIR off/on did not resume until the iPhone
+speaker was muted/unmuted. This distinguishes successful saved-intent restoration
+in that restart from a still-failing source-return path; its cause was not
+captured. Receiver code intends automatic subscription restoration and retries
+inactive output every 250 ms, so manual toggling should not be required.
+
+Source audit confirms that `synchronized` gates mapping authorization and
+freshness, not measured clock accuracy, remaining slew or uncertainty. An initial
+100 ms mapping error needs 200 seconds to remove at the configured 500 ppm,
+after a correction check (every 30 s). This is a concrete possible long-settling
+mechanism, not a proven explanation of the reported startup wait. Master choice
+still follows the original reference or sorted online ON AIR privilege holders,
+using each Device's local presence view. Active broadcaster placement and a
+shared master announcement remain unfinished. See BUFFEE_TIME.md for the audit.
+No runtime changes, app builds or new tests were performed for this analysis.
+
+## Rebuilt Mac → iPhone listening recheck — 2026-11-18, 22:12–22:16 Helsinki
+
+The owner reported roughly three minutes between enabling the speaker and
+hearing music, followed by fragmented playback, possibly worse while typing on
+the broadcasting Mac. Read-only CLI snapshots did not capture usable remote
+diagnostics before sound began, so the cause and precise duration of startup
+remain unproven. The first usable sample already had a full, ready clock,
+41,980 cumulative native late-block failures and fresh native playback. Those
+cumulative failures cannot be assigned to the startup interval from this sample.
+
+The same Mac/iPhone instances remained running. From 22:14:49 to 22:15:49, the
+Mac's capture drop count stayed at 34 while 5,554 more capture blocks were
+published. The iPhone counted 1,016 additional late input packets, 51 missed
+handoff targets, 64 native late blocks and 33 overlapping packets. Its maximum
+Mixer wakeup gap increased from 2,000 to 2,663 ms, and long wakeup gaps increased
+from 22 to 34. The clock stayed ready at 20/20 samples without another reset;
+engine/player and speaker route remained active. Response time was **manual
+150 ms**, not the previously successful 800 ms. This establishes deadline and
+overlap failures during the listening report, not their complete root cause
+or a correlation with individual keystrokes.
+
+Source inspection confirms eight native Mac capture slots (about 85 ms for
+the observed 512-frame/48-kHz callbacks). The shared capture drop count combines
+try-lock contention, a full ring and invalid/oversize buffers; it does not
+identify which occurred. From 22:12:45 to 22:14:49 it rose by five, so capture
+loss also exists, but increasing that queue alone cannot explain or resolve
+the later breakup with no new capture drops. No playback settings or runtime
+code were changed. No build or tests were needed for this inspection.
+
 ## Raw clock availability and reproduced clock-slew drops — 2026-11-18
 
 The master now seeds its host clock immediately, including cold provider

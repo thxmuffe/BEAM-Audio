@@ -182,6 +182,9 @@ command(#{<<"op">> := <<"attack">>,<<"peer">> := Peer},Id,_) ->
     [ok = ba_buffee_desks:send(Peer,<<"buffee_control">>,Wire) || Wire <- [Forbidden,Forged,Replay]],
     #{ok => true};
 command(#{<<"op">> := <<"clock_snapshot">>},_,_) -> ba_buffee_clock:status();
+command(#{<<"op">> := <<"clock_audio_ready">>},_,_) ->
+    #{subscription => ba_subscription:clock_ready(ba_buffee_clock:status(),undefined),
+      presentation => case ba_buffee_clock:presentation([]) of {ok,_} -> true;_ -> false end};
 command(#{<<"op">> := <<"clock_prepare">>,<<"interval_ms">> := I,<<"samples">> := Count},_,_) ->
     application:load(ba_core),application:set_env(ba_core,clock_reference,system),
     application:set_env(ba_core,clock_sample_interval_ms,I),application:set_env(ba_core,clock_filter_samples,Count),

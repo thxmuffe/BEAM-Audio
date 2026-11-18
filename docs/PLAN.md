@@ -58,6 +58,19 @@ physical synchronization remain unqualified.
 ## Next 5 steps
 
 1. **Fix speaker startup state, then continue listening tests.**
+   Owner now confirms a quick automatic resume after an iPhone restart, but
+   Mac ON AIR off/on still needed a speaker mute/unmute to recover. Trace that
+   source-return path with saved playback intent retained; automatic recovery is
+   intended by the receiver's existing 250 ms retry loop.
+   Latest rebuilt-app listening recheck (22:12–22:16): owner reports an approximately
+   three-minute silent start, then fragmented audio. Startup cause was not
+   captured. During one bad minute the Mac had zero new capture drops, while
+   the iPhone counted 1,016 late input packets, 115 output deadline failures
+   and 33 overlaps; maximum Mixer wakeup gap reached 2,663 ms. Response time
+   was manual 150 ms. Investigate receiver scheduling stalls and packet timing
+   before treating a larger capture queue as the fix; distinguish native capture
+   ring overflow from try-lock contention if capture drops recur. A controlled
+   comparison at the previously successful 800 ms remains useful.
    The monitored iPhone cold start took about 100 s to acquire 20 clock samples;
    output then ran for about a minute with the owner confirming sound. Preserve
    saved speaker intent, show clock acquisition as waiting, and make a genuine
@@ -71,15 +84,21 @@ physical synchronization remain unqualified.
    (owner decision). This decides what audio work is next.
 2. **Clock availability and rate correction (2026-11-18).** Source now seeds a
    master's host clock immediately and uses a follower's first authenticated raw
-   sample while the filter warms; 33 focused checks and a production-cadence
-   startup check pass. Not rebuilt/deployed to apps. A deterministic reproduction
+   sample while the filter warms. An initial five-sample burst now runs on join
+   before audio scheduling; its lowest-RTT measurement sets the mapping directly,
+   bounded to two seconds after the first valid reply. Local idle-join check:
+   raw time 0.17 s, calibration complete 1.37 s; 35 focused checks pass. Core
+   compiled, apps not rebuilt/deployed for this increment. A deterministic reproduction
    drops 25/100 contiguous 512-frame blocks during a -500 ppm clock slew, versus
    zero with a steady clock: start-time mapping and nominal duration diverge,
    and the Mixer rejects small overlaps as whole-block failures. Resolve sample/
    time conversion and continuous rendering before relying on more buffering.
    One announced master on the active broadcaster remains unfinished; current
    selection still prefers the original reference. Short sample gaps (up to 12
-   intervals) now keep the filter and readiness, counted as `clock.sample_gaps`;
+   intervals) now keep the filter, counted as `clock.sample_gaps`, but readiness
+   still expires after two intervals. `synchronized` does not bound clock error:
+   at 500 ppm a 100 ms initial error takes 200 s to remove. Establish measured
+   alignment/error reporting without reinstating a full-filter startup gate;
    remaining: the three intermittent clock test failures. Before: one late time sample (> 2 sample intervals,
    10 s in production) resets the follower filter and the clock reports *not
    ready* until 20 new samples arrive (≈ 100 s), stopping audio. Keep using the

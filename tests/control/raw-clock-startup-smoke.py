@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""First authenticated sample permits playback before the production filter fills."""
+"""Idle join acquires raw time, then calibrates audio before the full filter fills."""
 import importlib.util
 from pathlib import Path
 import shutil
@@ -48,7 +48,26 @@ def main():
         assert state['estimate_quality'] == 'provisional'
         assert isinstance(state['raw_offset_ns'], str) and isinstance(state['filtered_utc_time'], int)
         assert state['master_clock']['state'] == 'fresh'
-        print(f'PASS: production 5s/20-sample filter remains warming while an authenticated raw mapping is usable after {time.monotonic()-started:.2f}s; raw offset and master time remain visible')
+        raw_elapsed = time.monotonic()-started
+        assert not state['initial_sync_complete'], state
+        assert b.request('clock_audio_ready') == {'subscription': False, 'presentation': False}
+        first_rtt = state['round_trip_ns']
+        while time.monotonic() < until:
+            state = b.request('clock_snapshot')
+            if state['initial_sync_complete']:
+                break
+            time.sleep(.025)
+        else:
+            raise AssertionError('Initial calibration did not complete: ' + str(state))
+        elapsed = time.monotonic()-started
+        assert elapsed < 5, (elapsed, state)
+        assert state['initial_sync_samples'] == 5, state
+        assert state['initial_sync_round_trip_ns'] <= first_rtt, state
+        assert state['remaining_correction_ns'] == 0, state
+        assert not state['filter_ready'] and state['filter_sample_count'] == 1, state
+        assert b.request('clock_audio_ready') == {'subscription': True, 'presentation': True}
+        # Neither Device has started native audio: the join alone initiated this.
+        print(f'PASS: idle join gives raw time after {raw_elapsed:.2f}s and finishes five-sample initial calibration after {elapsed:.2f}s; audio scheduling then opens with no pending slew, before the 20-sample filter fills')
     finally:
         for device in devices:
             device.close()

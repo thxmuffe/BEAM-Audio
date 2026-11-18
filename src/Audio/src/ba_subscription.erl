@@ -26,6 +26,7 @@ validate(Items) ->
         channel = maps:get(profile,I),true = is_boolean(maps:get(playing,I)),
         G = maps:get(gain,I),true = is_number(G) andalso G>=0 andalso G=<1
     end,Items),ok.
+clock_ready(#{initial_sync_complete := false},_) -> false;
 clock_ready(#{state := synchronized,role := master,filtered_utc_time := UTC,last_sync := Sync},After)
         when is_integer(UTC),is_integer(Sync) -> After=:=undefined orelse Sync>=After;
 clock_ready(#{state := synchronized,last_sync := Sync,age_ns := Age},After)

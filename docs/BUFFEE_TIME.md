@@ -19,11 +19,15 @@ architecture; increasing their limits is outside this increment.
 ## Current implementation
 
 The clock provider is independent of ownership. The original reference is
-preferred while present; otherwise an online ON AIR privilege holder is selected.
+preferred while present; otherwise an online ON AIR privilege holder is selected
+by sorted Device ID. This checks the privilege, not whether audio is currently
+broadcasting. Each Device derives the choice from its own observed online view;
+there is no coordinated master announcement yet, so agreement during differing
+presence views is not guaranteed by local OTP supervision.
 A Device with a fresh acquired mapping continues that same timeline and committed
 Response time. Followers obtain fresh authenticated samples from the new provider;
 packet Presentation Targets are not changed. Without a usable mapping the provider
-must acquire a new timeline and report unavailability until ready. No saved clock
+starts a new timeline seeded immediately from its own host clock. No saved clock
 observations or guessed playback targets bypass acquisition.
 
 The `buffee_control` profile runs `ba_buffee_clock` under its local OTP supervisor.
@@ -136,11 +140,27 @@ subtracts responder service time from RTT and estimates UTC-minus-local-monotoni
 Queueing before send/after response construction remains part of the measurement;
 network asymmetry and Reception/TLS latency remain real uncertainty.
 
-Production defaults retain 5-second sampling, a 20-observation median window,
+Sampling starts as soon as authorized Session membership and the master's
+authenticated control connection are available, independently of playback.
+Initial acquisition requests up to five samples at 250 ms spacing (one request
+in flight); it finishes after five replies or two seconds after the first valid
+reply. The lowest-RTT observation sets the initial mapping directly. Until that
+commit, raw time remains visible through `now/0`, but `presentation/1`,
+`to_monotonic/1` and automatic subscription restoration wait. Thus a provisional
+anchor can change before audio targets are assigned or executed. The selected
+observation seeds the median window; the burst does not fill it with clustered
+samples. `initial_sync_complete`, `initial_sync_samples` and
+`initial_sync_round_trip_ns` expose this acquisition separately from filter quality.
+The two-second bound begins with a valid reply, not with joining a disconnected
+or unauthorized Session, and remains subject to process scheduling delays.
+
+After initial acquisition, production defaults retain 5-second sampling,
+a 20-observation median window,
 30-second correction checks, strict 2 ms correction deadband and at most 500 ppm
 slew. At most one observation per sampling period enters the filter. The initial
-follower mapping is available from its first authenticated raw sample; partial
-median estimates refine it while the window fills. Corrections reuse
+follower's raw mapping is available from its first authenticated sample; after
+initial calibration, partial median estimates refine it while the window fills.
+Corrections reuse
 the existing monotonic mapping/inverse and never step an established mapping
 backward. Headless checks explicitly accelerate cadence/window, not production
 quality requirements. `estimate_quality` distinguishes provisional and filtered
@@ -163,6 +183,25 @@ monotonic values can be negative). Stale mappings remain diagnostic holdover;
 they do not authorize new scheduling. Public status keeps measurement uncertainty,
 RTT, age, reference identity/revision and filter counts, while current absolute
 uncertainty and unmeasured oscillator drift remain unknown.
+
+`state: synchronized` currently means usable authorized mapping with fresh
+evidence, not demonstrated alignment within a specified error. It does not test
+the remaining correction, measurement uncertainty or filter fullness. The 2 ms
+deadband is a correction trigger, not an accuracy guarantee. A full 20-sample
+median is not an independent alignment check. At 500 ppm, removing a 100 ms
+error takes 200 seconds after correction starts; checks run every 30 s.
+This can permit long settling while reporting synchronized. Initial acquisition
+now avoids slewing the first provisional anchor, but errors discovered afterward
+still have this limit. The slow-settling mechanism was not measured during the
+owner's earlier silent start.
+The filter uses median offset without RTT weighting; samples up to 4 s RTT can
+be accepted. Unequal outward/return delays can bias the estimate.
+
+Sample gaps up to 60 s preserve the filter, but scheduling readiness still
+expires after 10 s under the default cadence. Filter retention does not extend
+the readiness or Response-time freshness deadlines. Native host-clock mapping
+and actual audio-device latency add further error; software clock status does
+not establish acoustic synchronization.
 
 Follower resync invalidates readiness until fresh evidence returns. A master
 refreshes its host-clock observation immediately and can refine it externally.

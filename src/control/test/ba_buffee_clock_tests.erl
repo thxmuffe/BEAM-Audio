@@ -188,6 +188,48 @@ fresh_raw_mapping_is_usable_while_filter_is_warming_test() ->
         ?assertMatch(#{state := synchronized,filter_ready := false,estimate_quality := provisional},ba_buffee_clock:status())
     after ets:delete(ba_buffee_clock) end.
 
+initial_calibration_keeps_raw_time_visible_but_fences_audio_targets_test() ->
+    ets:new(ba_buffee_clock,[named_table,protected]),
+    try
+        T=erlang:monotonic_time(nanosecond),Ms=erlang:monotonic_time(millisecond),
+        D=#{role => follower,mapping => ba_buffee_clock_mapping:new(T,1000000000000000000),
+            timeline => <<"initial-test">>,confirmed => true,authorization_until => Ms+10000,
+            sample_authorization_until => Ms+10000,last_sync => T,sample_interval_ms => 5000,
+            initial_sync_complete => false,offset => #{<<"revision">> => 1,<<"offset_ms">> => 150},
+            offset_until => Ms+10000},
+        ets:insert(ba_buffee_clock,{clock,D}),
+        {ok,UTC}=ba_buffee_clock:now(),
+        ?assertEqual({error,clock_unavailable},ba_buffee_clock:to_monotonic(UTC)),
+        ?assertEqual({error,clock_or_offset_unavailable},ba_buffee_clock:presentation([T])),
+        ets:insert(ba_buffee_clock,{clock,D#{initial_sync_complete := true}}),
+        ?assertEqual({ok,T},ba_buffee_clock:to_monotonic(T+1000000000000000000)),
+        ?assertMatch({ok,#{times := [_]}},ba_buffee_clock:presentation([T]))
+    after ets:delete(ba_buffee_clock) end.
+
+initial_calibration_commits_without_a_minutes_long_slew_test() ->
+    with_clock(member,fun(_) ->
+        await(fun() -> maps:get(role,ba_buffee_clock:status())=:=follower end),
+        sys:replace_state(ba_buffee_clock,fun(S) ->
+            %% Exercise both the five-sample finish and the bounded timeout with
+            %% only one valid sample. Neither may slew the provisional 100 ms error.
+            lists:foldl(fun({Count,Delay},Current) ->
+                T=erlang:monotonic_time(nanosecond),Ms=erlang:monotonic_time(millisecond),
+                Offset=1000000000000000000,
+                Best=#{offset_ns => Offset,sampled_at => T,round_trip_ns => 1000000},
+                D=maps:get(clock,Current),
+                Pending=Current#{acquisition := #{count => Count,best => Best,until => Ms+Delay},
+                    clock := D#{mapping := ba_buffee_clock_mapping:new(T,Offset+100000000),
+                        initial_sync_complete => false,initial_sync_samples => Count}},
+                {noreply,Finished}=ba_buffee_clock:handle_info(tick,Pending),
+                FD=maps:get(clock,Finished),M=maps:get(mapping,FD),
+                ?assertEqual(true,maps:get(initial_sync_complete,FD)),
+                ?assertEqual(Offset,ba_buffee_clock_mapping:offset(M,T)),
+                ?assertEqual(0,ba_buffee_clock_mapping:remaining(M,T)),
+                ?assertEqual(undefined,maps:get(acquisition,Finished)),Finished
+            end,S,[{5,2000},{1,-1}])
+        end)
+    end).
+
 session_renewal_retains_filter_but_invalidates_readiness_test() ->
     with_clock(member,fun({_,Authority}) ->
         await(fun() -> maps:get(role,ba_buffee_clock:status())=:=follower end),

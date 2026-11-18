@@ -25,6 +25,8 @@ fresh_clock_required_after_resume_test() ->
     ?assertNot(ba_subscription:clock_ready(Clock,101)),
     ?assert(ba_subscription:clock_ready(Clock#{last_sync := 102},101)),
     ?assert(ba_subscription:clock_ready(Clock#{last_sync := 102,filter_ready := false},101)),
+    ?assertNot(ba_subscription:clock_ready(Clock#{initial_sync_complete => false},undefined)),
+    ?assert(ba_subscription:clock_ready(Clock#{initial_sync_complete => true},undefined)),
     ?assertNot(ba_subscription:clock_ready(Clock#{age_ns := 11000000000},undefined)),
     ?assertNot(ba_subscription:clock_ready(Clock#{age_ns := -1},undefined)),
     ?assert(ba_subscription:clock_ready(#{state => synchronized,role => master,filtered_utc_time => 1000,last_sync => 102},101)).

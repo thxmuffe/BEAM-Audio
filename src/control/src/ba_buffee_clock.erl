@@ -6,6 +6,9 @@
          presentation/1,status/0,set_reference/1,resync/0,resync/1,offset/0,offset_status/0,set_offset/1,set_offset/2,
          reference_sample/0,peer_sample/2,seed_sample/1,set_automatic/1,require_offset/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
+-define(INITIAL_SAMPLES,5).
+-define(INITIAL_INTERVAL_MS,250).
+-define(INITIAL_WINDOW_MS,2000).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 id() -> maps:get(timeline,snapshot(),undefined).
 now() -> from_monotonic(mono()).
@@ -17,12 +20,12 @@ map_times(Times) ->
         false -> {error,clock_unavailable}
     end.
 to_monotonic(T) ->
-    D = snapshot(),case ready(D) of
+    D = snapshot(),case playback_ready(D) of
         true -> {ok,ba_buffee_clock_mapping:to_monotonic(maps:get(mapping,D),T)};
         false -> {error,clock_unavailable}
     end.
 presentation(Times) ->
-    D = snapshot(),case ready(D) andalso offset_ready(D) of
+    D = snapshot(),case playback_ready(D) andalso offset_ready(D) of
         true ->
             P = maps:get(offset,D),M = maps:get(mapping,D),
             {ok,#{clock => maps:get(timeline,D),offset_ms => maps:get(<<"offset_ms">>,P),
@@ -85,6 +88,9 @@ ready(#{role := Role,mapping := M,confirmed := true,authorization_until := Until
     live(Until) andalso (Role=:=master orelse (Role=:=follower andalso
         live(maps:get(sample_authorization_until,D,undefined)) andalso mono()-Last=<2*I*1000000));
 ready(_) -> false.
+%% Raw time is visible immediately; initial calibration completes before any
+%% audio target is assigned or converted, so its final anchor can be set directly.
+playback_ready(D) -> ready(D) andalso maps:get(initial_sync_complete,D,true).
 offset_ready(#{offset := P,offset_until := Until,authorization_until := Auth}) ->
     is_map(P) andalso live(Until) andalso live(Auth);
 offset_ready(_) -> false.
@@ -108,6 +114,7 @@ init([]) ->
     D = #{role => waiting,mapping => undefined,timeline => undefined,instance => fresh(),
         master_instance => undefined,master => undefined,reference_revision => 0,revision => 0,
         last_sync => undefined,confirmed => false,filter_ready => false,filter_sample_count => 0,
+        initial_sync_complete => false,initial_sync_samples => 0,
         filter_required_samples => Count,filter_reset_count => 0,filter_reset_reason => startup,
         sample_interval_ms => Interval,interval_ms => Phase,
         threshold_ns => 2000000,slew_ppm => PPM,measurement_uncertainty_ns => unknown,
@@ -115,7 +122,7 @@ init([]) ->
         offset => undefined,offset_until => undefined,authorization_until => undefined},
     S = #{clock => D,scope => undefined,role => waiting,view => undefined,reference => Reference,
         pending => #{},upstream => undefined,blocked => false,last_external_start => undefined,next_external => now_ms(),backoff_ms => 30000,
-        filter => ba_buffee_clock_filter:new(Count),filter_reference => undefined,
+        filter => ba_buffee_clock_filter:new(Count),filter_reference => undefined,acquisition => undefined,
         born => now_ms(),filter_last_slot => undefined,sample_due => now_ms(),offset_due => now_ms(),phase_due => now_ms()+Phase},
     erlang:send_after(100,self(),tick),{ok,save(S)}.
 handle_call({offset,Value,Expected},From,S) when is_integer(Value),Value>=5,Value=<30000 ->
@@ -229,7 +236,8 @@ scope({Buffee,Authority}=Scope,Role,S) ->
     P = case Saved of #{buffee := Buffee,authority := Authority,policy := Policy} -> ba_buffee_time_protocol:state(Policy),Policy;_ -> Default end,
     case Role of authority -> checkpoint(Name,Scope,P);member -> ok end,
     Next = reset_filter(scope_changed,invalidate(S)),D = maps:get(clock,Next),
-    Scoped=Next#{scope := Scope,clock := D#{offset := P,offset_until := undefined}},
+    Scoped=Next#{scope := Scope,acquisition := undefined,clock := D#{offset := P,offset_until := undefined,
+        initial_sync_complete => false,initial_sync_samples => 0}},
     case Role of
         authority ->
             %% A Session clock exists without external UTC acquisition. Use the
@@ -237,7 +245,8 @@ scope({Buffee,Authority}=Scope,Role,S) ->
             host_reference(Scoped);
         member -> Scoped
     end.
-follow(#{view := V} = S) ->
+follow(#{view := V} = S0) ->
+    S=finish_acquisition(S0),
     case lists:member(<<"time_read">>,maps:get(local_permissions,V,[])) of
         false ->
             D = maps:get(clock,S),Pending = maps:filter(fun(_,P) -> maps:get(kind,P)=:= <<"offset.set">> end,maps:get(pending,S)),
@@ -266,8 +275,12 @@ periodic(Kind,Due,Extra,S) ->
                 {error,R} when is_atom(R) -> save(S#{clock := (maps:get(clock,S))#{last_error => R}});
                 _ -> S
             end,
-            Next#{Due := now_ms()+maps:get(sample_interval_ms,maps:get(clock,S))}
+            Next#{Due := now_ms()+request_interval(Kind,S)}
     end.
+request_interval(<<"sample.request">>,#{clock := D}) ->
+    I=maps:get(sample_interval_ms,D),
+    case maps:get(initial_sync_complete,D,false) of true -> I;false -> min(I,?INITIAL_INTERVAL_MS) end;
+request_interval(_,#{clock := D}) -> maps:get(sample_interval_ms,D).
 request(P,Extra,#{scope := {_,Authority},pending := Pending} = S) when map_size(Pending)<32 ->
     case context(Authority) of
         {ok,#{deadline := Until}=Context} ->
@@ -359,7 +372,8 @@ apply_sample(P,T4,Until,#{scope := {Buffee,Provider},clock := D0}=S0) ->
     Full = element(1,Estimate)=:=ok,
     Old = case maps:get(timeline,D)=:=Timeline of true -> maps:get(mapping,D);false -> undefined end,
     %% The authenticated raw sample establishes a usable mapping immediately.
-    %% Later estimates slew this same mapping; a warming filter cannot gate time.
+    %% Initial calibration may replace this provisional anchor before audio;
+    %% subsequent estimates slew the committed mapping while the filter warms.
     Mapping = case Old of undefined -> ba_buffee_clock_mapping:new(T4,maps:get(offset_ns,Sample));_ -> Old end,
     U = case maps:get(<<"uncertainty_ns">>,P) of null -> unknown;B -> number(B)+maps:get(round_trip_ns,Sample) div 2 end,
     NextD = D#{mapping := Mapping,timeline := Timeline,master_instance := Instance,reference_revision := Revision,
@@ -368,13 +382,38 @@ apply_sample(P,T4,Until,#{scope := {Buffee,Provider},clock := D0}=S0) ->
         raw_offset_ns => ns(maps:get(offset_ns,Sample)),
         master_sample => #{device => Provider,utc_time_ns => T3,received_at_ns => T4},
         sample_authorization_until => Until,last_error := null},
-    S#{filter := Filter,filter_reference := Key,filter_last_slot := Slot,clock := NextD}.
+    Next=S#{filter := Filter,filter_reference := Key,filter_last_slot := Slot,clock := NextD},
+    acquire(Sample,Old,Next).
+
+acquire(Sample,undefined,S) ->
+    D=maps:get(clock,S),
+    acquire(Sample,existing,S#{acquisition := #{count => 0,best => Sample,until => now_ms()+?INITIAL_WINDOW_MS},
+        clock := D#{initial_sync_complete => false,initial_sync_samples => 0}});
+acquire(Sample,_,#{acquisition := #{count := Count,best := Best}=A,clock := D}=S) ->
+    Chosen=case maps:get(round_trip_ns,Sample)<maps:get(round_trip_ns,Best) of true -> Sample;false -> Best end,
+    finish_acquisition(S#{acquisition := A#{count := Count+1,best := Chosen},
+        clock := D#{initial_sync_samples => Count+1}});
+acquire(_,_,S) -> S.
+
+finish_acquisition(#{acquisition := #{count := Count,best := Best,until := Until},clock := D}=S) ->
+    case Count>=?INITIAL_SAMPLES orelse now_ms()>=Until of
+        false -> S;
+        true ->
+            Mapping=ba_buffee_clock_mapping:new(maps:get(sampled_at,Best),maps:get(offset_ns,Best)),
+            Filter=ba_buffee_clock_filter:add(Best,ba_buffee_clock_filter:new(maps:get(filter_required_samples,D))),
+            S#{acquisition := undefined,filter := Filter,phase_due := now_ms()+maps:get(interval_ms,D),
+               sample_due := now_ms()+maps:get(sample_interval_ms,D),
+               clock := D#{mapping := Mapping,initial_sync_complete => true,
+                   initial_sync_round_trip_ns => maps:get(round_trip_ns,Best),
+                   filter_sample_count := 1,filter_ready := maps:get(filter_required_samples,D)=:=1}}
+    end;
+finish_acquisition(S) -> S.
 correct(#{role := member,clock := D}=S) ->
     case now_ms()>=maps:get(phase_due,S) of
         false -> S;
         true ->
             Next = S#{phase_due := now_ms()+maps:get(interval_ms,D)},
-            case {ready(D),ba_buffee_clock_filter:current(maps:get(filter,S))} of
+            case {playback_ready(D),ba_buffee_clock_filter:current(maps:get(filter,S))} of
                 {true,{ok,Target}} ->
                     {M,_,Changed} = ba_buffee_clock_sync:correct(maps:get(mapping,D),mono(),Target,2000000,maps:get(slew_ppm,D)),
                     Next#{clock := D#{mapping := M,revision := maps:get(revision,D)+case Changed of true -> 1;false -> 0 end}};
@@ -399,9 +438,10 @@ upstream(S) -> S.
 apply_upstream({ok,#{offset_ns := Offset,sampled_at := T,uncertainty_ns := U}},#{scope := {Buffee,_},clock := D}=S) ->
     {M,_,_} = ba_buffee_clock_sync:correct(maps:get(mapping,D),T,Offset,2000000,maps:get(slew_ppm,D)),
     Timeline = ba_buffee_time_protocol:timeline(Buffee,maps:get(instance,D)),
-    S#{backoff_ms := 30000,next_external := infinity,clock := D#{mapping := M,timeline := Timeline,
+    S#{backoff_ms := 30000,next_external := infinity,acquisition := undefined,clock := D#{mapping := M,timeline := Timeline,
         master_instance := maps:get(instance,D),reference_revision := maps:get(reference_revision,D)+1,
         revision := maps:get(revision,D)+1,last_sync := T,confirmed := true,filter_ready := true,
+        initial_sync_complete => true,
         filter_sample_count := 1,last_error := null,measurement_uncertainty_ns := U,
         raw_offset_ns => ns(Offset),
         upstream_acquisitions := maps:get(upstream_acquisitions,D)+1}};

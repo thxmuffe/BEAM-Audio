@@ -20,7 +20,14 @@ Fresh authenticated raw clock time is usable before the median window fills.
 `clock.estimate_quality` distinguishes provisional/reference/filtered estimates;
 `clock.raw_offset_ns` carries the raw measurement as a decimal string. Filter
 fullness no longer blocks playback startup, while authorization, freshness and
-post-resume observation checks remain. Same-source overlap is still rejected:
+post-resume observation checks remain. Clock acquisition starts on Session join,
+independent of speaker use: a short burst takes up to five samples, 250 ms apart,
+or finishes two seconds after the first valid reply. The lowest-RTT observation
+sets the initial audio mapping directly before scheduling is allowed. Raw time
+remains visible during this calibration. Diagnostics expose
+`clock.initial_sync_complete`, `clock.initial_sync_samples` and
+`clock.initial_sync_round_trip_ns`; completion is not an acoustic accuracy claim.
+Same-source overlap is still rejected:
 clock-rate correction with continuous resampling and deliberate-splice crossfades
 is proposed work, not part of this startup change.
 
