@@ -9,7 +9,7 @@ methods() -> lists:usort(client_methods()++[
     <<"network_changed">>,<<"audio_lifecycle">>]).
 %% The one list of commands an app window may send (web, Mac, iOS, Windows).
 client_methods() ->
-    [<<"audio_diagnostics">>,<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
+    [<<"audio_diagnostics">>,<<"answer_consent">>,<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
      <<"end_buffee">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"preset">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
      <<"ui_get">>,<<"ui_set">>,<<"microphone_live">>,<<"speaker_mute">>,<<"undo">>,<<"redo">>,<<"send">>,<<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
      <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
@@ -27,6 +27,9 @@ printable(owner_or_valid_invitation_required) -> <<"Rejoin using an invitation t
 printable(revocation_incomplete) -> <<"Permission is OFF, but stopping has not been confirmed. New grants are blocked; retry OFF or restart the app.">>;
 printable(grant_required) -> <<"Only a Device with the grant privilege can change privileges.">>;
 printable(end_privilege_required) -> <<"This Device needs the end-session privilege to end the Session.">>;
+printable(waiting_for_approval) -> <<"Waiting for this Device's approval in Requests.">>;
+printable(declined) -> <<"Declined on this Device. Change the choice in Settings to ask again.">>;
+printable(refused) -> <<"Not allowed in this Device's Settings.">>;
 printable(grant_holder_unavailable) -> <<"No Device that can grant privileges is reachable right now.">>;
 printable(local_approval_required) -> <<"Enable this permission explicitly in My Device; history cannot grant access.">>;
 printable(configuration_changed) -> <<"Settings changed in another client. Review the latest state and retry.">>;
@@ -63,6 +66,9 @@ command(#{<<"method">> := <<"capabilities">>,<<"consent">> := Values}=R) ->
 command(#{<<"method">> := <<"capability">>,<<"capability">> := <<"broadcast">>,<<"enabled">> := B}) -> ba_app_session:capability(broadcast,B);
 command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}=R) ->
     ba_device_config:change(#{capability_key(K) => B},config_options(R));
+%% This Device's user answers a pending Ask request for one of its own uses.
+command(#{<<"method">> := <<"answer_consent">>,<<"key">> := K,<<"allow">> := Allow}=R) when is_boolean(Allow) ->
+    ba_device_config:answer(capability_key(K),Allow,config_options(R));
 command(#{<<"method">> := <<"auto_accept">>,<<"enabled">> := Enabled}=R) when is_boolean(Enabled) ->
     ba_device_config:auto_accept(Enabled,config_options(R));
 command(#{<<"method">> := <<"preset">>,<<"name">> := Name}=R) ->

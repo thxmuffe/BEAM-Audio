@@ -256,17 +256,32 @@ def main():
                     caps=[row for row in local.get('result',{}).get('devices',[]) if row.get('local')]
                     raise AssertionError({'error':reply.get('error'),'target_capabilities':caps})
                 return reply
-            if inspector:
-                # Both local and remote public APIs control real instrumentation.
-                for r in runtimes:
-                    reply=r.request('api',request={'method':'audio_diagnostics','options':{'meters':False,'analysis':False}})
+            CALIBRATION=('calibrate_speaker','calibrate_microphone')
+            def calibration(r,on):
+                for key in CALIBRATION:
+                    reply=r.request('api',request={'method':'capability','capability':key,'enabled':on})
                     assert reply.get('error') is None,reply.get('error')
+            if inspector:
+                # Inspection follows each Device's calibration consent. On Ask, a
+                # remote request appears on that Device and waits for its user.
+                for r in runtimes:
+                    for key in CALIBRATION:
+                        assert r.request('api',request={'method':'policy','key':key,'value':'ask'}).get('error') is None
+                    calibration(r,False)
                 off=monitor()
                 for r in runtimes:
                     caps=off[r.identity['id']]['capabilities']
                     assert caps['audio_diagnostics']=={'diagnostics.meters':False,'diagnostics.analysis':False},caps
                     assert all('peak_db' not in row for row in caps.get('audio',{}).values()) and not caps.get('audio_meters'),caps
                     configure(r,meters=True,analysis=True)
+                    end=time.monotonic()+5
+                    while True:
+                        asked=r.request('api',request={'method':'snapshot'})['configuration'].get('requests',[])
+                        if {(q['key'],q['from']) for q in asked}>={(k,inspector.identity['id']) for k in CALIBRATION}:break
+                        assert time.monotonic()<end,asked;time.sleep(.05)
+                    for key in CALIBRATION:
+                        reply=r.request('api',request={'method':'answer_consent','key':key,'allow':True})
+                        assert reply.get('error') is None,reply.get('error')
                 deadline=time.monotonic()+5
                 while True:
                     initial=monitor()
@@ -362,15 +377,15 @@ def main():
                     assert reported[r.identity['id']]['clock.state']=='synchronized',reported
                     assert reported[r.identity['id']]['clock.offset_ms']==args.offset_ms,reported
                     assert reported[r.identity['id']]['clock.ready'] is True,reported
-                # Disabling observation must leave media/consent/processes intact.
-                for r in runtimes:configure(r,meters=False,analysis=False)
+                # Each Device's own choice turns inspection off; media/processes stay intact.
+                for r in runtimes:calibration(r,False)
                 disabled=monitor()
                 for r,old in zip(runtimes,identities):
                     assert r.request('audio_ids')==old
                     caps=disabled[r.identity['id']]['capabilities']
                     assert caps['audio_diagnostics']=={'diagnostics.meters':False,'diagnostics.analysis':False},caps
                     assert all('peak_db' not in entry for entry in caps.get('audio',{}).values()) and not caps.get('audio_meters'),caps
-                print('PASS: independent Inspector remotely toggled both Devices and validated packet/frame totals, output meter, synchronized clocks and response time through signed monitor replies',flush=True)
+                print('PASS: independent Inspector asked for calibration consent, each Device approved it, and validated packet/frame totals, output meter, synchronized clocks and response time through signed monitor replies',flush=True)
             print(f'PASS: {expected_packets} packets/source delivered; clocks and {args.offset_ms}ms response-time assertions passed',flush=True)
             if after['dropped']!=before['dropped']:
                 print('VM scheduler report (receiver):',b.request('vm_report'),flush=True)
@@ -543,15 +558,15 @@ def main():
                     assert reported[r.identity['id']]['clock.state']=='synchronized',reported
                     assert reported[r.identity['id']]['clock.offset_ms']==args.offset_ms,reported
                     assert reported[r.identity['id']]['clock.ready'] is True,reported
-                # Disabling observation must leave media/consent/processes intact.
-                for r in runtimes:configure(r,meters=False,analysis=False)
+                # Each Device's own choice turns inspection off; media/processes stay intact.
+                for r in runtimes:calibration(r,False)
                 disabled=monitor()
                 for r,old in zip(runtimes,identities):
                     assert r.request('audio_ids')==old
                     caps=disabled[r.identity['id']]['capabilities']
                     assert caps['audio_diagnostics']=={'diagnostics.meters':False,'diagnostics.analysis':False},caps
                     assert all('peak_db' not in entry for entry in caps.get('audio',{}).values()) and not caps.get('audio_meters'),caps
-                print('PASS: independent Inspector remotely toggled both Devices and validated packet/frame totals, output meter, synchronized clocks and response time through signed monitor replies',flush=True)
+                print('PASS: independent Inspector asked for calibration consent, each Device approved it, and validated packet/frame totals, output meter, synchronized clocks and response time through signed monitor replies',flush=True)
             assert after['dropped']==before['dropped'],(before,after)
             assert after['rendered']-before['rendered']>=600,(before,after)
             assert blocks and max(x['peak'] for x in blocks)==.75,blocks

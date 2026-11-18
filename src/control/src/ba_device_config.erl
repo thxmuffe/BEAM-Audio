@@ -2,7 +2,7 @@
 %% configuration. One serialized owner records changes from every supported client.
 -module(ba_device_config).
 -behaviour(gen_server).
--export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3,auto_accept/2,auto_grant/2,preset/2]).
+-export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3,auto_accept/2,auto_grant/2,preset/2,request/2,answer/3]).
 %% Device resources the Session may ask to use, and requests from other Devices
 %% that this Device answers. Each has a policy: always, ask (default) or no.
 %% PROTECTED uses still carry a consent flag; the others are recorded choices only.
@@ -23,6 +23,13 @@ policy(Key) -> gen_server:call(ba_session_scope:ref(?MODULE),{policy,Key}).
 policy(Key,Value,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{policy,Key,Value,Options}).
 auto_accept(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{auto_accept,Enabled,Options}).
 auto_grant(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{auto_grant,Enabled,Options}).
+%% Something needs a protected use that is off. Always/allowed: ok. No: refused.
+%% Ask: one pending request per requester (a Device ID, or <<"local">>) that this
+%% Device's user answers in Requests; a declined requester is not asked again
+%% until the policy changes. Never blocks the caller.
+request(Key,From) -> gen_server:call(ba_session_scope:ref(?MODULE),{request,Key,From}).
+%% The user's answer: Allow turns the use on (a normal, recorded change).
+answer(Key,Allow,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{answer,Key,Allow,Options}).
 %% A named bundle of the settings below; only `advanced` leaves them for the person to set.
 preset(Name,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{preset,Name,Options}).
 -define(PRESETS,[no_control,friendly,tight,advanced]).
@@ -106,8 +113,37 @@ public(#{states := States,cursor := C,revision := R}=S) ->
     #{revision => R,consent => current(S),policies => maps:from_list([{K,policy_of(K,S)} || K <- ?PROTECTED++?ANSWERS]),auto_accept => auto(S),auto_grant => maps:get(auto_grant,S,false),preset => maps:get(preset,S,advanced),revocation_pending => maps:get(revocation_pending,S,[]),can_undo => C>0 andalso history_allowed(current(S),maps:get(config,lists:nth(max(1,C),States))),can_redo => C+1<length(States) andalso history_allowed(current(S),maps:get(config,lists:nth(min(length(States),C+2),States))),
       undo_label => case C of 0 -> null;_ -> maps:get(label,lists:nth(C+1,States)) end,
       redo_label => case C+1<length(States) of true -> maps:get(label,lists:nth(C+2,States));false -> null end,
-      cursor => C,entries => [E#{selected => I=:=C} || {I,E} <- lists:zip(lists:seq(0,length(States)-1),States)]}.
+      cursor => C,entries => [E#{selected => I=:=C} || {I,E} <- lists:zip(lists:seq(0,length(States)-1),States)],
+      requests => [#{key => K,from => F} || {K,Fs} <- lists:sort(maps:to_list(maps:get(requests,S,#{}))),not maps:get(K,current(S),false),F <- Fs]}.
 handle_call(consent,_,S) -> {reply,current(S),S};
+handle_call({request,Key,From},_,S) when is_binary(From) ->
+    Requests=maps:get(requests,S,#{}),Pending=maps:get(Key,Requests,[]),
+    case {lists:member(Key,?PROTECTED),maps:get(Key,current(S),false)} of
+        {false,_} -> {reply,{error,invalid_configuration},S};
+        {true,true} -> {reply,ok,S};
+        {true,false} ->
+            case {policy_of(Key,S),lists:member(From,maps:get(Key,maps:get(declined,S,#{}),[]))} of
+                {no,_} -> {reply,{error,refused},S};
+                {_,true} -> {reply,{error,declined},S};
+                _ when length(Pending)>=8 -> {reply,{error,waiting_for_approval},S};
+                _ ->
+                    case lists:member(From,Pending) of
+                        true -> {reply,{error,waiting_for_approval},S};
+                        false -> changed(),{reply,{error,waiting_for_approval},S#{requests => Requests#{Key => Pending++[From]}}}
+                    end
+            end
+    end;
+handle_call({answer,Key,true,Options},From,S) ->
+    case lists:member(Key,?PROTECTED) andalso handle_call({edit,#{Key => true},Options},From,S) of
+        {reply,ok,Next} -> changed(),{reply,ok,Next#{requests => maps:remove(Key,maps:get(requests,Next,#{}))}};
+        false -> {reply,{error,invalid_configuration},S};
+        Other -> Other
+    end;
+handle_call({answer,Key,false,_},_,S) ->
+    Declined=maps:get(declined,S,#{}),Asked=maps:get(Key,maps:get(requests,S,#{}),[]),
+    changed(),
+    {reply,ok,S#{requests => maps:remove(Key,maps:get(requests,S,#{})),
+                 declined => Declined#{Key => lists:usort(Asked++maps:get(Key,Declined,[]))}}};
 handle_call(snapshot,_,S) -> {reply,public(S),S};
 %% The answer in force: a top switch overrides the stored choice without changing
 %% it. "Auto grant" covers requests for rights; "auto accept" covers the rest.
@@ -157,7 +193,9 @@ handle_call({policy,Key,Value,Options},From,S) ->
     case {lists:member(Value,[always,ask,no]),lists:member(Key,?PROTECTED),lists:member(Key,?ANSWERS)} of
         {true,true,_} ->
             case handle_call({edit,#{Key => auto(S) orelse Value=:=always},Options},From,S) of
-                {reply,ok,Next} -> {reply,ok,choose(Key,Value,Next)};
+                {reply,ok,Next0} ->
+                    Next=Next0#{requests => maps:remove(Key,maps:get(requests,Next0,#{})),declined => maps:remove(Key,maps:get(declined,Next0,#{}))},
+                    {reply,ok,choose(Key,Value,Next)};
                 Other -> Other
             end;
         {true,_,true} -> {reply,ok,choose(Key,Value,S)};

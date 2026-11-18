@@ -1,17 +1,38 @@
 %% Bounded, payload-free projection of existing local audio/clock observations.
 %% Cached by the Device Handler; remote reads never poll the audio processes.
 -module(ba_audio_diagnostics).
--export([snapshot/2,validate/1,trace/1,validate_trace/1,meters/1,validate_meters/1,options/0,configure/1,validate_options/1,enabled/1,meter/2]).
-%% Device-wide saved switches. Turning these off never changes audio consent,
-%% packet targets, or mandatory failure accounting.
-options() -> ba_settings:get(audio_diagnostics,#{<<"meters">> => true,<<"analysis">> => true}).
-enabled(Key) -> maps:get(atom_to_binary(Key),options(),true).
+-export([snapshot/2,validate/1,trace/1,validate_trace/1,meters/1,validate_meters/1,options/0,configure/1,configure/2,validate_options/1,enabled/1,meter/2,meter/3]).
+%% Inspection follows the user's calibration consent; there are no separate
+%% switches. Calibrate speaker covers received/output levels and playback
+%% analysis; Calibrate microphone covers capture levels. Never changes audio
+%% consent, packet targets or mandatory failure accounting.
+options() ->
+    Speaker=allowed(calibrate_speaker),
+    #{<<"meters">> => Speaker,<<"analysis">> => Speaker,<<"microphone">> => allowed(calibrate_microphone)}.
+enabled(microphone) -> allowed(calibrate_microphone);
+enabled(meters) -> allowed(calibrate_speaker);
+enabled(analysis) -> allowed(calibrate_speaker).
+allowed(Key) -> try ba_device_permission:allowed(Key) catch _:_ -> false end.
 validate_options(P) ->
     true=is_map(P) andalso map_size(P)>0 andalso map_size(P)=<2,
     maps:foreach(fun(K,V) -> true=lists:member(K,[<<"meters">>,<<"analysis">>]),true=is_boolean(V) end,P),ok.
-configure(P) ->
+%% A request to inspect (any true option) asks for calibration consent on this
+%% Device; Ask policies raise a request its user answers. Turning inspection
+%% off is the user's own Settings choice, not a remote command.
+configure(P) -> configure(P,<<"local">>).
+configure(P,From) ->
     ok=validate_options(P),
-    {ok,ba_settings:update(audio_diagnostics,fun(Old) -> maps:merge(Old,P) end,options())}.
+    case lists:member(true,maps:values(P)) of
+        true -> [try ba_device_config:request(K,From) catch exit:_ -> ok end || K <- [calibrate_speaker,calibrate_microphone]];
+        false -> ok
+    end,
+    {ok,options()}.
+%% Capture-side levels use the microphone calibration consent.
+meter(microphone,Format,PCM) ->
+    case enabled(microphone) of
+        true -> ba_audio_meter:levels(ba_audio_meter:accumulate(Format,PCM,ba_audio_meter:new()));
+        false -> #{}
+    end.
 meter(Format,PCM) -> case enabled(meters) of
     true -> ba_audio_meter:levels(ba_audio_meter:accumulate(Format,PCM,ba_audio_meter:new()));
     false -> #{}

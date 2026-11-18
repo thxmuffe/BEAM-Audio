@@ -19,6 +19,17 @@ reconcile(S) ->
     %% The mic and speaker buttons are live actions on top of the gates: the
     %% microphone sends only while its button is on, the speaker plays unless muted.
     Gates=ba_app_session:consent(),
+    %% The mic button is on but Recording is not allowed: with Ask, raise a
+    %% request this Device's user answers in Requests (deduplicated there).
+    case ba_settings:get(mic_live,false)=:=true andalso not maps:get(microphone,Gates,false) of
+        true -> try ba_device_config:request(microphone,<<"local">>) catch exit:_ -> ok end;
+        false -> ok
+    end,
+    %% Likewise the speaker: unmuted while Playback is not allowed.
+    case ba_settings:get(muted,false)=/=true andalso not maps:get(speaker,Gates,false) of
+        true -> try ba_device_config:request(speaker,<<"local">>) catch exit:_ -> ok end;
+        false -> ok
+    end,
     Requested=Gates#{microphone := maps:get(microphone,Gates) andalso ba_settings:get(mic_live,false) =:= true,
                      speaker := maps:get(speaker,Gates) andalso ba_settings:get(muted,false) =/= true},
     OnAir=lists:member(<<"on_air">>,maps:get(privileges,ba_buffee_membership:status(),[])),

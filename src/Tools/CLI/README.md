@@ -304,30 +304,31 @@ shape. Permission denial/disconnection also remains visible, never fake silence.
 Native capture/playback and physical timing are not enabled or qualified merely
 by running this command. A “running” state alone is not proof of sound.
 
-## Switch Device audio diagnostics
+## Audio inspection follows calibration consent
 
-Settings in the shared OpenSound UI has **Audio meters** and **Audio analysis**
-switches, Received/Output meters and an output-progress message. These settings
-are Device-wide, persisted through `ba_settings`, and initially enabled to retain
-existing diagnostics. Each switch is independent. Disabling them does not revoke
-speaker/microphone/ON AIR consent or change audio scheduling. Native analysis
-switches take effect on the next bounded output poll (up to 500 ms).
+There are no separate inspection switches. A Device's **Calibrate speaker**
+consent covers received/output levels and playback analysis (counters, trace,
+clock); **Calibrate microphone** covers capture levels. Both are ordinary
+Always / Ask / No choices in Settings and never change audio consent or
+scheduling.
 
-The same public API works locally or through an admitted Inspector:
+- Always: inspection is on.
+- No: inspection stays off; requests are refused.
+- Ask: a `monitor --metrics` read or an explicit request from another Device
+  raises a request naming that Device in this Device's **Requests** panel. Its
+  user allows (consent on) or declines (that requester is not asked again until
+  the choice changes). Replies never wait; they carry what is allowed now.
 
 ```sh
-beamaudio call device --devicename OpenSound --request '{"method":"audio_diagnostics","options":{"meters":true,"analysis":true}}'
-beamaudio call device --devicename ba-monitor-SESSION_ID --request '{"method":"audio_diagnostics","device":"PUBLIC_DEVICE_ID","options":{"meters":false,"analysis":false}}'
+beamaudio call device --devicename ba-monitor-SESSION_ID --request '{"method":"audio_diagnostics","device":"PUBLIC_DEVICE_ID","options":{"meters":true}}'
+beamaudio call device --devicename OpenSound --request '{"method":"answer_consent","key":"calibrate_speaker","allow":true}'
 ```
 
-Omit `options` to read this Device's switches. A partial options map changes only
-that switch. Remote configuration uses the signed capabilities request/reply,
-requires `capabilities_read` on the target and never grants audio consent. It is
-an explicit configuration request, not an effect of an ordinary `monitor` read.
-Inspection privacy choices (Always / Ask / No, with a separate default to decide)
-are recorded in PLAN.md and are **not enforced yet**. An Inspector/Manager label
-grants no privilege. Diagnostics OFF is not a privacy block: an authorized monitor
-can enable them again under the current permission model.
+`audio_diagnostics` without `options` reads the current state. Requests use the
+signed capabilities path and require `capabilities_read` on the target. The same
+Ask procedure applies to the Device's own microphone (Recording) and speaker
+(Playback) buttons: pressing them under Ask raises a local request; under No they
+do not turn on.
 
 `monitor --metrics` now exposes `audio_meters.receive_max` and
 `audio_meters.output_submitted` separately. The latter is Erlang's mixed PCM

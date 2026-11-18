@@ -257,10 +257,13 @@ event(Peer,{reply,<<"capabilities.error">>,#{<<"reason">> := Reason}},S) ->
     Error = case Reason of <<"forbidden">> -> forbidden; <<"unavailable">> -> unavailable end,
     reply(Peer,{error,Error},S);
 event(Peer,{capabilities_read,Request,true,Options},S) ->
-    {ok,_}=ba_audio_diagnostics:configure(Options),
+    {ok,_}=ba_audio_diagnostics:configure(Options,Peer),
     event(Peer,{capabilities_read,Request,true},S);
 event(Peer,{capabilities_read,Request},S) -> event(Peer,{capabilities_read,Request,false},S);
 event(Peer,{capabilities_read,Request,Metrics},S) ->
+    %% Inspecting levels/analysis needs this Device's calibration consent; an Ask
+    %% policy raises a request naming the reading Device. The reply never waits.
+    case Metrics of true -> _=ba_audio_diagnostics:configure(#{<<"meters">> => true},Peer);false -> ok end,
     Value = try ba_device_handler:capabilities(Metrics) catch exit:_ -> unavailable end,
     case ba_buffee_control_protocol:reply_capabilities(Peer,Request,Value,now_ms(),maps:get(protocol,S)) of
         {ok,Packet,Protocol} ->

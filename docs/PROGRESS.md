@@ -1,5 +1,18 @@
 # Current implementation and validation
 
+## Ask consent procedure and inspection by calibration — 2026-11-18
+
+- "Ask" now asks: `ba_device_config:request/2` records one pending request per
+  requester for a protected use (Device ID or `local`), shown in the Requests
+  panel; `answer_consent` Allow turns the use on, Decline is remembered until the
+  policy changes; No refuses. Covers Recording (mic button), Playback (speaker
+  button) and calibration.
+- Audio meters/analysis switches removed: inspection follows Calibrate speaker /
+  Calibrate microphone. A remote `monitor --metrics` read raises a calibration
+  request on Ask. e2e: inspector asked, each Device approved, validated, then
+  each Device turned calibration off locally.
+- Windows home page shows `Version 0.<OpenSound commit count>` like macOS/iOS.
+
 ## Windows capture — 2026-11-18
 
 - `ba_windows_input` + WASAPI helper `audio_capture.cpp`: microphone (48 kHz

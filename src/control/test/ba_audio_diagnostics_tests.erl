@@ -42,21 +42,25 @@ wire_rejects_unbounded_or_nested_diagnostics_test() ->
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"secret">> => <<"private">>})),
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"clock.state">> => <<27,"[2J">>})).
 
-switches_disable_work_and_never_report_stale_levels_test() ->
-    {ok,Settings}=ba_settings:start_link(),
+%% Inspection follows calibration consent; without it no work is done and no
+%% stale levels are reported. (The secure profile with no consent granted.)
+calibration_consent_gates_inspection_test() ->
+    Old=application:get_env(ba_core,runtime_profile),
     try
-        {ok,_}=ba_audio_diagnostics:configure(#{<<"meters">> => false,<<"analysis">> => false}),
+        application:set_env(ba_core,runtime_profile,buffee_control),
         %% Invalid PCM proves the expensive sample parser is actually bypassed.
         ?assertEqual(#{},ba_audio_diagnostics:meter(float32_le,<<1>>)),
+        ?assertEqual(#{},ba_audio_diagnostics:meter(microphone,float32_le,<<1>>)),
         ?assertEqual(#{<<"diagnostics.meters">> => false,<<"diagnostics.analysis">> => false},
             ba_audio_diagnostics:snapshot(#{mixer => #{rendered => 10}},#{state => synchronized})),
         ?assertNot(maps:is_key(meter,ba_audio_input:status((ba_audio_input:new())#{meter => #{<<"peak_db">> => -1.0}}))),
-        {ok,_}=ba_audio_diagnostics:configure(#{<<"meters">> => true}),
-        ?assertEqual(false,ba_audio_diagnostics:enabled(analysis)),
+        ?assertEqual(#{<<"meters">> => false,<<"analysis">> => false,<<"microphone">> => false},ba_audio_diagnostics:options()),
+        application:unset_env(ba_core,runtime_profile), % compatibility profile: allowed
+        ?assertEqual(true,ba_audio_diagnostics:enabled(analysis)),
         ?assertEqual(0.0,maps:get(<<"peak_db">>,ba_audio_diagnostics:meter(float32_le,<<1.0:32/little-float>>))),
         ?assertException(error,_,ba_audio_diagnostics:validate_options(#{<<"meters">> => <<"yes">>})),
         ?assertException(error,_,ba_audio_diagnostics:validate_options(#{<<"pcm">> => true}))
-    after gen_server:stop(Settings) end.
+    after case Old of undefined -> application:unset_env(ba_core,runtime_profile);{ok,V} -> application:set_env(ba_core,runtime_profile,V) end end.
 
 native_summary_is_allowlisted_not_arbitrary_state_test() ->
     D=ba_audio_diagnostics:snapshot(#{mixer => #{submitted_frames => 48000,output => #{

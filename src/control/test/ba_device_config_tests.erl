@@ -1,6 +1,30 @@
 -module(ba_device_config_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+%% Ask raises one request per requester; the user's Allow turns the use on,
+%% Decline stops that requester asking until the policy changes; No refuses.
+ask_requests_wait_for_this_devices_answer_test() -> fixture(fun(_) ->
+    Key=calibrate_speaker,ok=ba_device_config:policy(Key,ask,#{}),
+    Pending=fun() -> [maps:get(from,R) || R <- maps:get(requests,ba_device_config:snapshot()),maps:get(key,R)=:=Key] end,
+    ?assertEqual({error,waiting_for_approval},ba_device_config:request(Key,<<"PEER">>)),
+    ?assertEqual({error,waiting_for_approval},ba_device_config:request(Key,<<"PEER">>)),
+    ?assertEqual([<<"PEER">>],Pending()),
+    ok=ba_device_config:answer(Key,false,#{}),
+    ?assertEqual([],Pending()),
+    ?assertEqual({error,declined},ba_device_config:request(Key,<<"PEER">>)),
+    ?assertEqual({error,waiting_for_approval},ba_device_config:request(Key,<<"local">>)),
+    ok=ba_device_config:answer(Key,true,#{}),
+    ?assert(maps:get(Key,ba_app_session:consent())),
+    ?assertEqual(ok,ba_device_config:request(Key,<<"PEER">>)),
+    ?assertEqual([],Pending()),
+    ok=ba_device_config:policy(Key,no,#{}),
+    ?assertNot(maps:get(Key,ba_app_session:consent())),
+    ?assertEqual({error,refused},ba_device_config:request(Key,<<"OTHER">>)),
+    %% A policy change starts over: an earlier decline asks again under Ask.
+    ok=ba_device_config:policy(Key,ask,#{}),
+    ?assertEqual({error,waiting_for_approval},ba_device_config:request(Key,<<"PEER">>))
+end).
+
 restart_keeps_settings_not_history_test() -> fixture(fun(_) ->
     ok=ba_app_session:capability(microphone,true),
     ?assertEqual(<<"Enable microphone">>,maps:get(undo_label,ba_device_config:snapshot())),

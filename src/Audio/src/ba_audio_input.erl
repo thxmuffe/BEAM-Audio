@@ -37,7 +37,7 @@ captured_allowed(PCM, Mono, #{descriptor := #{sample_format := Encoding} = Descr
     Frame = Handler:frame_bytes(Descriptor),
     true = byte_size(PCM) rem Frame =:= 0,
     Frames = byte_size(PCM) div Frame,
-    Levels = ba_audio_diagnostics:meter(Encoding,PCM),
+    Levels = ba_audio_diagnostics:meter(microphone,Encoding,PCM),
     Next = S#{frames := maps:get(frames, S) + Frames, meter => Levels,
               last_capture_ms => erlang:monotonic_time(millisecond)},
     %% Use one immutable mapping for both times, including an active clock slew.
@@ -71,7 +71,7 @@ send_blocks(PCM, Time, Offset, #{descriptor := #{sample_rate := Rate} = Descript
 
 status(S) ->
     Public = maps:without([source, source_monitor, handler, last_capture_ms], S),
-    case {ba_audio_diagnostics:enabled(meters),maps:find(last_capture_ms,S)} of
+    case {ba_audio_diagnostics:enabled(microphone),maps:find(last_capture_ms,S)} of
         {true,{ok, Last}} ->
             Age=max(0,erlang:monotonic_time(millisecond)-Last),
             Meter=case Age>250 of true -> ba_audio_meter:levels(ba_audio_meter:new());false -> maps:get(meter,S,#{}) end,
