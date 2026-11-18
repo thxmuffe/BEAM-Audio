@@ -21,6 +21,11 @@ $paths = @()
 foreach ($project in @('control', 'DeviceWeb')) {
     $paths += Get-ChildItem "$root/builds/intermediates/$project/default/lib/*/ebin" -Directory | ForEach-Object { $_.FullName }
 }
+# Use the same compiled Windows transport/native libraries as the app bundle.
+foreach ($libraries in @('builds/intermediates/Windows/transport/beam/dev/lib', 'builds/intermediates/tools/elixir/lib')) {
+    $paths += Get-ChildItem "$root/$libraries/*/ebin" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+}
+$entryModule = if ($args -contains '--local-device') { 'ba_windows_device' } else { 'ba_device_web_cli' }
 $env:BA_WEB_BROWSER_SCRIPT = Join-Path $PSScriptRoot 'open-browser.ps1'
 $env:BA_WEB_POWERSHELL = (Get-Command powershell.exe).Source
 # A stable Device slot keeps ownership across launches. DPAPI protects its seed
@@ -56,7 +61,11 @@ try {
         $env:BA_STATE_DIR = $statePath
         $env:BA_IDENTITY_SEED = [BitConverter]::ToString($seedBytes).Replace('-', '')
     }
-    & $erl -noshell -pa @paths -s ba_device_web_cli main -extra @args
+    if ($entryModule -eq 'ba_windows_device') {
+        & $erl -noshell -pa @paths -s $entryModule boot -extra @args
+    } else {
+        & $erl -noshell -pa @paths -s $entryModule main -extra @args
+    }
     $runtimeExit = $LASTEXITCODE
 } finally {
     if ($seedBytes) { [Array]::Clear($seedBytes, 0, $seedBytes.Length) }

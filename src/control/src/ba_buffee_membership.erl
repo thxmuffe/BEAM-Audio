@@ -153,10 +153,23 @@ handle_call({grant,Device,Permissions},_,S) ->
     catch exit:{membership_storage_failed,_} = Reason -> exit(Reason);
           _:_ -> {error,invalid_grant} end,
     case Result of {ok,Next} -> {reply,ok,Next};_ -> {reply,{error,invalid_grant},S} end;
-handle_call({revoke,Device},_,#{id := Id}=S) ->
-    case grant_holder(S) andalso Device=/=Id andalso hex(Device,64) of
-        false -> {reply,{error,invalid_revocation},S};
-        true -> reply(update(fun(P) ->
+handle_call({revoke,Device},_,#{id := Id,policy := Policy}=S) ->
+    case {Device=/=Id andalso hex(Device,64),grant_holder(S),ba_session_privileges:has(end_session,Id,Policy)} of
+        {false,_,_} -> {reply,{error,invalid_revocation},S};
+        {true,false,false} -> {reply,{error,kick_privilege_required},S};
+        %% The same signed End authorization can disconnect just one target.
+        %% Do not require an Admin to be online for a live kick. Ask any present
+        %% grant holder to record removal too, without granting policy-signing
+        %% or privilege-management powers to the moderator.
+        {true,false,true} ->
+            Direct=case maps:find(Device,maps:get(participants,S)) of
+                {ok,R} -> send(Device,R,<<"ended">>,fresh(16),#{<<"pair">> => hd(maps:get(Device,maps:get(pairs,S)))},S);
+                error -> {error,device_unavailable}
+            end,
+            Recorded=ask_holders(<<"remove_request">>,#{<<"device">> => Device},S),
+            Result=case {Direct,Recorded} of {ok,_} -> ok;{_,ok} -> ok;_ -> Recorded end,
+            {reply,Result,S};
+        {true,true,_} -> reply(update(fun(P) ->
             Manager = case maps:get(<<"manager">>,P) of Device -> maps:get(<<"authority">>,P);M -> M end,
             Removed = lists:usort([Device|maps:get(<<"removed">>,P)]),
             case length(Removed) =< 31 of
@@ -281,6 +294,11 @@ participant(Peer,<<"policy">>,Data,S) ->
 participant(Peer,<<"rename_request">>,Data,#{policy := P}=S) ->
     ba_buffee_passport:exact(Data,[<<"name">>]),true = grant_holder(S),true = ba_session_privileges:has(on_air,Peer,P),
     {reply,_,Next} = handle_call({rename,maps:get(<<"name">>,Data)},undefined,S),Next;
+participant(Peer,<<"remove_request">>,Data,#{policy := P}=S) ->
+    ba_buffee_passport:exact(Data,[<<"device">>]),true = grant_holder(S),
+    true = ba_session_privileges:has(end_session,Peer,P),
+    Device=maps:get(<<"device">>,Data),true=Device=/=Peer,
+    {reply,_,Next}=handle_call({revoke,Device},undefined,S),Next;
 participant(Peer,<<"privilege_release">>,Data,S) ->
     true = grant_holder(S),
     {reply,_,Next} = handle_call({change,take,Peer,requested(Data)},undefined,S),Next;

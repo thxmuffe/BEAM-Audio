@@ -43,7 +43,7 @@ handle_info({participants,Ids},#{present := Present}=S) ->
 %% A request waits for an answer from a Device that can give rights.
 handle_info({privilege_requested,Device,Wire},S) ->
     Text=case [T || {Privilege,T} <- [{on_air,<<"asks to go on air">>},{grant,<<"asks for the right to give and take rights">>},
-                                      {end_session,<<"asks for the right to end the Session">>}],ba_session_privileges:wire(Privilege)=:=Wire] of
+                                      {end_session,<<"asks for moderator rights">>}],ba_session_privileges:wire(Privilege)=:=Wire] of
         [T] -> T;[] -> <<"asks for a right">> end,
     {noreply,info(Device,Text,S)};
 %% A Device starts or stops sending sound to the Session (seen locally).
@@ -64,7 +64,7 @@ handle_info(_,S) -> {noreply,S}.
 named() ->
     [{on_air,<<"can now go on air">>,<<"can no longer go on air">>},
      {grant,<<"can now give and take privileges">>,<<"can no longer give and take privileges">>},
-     {end_session,<<"can now end the Session">>,<<"can no longer end the Session">>}].
+     {end_session,<<"can now moderate">>,<<"can no longer moderate">>}].
 %% The text completes a sentence that starts with the subject Device's name.
 info(Subject,Text,#{messages := M}=S) ->
     Entry=#{id => binary:encode_hex(crypto:strong_rand_bytes(16)),sender => Subject,text => Text,

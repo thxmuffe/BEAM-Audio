@@ -378,3 +378,18 @@ monitor_payload_roundtrip_with_dual_meters_and_trace_test() ->
         ?assertMatch({ok,[],[{reply,<<"capabilities.reply">>,Caps}],_},p(receive_packet,[B,Reply,8,A1]))
     end,[{#{},#{}},{#{<<"receive_max">> => Meter},#{}},
         {#{<<"receive_max">> => Meter},#{<<"1">> => #{<<"stage">> => <<"mixer">>,<<"reason">> => <<"missed_packet_target">>,<<"age_ms">> => 1}}}]).
+
+%% Both Devices say hello at once (e.g. after one restarted its control owner):
+%% the lower ID's hello wins on both sides and the handshake completes once.
+simultaneous_hellos_resolve_to_lower_id_test() ->
+    {A,B,_,_,SA,SB} = fixture(),
+    {Low,High,SLow,SHigh} = case A<B of true -> {A,B,SA,SB};false -> {B,A,SB,SA} end,
+    {ok,HelloLow,L1} = p(connect,[High,0,SLow]),
+    {ok,HelloHigh,H1} = p(connect,[Low,0,SHigh]),
+    %% The lower side rejects the higher side's hello and keeps its own attempt.
+    ?assertMatch({error,_,_},p(receive_packet,[High,HelloHigh,1,L1])),
+    %% The higher side drops its pending hello and answers the lower one.
+    {ok,[Challenge],[],H2} = p(receive_packet,[Low,HelloLow,1,H1]),
+    {ok,[Proof],[],L2} = p(receive_packet,[High,Challenge,2,L1]),
+    {ok,[Ready],[],_H3} = p(receive_packet,[Low,Proof,3,H2]),
+    ?assertMatch({ok,[],[authorized],_},p(receive_packet,[High,Ready,4,L2])).

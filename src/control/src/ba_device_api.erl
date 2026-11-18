@@ -26,7 +26,8 @@ request(_) -> request(#{}).
 printable(owner_or_valid_invitation_required) -> <<"Rejoin using an invitation to recover the shareable link.">>;
 printable(revocation_incomplete) -> <<"Permission is OFF, but stopping has not been confirmed. New grants are blocked; retry OFF or restart the app.">>;
 printable(grant_required) -> <<"Only a Device with the grant privilege can change privileges.">>;
-printable(end_privilege_required) -> <<"This Device needs the end-session privilege to end the Session.">>;
+printable(kick_privilege_required) -> <<"This Device needs moderator rights to remove a Device.">>;
+printable(end_privilege_required) -> <<"This Device needs moderator rights to end the Session.">>;
 printable(waiting_for_approval) -> <<"Waiting for this Device's approval in Requests.">>;
 printable(declined) -> <<"Declined on this Device. Change the choice in Settings to ask again.">>;
 printable(refused) -> <<"Not allowed in this Device's Settings.">>;

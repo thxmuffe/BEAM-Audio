@@ -1,5 +1,42 @@
 # Current implementation and validation
 
+## Windows Web audio, moderation and Settings — 2026-11-18
+
+Windows native and source Web launches now share `ba_windows_device` binding
+setup. The browser launcher selects Windows audio automation, reuses the built
+WASAPI capture/output helpers and loads the prepared Windows transport/Elixir
+libraries. It keeps its own existing DPAPI identity and Web label; native
+Credential Manager identity/leases are unchanged. Build Windows once before
+starting Web, or supply BA_WINDOWS_AUDIO_HELPER_DIR. No separate browser audio
+implementation was introduced.
+
+Settings now uses **Can moderate**, a switch matching Admin and On air. The
+existing `end_session` wire privilege permits individual kicks and Session End;
+it does not grant privilege-management rights. A live kick uses the existing
+signed, paired End message addressed only to its target, so even an Admin can
+be kicked and moderation continues without an Admin online. Present grant
+holders can additionally record removal in signed membership policy, including
+for an offline target. Persistently recording an offline removal still needs a
+grant holder; moderation itself never receives policy-signing authority.
+
+The Settings audio-diagnostics fieldset and its renderer are removed. The
+moderator-request policy is last on the page. Existing CLI diagnostics and
+calibration consent are retained.
+
+Validation: Windows package build with --test passed (6 DeviceWeb + 32 frontend
+checks), 12 focused core checks passed, and 7 isolated headless Chromium
+scenarios passed. The real Web launcher smoke test captured WASAPI frames in a
+private local Session, reported speaker ready and stopped its own process tree;
+it used no microphone or public Session. A four-Device local integration check
+confirmed ordinary Devices cannot kick, a moderator cannot grant privileges,
+can kick another Device and the Admin, and can continue kicking afterward.
+The same regression subsequently passed through the public CLI with a private
+CLI home and four audio-disabled Devices; all test Devices were stopped by
+their exact names before the temporary home was removed.
+Speaker-ready and capture counters do not qualify acoustic playback. Rebuild
+and restart apps to load these source changes; Mac/iPhone qualification remains
+pending on the Mac machine.
+
 ## Ask consent procedure and inspection by calibration — 2026-11-18
 
 - "Ask" now asks: `ba_device_config:request/2` records one pending request per

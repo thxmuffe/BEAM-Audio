@@ -479,16 +479,24 @@ connect_peer(Peer,S) ->
     end.
 
 %% Peer liveness belongs to the runtime, not to an optional UI/CLI monitor.
-%% Only one side initiates; the existing signed handshake and expiry own the
-%% connection lifecycle. Admission, routes and local exclusions still gate it.
+%% The lower Device ID initiates at once. The higher one also initiates after the
+%% peer has been missing for ?LATE_INITIATE_MS: after its own control owner
+%% restarted, the other side may still hold the old session until its lease
+%% expires, and the signed handshake replaces it (rekey). Simultaneous hellos
+%% are resolved in the protocol (the lower ID's hello wins). Admission, routes
+%% and local exclusions still gate it.
+-define(LATE_INITIATE_MS,3000).
 connect_missing(#{protocol := Protocol,config := #{routes := Routes}}=S) ->
     Id=maps:get(id,Protocol),Sessions=maps:get(sessions,Protocol),
-    Peers=maps:keys(maps:get(peers,maps:get(policy,Protocol))),
+    Peers=maps:keys(maps:get(peers,maps:get(policy,Protocol))),Now=now_ms(),
+    Missing0=maps:get(missing_since,S,#{}),
+    Missing=maps:from_list([{P,maps:get(P,Missing0,Now)} || P <- Peers,not maps:is_key(P,Sessions)]),
     lists:foldl(fun(Peer,Acc) ->
-        case Id<Peer andalso not maps:is_key(Peer,Sessions) andalso
+        Due=Id<Peer orelse Now-maps:get(Peer,Missing,Now)>=?LATE_INITIATE_MS,
+        case Due andalso not maps:is_key(Peer,Sessions) andalso
              maps:is_key(Peer,Routes) andalso not ba_app_session:excluded(Peer) andalso
              ba_buffee_desks:peer_online(Peer) of
             true -> {reply,_,Next}=connect_peer(Peer,Acc),Next;
             false -> Acc
         end
-    end,S,Peers).
+    end,S#{missing_since => Missing},Peers).

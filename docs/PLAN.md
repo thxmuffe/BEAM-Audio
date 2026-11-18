@@ -10,6 +10,11 @@ cleanup waits until then.
 
 - **Session, Device, privileges** (`grant`, `on_air`, `end_session`); no roles.
   Holding the invitation link is enough to participate; links last forever.
+- **Can moderate** is the Settings switch for the existing `end_session`
+  privilege: kick individual Devices or end the Session. Live kicks do not
+  depend on an online Admin. Changing privileges still requires `grant`.
+  Settings ends with the moderator-request policy; audio diagnostics stay out
+  of the Settings page.
 - **End is not a special event.** Not a priority: an ended Session's link still
   reopens it without old privileges; End reaches only paired Devices. Leave
   keeps membership and privileges.

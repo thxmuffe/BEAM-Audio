@@ -42,9 +42,15 @@ def main():
             def revision(d, rev):
                 return control.wait(d, lambda s: s['membership']['revision'] == rev)
             def clocks(*ds):
-                deadline=time.monotonic()+10
+                started=time.monotonic();deadline=started+10;trace=[]
+                def view(d):
+                    c=d.request('clock_snapshot');return (c['state'],c['role'],str(c.get('master'))[:6],c.get('filter_reset_reason'),c.get('filter_sample_count'))
                 while not all(d.request('clock_snapshot')['state']=='synchronized' for d in ds):
-                    assert time.monotonic()<deadline, [(d.identity["id"][:8],d.request("clock_snapshot")) for d in ds]
+                    v=[view(d) for d in ds]
+                    if not trace or trace[-1][1]!=v:trace.append((round(time.monotonic()-started,1),v))
+                    # On failure: final clocks, membership views and the state timeline.
+                    assert time.monotonic()<deadline, ([(d.identity["id"][:8],d.request("clock_snapshot"),
+                        {k:d.request('snapshot')['membership'].get(k) for k in ('privileges','participants','state','revision')}) for d in ds],trace)
                     time.sleep(.05)
             def told(d, subject, text):
                 # Info entries are derived locally by every Device, never sent.
@@ -153,6 +159,10 @@ def main():
             saved_seed=b.seed;b.close();b=device('second',saved_seed);b.request('start_app')
             assert b.request('buffee_status')=={'state':'idle'}
             print('PASS: requested privileges; shared grant; creator return; acquired clock continues with on-air Devices and no online grant holder; giving up grant; End needs its own privilege (software timing only)')
+            # Stop the VMs before their state folder is removed (Windows keeps
+            # open files locked, so cleanup would otherwise fail).
+            for d in devices:
+                d.close()
     finally:
         for d in devices:
             d.close()

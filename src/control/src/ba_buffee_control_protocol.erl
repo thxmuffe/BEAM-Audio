@@ -151,15 +151,19 @@ dispatch(Peer,#{<<"op">> := <<"proof">>,<<"session">> := Id}=Body,Now,#{rekeys :
     {ok,Packets,Events++More,Next};
 dispatch(Peer, #{<<"op">> := <<"hello">>,<<"seq">> := 0,<<"session">> := Id,
                  <<"request">> := Id,<<"payload">> := Payload}, Now, S) ->
-    Sessions = maps:get(sessions,S),
-    case maps:find(Peer,Sessions) of
-        error -> ok;
-        {ok,#{stage := authorized,id := Old}} -> true = Id=/=Old
+    Sessions0 = maps:get(sessions,S),
+    %% Both sides said hello at once: the lower Device ID's hello wins. The
+    %% higher side drops its own pending hello and answers this one; the lower
+    %% side rejects this hello (no clause) and keeps waiting for its challenge.
+    Sessions = case maps:find(Peer,Sessions0) of
+        error -> Sessions0;
+        {ok,#{stage := authorized,id := Old}} -> true = Id=/=Old,Sessions0;
+        {ok,#{stage := hello}} when Peer < map_get(id,S) -> maps:remove(Peer,Sessions0)
     end,
     #{<<"a">> := A,<<"b">> := null} = Payload,
     Session = #{id => Id,a => A,b => fresh(32),stage => challenge,
                 deadline => Now+10000,sent => 0,received => 0},
-    {Packet,Next} = outgoing(Peer,<<"challenge">>,Id,nonces(Session),Session,S),
+    {Packet,Next} = outgoing(Peer,<<"challenge">>,Id,nonces(Session),Session,S#{sessions := Sessions}),
     case maps:is_key(Peer,Sessions) of
         false -> {ok,[Packet],[],Next#{rekeys => maps:remove(Peer,maps:get(rekeys,S,#{}))}};
         true ->
