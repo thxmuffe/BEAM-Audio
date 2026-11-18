@@ -29,10 +29,10 @@ handle_info({buffee_chat,#{peer := Peer,session := Session},Id,Text},S) ->
         {ok,#{session := Session}} -> {noreply,S#{messages := add(Id,Peer,Text,maps:get(messages,S))}};
         _ -> {noreply,S}
     end;
-%% The automatic hello, once per arrival: a Device has proved the Session's link
-%% to this one. Control links come and go with policy changes; presence does not.
+%% Presence follows links, which drop and return with networks and restarts.
+%% Users see joins (signed membership, below), not reconnects: debug only.
 handle_info({participants,Ids},#{present := Present}=S) ->
-    {noreply,lists:foldl(fun(Peer,Acc) -> info(Peer,<<"is here">>,Acc) end,S#{present := Ids},Ids--Present)};
+    {noreply,lists:foldl(fun(Peer,Acc) -> debug(Peer,<<"is online">>,Acc) end,S#{present := Ids},Ids--Present)};
 %% Privileges affect everyone, so each signed change is shown to everyone.
 %% A request waits for an answer from a Device that can give rights.
 handle_info({privilege_requested,Device,Wire},S) ->
@@ -42,14 +42,18 @@ handle_info({privilege_requested,Device,Wire},S) ->
     {noreply,info(Device,Text,S)};
 %% A Device starts or stops sending sound to the Session (seen locally).
 handle_info({on_air,Device,true},S) -> {noreply,info(Device,<<"is going on air">>,S)};
-handle_info({on_air,Device,false},S) -> {noreply,info(Device,<<"went off air">>,S)};
+handle_info({on_air,Device,false},S) -> {noreply,debug(Device,<<"went off air">>,S)};
 handle_info({session_privileges,New},#{privileges := undefined}=S) -> {noreply,S#{privileges := New}};
+%% Shown to users: a Device joining (new signed member) and privileges gained.
+%% Losses and removals are debug-level, like presence.
 handle_info({session_privileges,New},#{privileges := Old}=S) ->
-    Changes=[{Id,Text} || Id <- lists:sort(maps:keys(New)),{Privilege,Gained,Lost} <- named(),
-        {Had,Has} <- [{ba_session_privileges:has(Privilege,maps:get(Id,Old,[])),ba_session_privileges:has(Privilege,maps:get(Id,New))}],
-        Had=/=Has,Text <- [case Has of true -> Gained;false -> Lost end]]
-        ++[{Id,<<"was removed from the Session">>} || Id <- lists:sort(maps:keys(Old)),not maps:is_key(Id,New)],
-    {noreply,lists:foldl(fun({Id,Text},Acc) -> info(Id,Text,Acc) end,S#{privileges := New},Changes)};
+    Joined=[{info,Id,<<"joined the Session">>} || Id <- lists:sort(maps:keys(New)),not maps:is_key(Id,Old)],
+    Changes=[{Level,Id,Text} || Id <- lists:sort(maps:keys(New)),maps:is_key(Id,Old),{Privilege,Gained,Lost} <- named(),
+        {Had,Has} <- [{ba_session_privileges:has(Privilege,maps:get(Id,Old)),ba_session_privileges:has(Privilege,maps:get(Id,New))}],
+        Had=/=Has,{Level,Text} <- [case Has of true -> {info,Gained};false -> {debug,Lost} end]]
+        ++[{debug,Id,<<"was removed from the Session">>} || Id <- lists:sort(maps:keys(Old)),not maps:is_key(Id,New)],
+    {noreply,lists:foldl(fun({info,Id,Text},Acc) -> info(Id,Text,Acc);({debug,Id,Text},Acc) -> debug(Id,Text,Acc) end,
+        S#{privileges := New},Joined++Changes)};
 handle_info(_,S) -> {noreply,S}.
 named() ->
     [{on_air,<<"can now go on air">>,<<"can no longer go on air">>},
@@ -60,6 +64,9 @@ info(Subject,Text,#{messages := M}=S) ->
     Entry=#{id => binary:encode_hex(crypto:strong_rand_bytes(16)),sender => Subject,text => Text,
             time => erlang:system_time(second),level => info},
     S#{messages := lists:sublist([Entry|M],200)}.
+%% Not part of the user-visible history; OTP Logger at debug level only.
+debug(Subject,Text,S) ->
+    logger:debug(#{event => session_notice,device => Subject,text => Text}),S.
 terminate(_,_) ->
     Other=[P || {ba_session,_,ba_buffee_chat}=Name <- global:registered_names(),
         P <- [global:whereis_name(Name)],is_pid(P),P=/=self()],

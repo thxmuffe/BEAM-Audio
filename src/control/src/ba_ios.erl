@@ -50,8 +50,7 @@ resolve_host(Host) ->
 resolve_ice_servers() ->
     %% ExICE uses inet lookup for STUN/TURN. Seed its configured hostnames using
     %% the same in-process platform resolver as Gun; never spawn inet_gethost.
-    Servers = application:get_env(ba_transport, native_ice_servers,
-        [#{urls => ba_settings:app(direct_stun_urls, [])}]),
+    Servers = ba_media_session:ice_servers(),
     application:set_env(ba_transport,native_ice_servers,Servers),
     URLs = lists:append([case maps:get(urls, S, []) of
         U when is_binary(U) -> [U]; Us -> Us end || S <- Servers]),

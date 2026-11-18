@@ -44,7 +44,8 @@ project(Audio,Clock) ->
             end
         end,Acc,[received,sent,rejected])
     end,O,Transports),
-    D1=failures(<<"receiver">>,maps:get(diagnostics,Audio,#{}),T),
+    T2=lists:foldl(fun setup_fields/2,T,Transports),
+    D1=failures(<<"receiver">>,maps:get(diagnostics,Audio,#{}),T2),
     D2=failures(<<"mixer">>,maps:get(diagnostics,Mixer,#{}),D1),
     Counts=lists:foldl(fun(View,Acc) -> maps:fold(fun(K,V,A) -> A#{K => maps:get(K,A,0)+V} end,
         Acc,maps:get(counts,maps:get(diagnostics,View,#{}),#{})) end,#{},Transports),
@@ -53,6 +54,25 @@ project(Audio,Clock) ->
     %% Reserve three fields for switches and cache age; preserve summaries before capped reasons.
     {Failures,Summary}=lists:partition(fun({K,_}) -> binary:match(K,<<".failure.">>)=/=nomatch end,maps:to_list(Filtered)),
     maps:from_list(Summary++lists:sublist(lists:sort(Failures),max(0,125-length(Summary)))).
+%% Connection setup of current transports: how many sit at each step, the
+%% candidate types exchanged (never addresses) and configured STUN/TURN URL counts.
+setup_fields(#{setup := Setup},Acc) when is_map(Setup) ->
+    Add=fun(Key,N,A) -> A#{Key => maps:get(Key,A,0)+N} end,
+    A1=case maps:get(stage,Setup,undefined) of
+        Stage when is_atom(Stage),Stage=/=undefined -> Add(key(<<"transport.stage">>,Stage),1,Acc);
+        _ -> Acc
+    end,
+    A2=lists:foldl(fun(Side,A) ->
+        maps:fold(fun(Type,N,B) when is_atom(Type),is_integer(N) -> Add(key(<<"transport.",(atom_to_binary(Side))/binary,"_candidates">>,Type),N,B);
+                     (_,_,B) -> B end,A,maps:get(Side,Setup,#{}))
+    end,A1,[local,remote]),
+    lists:foldl(fun(K,A) ->
+        case maps:find(K,Setup) of
+            {ok,N} when is_integer(N) -> Key=key(<<"transport.ice">>,K),A#{Key => max(N,maps:get(Key,A,0))};
+            _ -> A
+        end
+    end,A2,[stun_urls,turn_urls]);
+setup_fields(_,Acc) -> Acc.
 meters(Audio) ->
     case enabled(meters) of
         false -> #{};

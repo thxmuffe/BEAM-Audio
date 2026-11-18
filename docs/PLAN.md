@@ -66,7 +66,18 @@ Unfinished / next work:
 6. Windows native audio remains unconnected to the shared profile as documented
    in OpenSound/docs/Windows/README.md. Passing headless tests does not qualify
    physical Windows or iPhone speakers. Keep backend/media transport and native
-   hardware qualification distinct.
+   hardware qualification distinct. Root cause of "Windows never subscribes"
+   (2026-11-18): `ba_app_session:configure/0` enables audio automation only for
+   mac/ios, so no Windows Worker reads catalogues or subscribes. Its speaker now
+   reports `unsupported` with an error instead of `ready`. Next: a Windows
+   output adapter (open/write/close, like `ba_mac_output`) and capture adapter
+   with `start/1`/`stop/1`/`status/1`, then a `windows` branch in configure/0.
+7. Mac→iPhone media never opened (setup_timeout every ~11 s, 0 bytes). Only
+   iOS configured STUN; Mac/Windows/CLI Media Sessions had no ICE servers.
+   2026-11-18: all platforms now use `ba_media_session:ice_servers/0`. Not yet
+   verified on the physical Mac/iPhone: rebuild both, rerun the monitor and
+   read `Transport setup:`. If it still stalls at `ice_checking` with srflx
+   candidates on both sides, the networks need a TURN relay (product decision).
 
 
 ## Device inspection privacy policy — user note, 2026-11-18

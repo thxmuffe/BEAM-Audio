@@ -23,6 +23,23 @@ build may need `python3 scripts/setup-host.py` / `bash scripts/build-native.sh` 
 in the core build guide. Nothing is installed globally, launched or captured by
 building. Standalone release distribution and Windows launch support are later.
 
+## Windows
+
+The same escript runs on Windows; only the launcher differs. `bin\beamaudio.cmd`
+(alias `bin\beam-audio.cmd`) prefers the pinned OTP from `.\build.ps1`
+(`builds\intermediates\Windows\otp`) and passes all arguments through:
+
+```powershell
+.\bin\beamaudio.cmd monitor --all --metrics --invitation-file C:\private\session-link.txt
+```
+
+Monitor, inspect, call, wait, get, history and stop work as on macOS. CLI audio
+capabilities (`--enable speaker|mic|broadcast`) still need the macOS helpers.
+Windows OTP has no Unix-domain sockets in `gen_tcp`, so each Device listens on a
+127.0.0.1 port that it writes into its `running.json`; every request must still
+carry the random instance secret from that per-user record. Files rely on the
+user profile's ACL rather than POSIX modes. The legacy Inspector is macOS-only.
+
 ## Generic Device API calls
 
 The terminal/embedded monitor shows `Master clock` in UTC, its Device and sample
@@ -326,6 +343,25 @@ state. Software `.dataPlayedBack` callbacks do not prove acoustic output.
 Older/other bindings explicitly report unsupported; no native counters are
 invented. Rebuild **both native and Erlang parts** of iOS together for the new
 versioned local output handshake. The observer/runtime also needs current code.
+
+Media connection setup is reported per step. Each current transport counts
+toward `transport.stage.STAGE`, one of `offer_pending`, `no_offer`, `no_answer`,
+`no_local_candidates`, `no_remote_candidates`, `ice_new`, `ice_checking`,
+`ice_failed`, `dtls`, `dtls_failed`, `channel` (connected, waiting for the
+data channel/decoder) or `open`. Candidate *types* seen on each side appear as
+`transport.local_candidates.TYPE` / `transport.remote_candidates.TYPE` (`host`,
+`mdns`, `srflx`, `prflx`, `relay`); addresses are never reported.
+`transport.ice.stun_urls` / `turn_urls` count the configured ICE server URLs,
+never credentials. Every platform uses `ba_media_session:ice_servers/0`: the
+`ba_transport` `native_ice_servers` override, else `ba_core` `direct_stun_urls`
+(public STUN by default). No TURN relay is configured by default. A transport that stops before opening names its step in the
+failure reason: `setup_timeout_ice_checking`, `setup_timeout_no_answer`,
+`transport_failed_ice`, `transport_failed_dtls` and so on. The console prints
+these as a `Transport setup:` line. Signalling that arrives for an attempt that
+already ended counts as `stale_media_signal`, separate from
+`invalid_control_or_attempt`. Typical reading: `ice_checking` with only `host`
+candidates on both sides and `0 STUN / 0 TURN` means the peers cannot reach each
+other directly and have no relay.
 
 `audio_trace` holds up to 16 recent failures under keys `"1"` to `"16"`, each
 with stage, coded reason and age. It contains no PCM, credentials or packet

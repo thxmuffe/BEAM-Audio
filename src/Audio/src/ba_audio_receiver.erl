@@ -173,7 +173,15 @@ handle_info({buffee_audio,Context,Id,P},S) ->
         {ok,#{session := Session,buffee := Buffee}} = context(Peer),
         incoming(Context,Id,P,S)
     of Next -> {noreply,Next}
-    catch _:_ -> {noreply,reject(S)} end;
+    catch _:_ ->
+        %% Signalling for an attempt that already ended (e.g. after a setup
+        %% timeout) is expected noise; keep it apart from invalid control.
+        case P of
+            #{<<"kind">> := <<"signal.",_/binary>>} ->
+                {noreply,ba_diagnostics:count(stale_media_signal,S#{rejected := maps:get(rejected,S)+1})};
+            _ -> {noreply,reject(S)}
+        end
+    end;
 handle_info({audio_session_renewed,#{peer := Peer,session := Session,deadline := Until}},S) ->
     %% The authenticated owner emits this only after a fresh two-way nonce proof.
     case context(Peer) of

@@ -1,13 +1,19 @@
 %% Local CLI process records and persistent identity, never saved Buffee state.
 -module(ba_cli_store).
 -include_lib("kernel/include/file.hrl").
--export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,remove/1,names/0,valid_name/1,reserve/3]).
+-export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,replace/2,remove/1,names/0,valid_name/1,reserve/3]).
+%% POSIX mode bits are the owner-only check on Unix. On Windows the per-user
+%% profile directory's ACL protects these files; OTP reports only read-only there.
+posix() -> element(1,os:type())=:=unix.
 home() -> case ba_settings:env("BA_CLI_HOME") of false -> filename:join(filename:basedir(user_data,"beam-audio"),"devices");P -> filename:absname(P) end.
 valid_name(N) -> re:run(N,"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$",[{capture,none}])=:=match.
 dir(N) -> case valid_name(N) of true -> filename:join(home(),N);false -> error(invalid_device_name) end.
 private_dir(D) ->
     ok=filelib:ensure_dir(filename:join(D,"placeholder")),
-    case file:read_link_info(D) of {ok,#file_info{type=directory}} -> ok=file:change_mode(D,8#700);_ -> error(unsafe_state_directory) end.
+    case file:read_link_info(D) of
+        {ok,#file_info{type=directory}} -> case posix() of true -> ok=file:change_mode(D,8#700);false -> ok end;
+        _ -> error(unsafe_state_directory)
+    end.
 identity(D) ->
     File=filename:join(D,"identity.seed"),
     case file:open(File,[write,binary,exclusive]) of
@@ -16,7 +22,7 @@ identity(D) ->
         {error,R} -> error({identity_file,R})
     end,
     {ok,#file_info{type=regular,mode=Mode}}=file:read_link_info(File),
-    true=Mode band 8#077=:=0,
+    true=not posix() orelse Mode band 8#077=:=0,
     {ok,<<Seed0:32/binary>>}=file:read_file(File),binary:encode_hex(Seed0).
 read(N) ->
     case file:read_file(filename:join(dir(N),"running.json")) of
@@ -30,6 +36,10 @@ write(Path,Map) ->
             try file:write(F,json:encode(Map)) after file:close(F) end;
         Error -> Error
     end.
+%% Atomic update of a record this runtime already owns (temporary file + rename).
+replace(Path,Map) ->
+    Tmp=Path++".tmp",_=remove(Tmp),
+    case write(Tmp,Map) of ok -> file:rename(Tmp,Path);E -> _=remove(Tmp),E end.
 remove(Path) -> case file:delete(Path) of ok -> ok;{error,enoent} -> ok;E -> E end.
 names() -> case file:list_dir(home()) of {ok,Ns} -> lists:sort([N || N <- Ns,valid_name(N),filelib:is_file(filename:join(dir(N),"running.json"))]);_ -> [] end.
 

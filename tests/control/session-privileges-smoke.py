@@ -79,7 +79,8 @@ def main():
             for d in (a, b, c): told(d, b, 'can now go on air')
             assert a.request('take_privilege',peer=b.identity['id'],privilege='on_air')['ok']
             holds(b)
-            for d in (a, b, c): told(d, b, 'can no longer go on air')
+            # Losing a privilege is debug-level: not in anyone's visible history.
+            for d in (a, b, c): assert not any(m['text']=='can no longer go on air' for m in d.request('chat_history'))
             assert b.identity['id'] not in a.request('snapshot')['membership']['requests']
             # The grant holder's own policy answers on-air requests: no, then always.
             assert a.request('answer_on_air_requests',value='no')['ok']
@@ -102,9 +103,10 @@ def main():
             rev = a.request('snapshot')['membership']['revision']
             revision(c, rev)
             clocks(a, b, c)
-            # The automatic hello: each authenticated link announces its Device once.
-            told(a, b, 'is here'); told(a, c, 'is here'); told(b, a, 'is here'); told(c, a, 'is here')
-            assert sum(m.get('level')=='info' and m['text']=='is here' and m['sender']==b.identity['id'] for m in a.request('chat_history'))==1
+            # A join is a new signed member, shown once; link presence is debug-only.
+            told(a, b, 'joined the Session'); told(a, c, 'joined the Session')
+            assert sum(m['text']=='joined the Session' and m['sender']==b.identity['id'] for m in a.request('chat_history'))==1
+            assert not any(m['text'] in ('is here','is online') for d in (a, b, c) for m in d.request('chat_history'))
             timeline=b.request('clock_snapshot')['timeline']
             first_id, first_seed = a.identity['id'], a.seed
             assert a.request('leave_buffee')['ok']

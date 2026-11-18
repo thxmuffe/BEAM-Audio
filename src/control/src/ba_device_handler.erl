@@ -4,6 +4,9 @@
 -export([start_link/0,capabilities/0,capabilities/1,status/0,audio_changed/0,enable_test/1,start/2,cancel/1]).
 -export([set_test_contract/3,clear_test_contract/0,accept_job/3,cancel_job/2,session_down/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
+-ifdef(TEST).
+-export([no_worker_speaker/1]).
+-endif.
 -define(CAPACITY,2).
 -define(HISTORY,16).
 
@@ -31,7 +34,7 @@ handle_call(capabilities,_,S) -> {reply,capability_snapshot(S),S};
 handle_call(status,_,S) ->
     {reply,#{capabilities => capability_snapshot(S),active =>
         maps:map(fun(_,W) -> public(W) end,maps:get(active,S)),history => maps:get(history,S),
-        jobs => maps:map(fun(_,J) -> maps:get(report,J) end,maps:get(jobs,S)),contract => maps:get(contract,S),monitor => capability_metrics(S),audio => maps:get(audio,S,#{})},S};
+        jobs => maps:map(fun(_,J) -> maps:get(report,J) end,maps:get(jobs,S)),contract => maps:get(contract,S),monitor => capability_metrics(S),audio => app_audio(S)},S};
 handle_call({test_contract,Manager,Id,Revision},_,S) ->
     case ba_buffee_job:hex(Manager,64) andalso ba_buffee_job:hex(Id,32) andalso
          is_integer(Revision) andalso Revision > 0 andalso Revision =< 9007199254740991 of
@@ -187,10 +190,30 @@ capability_snapshot(#{active := Active,enabled := Enabled,instance := Instance,r
                lists:member(K,[speaker,microphone,broadcast])])}
     end.
 
+%% Without the audio automation Worker nothing subscribes or plays here (e.g.
+%% Windows until its PCM binding is connected, or an Inspector). Say so instead
+%% of looking idle-but-ready; manually driven mixers still report their streams.
+no_worker_speaker(Mixer) ->
+    case {maps:get(streams,Mixer,0)>0,ba_settings:app(audio_automation,false)} of
+        {true,_} -> #{state => running};
+        {false,true} -> #{state => ready};
+        {false,false} ->
+            case maps:get(speaker,ba_app_session:consent(),false) of
+                true -> #{state => unsupported,error => <<"Playback is not available on this Device yet.">>};
+                false -> #{state => unsupported}
+            end
+    end.
+%% What the app window shows: the Worker's rows, or the explicit no-Worker speaker.
+app_audio(S) ->
+    Audio=maps:get(audio,S,#{}),
+    case maps:is_key(speaker,Audio) orelse ba_settings:app(audio_automation,false) of
+        true -> Audio;
+        false -> Audio#{speaker => no_worker_speaker(maps:get(mixer,maps:get(audio_view,S,#{}),#{}))}
+    end.
 capability_metrics(S) ->
     View=maps:get(audio_view,S,#{}),
     Mixer=maps:get(mixer,View,#{}),
-    Speaker=maps:get(speaker,maps:get(audio,S,#{}),#{state => case maps:get(streams,Mixer,0)>0 of true -> running;false -> ready end}),
+    Speaker=maps:get(speaker,maps:get(audio,S,#{}),no_worker_speaker(Mixer)),
     OutputMeter=maps:get(output_meter,Mixer,#{}),
     Meter=case map_size(OutputMeter) of 0 -> maps:get(receive_meter,View,#{});_ -> OutputMeter end,
     Audio=(maps:get(audio,S,#{}))#{speaker => Speaker#{meter => Meter}},

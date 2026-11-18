@@ -203,10 +203,29 @@ diagnostic_lines(R,Color) ->
                 {K,E} <- lists:sort(maps:to_list(maps:get(<<"audio_meters">>,Caps,#{})))],
             [Errors,MeterLines,case maps:get(<<"diagnostics.analysis">>,D,true) of
                 false -> "  Audio analysis: OFF\n";
-                true -> ["  Diagnostic sample age: ",number(maps:get(<<"diagnostics.age_ms">>,D,null))," ms\n",Clock,Playback,output_line(D)]
+                true -> ["  Diagnostic sample age: ",number(maps:get(<<"diagnostics.age_ms">>,D,null))," ms\n",Clock,Playback,transport_lines(D),output_line(D)]
             end,case maps:get(<<"diagnostics.meters">>,D,true) of false -> "  Audio meters: OFF\n";true -> [] end,Failures,
             [["  Recent: ",safe(maps:get(<<"stage">>,E))," / ",safe(maps:get(<<"reason">>,E)),
               " (",number(maps:get(<<"age_ms">>,E))," ms ago)\n"] || E <- lists:sublist(lists:sort(fun(A,B) -> maps:get(<<"age_ms">>,A)<maps:get(<<"age_ms">>,B) end,maps:values(maps:get(<<"audio_trace">>,Caps,#{}))),3)]]
+    end.
+%% Connection setup of current transports, e.g. "2 ice_checking" with the
+%% candidate types each side has seen and the STUN/TURN URLs configured.
+transport_lines(D) ->
+    Group=fun(Prefix) ->
+        Size=byte_size(Prefix),
+        lists:join(" ",[[number(V)," ",safe(binary:part(K,Size,byte_size(K)-Size))] ||
+            {K,V} <- lists:sort(maps:to_list(D)),is_integer(V),V>0,byte_size(K)>Size,binary:part(K,0,Size)=:=Prefix])
+    end,
+    case Group(<<"transport.stage.">>) of
+        [] -> [];
+        Stages ->
+            None=fun([]) -> "none";(L) -> L end,
+            ["  Transport setup: ",Stages,"  (",number(maps:get(<<"transport.open">>,D,0)),"/",
+             number(maps:get(<<"transport.sessions">>,D,0))," open)\n",
+             "    candidates local: ",None(Group(<<"transport.local_candidates.">>)),
+             "  remote: ",None(Group(<<"transport.remote_candidates.">>)),
+             "  ICE servers: ",number(maps:get(<<"transport.ice.stun_urls">>,D,0))," STUN / ",
+             number(maps:get(<<"transport.ice.turn_urls">>,D,0))," TURN\n"]
     end.
 output_line(#{<<"output.supported">> := true}=D) ->
     io_lib:format("  Output (~ts): engine ~ts  player ~ts  route ~ts  volume ~ts/1000~n    ~ts scheduled / ~ts completed frames  ~ts queued / ~ts rejected buffers  stats age ~ts ms~n",[

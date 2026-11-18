@@ -61,13 +61,22 @@ safe_reason({badmatch,{error,R}}) when is_atom(R) -> {badmatch,R};
 safe_reason(R) when is_atom(R) -> R;
 safe_reason(_) -> startup_failed.
 start_link(C) -> gen_server:start_link({local,?MODULE},?MODULE,C,[]).
-init(#{<<"socket">> := Path}=C) ->
+init(C) ->
     process_flag(trap_exit,true),
-    {ok,L}=gen_tcp:listen(0,[local,binary,{ifaddr,{local,Path}},{packet,line},
-        {packet_size,?MAX_REQUEST},{buffer,?MAX_REQUEST},{active,false},{send_timeout,2000},{send_timeout_close,true}]),
-    ok=file:change_mode(Path,8#600),Parent=self(),
+    {ok,L}=listen(C,[binary,{packet,line},{packet_size,?MAX_REQUEST},{buffer,?MAX_REQUEST},
+        {active,false},{send_timeout,2000},{send_timeout_close,true}]),
+    Parent=self(),
     A=spawn_link(fun() -> accept(L,Parent) end),
     {ok,C#{listener => L,acceptor => A,startup_error => null}}.
+listen(#{<<"socket">> := Path},Opts) ->
+    {ok,L}=gen_tcp:listen(0,[local,{ifaddr,{local,Path}}|Opts]),
+    ok=file:change_mode(Path,8#600),{ok,L};
+listen(#{dir := Dir},Opts) ->
+    %% Loopback-only endpoint; publish its port in the existing process record
+    %% so callers find it. Callers retry until the record names a port.
+    {ok,L}=gen_tcp:listen(0,[{ip,{127,0,0,1}}|Opts]),{ok,Port}=inet:port(L),
+    Record=filename:join(Dir,"running.json"),{ok,B}=file:read_file(Record),
+    ok=ba_cli_store:replace(Record,(json:decode(B))#{<<"port">> => Port}),{ok,L}.
 accept(L,Parent) ->
     case gen_tcp:accept(L) of
         {ok,S} ->
@@ -115,17 +124,18 @@ handle_cast(stop,S) ->
     ba_buffee:disconnect(),init:stop(),{stop,normal,S};
 handle_cast(kill,S) ->
     %% Only this process can be killed, after an instance-checked local command.
-    spawn(fun() -> os:cmd("/bin/kill -KILL "++os:getpid()) end),{stop,normal,S};
+    Kill=case os:type() of {win32,_} -> "taskkill /F /PID ";_ -> "/bin/kill -KILL " end,
+    spawn(fun() -> os:cmd(Kill++os:getpid()) end),{stop,normal,S};
 handle_cast(_,S) -> {noreply,S}.
 terminate(_,S) ->
-    gen_tcp:close(maps:get(listener,S)),ba_cli_store:remove(maps:get(<<"socket">>,S)),
+    gen_tcp:close(maps:get(listener,S)),
+    case maps:find(<<"socket">>,S) of {ok,Path} -> ba_cli_store:remove(Path);error -> ok end,
     ba_cli_store:remove(filename:join(maps:get(dir,S),"running.json")),ok.
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([<<"name">>,startup_error],S);(log,_) -> [];(_,_) -> redacted end,Status).
 call(Record,Request) ->
     %% Line mode can split lines at the receive-buffer boundary. Match the
     %% buffer to the existing reply bound so a large snapshot is one JSON line.
-    case gen_tcp:connect({local,maps:get(<<"socket">>,Record)},0,[local,binary,{packet,line},
-            {packet_size,?MAX_REPLY},{buffer,?MAX_REPLY},{active,false}],1000) of
+    case connect(Record,[binary,{packet,line},{packet_size,?MAX_REPLY},{buffer,?MAX_REPLY},{active,false}]) of
         {ok,S} ->
             try
                 ok=gen_tcp:send(S,[json:encode(Request#{<<"instance">> => maps:get(<<"instance">>,Record)}),$\n]),
@@ -137,3 +147,6 @@ call(Record,Request) ->
             after gen_tcp:close(S) end;
         E -> E
     end.
+connect(#{<<"socket">> := Path},Opts) when is_binary(Path) -> gen_tcp:connect({local,Path},0,[local|Opts],1000);
+connect(#{<<"port">> := Port},Opts) when is_integer(Port) -> gen_tcp:connect({127,0,0,1},Port,Opts,1000);
+connect(_,_) -> {error,endpoint_pending}.

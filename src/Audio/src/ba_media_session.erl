@@ -1,8 +1,11 @@
 %% A local WebRTC PCM/Opus endpoint. No remote PIDs or OTP carrier.
 -module(ba_media_session).
 -behaviour(gen_server).
--export([start_link/1,signal/2,push/3,status/1]).
+-export([start_link/1,signal/2,push/3,status/1,ice_servers/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
+-ifdef(TEST).
+-export([stage/1,candidate/3,timeout_reason/1,ice_config/1]).
+-endif.
 -define(PC,'Elixir.ExWebRTC.PeerConnection').
 -define(SD,'Elixir.ExWebRTC.SessionDescription').
 -define(ICE,'Elixir.ExWebRTC.ICECandidate').
@@ -10,12 +13,18 @@ start_link(Args) -> gen_server:start_link(?MODULE,Args,[]).
 signal(Pid,P) -> gen_server:cast(Pid,{signal,P}).
 push(Pid,H,PCM) -> gen_server:call(Pid,{push,H,PCM},1000).
 status(Pid) -> gen_server:call(Pid,status).
+%% Every platform uses the same ICE servers: an explicit native_ice_servers
+%% override, else the configured STUN URLs (ba_core direct_stun_urls). Without
+%% STUN a peer offers only host candidates and cannot be reached across NAT.
+ice_servers() ->
+    application:get_env(ba_transport,native_ice_servers,[#{urls => ba_settings:app(direct_stun_urls,[])}]).
 init(#{owner := Owner,context := #{deadline := Deadline},role := Role,descriptor := D} = Args) ->
     process_flag(trap_exit,true),monitor(process,Owner),
     case maps:find(source_pid,Args) of {ok,Source} -> monitor(process,Source);error -> ok end,
     {ok,_} = application:ensure_all_started(ex_webrtc),
     Opus = maps:get(encoding,D)=:=opus,
-    {ok,PC} = ?PC:start_link([{ice_servers,application:get_env(ba_transport,native_ice_servers,[])},
+    IceServers = ice_servers(),
+    {ok,PC} = ?PC:start_link([{ice_servers,IceServers},
                              {video_codecs,[]},{audio_codecs,case Opus of true -> [opus];false -> [] end}]),
     Extra = case {Opus,Role} of
         {true,receiver} -> {ok,Decoder} = ba_audio_opus:open(),#{decoder => Decoder,decoder_ready => false,pc_ready => false};
@@ -26,10 +35,14 @@ init(#{owner := Owner,context := #{deadline := Deadline},role := Role,descriptor
     monitor(process,PC),erlang:send_after(max(1,Deadline-now_ms()),self(),{lease_expired,Deadline}),
     erlang:send_after(10000,self(),setup_timeout),
     S = (maps:merge(Args,Extra))#{pc => PC,opus => Opus,channel => undefined,open => false,remote_ready => false,pending_ice => [],
-              sequence => 0,last_sequence => undefined,received => 0,sent => 0,rejected => 0},
+              sequence => 0,last_sequence => undefined,received => 0,sent => 0,rejected => 0,
+              setup => (ice_config(IceServers))#{signaling => none,gathering => new,ice => new,dtls => new,connection => new,
+                                                 local => #{},remote => #{}}},
     case Role of provider -> self() ! offer;receiver -> ok end,
     {ok,S}.
-handle_call(status,_,S) -> {reply,(maps:with([role,open,received,sent,rejected],S))#{diagnostics => ba_diagnostics:view(S)},S};
+handle_call(status,_,S) ->
+    {reply,(maps:with([role,open,received,sent,rejected],S))#{diagnostics => ba_diagnostics:view(S),
+        setup => (maps:get(setup,S))#{stage => stage(S)}},S};
 handle_call({encoded,Timing,Payload},{Source,_},#{role := provider,source_pid := Source,opus := true,open := true,
             pc := PC,track := Track,sequence := Seq}=S) ->
     case admit_send(S,PC) of
@@ -72,9 +85,18 @@ handle_info(offer,#{role := provider,pc := PC} = S) ->
     end,
     {ok,Offer} = ?PC:create_offer(PC),ok = ?PC:set_local_description(PC,Offer),
     notify_signal(#{<<"kind">> => <<"signal.offer">>,<<"sdp">> => maps:get(sdp,Offer)},S),
-    {noreply,S#{channel := Ref}};
-handle_info({ex_webrtc,PC,{connection_state_change,connected}},#{pc := PC,opus := true}=S) ->
-    {noreply,opus_open(S#{pc_ready => true})};
+    {noreply,setup(signaling,offer_sent,S#{channel := Ref})};
+handle_info({ex_webrtc,PC,{connection_state_change,State}},#{pc := PC}=S0) ->
+    S = setup(connection,State,S0),
+    case State of
+        connected when map_get(opus,S) -> {noreply,opus_open(S#{pc_ready => true})};
+        failed -> {stop,failed_reason(S),S};
+        closed -> {stop,normal,S};
+        _ -> {noreply,S}
+    end;
+handle_info({ex_webrtc,PC,{ice_connection_state_change,State}},#{pc := PC}=S) -> {noreply,setup(ice,State,S)};
+handle_info({ex_webrtc,PC,{ice_gathering_state_change,State}},#{pc := PC}=S) -> {noreply,setup(gathering,State,S)};
+handle_info({ex_webrtc,PC,{dtls_transport_state_change,State}},#{pc := PC}=S) -> {noreply,setup(dtls,State,S)};
 handle_info({ex_webrtc,PC,{track,#{kind := audio,id := Id}}},#{pc := PC,opus := true,role := receiver}=S) ->
     case maps:find(track,S) of error -> {noreply,S#{track => Id}};{ok,Id} -> {noreply,S};_ -> {stop,multiple_audio_tracks,S} end;
 handle_info({ex_webrtc,PC,{rtp,Track,_,Packet}},#{pc := PC,opus := true,role := receiver,track := Track,decoder := Decoder}=S) ->
@@ -114,11 +136,10 @@ handle_info({ex_webrtc,PC,{data,Ref,Packet}},#{pc := PC,channel := Ref,role := r
 handle_info({ex_webrtc,PC,{ice_candidate,C}},#{pc := PC} = S) ->
     J = ?ICE:to_json(C),
     notify_signal(#{<<"kind">> => <<"signal.candidate">>,<<"candidate">> => maps:get(<<"candidate">>,J),
-        <<"mid">> => maps:get(<<"sdpMid">>,J),<<"line">> => maps:get(<<"sdpMLineIndex">>,J)},S),{noreply,S};
-handle_info({ex_webrtc,PC,{connection_state_change,failed}},#{pc := PC} = S) -> {stop,transport_failed,S};
-handle_info({ex_webrtc,PC,{connection_state_change,closed}},#{pc := PC} = S) -> {stop,normal,S};
+        <<"mid">> => maps:get(<<"sdpMid">>,J),<<"line">> => maps:get(<<"sdpMLineIndex">>,J)},S),
+    {noreply,candidate(local,maps:get(<<"candidate">>,J),S)};
 handle_info({ex_webrtc,PC,{data_channel_state_change,Ref,closed}},#{pc := PC,channel := Ref} = S) -> {stop,normal,S};
-handle_info(setup_timeout,#{open := false} = S) -> {stop,setup_timeout,S};
+handle_info(setup_timeout,#{open := false} = S) -> {stop,timeout_reason(stage(S)),S};
 handle_info({lease_expired,Deadline},#{context := #{deadline := Deadline}}=S) -> {stop,authorization_expired,S};
 handle_info({lease_expired,_},S) -> {noreply,S};
 handle_info({'DOWN',_,process,_,_},S) -> {stop,normal,S};
@@ -152,16 +173,75 @@ opus_open(S) -> S.
 incoming_signal(#{<<"kind">> := <<"signal.offer">>,<<"sdp">> := SDP},#{role := receiver,remote_ready := false,pc := PC} = S) ->
     ok = ?PC:set_remote_description(PC,?SD:from_json(#{<<"type">> => <<"offer">>,<<"sdp">> => SDP})),
     {ok,Answer} = ?PC:create_answer(PC),ok = ?PC:set_local_description(PC,Answer),
-    notify_signal(#{<<"kind">> => <<"signal.answer">>,<<"sdp">> => maps:get(sdp,Answer)},S),flush_ice(S);
+    notify_signal(#{<<"kind">> => <<"signal.answer">>,<<"sdp">> => maps:get(sdp,Answer)},S),flush_ice(setup(signaling,answer_sent,S));
 incoming_signal(#{<<"kind">> := <<"signal.answer">>,<<"sdp">> := SDP},#{role := provider,remote_ready := false,pc := PC} = S) ->
-    ok = ?PC:set_remote_description(PC,?SD:from_json(#{<<"type">> => <<"answer">>,<<"sdp">> => SDP})),flush_ice(S);
-incoming_signal(#{<<"kind">> := <<"signal.candidate">>,<<"candidate">> := C,<<"mid">> := Mid,<<"line">> := Line},S) ->
-    J = #{<<"candidate">> => C,<<"sdpMid">> => Mid,<<"sdpMLineIndex">> => Line},
+    ok = ?PC:set_remote_description(PC,?SD:from_json(#{<<"type">> => <<"answer">>,<<"sdp">> => SDP})),flush_ice(setup(signaling,answer_received,S));
+incoming_signal(#{<<"kind">> := <<"signal.candidate">>,<<"candidate">> := C,<<"mid">> := Mid,<<"line">> := Line},S0) ->
+    J = #{<<"candidate">> => C,<<"sdpMid">> => Mid,<<"sdpMLineIndex">> => Line},S = candidate(remote,C,S0),
     case maps:get(remote_ready,S) of
         true -> add_ice(J,S),S;
         false -> L = maps:get(pending_ice,S),true = length(L)<32,S#{pending_ice := [J|L]}
     end.
 flush_ice(S) -> [add_ice(C,S) || C <- lists:reverse(maps:get(pending_ice,S))],S#{remote_ready := true,pending_ice := []}.
+%% Connection-setup observations: states reported by ex_webrtc, signalling
+%% progress and candidate *types* only (never addresses or ICE credentials).
+setup(Key,Value,#{setup := Setup}=S) -> S#{setup := Setup#{Key := Value}}.
+ice_config(Servers) ->
+    URLs = lists:append([case maps:get(urls,Server,[]) of U when is_binary(U) -> [U];Us when is_list(Us) -> Us;_ -> [] end
+        || Server <- Servers,is_map(Server)]),
+    Count = fun(Prefixes) -> length([U || U <- URLs,is_binary(U),lists:any(fun(P) -> binary:longest_common_prefix([U,P])=:=byte_size(P) end,Prefixes)]) end,
+    #{stun_urls => Count([<<"stun:">>,<<"stuns:">>]),turn_urls => Count([<<"turn:">>,<<"turns:">>])}.
+candidate(_,<<>>,S) -> S;
+candidate(Side,Line,#{setup := Setup}=S) when is_binary(Line) ->
+    Type = case re:run(Line,<<" typ (host|srflx|prflx|relay)( |$)">>,[{capture,[1],binary}]) of
+        {match,[<<"host">>]} ->
+            %% mDNS-obfuscated host candidates need .local resolution on the peer.
+            case binary:match(Line,<<".local ">>) of nomatch -> host;_ -> mdns end;
+        {match,[<<"srflx">>]} -> srflx;
+        {match,[<<"prflx">>]} -> prflx;
+        {match,[<<"relay">>]} -> relay;
+        _ -> other
+    end,
+    Counts = maps:get(Side,Setup),
+    S#{setup := Setup#{Side := Counts#{Type => maps:get(Type,Counts,0)+1}}};
+candidate(_,_,S) -> S.
+%% The furthest point connection setup has reached; also the suffix of the
+%% stop reason so a failure names its step. Bounded set of atoms.
+stage(#{open := true}) -> open;
+stage(#{role := Role,setup := #{signaling := Sig,ice := Ice,dtls := Dtls,connection := Conn,local := L,remote := R}}) ->
+    if
+        Conn=:=connected -> channel;
+        Dtls=:=failed -> dtls_failed;
+        Ice=:=connected;Ice=:=completed -> dtls;
+        Ice=:=failed -> ice_failed;
+        Sig=:=none,Role=:=receiver -> no_offer;
+        Sig=:=none -> offer_pending;
+        Sig=:=offer_sent -> no_answer;
+        map_size(L)=:=0 -> no_local_candidates;
+        map_size(R)=:=0 -> no_remote_candidates;
+        Ice=:=checking -> ice_checking;
+        true -> ice_new
+    end.
+timeout_reason(open) -> setup_timeout;
+timeout_reason(channel) -> setup_timeout_channel;
+timeout_reason(dtls_failed) -> setup_timeout_dtls_failed;
+timeout_reason(dtls) -> setup_timeout_dtls;
+timeout_reason(ice_failed) -> setup_timeout_ice_failed;
+timeout_reason(no_offer) -> setup_timeout_no_offer;
+timeout_reason(offer_pending) -> setup_timeout_offer_pending;
+timeout_reason(no_answer) -> setup_timeout_no_answer;
+timeout_reason(no_local_candidates) -> setup_timeout_no_local_candidates;
+timeout_reason(no_remote_candidates) -> setup_timeout_no_remote_candidates;
+timeout_reason(ice_checking) -> setup_timeout_ice_checking;
+timeout_reason(ice_new) -> setup_timeout_ice_new.
+failed_reason(S) ->
+    case stage(S) of
+        dtls_failed -> transport_failed_dtls;
+        dtls -> transport_failed_dtls;
+        channel -> transport_failed;
+        open -> transport_failed;
+        _ -> transport_failed_ice
+    end.
 add_ice(C,#{pc := PC}) -> ok = ?PC:add_ice_candidate(PC,?ICE:from_json(C)).
 notify_signal(P,S) ->
     case bounded_notify({audio_signal,self(),P},S) of

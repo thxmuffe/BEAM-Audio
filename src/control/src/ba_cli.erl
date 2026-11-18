@@ -82,14 +82,25 @@ new_device(A,Root) ->
     BaseName=one_name(A),Enabled=capabilities(maps:get(enable,A,"")),Timeout=timeout(A),
     Create=maps:get(createbuffee,A),Join=maps:get(joinbuffee,A,undefined),
     case Create andalso Join=/=undefined of true -> fail(2,<<"Choose createbuffee or joinbuffee, not both.">>);false -> ok end,
-    case os:type() of {unix,darwin} -> ok;_ -> fail(2,<<"Real hardware CLI currently supports macOS only.">>) end,
+    %% Observation and control are platform independent; only the CLI's own
+    %% audio helpers are macOS builds so far.
+    case Enabled=/=[] andalso os:type()=/={unix,darwin} of
+        true -> fail(2,<<"CLI audio capabilities (speaker, mic, broadcast) currently need the macOS native helpers. Audio-off Devices and the monitor work on every platform.">>);
+        false -> ok
+    end,
     Helpers=[{<<"speaker">>,"ba_device_audio"},{<<"microphone">>,"ba_audio_input"},{<<"broadcast">>,"ba_audio_input"}],
     [case filelib:is_regular(filename:join([Root,"builds/CLI",H])) of true -> ok;false -> fail(2,<<"Missing native binding; run bash src/Tools/CLI/build.sh.">>) end || {K,H} <- Helpers,lists:member(K,Enabled)],
     Instance=binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(16))),
-    Socket=filename:join("/tmp","ba-device-"++Instance++".sock"),
+    %% Unix uses an owner-only socket. Windows OTP has no AF_UNIX in gen_tcp, so
+    %% the Device publishes a loopback port instead; every request still needs
+    %% the random instance secret from the owner's private process record.
+    Endpoint=case os:type() of
+        {win32,_} -> #{};
+        _ -> #{socket => list_to_binary(filename:join("/tmp","ba-device-"++Instance++".sock"))}
+    end,
     Mode=case {Create,Join} of {true,_} -> <<"create">>;{_,undefined} -> <<"idle">>;_ -> <<"join">> end,
     Desk=maps:get(desk,A,"wss://beamaudio.onrender.com/reception"),
-    C0=#{instance => list_to_binary(Instance),name => list_to_binary(BaseName),socket => list_to_binary(Socket),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
+    C0=Endpoint#{instance => list_to_binary(Instance),name => list_to_binary(BaseName),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
         observer => maps:get(observer,A,false),invitation => case Join of undefined -> null;_ -> list_to_binary(Join) end},
     Candidate=case maps:find(web_assets,A) of
         error -> C0;
