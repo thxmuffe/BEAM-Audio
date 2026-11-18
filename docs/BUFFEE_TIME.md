@@ -1,5 +1,18 @@
 # Buffee Clock and Playback Offset
 
+## Accepted native media direction — 2026-11-18
+
+Erlang controls and supervises the pipes; no audio payload travels through it.
+Use continuous native media streams, sample-position timestamps and explicit
+global-time mappings (prefer standard RTP/RTCP), with immediate initial mapping,
+periodic updates, early buffering, packet recovery and smooth sample-rate
+correction. The owner accepted this direction; it supersedes the independent
+absolute-target-per-packet requirement for the replacement architecture. Session
+clock authority and presentation/correction policy remain in Erlang. This
+migration is not implemented. The current implementation details below describe
+the existing Erlang media path and absolute-target protocol. Read PLAN.md and
+the native media audit at the top of PROGRESS.md before continuing the migration.
+
 ## Agreed next clock coordination — 2026-11-17
 
 The Manager maintains one logical master on an ON AIR Device. Several Devices

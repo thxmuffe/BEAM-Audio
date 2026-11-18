@@ -1,5 +1,17 @@
 # Shared audio runtime
 
+Architecture clarified 2026-11-18: Erlang connects, configures and supervises the
+pipes; audio payloads stay in native code and OS/media libraries. This applies
+to encoded media as well as PCM. The current default described below does not
+meet this boundary: it carries PCM through Erlang and mixes it there. It remains
+legacy implementation while a complete native pipeline is integrated. Existing
+native receiver prototypes do not yet provide that complete production path.
+The accepted replacement uses continuous native streams with sample positions
+and periodic shared-clock mappings, preferably RTP/RTCP, rather than requiring
+independent absolute targets on every packet. Acquire an initial mapping promptly;
+native buffering/recovery and smooth rate correction follow Session policy.
+The remaining sections describe existing implementation until that migration.
+
 Shared Erlang modules in `src/` own publication, metering, interpretation,
 subscription/Contract lifetimes, timing policy and backend lifecycle. Adapters
 under `adapters/macOS`, `adapters/iOS` and `adapters/Windows` bind platform APIs,

@@ -1,5 +1,89 @@
 # Current implementation and validation
 
+## Native media boundary and buffering audit — 2026-11-18
+
+The owner explicitly clarified that Erlang is the piping/control system and
+audio must never travel through it. Both PCM and encoded payloads must remain
+in native/OS media components; Erlang retains Session control, consent,
+supervision, clock/presentation policy and timing/diagnostic metadata. Updated
+repository instructions and PLAN accordingly. The default implementation still
+violates this boundary: native capture → Erlang PCM interpretation/transport/
+Mixer → native output. The encoded Mac path also sends Opus through Erlang.
+Existing GStreamer/libwebrtc prototypes cover parts of a native implementation;
+their common binding currently refuses `buffee_control` with
+`native_revocation_protocol_required`. No native pipeline was switched on and
+no runtime source was changed by this audit.
+
+For one 48-kHz stereo float32 stream, payload storage is 384,000 bytes/s:
+3 s = 1,152,000 bytes and 10 s = 3,840,000 bytes, excluding queue/library overhead.
+With 512-frame input blocks these need 282/938 blocks. The existing shared
+Erlang queue allows 32 MiB total, 8,192 total blocks, 4,096 per source and targets
+up to 31 s ahead: enough for either duration for one such stream, not an
+unlimited multi-stream guarantee. Seven existing Mixer checks passed, including
+two 30-second streams queued and drained in virtual time. This proves shared
+software buffering, not native ten-second playback or physical synchronization.
+
+Native iOS allows 2,048 scheduled buffers and targets up to 35 s ahead. At the
+current 256-frame output size, 3 s needs 563 buffers and 10 s needs 1,875; ten
+seconds leaves little count headroom, and smaller fragments consume more slots.
+The Mac native helper allows only 128 buffers and targets less than 1 s ahead:
+about 0.683 s at 256 frames/48 kHz. The current Mixer submits at most 500 ms
+ahead even when Response time is 3 or 10 s, retaining the rest in Erlang.
+Therefore today's native path does not provide the requested cross-platform
+3/10-second preloading. Windows has a native target-indexed queue and a small
+hardware buffer, but this audit did not qualify its memory bounds or ten-second
+native playback. Native queue budgets should be expressed in time/frames and
+bytes, with actual device tests, rather than assumed from nominal buffer count.
+
+Transport audit found unordered delivery with retransmission disabled, plus a
+receiver that rejects any sequence older than the last accepted one. Even an
+early reordered packet can therefore be discarded before the timed queue.
+Waiting longer does not recover loss. Quality-first native integration needs
+reordering and deadline-bounded recovery, alongside sample-clock correction.
+Capture targets currently use native capture timestamps, not encoding completion
+time; processing stalls do not automatically add delay or rewrite old targets.
+
+The owner proposed continuous sample-ordered audio with a global-time code about
+every five seconds. Standard RTP timestamps plus RTCP Sender Reports provide
+this media/global-time correspondence (RFC 3550 §6.4.1); RFC 7273 distinguishes
+reference and media clocks, and RFC 6051 addresses rapid initial synchronization.
+Send an initial mapping on join/start, maintain sample continuity, and apply
+controlled corrections rather than stepping at every report. The owner accepted
+this recommendation before handing off to a new chat. It replaces the earlier
+independent absolute-target requirement in the architecture, but the runtime
+still uses that legacy protocol; no native migration has been implemented.
+Current clock accuracy is unqualified: a measured ~100 ms timing RTT permits
+roughly ±50 ms path-asymmetry error for that exchange before master/local mapping
+errors; larger audio buffers do not reduce this uncertainty. External UTC error
+shared by all followers is distinct from relative speaker alignment.
+
+Primary references: [RTP/RTCP](https://www.rfc-editor.org/rfc/rfc3550.html),
+[RTP clock sources](https://www.rfc-editor.org/rfc/rfc7273.html),
+[rapid synchronization](https://www.rfc-editor.org/rfc/rfc6051.html),
+[NTP error metrics](https://www.rfc-editor.org/rfc/rfc5905.html), and
+[Apple scheduled audio buffers](https://developer.apple.com/documentation/avfaudio/avaudioplayernode).
+
+## Listening after the initial clock burst — 2026-11-18, 22:49–22:54 Helsinki
+
+The owner rebuilt and confirmed immediate playback, then reported odd sound,
+possible gradual degradation and improvement after restarting the speaker.
+Later reports explicitly said deterioration had stopped and sound remained OK.
+The Inspector confirmed five initial samples completed, the same iPhone runtime,
+and no further clock filter resets. In one 43-second comparison the Mac had no
+new capture drops; iPhone failures rose by 93 late inputs, 20 missed handoffs,
+30 native late blocks and 27 overlaps. Overlaps recurred about every 1.5 seconds,
+including while the master reported no remaining correction. Response time
+was manual 150 ms. This is ongoing packet loss, not proof of worsening quality.
+
+The native output was reopened between observations: its counters restarted
+and host-clock calibration RTT improved from 26.163 ms to 2.451 ms while the
+Session clock reset count stayed at one. Recalibration is a possible contributor
+to recovery, not an established explanation. A subsequent one-second recording
+showed advancing output and bounded queues, with no captured progressive buildup
+to silence; the owner's report of the earlier decline remains unresolved.
+No audio settings or runtime code were changed during this inspection. The
+recorder and exact audio-disabled Inspector were stopped afterward.
+
 ## Rapid initial clock calibration on idle join — 2026-11-18
 
 Clock acquisition already started on membership; subsequent measurements now

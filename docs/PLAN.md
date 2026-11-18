@@ -8,6 +8,23 @@ cleanup waits until then.
 
 ## Decisions in force
 
+- **Erlang controls the pipes; audio stays native (2026-11-18 clarification).**
+  No PCM or encoded audio payloads through Erlang. Native libraries own capture,
+  codecs, media transport, buffering/reordering, processing, metering and output.
+  OTP owns Session control, consent, supervision, shared clock policy and timing
+  commands, receiving only metadata and bounded summaries. This supersedes the
+  earlier Erlang-first media implementation direction. Existing Erlang Mixer
+  findings below diagnose the legacy path, not a mandate to extend it.
+- **Quality before low latency.** Three-second Response time may be normal;
+  assess ten-second native buffering as well. The previous Automatic taper
+  toward 3 s remains implemented policy, not a quality target or native limit.
+  The owner accepted continuous native streams with periodic global-time
+  mappings, packet recovery and smooth sample-rate correction. Prefer standard
+  RTP/RTCP and established native libraries. Send an initial mapping promptly,
+  then refresh it periodically (about five seconds was proposed; exact cadence
+  and correction limits need implementation evidence). This replaces the earlier
+  independent absolute-target requirement per packet. No protocol/backend
+  replacement has been implemented.
 - **Session, Device, privileges** (`grant`, `on_air`, `end_session`); no roles.
   Holding the invitation link is enough to participate; links last forever.
 - **Can moderate** is the Settings switch for the existing `end_session`
@@ -28,9 +45,11 @@ cleanup waits until then.
   on Windows), one log per Device.
 - **Audio has no board or Manager in its path:** an ON AIR Device's catalogue is
   its standing offer; each Device subscribes under its own Playback consent.
-- **Every packet carries its broadcaster-assigned target;** receivers execute it
-  or report a failure. Native bindings may convert clocks linearly (e.g. the
-  Windows capture frame count → host time), never infer targets from neighbours.
+- **Continuous media follows the shared Session schedule.** Sample positions
+  and explicit global-time mappings determine playback; arrival time does not.
+  Native libraries may reorder/recover packets and correct sample rate smoothly,
+  while Erlang sets Session timing policy. Existing absolute-target packets
+  remain the legacy implementation until native integration replaces them.
 - **Timestamped audio regions may overlap.** Investigate continuous resampling
   for clock-rate correction and short crossfades at deliberate splices. Do not
   fade every packet independently. Regions retain their assigned targets;
@@ -57,7 +76,22 @@ physical synchronization remain unqualified.
 
 ## Next 5 steps
 
-1. **Fix speaker startup state, then continue listening tests.**
+1. **Establish the native media path, then continue listening tests.**
+   Reuse the existing native GStreamer/libwebrtc work where suitable, keeping
+   audio payloads out of Erlang throughout capture-to-speaker transport. Current
+   prototypes are not a complete replacement: `ba_audio_native_engine` rejects
+   the current control profile pending its native revocation protocol, and the
+   current encoded Mac path still passes Opus payloads through Erlang. Resolve
+   the smallest complete native integration before adding more Erlang rendering.
+   Evaluate standard RTP/RTCP sample/global-time mapping, early native buffering,
+   deadline-aware recovery and native continuous sample-rate correction. Keep
+   Session timing and consent control in Erlang.
+   After rebuilding the initial clock burst, owner confirmed immediate playback.
+   Quality was initially odd and reportedly worsened/recovered on speaker restart,
+   then stabilized. Latest recording did not capture growing queues or silence;
+   clock reset count stayed fixed. Native output calibration RTT improved from
+   26.163 ms to 2.451 ms on reopen. Investigate that conversion alongside regular
+   same-source overlaps and late packets; gradual deterioration is not yet explained.
    Owner now confirms a quick automatic resume after an iPhone restart, but
    Mac ON AIR off/on still needed a speaker mute/unmute to recover. Trace that
    source-return path with saved playback intent retained; automatic recovery is

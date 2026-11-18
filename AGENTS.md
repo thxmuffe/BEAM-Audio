@@ -110,21 +110,26 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 - Prefer architectural simplicity, clarity, and minimal code over feature completeness or defensive complexity.
 - Preserve the user’s stated product behavior. Established standards guide implementation mechanics; they do not justify silently adding restrictions or replacing the design with conventional product behavior. Explain proposed departures before implementing them. Easy sharing and playback at the assigned shared time are core requirements.
 - Avoid reinventing functionality already provided by OTP or established libraries.
-- Implement audio interpretation, metering, processing and timing/buffering
-  policy in Erlang first on the default path. Isolated third-party native media
-  backends are permitted under the accepted audio plan and the current audio architecture; replace
-  the default path only after relevant playback/recovery/timing evidence. Erlang
-  owns the shared clock reference, presentation schedule and correction policy;
-  native engines execute approved transport, buffering and audio operations and
-  report device timing. Keep other native code to OS/library bindings and buffer
-  transfer unless measured needs justify offloading.
+- Erlang/OTP connects, authorizes, configures and supervises the audio pipes;
+  audio payloads must stay entirely in native code and OS/media libraries.
+  Neither PCM nor encoded audio packets may pass through Erlang processes,
+  ports or sockets. Native components own capture, codecs, media transport,
+  reordering, buffering, resampling, mixing, metering and playback. Erlang owns
+  the shared clock reference, Session presentation policy and correction
+  commands; only control/signalling, timing metadata and bounded diagnostic
+  summaries cross that boundary. Prefer established native media libraries over
+  custom audio engines. The current Erlang media path is legacy implementation
+  to replace, not the architecture to extend.
 - Build incrementally. Do not introduce features, fallbacks, or complexity for hypothetical future needs.
-- Every audio packet must independently identify its broadcaster-assigned playback
-  target in the shared clock reference. Linear clock/unit conversions are allowed;
-  reconstructing a missing target from neighbouring packets, periodic media anchors
-  or arrival order is not. Receivers execute that target or explicitly report a
-  failure; adaptive streaming must never silently choose a replacement target.
-  Software scheduling evidence must remain distinct from physical speaker timing.
+- Use continuous native audio streams with sample-position timestamps and an
+  explicit mapping to the shared Session clock, using established RTP/RTCP
+  mechanisms where appropriate. Send an initial mapping promptly and refresh it
+  periodically; do not wait for a periodic report to start synchronization.
+  This replaces the earlier requirement for an independent absolute timestamp
+  on every packet. Arrival order must never define presentation time. Native
+  playback follows the agreed Session schedule with smooth rate correction;
+  it must not silently select an unrelated adaptive playout timeline. Keep
+  software scheduling evidence distinct from physical speaker timing.
 
 **Guiding principle:** I provide the vision. You provide the technical expertise. Our goal is the simplest elegant architecture that fulfills the vision, not merely code that works.
 
@@ -153,12 +158,11 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 - Keep `src/Audio/src/` platform independent. Platform audio bindings, including
   Erlang port/format/OS-clock adapters and native helpers, belong together under
   `src/Audio/adapters/<platform>/`. Adapters supply source-format descriptions,
-  sample blocks and local monotonic capture timestamps; shared audio code owns
-  publication, presentation timing policy and backend lifecycle. The legacy path
-  retains Erlang metering and packet delivery; an approved native backend may
-  carry audio directly between native components and report bounded summaries. This
-  boundary preserves heterogeneous source formats rather than imposing one rate
-  or precision.
+  timing metadata and bounded summaries, never audio sample blocks or encoded
+  media payloads. Shared Erlang code owns publication metadata, presentation
+  policy and backend lifecycle; native components carry and process the audio
+  directly. This boundary preserves heterogeneous source formats rather than
+  imposing one rate or precision.
 - Generated apps, dependencies, runtimes and caches belong under the ignored top-level `builds/` directory. Modify project sources rather than generated copies or downloaded dependency files.
 - Keep experimental implementations isolated until the planned integration step. Follow the current accepted plan in [docs/PLAN.md](docs/PLAN.md); do not turn speculative future requirements into present architecture.
 
