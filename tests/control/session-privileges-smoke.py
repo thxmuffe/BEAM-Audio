@@ -64,6 +64,8 @@ def main():
                 d.request('clock_prepare',interval_ms=1000,samples=2)
                 assert d.request('join', invitation=invitation, desk=url)['ok']
                 holds(d)
+                # Requests go to grant holders this Device is paired with now.
+                control.wait(d, lambda s: a.identity['id'] in s['membership']['participants'])
             # Every privilege is requested; a grant holder answers.
             assert b.request('request_privilege',privilege='on_air')['ok']
             control.wait(a,lambda s: s['membership']['requests'].get(b.identity['id']) == ['on_air'])

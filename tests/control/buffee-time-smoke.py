@@ -63,7 +63,7 @@ def main():
             return
         states=[ready(r) for r in runtimes]
         timeline=states[0]['timeline'];assert all(s['timeline']==timeline for s in states)
-        assert all(s['offset_policy']['offset_ms']==300 for s in states)
+        assert all(s['offset_policy']['offset_ms']==150 for s in states)  # new Sessions default to 150 ms
         assert b.request('clock_reference')=={'error':'authority_reference_only'}
         assert c.request('offset_set',offset_ms=1200,revision=1)=={'error':'forbidden'}
         assert a.request('clock_snapshot')['offset_policy']['revision']==1

@@ -225,7 +225,12 @@ periodic(Kind,Due,Extra,S) ->
         false -> S;
         true ->
             P = Extra#{<<"kind">> => Kind},
-            Next = case request(P,#{},S) of {ok,N} -> N;_ -> S end,
+            %% A failed request stays visible (clock.last_error) until a sample succeeds.
+            Next = case request(P,#{},S) of
+                {ok,N} -> N;
+                {error,R} when is_atom(R) -> save(S#{clock := (maps:get(clock,S))#{last_error => R}});
+                _ -> S
+            end,
             Next#{Due := now_ms()+maps:get(sample_interval_ms,maps:get(clock,S))}
     end.
 request(P,Extra,#{scope := {_,Authority},pending := Pending} = S) when map_size(Pending)<32 ->
@@ -386,6 +391,8 @@ checkpoint(Name,{Buffee,Authority},P) ->
     catch _:_ -> exit({time_storage_failed,Name}) end.
 reply(#{peer := Peer},Id,P) -> send(Peer,Id,P).
 reply_error(C,Id,Operation,Reason) -> reply(C,Id,#{<<"kind">> => <<"error">>,<<"operation">> => Operation,<<"reason">> => Reason}).
+%% Deliberately uncaught: if control is replaced or stuck, this clock crashes and
+%% its supervisor restarts it with fresh authenticated sessions (recovery path).
 send(Peer,Id,P) -> ba_buffee_control:time_message(Peer,Id,P).
 context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
 answer(#{caller := From},Result) -> gen_server:reply(From,Result);

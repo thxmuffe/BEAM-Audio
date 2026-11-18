@@ -82,3 +82,46 @@ an outdated end-session error expectation, an unsuccessful offset change, and
 subscriptions remaining active in the authorization-expiry fault test. The
 last result needs explicit investigation of the fault injector and lease
 enforcement; it is not evidence that expiry passed.
+
+## Afternoon: failing e2e scenarios re-examined
+
+All `device-session-e2e.py` scenarios were rerun on Windows.
+
+- **Authorization expiry** now passes. The fault injector predated per-Session
+  Reception mailboxes (`e7df05d`) and filtered nothing; it now wraps every
+  mailbox owner. With proofs really withheld, Media Sessions stop and future
+  buffers are discarded at expiry. Production enforcement was not at fault.
+- **Ephemeral lifecycle** now passes. Stale expectations updated to the
+  privileges model (End refused with `end_privilege_required`; Leave keeps
+  membership; losing the grant holder ends nothing; the shared Reception socket
+  may stay after Leave but no Session mailbox may; saved-Session `last` moves).
+  **Product fix:** End now also drops the ended Session's saved privilege policy
+  (`ba_buffee:ended_session/1`), not only the return link.
+- **Sustained/reference restart** now passes (Response time is set by the grant
+  holder; a stray copied summary line removed). It dropped 56 blocks once, then
+  passed three times.
+- **Maximum delay (30 s)** still drops a few blocks intermittently. New mixer
+  diagnostics `mixer.max_wakeup_gap_ms` / `mixer.long_wakeup_gaps` show the
+  mixer waking up to 95–290 ms late, while OTP `system_monitor` (test probe
+  `vm_monitor`/`vm_report`) found no Erlang process or GC holding a scheduler
+  over 40 ms. The VMs were not scheduled by the OS (coarse Windows timer, four
+  VMs plus the driver on one laptop). The same stalls reset the test's 250 ms
+  clock filter (`sample_gap`). Any stall over the mixer's 50 ms submission lead
+  becomes `missed_packet_target`. Open decision: a larger lead absorbs stalls but
+  makes slower sources' packets late sooner.
+- Decided by the owner: an ended Session's link keeps working (it opens an
+  empty Session with the same ID, without old privileges). End still reaches
+  only currently paired Devices (documented limit).
+- `session-privileges-smoke.py` passes: a request reaches only grant holders
+  the Device is currently paired with, so the test now waits for pairing. It
+  also exposed a chat defect: chat starts after membership and missed the
+  creator's first view, so the first joiner was never announced. Chat now asks
+  membership to resend its view on start (`resend_chat/0`).
+- `buffee-time-smoke.py` passes after its stale 300 ms default became 150 ms.
+- `ba_buffee_clock stopped (timeout)`: the clock calls control/Desk
+  synchronously and crashes when they are slow or replaced; its supervisor
+  restarts it with fresh sessions. That crash is the tested control-session
+  recovery path (catching it broke recovery), so it stays. Failed periodic
+  sample requests are now visible as `clock.last_error`. The notice itself is
+  still posted to Session chat by the crash-notice feature; the owner decided
+  (2026-11-18) that crash notices stay visible in chat.

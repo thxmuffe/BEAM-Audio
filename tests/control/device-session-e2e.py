@@ -33,6 +33,8 @@ def assert_session_clocks(runtimes,master,expected_offset_ms):
     readings=[]
     for r in runtimes:
         before=time.time_ns();clock=r.request('clock_snapshot');after=time.time_ns()
+        if not (clock['state']=='synchronized' and clock['filter_ready']):
+            for x in runtimes:print('VM scheduler report:',x.request('vm_report'),flush=True)
         assert clock['state']=='synchronized' and clock['filter_ready'],clock
         assert clock['offset_policy']['ready'],clock
         assert clock['offset_policy']['offset_ms']==expected_offset_ms,clock

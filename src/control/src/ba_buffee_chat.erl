@@ -13,12 +13,18 @@ init([]) ->
     %% One shared handler dispatches notices to the reporting Session.
 
     logger:add_handler(ba_buffee_chat,ba_buffee_log_h,#{level => error,config => #{recipient => self()}}),
+    %% Membership starts first; ask for its current view so the baseline is the
+    %% Session as this Device first saw it and every later member is a join.
+    self() ! resync,
     {ok,#{messages => [],present => [],privileges => undefined}}.
 handle_call(history,_,#{messages := M}=S) -> {reply,lists:reverse(M),S};
 handle_call({send,Text},_,S) when is_binary(Text),byte_size(Text)>0,byte_size(Text)=<4096 ->
     {Reply,M}=publish(Text,maps:get(messages,S)),{reply,Reply,S#{messages := M}};
 handle_call(_,_,S) -> {reply,{error,invalid_text},S}.
 handle_cast(_,S) -> {noreply,S}.
+handle_info(resync,S) ->
+    case ba_session_scope:whereis(ba_buffee_membership) of undefined -> ok;_ -> ba_buffee_membership:resend_chat() end,
+    {noreply,S};
 handle_info({ba_crash_notice,Text},S) ->
     %% This worker may wait on the ordinary chat API; the failing process never
     %% does. Lost membership/transport simply drops this one attempt.

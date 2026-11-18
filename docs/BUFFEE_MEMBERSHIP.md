@@ -115,7 +115,10 @@ does not trigger automatic destruction or revocation.
 
 A Device holding `end_session` can call `ba_buffee:end_buffee/0` (Destroy Session
 in the current UI). A signed End tears down reached Devices and clears saved
-return intent. Without the privilege the call returns `end_privilege_required`;
+return intent (the return link and that Session's saved privilege policy).
+End does not retire the link: by owner decision (2026-11-18) anyone holding it
+can still open the Session again, arriving as an unprivileged participant of an
+empty Session with the same ID. End reaches only Devices paired at that moment. Without the privilege the call returns `end_privilege_required`;
 a `grant` holder can request the privilege for itself first. Ordinary Leave or
 transport loss never substitutes for End. End is bound to each pair's handshake.
 `revoke/1` lists the Device as removed in the next policy and tells every

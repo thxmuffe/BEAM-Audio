@@ -4,7 +4,7 @@
 %% that grant holders change and every Device keeps; the highest revision wins.
 -module(ba_buffee_membership).
 -behaviour(gen_server).
--export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1]).
+-export([start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1,resend_chat/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 -ifdef(TEST).
 -export([order/3]).
@@ -166,6 +166,8 @@ handle_call({revoke,Device},_,#{id := Id}=S) ->
             end end,S),S)
     end;
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
+%% The chat starts after this process and may miss the first publish.
+handle_cast(resend_chat,#{state := authorized}=S) -> chat_view(S),{noreply,S};
 handle_cast(_,S) -> {noreply,S}.
 
 handle_info(tick,S0) ->
@@ -427,10 +429,13 @@ permissions(Id,#{<<"members">> := Members}) ->
 defaults() -> ba_settings:app(buffee_default_permissions,[]).
 publish(#{state := authorized}=S) ->
     ba_contacts:observe(maps:get(buffee,S),maps:get(name,S),maps:keys(maps:get(participants,S))),
-    chat({participants,lists:sort(maps:keys(maps:get(participants,S)))}),
-    View = view(S),chat({session_privileges,maps:get(device_privileges,View)}),
+    View = chat_view(S),
     notify({membership_authorized,View}),S;
 publish(S) -> S.
+chat_view(S) ->
+    chat({participants,lists:sort(maps:keys(maps:get(participants,S)))}),
+    View = view(S),chat({session_privileges,maps:get(device_privileges,View)}),View.
+resend_chat() -> gen_server:cast(ba_session_scope:ref(?MODULE),resend_chat).
 chat(Event) -> case ba_session_scope:whereis(ba_buffee_chat) of undefined -> ok;Chat -> Chat ! Event,ok end.
 invalidate() -> notify(membership_invalidated).
 notify(Event) -> case ba_session_scope:whereis(ba_buffee_control) of undefined -> ok;Pid -> Pid ! Event end.
