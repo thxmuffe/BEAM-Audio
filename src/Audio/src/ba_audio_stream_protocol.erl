@@ -26,7 +26,9 @@ validate(#{<<"kind">> := K} = P) ->
             true = binary:match(maps:get(<<"sdp">>,P),<<"a=fingerprint:sha-256 ">>) =/= nomatch;
         <<"signal.candidate">> ->
             exact(P,base()++[<<"candidate">>,<<"mid">>,<<"line">>]),session(P),
-            text(maps:get(<<"candidate">>,P),1024),text(maps:get(<<"mid">>,P),64),
+            %% Empty is the standard end-of-candidates marker, not an error.
+            Candidate=maps:get(<<"candidate">>,P),true=is_binary(Candidate) andalso byte_size(Candidate)=<1024,
+            text(maps:get(<<"mid">>,P),64),
             N = maps:get(<<"line">>,P),true = is_integer(N) andalso N>=0 andalso N=<16
     end,ok.
 base() -> [<<"kind">>,<<"source">>,<<"incarnation">>,<<"attempt">>].

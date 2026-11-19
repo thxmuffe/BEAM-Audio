@@ -47,7 +47,8 @@ connect(Port,G,D) ->
                   <<"profile">> := <<"gst_aac_rtp_v2">>,<<"owner_loss_stop">> := true,<<"stop_ack">> := true,<<"schedule">> := true}=json:decode(B),
                 Probes=[probe(S,G,D) || _ <- lists:seq(1,5)],
                 [{_,Plan,Clock}|_]=lists:sort(Probes),ok=send(S,G,Plan),{ok,S,Clock}
-            catch _:_ -> {error,native_lifecycle_handshake_failed} end,
+            catch throw:{native_clock_mapping_failed,_}=Reason -> {error,Reason};
+                  _:_ -> {error,native_lifecycle_handshake_failed} end,
             case Result of {ok,S,_} -> Result;_ -> gen_tcp:close(S),Result end;
         Error -> Error
     end.
@@ -56,8 +57,10 @@ probe(S,G,D) ->
     ok=send(S,G,#{op => <<"clock">>,sent_ns => integer_to_binary(Sent)}),
     {ok,B}=gen_tcp:recv(S,0,1000),Received=erlang:monotonic_time(nanosecond),
     #{<<"event">> := <<"clock">>,<<"generation">> := G}=E=json:decode(B),
-    {ok,Plan,Meta}=ba_audio_native_clock:plan(E,Sent,Received,D,#{}),
-    {Received-Sent,Plan,Meta}.
+    case ba_audio_native_clock:plan(E,Sent,Received,D,#{}) of
+        {ok,Plan,Meta} -> {Received-Sent,Plan,Meta};
+        {error,Reason} -> throw({native_clock_mapping_failed,Reason})
+    end.
 handle_call(status,_,S) ->
     {reply,#{open => maps:get(open,S),role => maps:get(role,S),native_payload_bypass => true,
         synchronized => false,codec => aac_lc,bitrate => 320000,stats => maps:get(stats,S),clock => maps:get(clock,S),

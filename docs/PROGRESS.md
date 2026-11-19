@@ -1,5 +1,44 @@
 # Current implementation and validation
 
+## Empty ICE candidate closed native streams — 2026-11-19
+
+Owner clarified the next consent change: Calibration (combined mic/speaker),
+Processing (DSP/computing) and Inspect (private data), each Always / Ask / No;
+requester-held signed inspection grants persist in its user's memory. Recorded
+in PLAN; not yet implemented. The temporary Inspector was stopped on this
+clarification; continue diagnosis from the Mac/iPhone's local logs.
+
+- Joined an isolated audio-disabled CLI Inspector and read both app logs. The
+  Mac publishes and iPhone clock is ready; answers reach a Mac with no provider.
+  Added closure-path/attach/exit diagnostics; a restarted Mac identified
+  `signal_send_failed`, excluding the earlier unconfirmed clock-churn theory
+  for that observed closure.
+- Reproduced GStreamer's empty ICE end-of-candidates event. The stream schema
+  rejected empty strings, so sending that valid event closed the media attempt.
+  Allow the empty marker while retaining binary type and 1,024-byte limit;
+  native GStreamer already accepts it. Both apps require the updated runtime.
+- Added a regression through signed control-message sending and receiving,
+  including rejection of non-string and oversized candidates. It fails before
+  the fix; afterward 41 focused control/native/publication tests pass. Mac app
+  rebuilt; iPhone runtime prepared with zero unresolved core imports. No iPhone installation or
+  listening acceptance performed by the agent. First owner retry was silent,
+  but process inspection confirmed the Mac still ran the pre-fix 21:29 process;
+  requested a full Quit/reopen. The exact signal kind and send error are now
+  logged too. After the actual Mac restart, owner confirms audible short bursts
+  from the iPhone; provider teardown now says `remote_close` every ~3.5 s.
+  Requested Xcode Stop/Run on the iPhone to install the updated runtime; its
+  remaining use of the old schema is suspected, not yet confirmed.
+- Native smoke passes (241,664 decoded frames, 272 RTCP-mapped packets, mapping
+  in 493 ms, maximum software schedule error 5.2 ms). Earlier lifecycle checks
+  and a disposable real OTP-to-native provider handshake also pass. These are
+  software checks, not proof of phone playback or physical synchronization.
+- Owner supplied an Xcode crash in libnice 0.1.24 `_tcp_sock_is_writable`
+  (`peer:ice`, EXC_BAD_ACCESS), preceded by GLib bad-descriptor warnings. A
+  lifetime/cleanup error is suspected, but the root cause remains unproven.
+  Do not claim that this signalling fix also fixes the native crash.
+- Initial native clock-plan failures now retain their reason instead of being
+  flattened into `native_lifecycle_handshake_failed`.
+
 ## Evening live testing — 2026-11-19
 
 - Gossip ON AIR crash fixed (atom vs binary note kind crashed membership).

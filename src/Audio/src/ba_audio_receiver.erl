@@ -210,8 +210,9 @@ handle_info({audio_signal,Pid,P},S) ->
             Id = case Side of provider -> maps:get(subscription,R);receiver -> Key end,
             case wire(R,Id,maps:merge(binding(R),P)) of
                 ok -> {noreply,S};
-                _ ->
-                    Next = case Side of receiver -> put_sub(Key,close_receiver(Key,R),S);provider -> close_provider(Key,R,S) end,
+                Error ->
+                    logger:warning("Native ~p ~ts send failed: ~p",[Side,maps:get(<<"kind">>,P),Error]),
+                    Next = case Side of receiver -> put_sub(Key,close_receiver(Key,R),S);provider -> close_provider(Key,R,signal_send_failed,S) end,
                     {noreply,Next}
             end;
         none -> {noreply,reject(S)}
@@ -227,7 +228,7 @@ handle_info({publication_rebound,Pid,Offer},#{sources := Sources}=S) ->
         [{Key,E}] ->
             Next = lists:foldl(fun({K,#{source := Source}=R},Acc) ->
                 case Source=:=Key of
-                    true -> _ = wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),close_provider(K,R,Acc);
+                    true -> _ = wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),close_provider(K,R,publication_rebound,Acc);
                     false -> Acc
                 end
             end,S,maps:to_list(maps:get(providers,S))),
@@ -257,6 +258,7 @@ handle_info({'DOWN',Ref,process,Pid,Reason},S) ->
                 _ -> put_sub(Id,(closed(Id,R))#{error => Failure},ba_diagnostics:count(Failure,S))
             end;
         {provider,Key,R} -> _ = wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),
+            logger:notice("Native provider exited: ~p",[ba_diagnostics:reason(Reason)]),
             Removed = S#{providers := maps:remove(Key,maps:get(providers,S))},
             case Reason of normal -> Removed;_ -> ba_diagnostics:count(Reason,Removed) end;
         none -> S
@@ -322,7 +324,7 @@ incoming(Context,Id,#{<<"kind">> := Kind} = P,S) ->
         <<"close">> ->
             case Side of
                 receiver -> put_sub(Key,close_receiver(Key,R),S);
-                provider -> close_provider(Key,R,S)
+                provider -> close_provider(Key,R,remote_close,S)
             end;
         <<"state">> when Side=:=receiver ->
             B = maps:get(<<"paused">>,P),
@@ -359,6 +361,7 @@ admit(#{peer := Peer,session := Session} = Context,Id,P,#{sources := Sources,pro
                                     wire(R,Id,(binding(R))#{<<"kind">> => <<"accepted">>,<<"paused">> => Paused}),
                                     S#{providers := Providers#{ProviderKey => R#{session => Pid,monitor => Ref}}};
                                 _ ->
+                                    logger:warning("Native provider attach failed: ~p",[Attached]),
                                     stop_worker(Pid),
                                     wire(R,Id,(binding(R))#{<<"kind">> => <<"rejected">>,<<"reason">> => <<"unavailable">>}),S
                             end;
@@ -483,7 +486,8 @@ close_receiver(Id,R) ->
         Pid when is_pid(Pid) -> _ = wire(R,Id,(binding(R))#{<<"kind">> => <<"close">>}),stop_worker(Pid);
         _ -> ok
     end,closed(Id,R).
-close_provider(Key,R,S) ->
+close_provider(Key,R,Reason,S) ->
+    logger:notice("Native provider closed: ~p",[Reason]),
     demonitor(maps:get(monitor,R),[flush]),stop_worker(maps:get(session,R)),
     S#{providers := maps:remove(Key,maps:get(providers,S))}.
 stop_worker(Pid) -> try gen_server:stop(Pid,normal,1000) catch exit:_ -> exit(Pid,kill) end.
@@ -496,7 +500,7 @@ scoped(Peer,Session,#{context := #{peer := Peer,session := Session}}) -> true;
 scoped(_,_,_) -> false.
 stop_matching(Predicate,S) ->
     Subs = maps:map(fun(Id,R) -> case Predicate(R) of true -> close_receiver(Id,R);false -> R end end,maps:get(subscriptions,S)),
-    lists:foldl(fun({K,R},Acc) -> case Predicate(R) of true -> close_provider(K,R,Acc);false -> Acc end end,
+    lists:foldl(fun({K,R},Acc) -> case Predicate(R) of true -> close_provider(K,R,session_closed,Acc);false -> Acc end end,
         S#{subscriptions := Subs},maps:to_list(maps:get(providers,S))).
 stop_contract({Direction,Peer,Key},S) ->
     case Direction of
@@ -508,7 +512,7 @@ stop_contract({Direction,Peer,Key},S) ->
             end,maps:get(subscriptions,S)),S#{subscriptions := Subs};
         publish -> lists:foldl(fun({K,#{context := #{peer := P},source := Source}=R},Acc) ->
             case P=:=Peer andalso Source=:=Key of
-                true -> wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),close_provider(K,R,Acc);
+                true -> wire(R,maps:get(subscription,R),(binding(R))#{<<"kind">> => <<"close">>}),close_provider(K,R,contract_changed,Acc);
                 false -> Acc
             end
         end,S,maps:to_list(maps:get(providers,S)))

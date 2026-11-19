@@ -35,6 +35,18 @@ its grant/authorization before starting and on each heartbeat. Required OTP
 owner/supervisor/registry loss stops that endpoint; source-owner loss ends the
 Mac helper. Helpers are not daemons and do not spawn media descendants.
 
+For setup diagnosis, read the Device's `runtime.log`: `Native provider closed`
+identifies the control path that removed a sending stream; attach failures and
+worker exits are logged separately. An initial `native_clock_mapping_failed`
+retains the clock planner's reason. These records contain control reasons, not
+SDP or audio. Rebuild/restart the affected app to load Erlang changes; an iPhone
+runtime update requires a new app build.
+
+ICE signalling accepts an empty candidate string as the standard end of
+candidate gathering and forwards it to GStreamer. Both sending and receiving
+apps must include this schema fix; older validators close their local media
+attempt when the native host emits the marker.
+
 Control protocol v2 has a generation-fenced hello and confirmed stop response.
 The native host watches control independently of the media loop: socket EOF
 starts teardown, two seconds without valid control also stops it, and cleanup

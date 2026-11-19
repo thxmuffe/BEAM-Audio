@@ -32,6 +32,19 @@ connected() ->
     {ok,[],[authorized],A2} = p(receive_packet,[B,Ready,2,A1]),
     {A,B,KA,KB,A2,B1}.
 
+%% GStreamer emits an empty candidate when gathering finishes. It must travel
+%% through signed signalling without closing an otherwise valid media attempt.
+end_of_candidates_roundtrip_test() ->
+    {A,B,_,_,SA,SB} = connected(),
+    Id=binary:copy(<<"C">>,32),
+    P=#{<<"kind">> => <<"signal.candidate">>,<<"source">> => <<"music">>,
+        <<"incarnation">> => binary:copy(<<"D">>,32),<<"attempt">> => binary:copy(<<"E">>,32),
+        <<"candidate">> => <<>>,<<"mid">> => <<"audio0">>,<<"line">> => 0},
+    {ok,Packet,_}=p(audio_message,[B,Id,P,5,SA]),
+    ?assertMatch({ok,[],[{audio,Id,P,#{peer := A}}],_},p(receive_packet,[A,Packet,6,SB])),
+    [?assertException(error,_,ba_audio_stream_protocol:validate(P#{<<"candidate">> := Bad}))
+        || Bad <- [null,42,binary:copy(<<"x">>,1025)]].
+
 status_roundtrip_and_replay_test() ->
     {A,B,_,_,SA,SB} = connected(),
     {ok,Request,A1} = p(request_status,[B,5,SA]),

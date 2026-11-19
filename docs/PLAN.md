@@ -9,6 +9,19 @@ and cosmetic cleanup still wait.
 
 ## Decisions in force
 
+- **Separate resource and data consent (owner 2026-11-19).** Settings should
+  offer Calibration, Processing and Inspect, each Always / Ask / No. Calibration
+  combines microphone and speaker calibration; Processing names DSP/computing
+  access; Inspect gates private Device information. All use the same receiving
+  Device request/approval pipeline. An Inspector stores signed grants from the
+  inspected Device in its user's persistent memory, following the requester-held
+  rights design below. Minimal public Session information must be distinguished
+  from private diagnostics/capabilities; the exact public fields are still to
+  define. Current code ties analysis/meters to calibration and exposes ordinary
+  capabilities via Session rights, so this consent design is not implemented.
+  Finish the active playback investigation, then implement the three controls
+  and inspection grants without a separate Inspector authorization path.
+
 - **No Manager; boards and gossip (owner decision 2026-11-19).** Devices meet
   through Reception (a sticky random sample of at most 32 neighbours). The
   request board is a signed grow-only log each Device keeps, synced on contact
@@ -169,26 +182,32 @@ Live state: Mac app, iPhone app and web Device see each other in one Session
 (after a Mac restart cleared a two-day-old web Device process). ON AIR runs on
 the Mac app (bundled native helper), but the iPhone plays nothing.
 
-1. **iPhone no audio (open).** Monitor: iPhone speaker ready, clock synced,
-   one stream stuck `native_negotiating` with no ICE candidates; it never gets
-   the Mac's offer (the Mac/provider always offers). The Mac discards incoming
-   stream messages as stale (~2/s). **Found (Mac log `Discarded …`):** the
-   iPhone does answer — the Mac receives its `signal.answer`, candidates and
-   `close` — but the Mac then has 0 providers (`unknown_attempt,0,0`): the
-   Mac's provider stream ends normally between offer and answer. Suspects:
-   `ba_mac_native_audio` heartbeat rebinds the publication whenever
-   `ba_buffee_clock:id()` changes (rebind closes providers), possibly churned by
-   the clock provider choice now following the Reception neighbour sample; or
-   publish-contract churn in `ba_device_audio`. Log provider exits next.
-   Earlier: read the Mac's
-   `~/Library/Application Support/org.opensound.beamaudio/cluster/runtime.log`
-   for `Discarded … : <reason>` (one line/s, exact check that failed); run
-   the iPhone from Xcode for `Native media:` lines.
-2. **Fixed tonight:** the new discard logging crashed the audio receiver
-   (subtraction on an unset timestamp); repeated crashes hit the restart limit
-   and took down the Session runtime, so ON AIR flapped and the Mac left the
-   Session. Fixed, guarded so diagnostics can never crash the receiver; Mac
-   app rebuilt. Not yet re-run live.
+1. **iPhone no audio: signalling bug fixed; listening check pending.** The
+   rebuilt Mac logged `Native provider closed: signal_send_failed`. A native
+   reproduction showed GStreamer emitting `candidate=""` at the end of ICE
+   gathering. Our stream validator required a nonempty candidate, so the local
+   send failed and closed the media attempt before the answer arrived. It now
+   accepts that standard end-of-candidates marker, retaining the binary type
+   and 1,024-byte limit. A signed-control round-trip regression failed before
+   the fix and passes afterward (41 focused tests pass). Update **both apps**:
+   each side can emit the marker. Mac app rebuilt; iPhone runtime prepared
+   for the next Xcode run. Verify actual Mac→iPhone playback;
+   the separate native crash below is not yet explained. The first silent retry
+   still used a Mac process started at 21:29, before the fix was built; a full
+   app quit/reopen is required (confirmed by process start time). After the
+   real Mac restart, the owner hears short iPhone audio bursts and the Mac logs
+   `remote_close` about every 3.5 s. The iPhone likely still runs the old schema;
+   asked for Xcode Stop then Run to install the prepared runtime. Continuous
+   playback remains unverified.
+2. **Two additional confirmed failures:** the first discard logger crashed on
+   an unset timestamp (fixed; owner confirmed ON AIR now stays on). A fresh
+   iPhone log contains repeated `native_lifecycle_handshake_failed` up to 21:20;
+   a later run had a negotiating endpoint without new handshake errors. The
+   owner's 21:22 Xcode screenshot shows a native `EXC_BAD_ACCESS` on `peer:ice`
+   in libnice 0.1.24 `_tcp_sock_is_writable`, preceded by GLib bad-descriptor
+   warnings. Suspected lifetime/cleanup error; root cause unproven. Preserve
+   the complete crash backtrace if it recurs. Do not infer an upstream fix
+   from a similar crash in a different libnice consumer.
 3. **Levels N/A** while sending: expected; Erlang PCM meters were deleted.
    Add GStreamer `level` in the native helper, report peak/RMS only.
 4. **"0 STUN" in diagnostics** is likely a field only the deleted PCM session
