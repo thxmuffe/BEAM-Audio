@@ -1,5 +1,27 @@
 # Current implementation and validation
 
+## One request/approval pipeline, first increment — 2026-11-19
+
+`ba_device_request` now holds the stages a Device applies to every remote
+control request: authenticate (existing per-packet Ed25519 verification and
+policy check in `ba_buffee_control_protocol:receive_packet/4`), authorize (one
+table of the Session rights each operation needs, replacing five separate
+checks in `dispatch`), approve (`approve/2`: Always approves, Ask records a
+Requests entry via `ba_device_config:request/2`, No refuses), then execute.
+Refusals keep each operation's existing wire error reply.
+
+Behavior change: a job offer to a Device whose DSP consent is Ask now raises a
+Requests entry naming the requester instead of rejecting silently; the offer is
+still answered `consent_required` and the requester's retry is a new request.
+
+An earlier uncommitted draft re-verified the same signed packet inside
+`ba_device_handler` and wrapped local API commands in a no-op pipeline. Both
+were removed: the second check verified identical bytes again, and local
+commands are the owner's own decisions. Per-request authentication still relies
+on the pairwise control handshake/lease; membership requests keep their own
+approval storage. Validation: full eunit, 270 tests, 0 failures; no live
+Session, smoke test or app build was run.
+
 ## Request approval and verification direction — 2026-11-19
 
 Owner clarified that the Device receiving/executing an action approves the

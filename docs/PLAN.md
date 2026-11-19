@@ -27,8 +27,13 @@ and cosmetic cleanup still wait.
   All requests follow that flow. Reverify request signatures and supplied
   grant/delegation evidence for each request; no verification-result cache.
   Retain signed Session policy/revocations as state and check freshness/replay.
-  This is the accepted direction,
-  not a claim that the existing action-specific paths have been unified.
+  First increment done (2026-11-19): `ba_device_request` holds the one rights
+  table and the Always/Ask/No approval stage for remote control requests; job
+  offers now Ask. Remaining, in order: (1) authenticate each request on its own
+  (signed, fresh, replay-checked) so Devices no longer keep a handshake/lease
+  with every peer in the Session; (2) route membership requests
+  (`privilege_request`, `rename_request`, `remove_request`) through the same
+  approval stage instead of their own Always/Ask/No storage.
 - **OTP ownership is mandatory.** Native streams stop when their owning OTP
   process, required supervisor, authority or runtime stops or crashes. Independent
   native teardown and forced termination must prevent orphan media connections;

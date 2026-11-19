@@ -275,10 +275,11 @@ evaluate_job(Context,Id,Offer,#{jobs := Jobs} = S) ->
         {ok,_} -> {reply,{ok,rejected(conflicting_offer)},S};
         error when map_size(Jobs) >= 32 -> {reply,{ok,rejected(job_limit)},S};
         error ->
-            Reason = job_permission(Context,Offer,S),
-            case Reason of
+            %% Authenticated and authorized by ba_buffee_control_protocol; this
+            %% is the approval stage of ba_device_request for the executing Device.
+            case job_permission(Context,Offer,S) of
                 ok -> accept_test_job(Context,Id,Offer,S);
-                _ ->
+                Reason ->
                     Report = rejected(Reason),
                     J = #{context => Context,offer => Offer,report => Report},
                     {reply,{ok,Report},S#{jobs := Jobs#{Id => J}}}
@@ -290,10 +291,12 @@ job_permission(#{peer := Peer,deadline := Deadline},Offer,S) ->
         true = erlang:monotonic_time(millisecond) < Deadline,
         #{manager := Peer,id := Contract,revision := Revision} = maps:get(contract,S),
         Contract = maps:get(<<"contract">>,Offer), Revision = maps:get(<<"contract_revision">>,Offer),
-        case {maps:get(enabled,S) andalso ba_device_permission:allowed(dsp),map_size(maps:get(active,S)) < ?CAPACITY} of
+        %% Capacity first: a full Device does not raise a request for its user.
+        case {maps:get(enabled,S),map_size(maps:get(active,S)) < ?CAPACITY} of
             {false,_} -> consent_required;
             {true,false} -> capacity_exceeded;
-            _ -> ok
+            {true,true} ->
+                case ba_device_request:approve(dsp,Peer) of ok -> ok;{error,_} -> consent_required end
         end
     catch _:_ -> contract_mismatch end;
 job_permission(_,_,_) -> contract_mismatch.

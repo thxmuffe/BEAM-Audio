@@ -15,6 +15,8 @@ client_methods() ->
      <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
      <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>].
 request(Request) when is_map(Request) ->
+    %% The owner's local commands are this Device's user deciding; remote
+    %% requests are decided by ba_device_request instead.
     Reply=try command(Request) of
         {ok,Data} -> (ba_app_session:snapshot())#{<<"error">> => null,<<"result">> => Data};
         ok -> (ba_app_session:snapshot())#{<<"error">> => null};

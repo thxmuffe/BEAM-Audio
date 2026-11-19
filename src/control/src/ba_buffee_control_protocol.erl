@@ -91,6 +91,8 @@ reply_capabilities(Peer,Request,Value,Now,S) ->
         {ok,Packet,Next}
     end,S).
 
+%% Authentication stage of ba_device_request: every packet is verified against
+%% its sender's key and the current installed policy before anything else.
 receive_packet(From, Packet, Now, S) ->
     attempt(fun() ->
         true = Now < maps:get(membership_deadline,S,infinity),
@@ -198,6 +200,26 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
     #{id := Id,received := Last} = Session = active(Peer,Now,S),
     true = Sequence > Last,
     Received = Session#{received := Sequence},
+    Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
+    case ba_device_request:authorize(Op,Payload,Permissions) of
+        ok -> authorized(Peer,Op,Request,Payload,Session,Received,Now,S);
+        {error,forbidden} -> forbidden(Peer,Op,Request,Payload,Received,S)
+    end.
+
+%% A refusal keeps each operation's established error reply; operations
+%% without one are dropped without changing replay state.
+forbidden(Peer,Op,Request,Payload,Received,S) ->
+    {Reply,Value} = case Op of
+        <<"status.read">> -> {<<"status.error">>,#{<<"reason">> => <<"forbidden">>}};
+        <<"capabilities.read">> -> {<<"capabilities.error">>,#{<<"reason">> => <<"forbidden">>}};
+        <<"time.message">> -> {Op,#{<<"kind">> => <<"error">>,<<"operation">> => maps:get(<<"kind">>,Payload),
+                                    <<"reason">> => <<"forbidden">>}};
+        _ -> error(forbidden)
+    end,
+    {Packet,Next} = outgoing(Peer,Reply,Request,Value,Received,S),
+    {ok,[Packet],[],Next}.
+
+authorized(Peer,Op,Request,Payload,Session,Received,Now,S) ->
     case Op of
         <<"chat.message">> ->
             {ok,[],[{chat,Request,maps:get(<<"text">>,Payload),context(Peer,Now,put(Peer,Received,S))}],put(Peer,Received,S)};
@@ -205,55 +227,24 @@ dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
                Op=:= <<"lease.proof">>;Op=:= <<"lease.ready">> ->
             lease(Peer,Op,Request,Payload,Received,Now,S);
         <<"time.message">> ->
-            Grant = ba_buffee_time_protocol:permission(maps:get(<<"kind">>,Payload)),
-            Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
-            Allowed=case maps:get(<<"kind">>,Payload) of
-                <<"offset.set">> -> ba_session_privileges:may_edit_settings([atom_to_binary(P) || P <- Permissions]);
-                _ -> Grant=:=none orelse lists:member(Grant,Permissions) end,
-            case Allowed of
-                true -> {ok,[],[{time,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
-                false ->
-                    Error = #{<<"kind">> => <<"error">>,<<"operation">> => maps:get(<<"kind">>,Payload),<<"reason">> => <<"forbidden">>},
-                    {Packet,Next} = outgoing(Peer,<<"time.message">>,Request,Error,Received,S),
-                    {ok,[Packet],[],Next}
-            end;
+            {ok,[],[{time,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
         <<"stream.message">> ->
-            Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
-            case maps:get(<<"kind">>,Payload) of
-                <<"catalog.read">> -> true = lists:member(stream_read,Permissions);
-                <<"subscribe">> -> true = lists:member(stream_subscribe,Permissions);
-                _ -> ok
-            end,
             {ok,[],[{audio,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
         _ when Op =:= <<"job.offer">>; Op =:= <<"job.cancel">> ->
-            Policy = maps:get(policy,S),
-            true = lists:member(job_offer,maps:get(Peer,maps:get(peers,Policy))),
             {ok,[],[{job,Op,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
         <<"job.report">> ->
             {ok,[],[{job_report,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
         <<"status.read">> ->
-            Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
-            {Reply,Value} = case lists:member(status_read,Permissions) of
-                true -> {<<"status.reply">>,#{<<"protocol">> => 1,<<"session">> => <<"authorized">>}};
-                false -> {<<"status.error">>,#{<<"reason">> => <<"forbidden">>}}
-            end,
-            {Packet,Next} = outgoing(Peer,Reply,Request,Value,Received,S),
+            Value = #{<<"protocol">> => 1,<<"session">> => <<"authorized">>},
+            {Packet,Next} = outgoing(Peer,<<"status.reply">>,Request,Value,Received,S),
             {ok,[Packet],[],Next};
         <<"capabilities.read">> ->
-            Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
-            case lists:member(capabilities_read,Permissions) of
-                true ->
-                    false = maps:is_key(capability_request,Session),
-                    Event=case maps:find(<<"diagnostics">>,Payload) of
-                        {ok,Options} -> {capabilities_read,Request,true,Options};
-                        error -> case maps:get(<<"metrics">>,Payload,false) of true -> {capabilities_read,Request,true};false -> {capabilities_read,Request} end
-                    end,
-                    {ok,[],[Event],put(Peer,Received#{capability_request => Request},S)};
-                false ->
-                    {Packet,Next} = outgoing(Peer,<<"capabilities.error">>,Request,
-                        #{<<"reason">> => <<"forbidden">>},Received,S),
-                    {ok,[Packet],[],Next}
-            end;
+            false = maps:is_key(capability_request,Session),
+            Event=case maps:find(<<"diagnostics">>,Payload) of
+                {ok,Options} -> {capabilities_read,Request,true,Options};
+                error -> case maps:get(<<"metrics">>,Payload,false) of true -> {capabilities_read,Request,true};false -> {capabilities_read,Request} end
+            end,
+            {ok,[],[Event],put(Peer,Received#{capability_request => Request},S)};
         _ when Op =:= <<"status.reply">>; Op =:= <<"status.error">>;
                Op =:= <<"capabilities.reply">>; Op =:= <<"capabilities.error">> ->
             Request = maps:get(pending,Session),

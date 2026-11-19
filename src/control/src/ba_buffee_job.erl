@@ -15,7 +15,7 @@ validate_report(P) ->
     true = lists:member(State,[<<"accepted">>,<<"completed">>,<<"failed">>,
                                <<"cancelled">>,<<"expired">>,<<"rejected">>]),
     true = lists:member(Reason,[<<"none">>,<<"contract_mismatch">>,<<"consent_required">>,
-        <<"capacity_exceeded">>,<<"job_limit">>,<<"conflicting_offer">>,<<"handler_unavailable">>,
+<<"capacity_exceeded">>,<<"job_limit">>,<<"conflicting_offer">>,<<"handler_unavailable">>,
         <<"worker_failed">>,<<"lease_expired">>,<<"cancelled">>,<<"consent_revoked">>,
         <<"session_lost">>,<<"contract_revoked">>]),
     case State of
