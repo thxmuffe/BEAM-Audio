@@ -13,6 +13,8 @@
 
 // Link only the plugins used by the receiver, not the SDK's complete plugin set.
 GST_PLUGIN_STATIC_DECLARE(coreelements);
+GST_PLUGIN_STATIC_DECLARE(app);
+GST_PLUGIN_STATIC_DECLARE(audioparsers);
 GST_PLUGIN_STATIC_DECLARE(audioconvert);
 GST_PLUGIN_STATIC_DECLARE(audioresample);
 GST_PLUGIN_STATIC_DECLARE(volume);
@@ -409,6 +411,7 @@ static void statsReceived(GstPromise *promise, gpointer data) {
         g_setenv("ORC_CODE", "backup", TRUE);
         gst_init(NULL, NULL);
         GST_PLUGIN_STATIC_REGISTER(coreelements);
+        GST_PLUGIN_STATIC_REGISTER(app); GST_PLUGIN_STATIC_REGISTER(audioparsers);
         GST_PLUGIN_STATIC_REGISTER(audioconvert); GST_PLUGIN_STATIC_REGISTER(audioresample);
         GST_PLUGIN_STATIC_REGISTER(volume); GST_PLUGIN_STATIC_REGISTER(level); GST_PLUGIN_STATIC_REGISTER(opus);
         GST_PLUGIN_STATIC_REGISTER(rtp); GST_PLUGIN_STATIC_REGISTER(rtpmanager);

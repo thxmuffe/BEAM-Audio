@@ -28,8 +28,8 @@ cleanup waits until then.
   RTP/RTCP and established native libraries. Send an initial mapping promptly,
   then refresh it periodically (about five seconds was proposed; exact cadence
   and correction limits need implementation evidence). This replaces the earlier
-  independent absolute-target requirement per packet. No protocol/backend
-  replacement has been implemented.
+  independent absolute-target requirement per packet. A native AAC prototype is now opt-in;
+  the default media path remains legacy.
 - **Session, Device, privileges** (`grant`, `on_air`, `end_session`); no roles.
   Holding the invitation link is enough to participate; links last forever.
 - **Can moderate** is the Settings switch for the existing `end_session`
@@ -81,19 +81,26 @@ physical synchronization remain unqualified.
 
 ## Next 5 steps
 
-1. **GStreamer backend and enforced control lifetime — in progress.**
+1. **GStreamer backend and enforced control lifetime — prototype implemented.**
    Backend assessment and replacement control contract are recorded in
    [AUDIO_ENGINE_INTERFACE.md](AUDIO_ENGINE_INTERFACE.md#native-stream-decision--2026-11-18).
-   GStreamer is selected for the first integration; no runtime backend was
-   switched. Next implement the lifecycle handshake, native lifetime guard,
-   confirmed stop/flush, and OTP owner/permission monitoring. Owner or supervisor
-   death must trigger teardown independently of the media loop, with forced
-   native termination if cleanup stalls. Keep the current profile rejection
-   until disposable crash/stop checks establish this boundary.
-2. **One complete native Mac → iPhone stream.**
-   Integrate capture, media transport and output without PCM or encoded packets
-   crossing Erlang. Reuse existing native components and authenticated
-   signalling; preserve source formats. Do not extend the legacy Erlang Mixer.
+   The new AAC endpoint has a versioned lifecycle handshake, native guard,
+   correlated stop/flush and OTP owner/permission monitoring. Disposable native
+   checks cover channel loss, heartbeat expiry, source-owner exit and a stalled
+   media loop; OTP checks cover owner, supervisor and registry loss and revocation.
+   Existing older native receiver bindings remain blocked. Real iOS lifecycle
+   and hardware-tail qualification remain open.
+2. **One complete native Mac → iPhone stream — implementation in development trial.**
+   Native Core Audio capture → Apple AAC-LC at 320 kb/s stereo → GStreamer
+   RTP/WebRTC → native AAC decode/output. The owner approved music-quality
+   compression on 2026-11-19; exact float preservation is no longer required for
+   this selected profile. Source metadata stays float32; Apple's current
+   GStreamer encoder accepts 16-bit PCM internally. No audio crosses Erlang on
+   this path. OTP subscriptions select it through an explicit native offer.
+   Mac CLI source and iPhone host are wired behind BA_NATIVE_STREAM_TRIAL=1.
+   Native synthetic sender/receiver and confirmed-stop checks pass locally;
+   no real Mac tap → iPhone listening check or app build/deployment was performed.
+   See src/Audio/README.md for the build/opt-in steps and limits.
 3. **Sample positions mapped to Session time.**
    Acquire the initial RTP/RTCP media/shared-clock mapping promptly and refresh
    it periodically. Native execution follows the Session schedule without

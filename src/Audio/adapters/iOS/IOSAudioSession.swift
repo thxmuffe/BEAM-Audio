@@ -27,3 +27,20 @@ final class IOSAudioSession {
         if clients.isEmpty { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
 }
+
+// C entry points let the native GStreamer host share the existing OS-session
+// owner with microphone/output bindings. A native stop releases only its token.
+private final class NativeStreamSessionToken {
+    let value: UUID
+    init(_ value: UUID) { self.value = value }
+}
+@_cdecl("ba_native_stream_audio_acquire")
+func baNativeStreamAudioAcquire() -> UnsafeMutableRawPointer? {
+    guard let token = try? IOSAudioSession.shared.acquire(microphone: false) else { return nil }
+    return Unmanaged.passRetained(NativeStreamSessionToken(token)).toOpaque()
+}
+@_cdecl("ba_native_stream_audio_release")
+func baNativeStreamAudioRelease(_ pointer: UnsafeMutableRawPointer?) {
+    guard let pointer else { return }
+    IOSAudioSession.shared.release(Unmanaged<NativeStreamSessionToken>.fromOpaque(pointer).takeRetainedValue().value)
+}

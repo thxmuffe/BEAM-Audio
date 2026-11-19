@@ -1,5 +1,50 @@
 # Current implementation and validation
 
+## Native AAC stream prototype — 2026-11-19
+
+Implemented the first opt-in native Mac source → iPhone receiver path, using
+Apple AAC-LC at 320 kb/s stereo and GStreamer RTP/WebRTC (DTLS-SRTP). The owner
+clarified that high-quality music compression is acceptable and approved this
+recommendation; the earlier bit-exact float requirement no longer applies to
+this selected profile. Source format stays float32 metadata; `atenc` currently
+requires native 16-bit PCM input. No custom codec, voice processing or Erlang
+media forwarding is added.
+
+Core changes: a native Core Audio helper build drains capture within native
+code; an OTP source adapter publishes the explicit `gst_aac_rtp_v1` transport
+profile; the existing Audio supervisor dispatches its native Media Session;
+subscription output/gain bypass the Erlang Mixer. Local native control is
+versioned/generation-fenced JSON only. The new session registers for consent
+revocation, monitors required owners/supervisors/registry, checks authorization
+on heartbeats and waits for correlated native stop completion. Source helper
+ownership is tied to its requester and required OTP owners.
+
+Native lifecycle: control socket EOF starts teardown independently of the media
+loop; missing control expires after two seconds. A 1.5-second stalled cleanup
+forces helper/host exit. Source-pipe loss forces the Mac helper out even during
+startup. No detached media process is created. iOS reuses IOSAudioSession's
+existing shared acquisition/release mechanism so stopping one playback client
+does not deactivate another recording/output client.
+
+Validation: Mac helper builds. Native synthetic AAC → RTP/WebRTC → decode with
+silent output connected both peers, decoded 105,472 frames in the recorded run,
+and confirmed both stops. Native checks pass for control EOF, control timeout,
+stalled media-loop forced exit and source-owner EOF. Focused Erlang engine,
+setup/app and native ownership/profile checks pass: 24 distinct tests, including
+all six final native tests after adding registry-loss coverage. iOS native source and
+Swift session/bridge API pass targeted compiler checks; Xcode project syntax
+passes. Initial socket tests were denied by the execution sandbox and passed
+when rerun with loopback access. No live Device was inspected or changed.
+
+Limits: **development trial only**, `BA_NATIVE_STREAM_TRIAL=1`; default remains
+legacy. Shared Session-clock mapping/presentation and rate correction are not
+connected, and status reports synchronized=false. Buffer-demand policy and the
+combined ten-second queue budget are unqualified (trial starts at 800 ms).
+TURN is explicitly unsupported in this new binding. Full iPhone/Mac app builds,
+real capture → iPhone connection/listening, OS route changes and physical stop
+tail/speaker synchronization were not tested. Other inputs remain legacy.
+Usage and exact continuation are in src/Audio/README.md and PLAN.md.
+
 ## Native backend selection and control contract — 2026-11-18
 
 Selected GStreamer for the first complete native stream integration after

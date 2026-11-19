@@ -201,21 +201,13 @@ public:
         uint8_t command[5];
 #ifdef BA_NATIVE_STREAM
         for (;;) {
-            pollfd owner={STDIN_FILENO,POLLIN,0};
-            int ready=poll(&owner,1,10);
-            if(ready<0 && errno==EINTR)continue;
-            if(ready<0 || (ready>0 && (owner.revents&(POLLHUP|POLLERR|POLLNVAL))))return false;
-            if(ready>0) {
-                if(fread(command,1,sizeof(command),stdin)!=sizeof(command))return false;
-                if(!memcmp(command,"\0\0\0\1s",5))return true;
-                if(memcmp(command,"\0\0\0\1h",5))throw Failure{-1,"Invalid native capture command"};
-                captureOwnerContact=nativeNowMS();
-            }
+            if(captureStopRequested)return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
 #else
         while (fread(command, 1, sizeof(command), stdin) == sizeof(command)) {
 #endif
-            if (!memcmp(command, "\0\0\0\1s", 5)) return true;
 #ifndef BA_NATIVE_STREAM
+            if (!memcmp(command, "\0\0\0\1s", 5)) return true;
             if (memcmp(command, "\0\0\0\1r", 5)) throw Failure{-1, "Invalid capture command"};
 #endif
             if (changed.load()) throw Failure{-1, "Default audio device or capture format changed; toggle capture off and on"};
@@ -252,13 +244,9 @@ int main(int argc, const char **argv) {
 #ifdef BA_NATIVE_STREAM
                 nativeStart();
                 if(argc>1 && strcmp(argv[1],"--protocol-test")==0){
-                    uint8_t command[5];
-                    while(fread(command,1,5,stdin)==5){
-                        captureOwnerContact=nativeNowMS();
-                        if(!memcmp(command,"\0\0\0\1s",5)){[nativeStreams stop];packet(6,nullptr,0);return 0;}
-                        if(memcmp(command,"\0\0\0\1h",5))return 65;
-                    }
-                    [nativeStreams stop];return 0;
+                    setenv("BA_NATIVE_STREAM_TESTING","1",1);
+                    while(!captureStopRequested)std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    [nativeStreams stop];packet(6,nullptr,0);return 0;
                 }
 #endif
                 auto capture = std::make_unique<Capture>(); bool stopped = capture->run(argc > 1 && strcmp(argv[1], "mic") == 0); capture.reset();

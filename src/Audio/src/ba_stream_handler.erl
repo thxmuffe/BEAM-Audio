@@ -32,5 +32,6 @@
 default() -> ba_stream_handler_pcm.
 
 %% Explicit installed handlers only; remote descriptors cannot name modules.
+for_descriptor(#{stream_handler := native_gst_aac}) -> ba_stream_handler_native;
 for_descriptor(#{stream_handler := webrtc_audio_opus}) -> ba_stream_handler_opus;
 for_descriptor(D) when not is_map_key(stream_handler,D) -> default().

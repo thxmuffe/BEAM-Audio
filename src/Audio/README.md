@@ -10,13 +10,99 @@ The accepted replacement uses continuous native streams with sample positions
 and periodic shared-clock mappings, preferably RTP/RTCP, rather than requiring
 independent absolute targets on every packet. Acquire an initial mapping promptly;
 native buffering/recovery and smooth rate correction follow Session policy.
-GStreamer is selected for the first complete native integration; the
+GStreamer is selected for the first complete native integration. The
 [replacement control contract](../../docs/AUDIO_ENGINE_INTERFACE.md#native-stream-decision--2026-11-18)
-requires streams to stop on OTP owner/supervisor loss, including forced native
-termination if teardown stalls. Native buffering varies on demand up to ten
-seconds. This selection is documented only: lifecycle enforcement and the new
-stream path are not implemented or enabled yet.
-The remaining sections describe existing implementation until that migration.
+requires teardown on OTP owner/supervisor loss and variable native buffering up
+to ten seconds. The first AAC implementation is a development trial below;
+Session timing, continuous rate correction and ten-second buffering qualification
+remain unfinished. The default remains the legacy path described later.
+
+## Native AAC development trial
+
+The owner approved AAC-LC at **320 kb/s stereo** for music. The new path is:
+Core Audio tap → native interleaving → Apple AAC encoder → GStreamer RTP/WebRTC
+(DTLS-SRTP) → native AAC decoder → native output. No PCM or encoded media enters
+Erlang, its ports or sockets. Source metadata is float32 at 44.1 or 48 kHz,
+stereo; the current `atenc` element requires an explicit native 16-bit PCM
+conversion before AAC encoding. Other capture formats are rejected. This is
+lossy encoding and is not a bit-exact float transport. No voice processing,
+automatic gain control or noise suppression is inserted.
+
+`ba_mac_native_audio` owns the capture helper port and a normal Source publication.
+The `gst_aac_rtp_v1` catalogue profile selects `ba_native_media_session` through
+the installed handler allowlist. The Media Session owns the native control socket
+and routes only SDP/ICE through existing authenticated Session signalling. It
+registers Playback execution with the existing permission registry and validates
+its grant/authorization before starting and on each heartbeat. Required OTP
+owner/supervisor/registry loss stops that endpoint; source-owner loss ends the
+Mac helper. Helpers are not daemons and do not spawn media descendants.
+
+Control protocol v2 has a generation-fenced hello and confirmed stop response.
+The native host watches control independently of the media loop: socket EOF
+starts teardown, two seconds without valid control also stops it, and cleanup
+that stalls for 1.5 seconds terminates the helper (the host app on iOS). The Mac
+source helper separately watches its owning pipe, including during capture
+startup. Stop flushes instead of draining buffered music. EOF triggers
+cleanup but never substitutes for a stop acknowledgement.
+
+**This trial is unsynchronized.** It deliberately requires
+`BA_NATIVE_STREAM_TRIAL=1` on both hosts and reports `synchronized=false`.
+Initial trial jitter latency is 800 ms; the native prepare protocol accepts
+0–10,000 ms, but demand-based buffer policy, combined queue budgets, recovery,
+shared-clock mapping and smooth rate correction are subsequent steps. The trial
+must not become the default before the Session schedule is implemented. TURN
+configuration currently returns an explicit unsupported error; this increment
+reuses STUN/ICE and does not change Reception. Microphone and other existing
+inputs remain on their previous implementations.
+
+Build the development helper from the core checkout:
+
+```sh
+python3 scripts/platforms/macOS/prepare-gstreamer.py --native-stream-headers
+bash scripts/platforms/macOS/build-native-stream.sh
+```
+
+The helper uses the pinned 1.28.8 runtime. The current build script can reuse the
+matching cached iOS SDK headers plus a checksum-pinned macOS header overlay;
+set `BA_GSTREAMER_HEADERS` to matching desktop SDK headers to use those instead.
+It neither installs GStreamer system-wide nor packages it into the Mac app.
+The ordinary core/CLI also needs its usual build after Erlang source changes.
+
+For a disposable Mac source, start the public CLI with the trial flag:
+
+```sh
+BA_NATIVE_STREAM_TRIAL=1 bin/beamaudio new device --devicename Native-Mac --createbuffee
+bin/beamaudio call device --devicename Native-Mac --request '{"method":"capability","capability":"broadcast","enabled":true}'
+```
+
+The CLI resolves the helper and runtime from the core build directory; optional
+`BA_MAC_NATIVE_STREAM_HELPER` and `BA_GSTREAMER_RUNTIME` override those paths.
+Use the ordinary invitation command to join the iPhone. Add
+`BA_NATIVE_STREAM_TRIAL=1` to its Xcode Run scheme environment and rebuild with
+current core sources/resources. The iPhone host starts its local native listener
+and supplies `BA_NATIVE_STREAM_PORT` to BEAM automatically. Allow Playback through
+the existing consent controls. To leave the trial, stop the disposable CLI Device
+and relaunch the iPhone without that environment flag. These manual device steps
+have not been executed or listening-qualified in this increment.
+
+Critical checks (no live Devices or physical audio capture):
+
+```sh
+python3 tests/transport/native-stream-smoke.py
+rebar3 eunit --module=ba_native_stream_tests
+```
+
+The native smoke uses generated audio and `fakesink` in two helper processes;
+it routes JSON signalling only. It checks decode progress, correlated stop,
+control loss/timeout, source-owner exit and a deliberately blocked media loop.
+The OTP checks cover explicit native offers, owner/session/supervisor/registry
+loss and revocation acknowledgement. These are software lifecycle/media checks,
+not music-quality, hardware-tail or acoustic-synchronization evidence. The iOS
+native source and Swift session/bridge API pass targeted compile checks; the
+full app was not built or installed.
+
+## Legacy implementation
+
 
 Shared Erlang modules in `src/` own publication, metering, interpretation,
 subscription/Contract lifetimes, timing policy and backend lifecycle. Adapters

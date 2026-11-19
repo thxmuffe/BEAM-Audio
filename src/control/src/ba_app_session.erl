@@ -14,7 +14,7 @@ configure() ->
     end.
 configure(#{platform := Platform}=Options) ->
     {Capture,Output}=case Platform of
-        mac -> {ba_mac_audio,ba_mac_output};
+        mac -> {case ba_settings:env("BA_NATIVE_STREAM_TRIAL") of "1" -> ba_mac_native_audio;_ -> ba_mac_audio end,ba_mac_output};
         ios -> {ba_ios_input,ba_ios_audio};
         windows -> {ba_windows_input,ba_windows_output}
     end,

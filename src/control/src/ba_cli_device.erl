@@ -23,6 +23,16 @@ boot() ->
                 true -> ba_device_label:os_name();false -> binary_to_list(maps:get(<<"name">>,C)) end end),
         os:putenv("BA_MAC_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_audio_input"])),
         os:putenv("BA_MAC_DEVICE_AUDIO_HELPER",filename:join([Root,"builds/CLI","ba_device_audio"])),
+        case os:getenv("BA_NATIVE_STREAM_TRIAL") of
+            "1" ->
+                case os:getenv("BA_MAC_NATIVE_STREAM_HELPER") of
+                    false -> os:putenv("BA_MAC_NATIVE_STREAM_HELPER",filename:join([Root,"builds/CLI","ba_native_stream"]));_ -> ok
+                end,
+                case os:getenv("BA_GSTREAMER_RUNTIME") of
+                    false -> os:putenv("BA_GSTREAMER_RUNTIME",filename:join([Root,"builds/intermediates/gstreamer/runtime"]));_ -> ok
+                end;
+            _ -> ok
+        end,
         ok=application:load(ba_core),
         Consent=#{speaker => false,microphone => false,broadcast => false},
         ok=ba_app_session:configure(#{platform => mac,consent => Consent}),

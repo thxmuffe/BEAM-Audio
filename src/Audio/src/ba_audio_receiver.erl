@@ -101,7 +101,7 @@ handle_call({playback,Id,Action},_,#{subscriptions := Items} = S) when Action=:=
         {ok,#{intent := I} = R} ->
             Playing = Action=:=start,
             Result = case {Playing,maps:get(state,R),maps:get(source_paused,R,false)} of
-                {false,_,_} -> ba_audio_mixer:remove(Id),{ok,R#{mix_ready => false}};
+                {false,_,_} -> disable_output(Id,R),{ok,R#{mix_ready => false}};
                 {true,active,false} -> enable_output(Id,R);
                 {true,active,true} -> {ok,R#{mix_ready => false}};
                 _ -> {error,subscription_not_active}
@@ -115,7 +115,7 @@ handle_call({playback,Id,Action},_,#{subscriptions := Items} = S) when Action=:=
 handle_call({gain,Id,G},_,#{subscriptions := Items} = S) when is_number(G),G>=0,G=<1 ->
     case maps:find(Id,Items) of
         {ok,#{intent := I} = R} ->
-            case maps:get(mix_ready,R,false) of true -> ba_audio_mixer:gain(Id,G);false -> ok end,
+            case maps:get(mix_ready,R,false) of true -> output_gain(Id,G,R);false -> ok end,
             {reply,ok,persist(S#{subscriptions := Items#{Id := R#{intent := I#{gain := G}}}})};
         error -> {reply,{error,unknown_subscription},S}
     end;
@@ -342,7 +342,7 @@ incoming(Context,Id,#{<<"kind">> := Kind} = P,S) ->
             end;
         <<"state">> when Side=:=receiver ->
             B = maps:get(<<"paused">>,P),
-            _ = ba_audio_mixer:remove(Key),
+            _ = disable_output(Key,R),
             put_sub(Key,start_playback(Key,R#{source_paused => B,mix_ready => false}),S);
         _ when Kind=:= <<"signal.offer">>;Kind=:= <<"signal.answer">>;Kind=:= <<"signal.candidate">> ->
             ba_media_session:signal(maps:get(session,R),P),S
@@ -394,8 +394,8 @@ restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := 
     case {Ready,maps:find({Peer,Key},Offers),maps:find({receive_audio,Peer,Key},Contracts),context(Peer)} of
         {true,{ok,#{incarnation := Inc,profiles := #{channel := D}}},{ok,Contract},{ok,#{buffee := Buffee} = Context}}
             when Buffee=:=map_get(buffee,I) ->
-            case maps:get(encoding,D,pcm)=:=opus andalso not ba_audio_opus:available() of
-                true -> put_sub(Id,R#{state := waiting_for_backend,error => opus_decoder_unavailable,retry_at := now_ms()+1000},S);
+            case backend_missing(D) of
+                true -> put_sub(Id,R#{state := waiting_for_backend,error => missing_backend_reason(D),retry_at := now_ms()+1000},S);
                 false ->
             Attempt = fresh(),Next = (maps:remove(error,R))#{state := opening,context => Context,attempt => Attempt,source => Key,
                 incarnation => Inc,descriptor => D,retry_at := now_ms()+10000},
@@ -414,6 +414,11 @@ clock_ready(S) ->
 start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
     case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
 start_playback(_,R) -> R.
+enable_output(_,#{descriptor := #{stream_handler := native_gst_aac},session := P,intent := I}=R) ->
+    case native_output(P,{gain,maps:get(gain,I)}) of
+        ok -> case native_output(P,{output,play}) of ok -> {ok,maps:remove(error,R#{mix_ready => true})};E -> E end;
+        E -> E
+    end;
 enable_output(Id,#{descriptor := D,intent := I,context := #{deadline := Deadline}} = R) ->
     case ba_audio_mixer:add(Id,(ba_audio_opus:descriptor(D))#{authorization_deadline => Deadline},maps:get(gain,I)) of
         ok ->
@@ -535,7 +540,7 @@ renew_media(Id,Peer,Session,Until,#{context := #{peer := Peer,session := Session
     Updated = R#{context := C#{deadline := Until}},
     case Id=/=undefined andalso maps:get(mix_ready,R,false) of
         true ->
-            case ba_audio_mixer:renew(Id,Until) of
+            case renew_output(Id,Until,R) of
                 ok -> Updated;
                 _ -> start_playback(Id,Updated#{mix_ready => false})
             end;
@@ -561,3 +566,20 @@ buffee_publication_allowed(Peer,Key) ->
             end;
         _ -> false
     end.
+
+%% Native controls never pass through the legacy PCM Mixer.
+backend_missing(#{stream_handler := native_gst_aac}) -> not ba_native_media_session:available();
+backend_missing(D) -> maps:get(encoding,D,pcm)=:=opus andalso not ba_audio_opus:available().
+disable_output(_,#{descriptor := #{stream_handler := native_gst_aac},session := P}) when is_pid(P) ->
+    native_output(P,{output,pause});
+disable_output(Id,_) -> ba_audio_mixer:remove(Id).
+output_gain(_,G,#{descriptor := #{stream_handler := native_gst_aac},session := P}) -> native_output(P,{gain,G});
+output_gain(Id,G,_) -> ba_audio_mixer:gain(Id,G).
+renew_output(_,_,#{descriptor := #{stream_handler := native_gst_aac}}) -> ok;
+renew_output(Id,Until,_) -> ba_audio_mixer:renew(Id,Until).
+
+native_output(P,Command) ->
+    try gen_server:call(P,Command,1500) catch exit:_ -> {error,native_endpoint_unavailable} end.
+
+missing_backend_reason(#{stream_handler := native_gst_aac}) -> native_backend_unavailable;
+missing_backend_reason(_) -> opus_decoder_unavailable.

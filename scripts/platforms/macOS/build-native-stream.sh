@@ -5,6 +5,11 @@ ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 RUNTIME="$ROOT/builds/intermediates/gstreamer/runtime"
 HEADERS=${BA_GSTREAMER_HEADERS:-"$ROOT/builds/intermediates/gstreamer/iOS/sdk-device/GStreamer.xcframework/ios-arm64/Headers"}
 OUTPUT="$ROOT/builds/CLI/ba_native_stream"
+if [ ! -f "$HEADERS/gst/gst.h" ]; then
+  echo 'Set BA_GSTREAMER_HEADERS to the matching GStreamer SDK headers.' >&2
+  exit 1
+fi
+python3 "$ROOT/scripts/platforms/macOS/prepare-gstreamer.py" --native-stream-headers
 mkdir -p "$(dirname "$OUTPUT")"
 xcrun clang++ -std=c++17 -O2 -fobjc-arc -DBA_NATIVE_STREAM -mmacosx-version-min=14.2 \
   -I "$ROOT/builds/intermediates/gstreamer/header-overlay" -I "$HEADERS" -L "$RUNTIME/lib" \

@@ -19,7 +19,9 @@ ensure_started() ->
     end.
 
 start_source(Offer) -> start_child(source, ba_audio_source, [Offer]).
-start_session(Args) when is_map(Args) -> start_child(subscription,ba_media_session,[Args]).
+start_session(#{descriptor := D}=Args) ->
+    Handler=ba_stream_handler:for_descriptor(D),
+    start_child(subscription,Handler:session_module(),[Args]).
 
 start_child(Kind, Module, Args) ->
     supervisor:start_child(ba_session_scope:ref(?MODULE), #{id => {Kind, make_ref()},

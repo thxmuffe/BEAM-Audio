@@ -7,7 +7,8 @@ validate(#{<<"kind">> := K} = P) ->
         <<"catalog.changed">> -> exact(P,[<<"kind">>]);
         <<"catalog.end">> -> exact(P,[<<"kind">>]);
         <<"catalog.offer">> ->
-            exact(P,[<<"kind">>,<<"source">>,<<"incarnation">>,<<"name">>,<<"rate">>,<<"channels">>,<<"format">>,<<"clock">>,<<"paused">>]),
+            Extra=case maps:is_key(<<"transport">>,P) of true -> [<<"transport">>];false -> [] end,
+            exact(P,[<<"kind">>,<<"source">>,<<"incarnation">>,<<"name">>,<<"rate">>,<<"channels">>,<<"format">>,<<"clock">>,<<"paused">>]++Extra),
             identity(P),text(maps:get(<<"name">>,P),128),
             true = is_boolean(maps:get(<<"paused">>,P)),_ = descriptor(P);
         <<"subscribe">> ->
@@ -38,7 +39,14 @@ offer(Key,Inc,#{name := Name,paused := Paused,profiles := #{channel := D}}) ->
     P = #{<<"kind">> => <<"catalog.offer">>,<<"source">> => Key,<<"incarnation">> => Inc,
           <<"name">> => Name,<<"paused">> => Paused,<<"rate">> => maps:get(sample_rate,D),
           <<"channels">> => maps:get(channel_count,D),<<"format">> => atom_to_binary(maps:get(sample_format,D)),
-          <<"clock">> => maps:get(clock,D)},ok = validate(P),P.
+          <<"clock">> => maps:get(clock,D)},
+    Native=case maps:get(stream_handler,D,undefined) of native_gst_aac -> P#{<<"transport">> => <<"gst_aac_rtp_v1">>};_ -> P end,
+    ok=validate(Native),Native.
+descriptor(#{<<"transport">> := <<"gst_aac_rtp_v1">>,<<"rate">> := R,<<"channels">> := 2,
+        <<"format">> := <<"float32_le">>,<<"clock">> := Clock}) when R=:=44100;R=:=48000 ->
+    text(Clock,128),#{encoding => pcm,sample_format => float32_le,sample_rate => R,channel_count => 2,
+        clock => Clock,stream_handler => native_gst_aac};
+descriptor(#{<<"transport">> := _}) -> error(unsupported_native_transport);
 descriptor(#{<<"rate">> := Rate,<<"channels">> := Channels,<<"format">> := F,<<"clock">> := Clock}) ->
     true = is_integer(Rate) andalso Rate>=8000 andalso Rate=<192000,
     true = Channels=:=1 orelse Channels=:=2,text(Clock,128),

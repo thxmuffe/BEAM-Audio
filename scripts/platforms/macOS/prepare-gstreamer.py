@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Unpack the pinned official runtime for isolated media proofs; no installer."""
+import argparse
 import hashlib
 from pathlib import Path
 import shutil
 import subprocess
 import urllib.request
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--native-stream-headers', action='store_true',
+                    help='Prepare the small matching macOS header overlay for the native trial.')
+args = parser.parse_args()
 ROOT = Path(__file__).resolve().parents[3]
 BASE = ROOT / 'builds/intermediates/gstreamer'
 NAME = 'gstreamer-1.0-1.28.8-universal.pkg'
@@ -32,7 +37,7 @@ if not (runtime / 'bin/gst-launch-1.0').exists():
 plugins = BASE / 'plugins'
 plugins.mkdir(exist_ok=True)
 for name in ['coreelements','app','audiotestsrc','opus','rtp','rtpmanager',
-             'audioconvert','audioresample','volume','osxaudio','webrtc','nice','dtls','srtp','sctp','netsim']:
+             'audioparsers','audioconvert','audioresample','volume','osxaudio','webrtc','nice','dtls','srtp','sctp','netsim']:
     source = runtime / f'lib/gstreamer-1.0/libgst{name}.dylib'
     if not source.exists():
         raise SystemExit('Required plugin absent from official runtime: ' + str(source))
@@ -40,3 +45,12 @@ for name in ['coreelements','app','audiotestsrc','opus','rtp','rtpmanager',
     if not target.exists():
         target.symlink_to(source)
 print('Prepared isolated GStreamer 1.28.8:', runtime)
+
+if args.native_stream_headers:
+    overlay = BASE / 'header-overlay/gst/gstmacos.h'
+    overlay.parent.mkdir(parents=True, exist_ok=True)
+    if not overlay.exists():
+        urllib.request.urlretrieve('https://raw.githubusercontent.com/GStreamer/gstreamer/1.28.8/'
+                                   'subprojects/gstreamer/gst/gstmacos.h', overlay)
+    if hashlib.sha256(overlay.read_bytes()).hexdigest() != 'ad868076ec8e3be42985da90dbc84e143ba61374c7aa20f4455a4e9df8409dbb':
+        raise SystemExit('Native stream header checksum mismatch')

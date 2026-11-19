@@ -3,6 +3,8 @@
 #if TARGET_OS_IPHONE
 #import <AVFAudio/AVFAudio.h>
 #import "../iOS/IOSGStreamerReceiver.h"
+extern "C" void *ba_native_stream_audio_acquire(void);
+extern "C" void ba_native_stream_audio_release(void *);
 #endif
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
@@ -50,6 +52,9 @@ static void enqueue(dispatch_block_t block) {
     NSString *_generation;
     uint32_t _rate,_channels;
     uint64_t _capturePosition;
+#if TARGET_OS_IPHONE
+    void *_audioSessionToken;
+#endif
 }
 - (instancetype)initWithSocket:(int)fd;
 - (void)serve;
@@ -133,13 +138,16 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
     if(_stopping.exchange(true))return;
     _stopAt=monotonicMS();
     enqueue(^{
-        if(self->_pipeline)gst_element_set_state(self->_pipeline,GST_STATE_NULL);
+        if(self->_pipeline && gst_element_set_state(self->_pipeline,GST_STATE_NULL)==GST_STATE_CHANGE_FAILURE)_Exit(70);
         { std::lock_guard<std::mutex> lock(self->_inputLock);
           if(self->_input){gst_object_unref(self->_input);self->_input=NULL;} }
         if(self->_bus){g_source_destroy(self->_bus);g_source_unref(self->_bus);self->_bus=NULL;}
         if(self->_volume){gst_object_unref(self->_volume);self->_volume=NULL;}
         if(self->_peer){gst_object_unref(self->_peer);self->_peer=NULL;}
         if(self->_pipeline){gst_object_unref(self->_pipeline);self->_pipeline=NULL;}
+#if TARGET_OS_IPHONE
+        if(self->_audioSessionToken){ba_native_stream_audio_release(self->_audioSessionToken);self->_audioSessionToken=NULL;}
+#endif
         if(request)[self send:@{@"event":@"stopped",@"request_id":request}];
         self->_finished=true;::shutdown(self->_fd,SHUT_RDWR);
     });
@@ -190,7 +198,7 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
         NSString *source=_synthetic ? @"audiotestsrc is-live=true wave=sine volume=0.02 samplesperbuffer=1024" : @"appsrc name=capture is-live=true format=time block=false max-bytes=4194304";
         NSString *graph;
         if(_provider)graph=[NSString stringWithFormat:
-            @"webrtcbin name=peer bundle-policy=max-bundle %@ ! audio/x-raw,format=F32LE,layout=interleaved,rate=%u,channels=2 ! audioconvert ! atenc bitrate=320000 ! audio/mpeg,mpegversion=4,stream-format=raw,base-profile=lc ! rtpmp4gpay pt=96 ! application/x-rtp,media=audio,encoding-name=MPEG4-GENERIC ! peer.",source,_rate];
+            @"webrtcbin name=peer bundle-policy=max-bundle %@ ! audio/x-raw,format=F32LE,layout=interleaved,rate=%u,channels=2 ! audioconvert ! atenc bitrate=320000 ! audio/mpeg,mpegversion=4,stream-format=raw,profile=lc ! rtpmp4gpay pt=96 ! application/x-rtp,media=audio,encoding-name=MPEG4-GENERIC ! peer.",source,_rate];
         else graph=[NSString stringWithFormat:
             @"webrtcbin name=peer latency=%d bundle-policy=max-bundle queue name=received max-size-buffers=0 max-size-bytes=16777216 max-size-time=10000000000 ! rtpmp4gdepay ! aacparse ! atdec ! audioconvert ! audio/x-raw,format=F32LE,channels=2 ! identity name=count ! audioresample ! volume name=volume mute=true ! %@",delay,
 #if TARGET_OS_IPHONE
@@ -199,6 +207,9 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
             [c[@"silent"] isEqual:@YES] ? @"fakesink sync=true async=false" : @"osxaudiosink sync=true"
 #endif
         ];
+#if TARGET_OS_IPHONE
+        if(!_provider && !(_audioSessionToken=ba_native_stream_audio_acquire())){fail(self,@"native_audio_session_failed");return;}
+#endif
         GError *error=NULL;_pipeline=gst_parse_launch(graph.UTF8String,&error);
         if(error || !_pipeline){if(error)g_error_free(error);fail(self,@"native_pipeline_prepare_failed");return;}
         _peer=gst_bin_get_by_name(GST_BIN(_pipeline),"peer");_volume=gst_bin_get_by_name(GST_BIN(_pipeline),"volume");
@@ -206,31 +217,31 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
         if(!_provider){
             GstElement *counter=gst_bin_get_by_name(GST_BIN(_pipeline),"count");GstPad *pad=gst_element_get_static_pad(counter,"sink");
             gst_pad_add_probe(pad,GST_PAD_PROBE_TYPE_BUFFER,countBuffer,(__bridge void *)self,NULL);gst_object_unref(pad);gst_object_unref(counter);
-            g_signal_connect(_peer,"pad-added",G_CALLBACK(+[](GstElement *,GstPad *pad,gpointer p){
+            g_signal_connect(_peer,"pad-added",G_CALLBACK((+[](GstElement *,GstPad *pad,gpointer p){
                 BANativePeer *self=(__bridge BANativePeer *)p;
                 if(GST_PAD_DIRECTION(pad)!=GST_PAD_SRC)return;
                 GstElement *queue=gst_bin_get_by_name(GST_BIN(self->_pipeline),"received");GstPad *sink=gst_element_get_static_pad(queue,"sink");
                 if(!gst_pad_is_linked(sink) && gst_pad_link(pad,sink)!=GST_PAD_LINK_OK)fail(self,@"native_track_link_failed");
                 gst_object_unref(sink);gst_object_unref(queue);
-            }),(__bridge void *)self);
+            })),(__bridge void *)self);
         }
         for(NSDictionary *server in c[@"ice_servers"])for(NSString *url in server[@"urls"]){
             if([url hasPrefix:@"stun:"])g_object_set(_peer,"stun-server",[[url stringByReplacingCharactersInRange:NSMakeRange(0,5) withString:@"stun://"] UTF8String],NULL);
             if([url hasPrefix:@"turn:"] || [url hasPrefix:@"turns:"]){fail(self,@"native_turn_configuration_not_implemented");return;}
         }
-        g_signal_connect(_peer,"on-ice-candidate",G_CALLBACK(+[](GstElement *,guint line,gchar *candidate,gpointer p){
+        g_signal_connect(_peer,"on-ice-candidate",G_CALLBACK((+[](GstElement *,guint line,gchar *candidate,gpointer p){
             [(__bridge BANativePeer *)p send:@{@"event":@"candidate",@"candidate":@(candidate),@"mid":@"audio0",@"line":@(line)}];
-        }),(__bridge void *)self);
-        g_signal_connect(_peer,"on-negotiation-needed",G_CALLBACK(+[](GstElement *,gpointer p){
+        })),(__bridge void *)self);
+        g_signal_connect(_peer,"on-negotiation-needed",G_CALLBACK((+[](GstElement *,gpointer p){
             BANativePeer *self=(__bridge BANativePeer *)p;
             enqueue(^{if(self->_provider && !self->_offered && !self->_stopping){self->_offered=true;g_signal_emit_by_name(self->_peer,"create-offer",NULL,descriptionPromise(self));}});
-        }),(__bridge void *)self);
-        g_signal_connect(_peer,"notify::connection-state",G_CALLBACK(+[](GObject *peer,GParamSpec *,gpointer p){
+        })),(__bridge void *)self);
+        g_signal_connect(_peer,"notify::connection-state",G_CALLBACK((+[](GObject *peer,GParamSpec *,gpointer p){
             BANativePeer *self=(__bridge BANativePeer *)p;GstWebRTCPeerConnectionState state;
             g_object_get(peer,"connection-state",&state,NULL);
             if(state==GST_WEBRTC_PEER_CONNECTION_STATE_CONNECTED)[self send:@{@"event":@"connected",@"synchronized":@NO}];
             if(state==GST_WEBRTC_PEER_CONNECTION_STATE_FAILED)fail(self,@"native_transport_failed");
-        }),(__bridge void *)self);
+        })),(__bridge void *)self);
         GstBus *bus=gst_element_get_bus(_pipeline);_bus=gst_bus_create_watch(bus);gst_object_unref(bus);
         g_source_set_callback(_bus,(GSourceFunc)(void *)+[](GstBus *,GstMessage *message,gpointer p)->gboolean{
             if(GST_MESSAGE_TYPE(message)==GST_MESSAGE_ERROR){GError *error=NULL;gchar *debug=NULL;gst_message_parse_error(message,&error,&debug);
@@ -240,6 +251,11 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
         if(gst_element_set_state(_pipeline,GST_STATE_PLAYING)==GST_STATE_CHANGE_FAILURE){fail(self,@"native_pipeline_start_failed");return;}
         [self send:@{@"event":@"prepared",@"codec":@"aac_lc",@"bitrate":@320000}];return;
     }
+#if !TARGET_OS_IPHONE
+    if([op isEqual:@"test_block_media"] && getenv("BA_NATIVE_STREAM_TESTING")){
+        std::this_thread::sleep_for(std::chrono::seconds(10));return;
+    }
+#endif
     if(!_prepared){fail(self,@"native_not_prepared");return;}
     if([op isEqual:@"offer"] || [op isEqual:@"answer"]){
         GstSDPMessage *sdp=NULL;gst_sdp_message_new(&sdp);NSString *text=c[@"sdp"];
@@ -254,11 +270,7 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
         if(_remoteReady)g_signal_emit_by_name(_peer,"add-ice-candidate",[c[@"line"] intValue],[c[@"candidate"] UTF8String]);
         else if(_candidates.count<32)[_candidates addObject:c];else fail(self,@"native_candidates_full");
     } else if([op isEqual:@"play"] || [op isEqual:@"pause"]){
-#if TARGET_OS_IPHONE
-        if([op isEqual:@"play"]){NSError *error=nil;AVAudioSession *session=AVAudioSession.sharedInstance;
-            [session setCategory:AVAudioSessionCategoryPlayback error:&error];[session setActive:YES error:&error];
-            if(error){fail(self,@"native_audio_session_failed");return;}}
-#endif
+
         if(_volume)g_object_set(_volume,"mute",[op isEqual:@"pause"],NULL);
         [self send:@{@"event":[op isEqual:@"play"] ? @"playing" : @"paused"}];
     } else if([op isEqual:@"gain"]){double gain=[c[@"gain"] doubleValue];if(gain>=0 && gain<=1 && _volume)g_object_set(_volume,"volume",gain,NULL);

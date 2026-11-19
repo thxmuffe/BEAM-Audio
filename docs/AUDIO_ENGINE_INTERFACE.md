@@ -4,9 +4,10 @@
 
 **Use GStreamer for the first complete native stream implementation.** Keep OTP
 responsible for authorization, supervision and Session timing policy. GStreamer
-owns capture through transport to playback, including encoded packets. This is
-a backend selection and control contract, not an enabled backend or a completed
-native revocation implementation. The current runtime remains unchanged.
+owns capture through transport to playback, including encoded packets. The
+default path remains legacy. A development-only native AAC implementation now
+follows part of this contract; see [usage and limits](../src/Audio/README.md#native-aac-development-trial).
+It is not a synchronized or device-qualified replacement yet.
 
 ### Why this backend
 
@@ -20,9 +21,11 @@ The earlier tone comparison does not establish a general quality winner. Select
 GStreamer for control of timing and lifecycle, not that metric. Reuse its existing
 `webrtcbin` connectivity/security components where suitable; selecting a backend
 does not authorize replacing authenticated media with plain UDP. The wire profile
-and source-format negotiation still need integration. Do not silently quantize
-float capture or force all sources through the prototype's 48-kHz stereo Opus
-format. No new backend fallback, plugin registry or OTP application is needed.
+still needs broader format negotiation. The owner approved AAC-LC at 320 kb/s
+stereo for music on 2026-11-19. The first profile accepts 44.1/48-kHz stereo float
+capture, explicitly converting to the Apple GStreamer encoder's 16-bit input;
+Its result is lossy AAC, not preserved float samples. Other formats are rejected.
+No new backend fallback, plugin registry or OTP application is needed.
 
 Sources inspected:
 
@@ -79,9 +82,9 @@ also work when no Erlang process remains to call that module.
 On iOS the native backend lives in the app process. The same independent native
 guard must stop the stream after its owning control socket closes. If teardown
 cannot complete, the enforcement boundary is the host process itself; a stalled
-engine cannot be allowed to keep running merely to preserve the UI. The exact
-guard integration and hard-termination path must be implemented and checked
-before enabling this backend. This is not currently guaranteed by the app.
+engine cannot be allowed to keep running merely to preserve the UI. The new native AAC host implements this guard and forced-exit path; the iOS
+source passes syntax checks, but actual iPhone lifecycle behavior remains
+unverified. It is enabled only by an explicit development-trial flag.
 
 The initial cleanup bound is 1.5 seconds after owner loss is detected, independent
 of the requested audio buffer. Teardown starts immediately and discards queued
@@ -92,9 +95,11 @@ Control closure is an enforcement trigger, never a stop acknowledgement.
 
 ### Replacement control contract
 
-This section specifies the replacement; these operations are **not yet the
-implemented wire protocol**. Reuse the existing packet-4 JSON control framing,
-with a version/capability handshake before creating media resources. Payloads
+This section specifies the complete replacement contract. The AAC trial implements
+hello/prepare/signalling, heartbeats, play/pause, gain, stats and confirmed stop.
+Clock mapping, scheduled presentation, rate correction and changing buffer policy
+remain unimplemented. The trial uses packet-4 JSON control framing with a
+version/capability handshake before creating media resources. Payloads
 are limited to control, signalling, timing and bounded diagnostic summaries.
 Native sender and receiver use the same lifetime rules.
 
@@ -147,12 +152,20 @@ correction replaces dropping entire blocks for tiny same-source overlaps.
 
 ### Implementation order and acceptance
 
-The backend decision and contract above are recorded. **Step 1 implementation
-is still open:** implement the lifecycle handshake, native guard, correlated
-stop completion and OTP permission/owner monitoring before removing the existing
-profile rejection. Prove lifetime behavior first with a disposable native
-endpoint; then connect GStreamer resources to that same boundary. A protocol
-mock alone cannot qualify the actual pipeline or iOS host.
+The new `ba_native_media_session` owns its native control socket directly and
+registers with the existing permission machinery. The Mac source owns its helper
+port. Both monitor required owners; the native host enforces closure and a
+separate control-liveness deadline. Requested stop acknowledges only after
+pipeline teardown; a stalled media context forces helper/host exit. Older
+`ba_audio_native_engine` receivers still refuse the current profile and are not
+silently substituted.
+
+The AAC trial currently reports `synchronized=false` and requires explicit
+`BA_NATIVE_STREAM_TRIAL=1` locally. Its prepare message carries
+`diagnostic_unsynchronized=true`; ordinary activation is blocked pending the
+Session clock/schedule integration. Native encode/transport/decode plus normal
+stop and independent guard checks pass with synthetic audio and silent output.
+The iPhone host has source/bridge checks, not a deployed or listening result.
 
 Critical checks are normal stop, consent revocation, owner `kill`, parent
 supervisor `kill`, permission-authority/registry loss, BEAM exit, blocked media

@@ -7,6 +7,8 @@ init({#{source_key := Key} = Offer,Owner}) when is_pid(Owner),node(Owner)=:=node
     ok = ba_audio:validate_offer(Offer),monitor(process,Owner),
     Inc = binary:encode_hex(crypto:strong_rand_bytes(16)),
     {ok,#{offer => Offer#{paused => false},source_key => Key,incarnation => Inc,owner => Owner,sessions => #{}}}.
+handle_call(native_endpoint,_,#{owner := Owner,offer := #{profiles := #{channel := #{stream_handler := native_gst_aac}}}}=S) ->
+    {reply,gen_server:call(Owner,native_endpoint,1000),S};
 handle_call(describe,_,#{offer := Offer,source_key := Key,incarnation := Inc} = S) ->
     {reply,Offer#{source_key => Key,incarnation => Inc},S};
 handle_call({attach,Pid},{Receiver,_},#{sessions := Sessions} = S) ->
