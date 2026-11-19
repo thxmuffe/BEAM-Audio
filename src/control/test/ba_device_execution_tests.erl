@@ -16,7 +16,6 @@ execution_gates_test() ->
         ?assertError(badarg,ets:insert(ba_device_config,{permissions,#{speaker => true}})),
         ?assertEqual({error,consent_required},ba_mac_output:open(#{})),
         ?assertEqual({error,consent_required},ba_ios_audio:open(#{})),
-        ?assertEqual({error,consent_required},ba_audio_native_engine:open(#{})),
         denied_writes(),
         Input=ba_audio_input:new(),Mac=#{kind => microphone,port => undefined,input => Input},
         IOS=#{kind => microphone,socket => undefined,input => Input},
@@ -44,6 +43,4 @@ execution_gates_test() ->
     end.
 denied_writes() ->
     ?assertEqual({error,consent_revoked},ba_mac_output:write(#{},0,1,<<>>)),
-    ?assertEqual({error,consent_revoked},ba_ios_audio:write(#{},0,1,<<>>)),
-    ?assertEqual({error,consent_revoked},ba_audio_native_engine:command(no_socket,play)),
-    ?assertEqual({error,consent_revoked},ba_audio_native_engine:command(no_socket,{presentation,#{}})).
+    ?assertEqual({error,consent_revoked},ba_ios_audio:write(#{},0,1,<<>>)).

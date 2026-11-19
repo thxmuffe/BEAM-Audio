@@ -19,7 +19,6 @@ parser.add_argument('--target', choices=HASHES, default='device')
 parser.add_argument('--transport', choices=['native', 'relay'], default='native')
 args = parser.parse_args()
 target = args.target
-subprocess.run([sys.executable, str(ROOT / 'src/Audio/handlers/webrtc/prepare.py'), '--target', 'ios'], check=True)
 subprocess.run([sys.executable, str(ROOT / 'scripts/platforms/iOS/prepare-gstreamer.py'), '--target', target], check=True)
 archive = ROOT / f'builds/intermediates/iOS/downloads/otp-ios-{target}-d199a49a.tar.gz'
 archive.parent.mkdir(parents=True, exist_ok=True)
@@ -90,9 +89,6 @@ shutil.copy2(otp / 'releases/29/start_clean.boot', resources / 'start_clean.boot
 shutil.copy2(ROOT / 'LICENSE', resources / 'LICENSE')
 shutil.copy2(ROOT / 'scripts/platforms/iOS/MOB-LICENSE', resources / 'MOB-LICENSE')
 (resources / 'prepared.stamp').write_text(f'{args.transport} {target}\n')
-shutil.copy2(ROOT / 'builds/intermediates/webrtc-audio/WebRTC.xcframework/LICENSE', resources / 'WEBRTC-LICENSE')
-shutil.copy2(ROOT / 'builds/intermediates/webrtc-audio/native-headers/third_party/abseil-cpp/LICENSE', resources / 'ABSEIL-LICENSE')
-shutil.copy2(ROOT / 'builds/intermediates/webrtc-audio/native-headers/PATENTS', resources / 'WEBRTC-PATENTS')
 if args.transport == 'native':
     subprocess.run(['escript', str(ROOT / 'scripts/check-runtime-calls.escript'), str(resources)], check=True)
 print(f'Prepared {target}: {resources}', flush=True)

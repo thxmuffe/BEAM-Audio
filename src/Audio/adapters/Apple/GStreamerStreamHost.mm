@@ -2,7 +2,7 @@
 #import <TargetConditionals.h>
 #if TARGET_OS_IPHONE
 #import <AVFAudio/AVFAudio.h>
-#import "../iOS/IOSGStreamerReceiver.h"
+#import "../iOS/IOSGStreamerRuntime.h"
 extern "C" void *ba_native_stream_audio_acquire(void);
 extern "C" void ba_native_stream_audio_release(void *);
 #endif
@@ -449,11 +449,11 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
     uint32_t _rate,_channels,_bytesPerFrame,_flags;
 }
 - (uint16_t)start:(NSError **)error {
+#if TARGET_OS_IPHONE
+    if(!ba_gstreamer_initialize(error))return 0;
+#endif
     static dispatch_once_t once;
     dispatch_once(&once,^{
-#if TARGET_OS_IPHONE
-        [IOSGStreamerReceiver initializeEngine:nil];
-#endif
         gst_init(NULL,NULL);mediaContext=g_main_context_new();
         std::thread([]{g_main_context_push_thread_default(mediaContext);g_main_loop_run(g_main_loop_new(mediaContext,FALSE));}).detach();
     });

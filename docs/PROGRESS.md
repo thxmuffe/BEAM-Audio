@@ -1,5 +1,40 @@
 # Current implementation and validation
 
+## First unused-code cleanup — 2026-11-19
+
+Owner reports audio works OK, pauses the audio migration and requests an
+incremental cleanup before committing. Removed the uncalled receiver-only
+`ba_audio_engine` selector, its two adapters/shared socket binding, the unused
+per-packet GStreamer control helper and unused Windows playback launcher. Removed
+their dedicated tests and obsolete execution-gate assertions. The stream-handler
+behavior no longer requires the uncalled `output_control/2` callback or the removed
+engine's types; actual native controls remain on the owned Media Session.
+
+Removed the two iOS receiver hosts never constructed by the app, their old Opus
+receiver/custom output implementation and Google WebRTC framework/header/resource
+packaging. Extracted the static GStreamer initialization still needed by the AAC
+trial into `IOSGStreamerRuntime`, which does no transport, playback or event-loop
+ownership. It validates the actual AAC pipeline factories and propagates an
+initialization error to the native host. The libwebrtc comparison's minimum-delay
+binding now lives with that experiment; unused RemoteIO timing helpers were
+removed. The working PCM path, opt-in Opus handler and native AAC trial remain.
+
+Validation: core compile and all **273 remaining EUnit tests pass** (11 removed
+tests belonged to the unused implementations). Targeted iOS arm64 compiler checks
+pass for the small runtime initializer and shared native stream host. Xcode
+project syntax/reference checks and runtime-preparation syntax pass. No full app
+build, deployment, live setting change, audio listening or broad test-runner pass.
+See the current Audio README for ownership/usage; the obsolete engine interface
+documentation was reduced to the implemented contract and retained media paths.
+
+Capture separation discussion: Core Audio process taps can exclude our playback
+while other apps' audio is captured on the same physical output. Existing Mac
+capture already excludes the configured playback-helper executable across local
+instances and refreshes the process list. Coverage across different builds or
+future native output hosts still needs verification; no capture behavior changed
+in this cleanup. This can be handled in the native adapter without moving audio
+through Erlang or adding a virtual audio driver.
+
 ## CLI confirmation of the active audio path — 2026-11-19
 
 Joined Paavo 007 with a fresh, audio-disabled Inspector through the public CLI.

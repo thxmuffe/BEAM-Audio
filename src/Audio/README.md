@@ -18,6 +18,20 @@ Session timing is connected in the trial; continuous playback correction and
 ten-second buffering qualification remain unfinished. The default remains the
 legacy path described later.
 
+The unused receiver-only engine selector and unstarted iOS libwebrtc/Opus hosts
+were removed in the first cleanup pass. Native AAC has one supervised control
+owner, `ba_native_media_session`, and one native pipeline host. iOS static SDK
+initialization is isolated in `adapters/iOS/IOSGStreamerRuntime`; the app does not
+embed Google WebRTC. The standalone comparison remains under `experiments/`.
+
+Mac ON AIR uses a Core Audio process tap, so capture selection and speaker output
+are separate. The tap excludes our configured playback-helper executable across
+local instances and refreshes when audio processes change. Other apps can still
+be captured while OpenSound plays to the same physical device. Different build
+paths and future native playback hosts need coverage checks before claiming all
+OpenSound processes are excluded. See Apple's
+[process-filtered device tap](https://developer.apple.com/documentation/coreaudio/catapdescription/initexcludingprocesses%3Aanddeviceuid%3Awithstream%3A).
+
 ## Native AAC development trial
 
 The owner approved AAC-LC at **320 kb/s stereo** for music. The new path is:

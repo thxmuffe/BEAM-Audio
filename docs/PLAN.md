@@ -91,6 +91,12 @@ wakeup gaps were recorded (historical maximum 3,074 ms). Both ends reported
 this run does not assess AAC quality. iPhone ON AIR is blocked on iOS 26 by
 the current build; reverse native capture is not implemented.
 
+Current pause (2026-11-19): the owner reports audio works OK and is committing
+the work. A first cleanup pass removes unused receiver-engine alternatives and
+their iOS packaging dependencies; the working PCM path and opt-in AAC trial
+remain. Further cleanup stays incremental and follows actual callers, not a
+general redesign. Resume native selection/continuity work when requested.
+
 ## Next 5 steps
 
 1. **GStreamer backend and enforced control lifetime — prototype implemented.**
@@ -100,7 +106,7 @@ the current build; reverse native capture is not implemented.
    correlated stop/flush and OTP owner/permission monitoring. Disposable native
    checks cover channel loss, heartbeat expiry, source-owner exit and a stalled
    media loop; OTP checks cover owner, supervisor and registry loss and revocation.
-   Existing older native receiver bindings remain blocked. Real iOS lifecycle
+   Unused older native receiver bindings have been removed. Real iOS lifecycle
    and hardware-tail qualification remain open.
 2. **One complete native Mac → iPhone stream — implementation in development trial.**
    Native Core Audio capture → Apple AAC-LC at 320 kb/s stereo → GStreamer
@@ -189,6 +195,10 @@ path. Dated recordings, counters and validation limits remain in PROGRESS.md.
 ## Backlog (after the next steps)
 
 **Audio**
+- Keep Mac playback separate from ON AIR with process-filtered Core Audio taps.
+  Existing capture excludes matching playback-helper processes across instances;
+  verify coverage for different build paths and future native playback hosts.
+  This is capture-source selection, independent of the physical output device.
 - Improvement plan for buffers/timing from listening results (e.g. mixer lead
   at short Response times; OS stalls > 50 ms drop blocks on loaded Windows).
 - Long-term audio objects: overlapping packets mixed by default.
@@ -247,7 +257,8 @@ path. Dated recordings, counters and validation limits remain in PROGRESS.md.
 1. **Privacy manifest:** create and bundle `PrivacyInfo.xcprivacy`; declare data collection and required-reason APIs.
 2. **GStreamer:** remove from Release builds if WebRTC can replace it; otherwise LGPL static-linking compliance.
 3. **Erlang/OTP:** bundle upstream copyright, license and third-party notices.
-4. **WebRTC:** audit the exact framework build and transitive notices.
+4. **Google WebRTC:** the unused framework was removed from current iOS packaging;
+   verify its absence in the next archive (ExWebRTC transport remains separate).
 5. **Other dependencies:** verify OpenSSL, libsrtp, Rust/SCTP and remaining licenses.
 6. **Attribution:** make complete third-party notices accessible in the app.
 7. **Verification:** build a Release archive, inspect binaries/resources, generate Xcode's privacy report.
