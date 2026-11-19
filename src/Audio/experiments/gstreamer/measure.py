@@ -3,11 +3,12 @@
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import resource
 import sys
 import time
+
+from runtime import load_runtime
 
 
 def main():
@@ -21,21 +22,7 @@ def main():
     runtime = args.runtime.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     output = args.output.resolve()
-    # The official macOS 1.28.8 package supplies CPython 3.9 bindings.
-    if sys.version_info[:2] != (3, 9):
-        parser.error("use /usr/bin/python3 (3.9) with the macOS runtime bindings")
-    sys.path.insert(0, str(runtime / "lib/python3.9/site-packages"))
-    os.environ["GI_TYPELIB_PATH"] = str(runtime / "lib/girepository-1.0")
-    os.environ["GST_PLUGIN_SYSTEM_PATH_1_0"] = str(runtime.parent / "plugins")
-    os.environ["GST_REGISTRY_1_0"] = str(runtime.parent / "l16-registry.bin")
-    import gi
-    gi.require_version("GIRepository", "2.0")
-    from gi.repository import GIRepository
-    GIRepository.Repository.prepend_library_path(str(runtime / "lib"))
-    gi.require_version("Gst", "1.0")
-    gi.require_version("GstRtp", "1.0")
-    from gi.repository import GLib, Gst, GstRtp
-    Gst.init(None)
+    GLib, Gst, GstRtp = load_runtime(runtime)
 
     profiles = {
         "clean": "",

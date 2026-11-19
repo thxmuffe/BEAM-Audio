@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-from schedule_proof import load_runtime
+from runtime import load_runtime
 
 
 def main():
@@ -33,7 +33,7 @@ def main():
         parser.error('--minimum-delay-ms is the NetEq control; GStreamer uses its existing 200 ms jitter latency.')
     if args.receiver=='neteq' and not args.native_receiver:
         parser.error('Supply --native-receiver for NetEq.')
-    GLib,Gst,GstRtp,_,dll_handles=load_runtime(args.runtime)
+    GLib,Gst,GstRtp=load_runtime(args.runtime)
     args.output.mkdir(parents=True,exist_ok=True)
     loop=GLib.MainLoop()
     result={'receiver':args.receiver,'seconds':args.seconds,'drop_every':args.drop_every,

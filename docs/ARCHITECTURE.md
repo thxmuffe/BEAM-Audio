@@ -12,12 +12,21 @@ Owner is trusted administration; Chef/Guest are participation roles. Process
 placement confers no ownership. Saved identity and policy survive ordinary Leave
 and shutdown. Destroy is explicit. See [membership](BUFFEE_MEMBERSHIP.md).
 
-Erlang owns the shared clock reference, every packet's broadcaster-assigned
-presentation target and correction/buffering policy. Native adapters supply
-sample blocks, source format, monotonic capture timestamps and device timing.
-Approved isolated third-party media engines execute operations under Erlang
-control. Replace the default path only after playback, recovery and timing
-measurements. Never reconstruct missing targets or silently reschedule packets.
+Erlang owns the shared clock reference, Session presentation policy and native
+stream lifecycle. Native adapters/libraries own samples and encoded media,
+sample-position timestamps, RTP/RTCP timing mappings, buffering and output.
+Only control, signalling, timing metadata and bounded diagnostics cross the
+BEAM boundary. The default PCM path is legacy and still violates this target
+boundary; replace it after native playback, recovery and timing qualification.
+See the current [native stream contract](AUDIO_ENGINE_INTERFACE.md).
+
+Routine liveness and timing must stay scoped to relevant peers/streams and use
+bounded concurrent work, not per-Device Session-wide pings. The explicit CLI
+Inspector can request Session-wide diagnostics; ordinary app snapshots read
+local state. Current control still scans authorized peers and maintains peer
+links (`ba_buffee_control:connect_missing/1`, every 250 ms); making Session
+topology scale is separate unfinished work. Concurrent collection by the
+Inspector does not make that full-mesh topology scalable.
 
 DSP interfaces and reference implementations remain in BEAM Audio. Keep optional
 backends isolated and avoid speculative abstractions. Swift hosts retain OS

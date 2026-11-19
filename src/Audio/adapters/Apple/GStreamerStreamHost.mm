@@ -76,7 +76,6 @@ static void enqueue(dispatch_block_t block) {
     bool _prepared,_remoteReady,_provider,_synthetic,_offered;
     NSString *_generation;
     uint32_t _rate,_channels;
-    uint64_t _capturePosition;
 #if TARGET_OS_IPHONE
     void *_audioSessionToken;
 #endif
@@ -428,7 +427,7 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
     std::lock_guard<std::mutex> lock(_inputLock);
     if(!_input)return;
     if(rate!=_rate || channels!=_channels){++_dropped;return;}
-    if(gst_app_src_get_current_level_bytes(GST_APP_SRC(_input))+pcm.length>4*1024*1024){++_dropped;_capturePosition+=frames;return;}
+    if(gst_app_src_get_current_level_bytes(GST_APP_SRC(_input))+pcm.length>4*1024*1024){++_dropped;return;}
     GstBuffer *buffer=gst_buffer_new_allocate(NULL,pcm.length,NULL);gst_buffer_fill(buffer,0,pcm.bytes,pcm.length);
     if(!_sourceAnchored){
         uint64_t nativeNow=hostNS(),clockNow=gst_clock_get_time(_clock);
@@ -437,7 +436,7 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
     }
     if(position<_sourceAnchorPosition){gst_buffer_unref(buffer);fail(self,@"native_capture_discontinuity");return;}
     GST_BUFFER_PTS(buffer)=_sourceAnchorTime+gst_util_uint64_scale(position-_sourceAnchorPosition,GST_SECOND,_rate);
-    GST_BUFFER_DURATION(buffer)=gst_util_uint64_scale(frames,GST_SECOND,_rate);_capturePosition+=frames;
+    GST_BUFFER_DURATION(buffer)=gst_util_uint64_scale(frames,GST_SECOND,_rate);
     gst_app_src_push_buffer(GST_APP_SRC(_input),buffer);
 }
 @end

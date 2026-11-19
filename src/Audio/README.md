@@ -23,6 +23,10 @@ were removed in the first cleanup pass. Native AAC has one supervised control
 owner, `ba_native_media_session`, and one native pipeline host. iOS static SDK
 initialization is isolated in `adapters/iOS/IOSGStreamerRuntime`; the app does not
 embed Google WebRTC. The standalone comparison remains under `experiments/`.
+The second pass removed the unused Windows receiver/capture prototypes and
+the superseded per-packet scheduling proofs. Current Windows WASAPI adapters,
+legacy PCM/Opus and the native AAC trial remain; they are still wired to callers.
+The retained Mac measurements share their private SDK loader under `experiments/`.
 
 Mac ON AIR uses a Core Audio process tap, so capture selection and speaker output
 are separate. The tap excludes our configured playback-helper executable across

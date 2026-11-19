@@ -153,6 +153,12 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
   Select All and Copy. Do not render error messages solely as static labels or
   implement custom clipboard/context-menu handling for them.
 - Use OTP for process lifecycle, supervision, messaging, links/monitors and process-group membership. Keep admission permission distinct from observed connection/process liveness.
+- Design routine discovery, liveness and timing for large Sessions: keep checks
+  scoped to relevant peers and active streams, with bounded concurrent work.
+  Do not make every Device periodically ping or scan the whole Session. Full
+  Session diagnostics must remain explicitly requested observer work, not a
+  background dependency of ordinary Devices. Existing full-mesh control is a
+  limitation to replace incrementally, not a pattern to extend.
 - Do not give mutually untrusted Buffee devices Distributed Erlang connectivity or the ability to invoke arbitrary remote functions. Keep supervision local and cross-device operations authenticated, allowlisted and scoped to explicit permissions.
 - Implementation sources belong under `src/`: platform apps in `src/Apps/`, app-specific shared code in `src/Apps/Shared/`, audio processing and native audio adapters in `src/Audio/`, shared networking/buffee runtime in `src/control/`, and independently deployed services in `src/Services/`. Cross-component integration checks belong in top-level `tests/`; component unit tests can stay beside their component. Documentation belongs in `docs/` and repository-wide tooling in `scripts/`.
 - Keep `src/Audio/src/` platform independent. Platform audio bindings, including

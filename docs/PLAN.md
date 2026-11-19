@@ -3,8 +3,9 @@
 Reorganized 2026-11-18: dated narratives were collated; completed work and its
 validation limits live in [PROGRESS.md](PROGRESS.md) and the Windows report in
 [WINDOWS-AUDIO-2026-11-18.md](WINDOWS-AUDIO-2026-11-18.md). Git history keeps the
-previous plan. **Goal now: audio works on every platform.** Code and document
-cleanup waits until then.
+previous plan. **Goal: audio works on every platform.** At the owner's request,
+the migration is paused for iterative unused-code cleanup; broad restructuring
+and cosmetic cleanup still wait.
 
 ## Decisions in force
 
@@ -15,6 +16,11 @@ cleanup waits until then.
   commands, receiving only metadata and bounded summaries. This supersedes the
   earlier Erlang-first media implementation direction. Existing Erlang Mixer
   findings below diagnose the legacy path, not a mandate to extend it.
+- **Large Sessions need scoped, concurrent work.** Ordinary Devices must not
+  periodically ping or scan the whole Session. Keep routine checks on relevant
+  peers/active streams; Session-wide diagnostic reads belong to an explicit
+  Inspector. Existing peer-mesh maintenance is a scaling limitation to replace,
+  not a model to extend during cleanup.
 - **OTP ownership is mandatory.** Native streams stop when their owning OTP
   process, required supervisor, authority or runtime stops or crashes. Independent
   native teardown and forced termination must prevent orphan media connections;
@@ -91,11 +97,12 @@ wakeup gaps were recorded (historical maximum 3,074 ms). Both ends reported
 this run does not assess AAC quality. iPhone ON AIR is blocked on iOS 26 by
 the current build; reverse native capture is not implemented.
 
-Current pause (2026-11-19): the owner reports audio works OK and is committing
-the work. A first cleanup pass removes unused receiver-engine alternatives and
-their iOS packaging dependencies; the working PCM path and opt-in AAC trial
-remain. Further cleanup stays incremental and follows actual callers, not a
-general redesign. Resume native selection/continuity work when requested.
+Current pause (2026-11-19): the owner reports audio works OK and committed the
+first cleanup. The second pass removes unused Windows capture/receiver files
+and superseded per-packet scheduling proofs, preserving the current Windows
+adapters and shared measurement tools. The working PCM path and opt-in AAC trial
+remain. Further cleanup follows actual callers, not a general redesign. Resume
+native selection/continuity work when requested.
 
 ## Next 5 steps
 
@@ -220,6 +227,11 @@ path. Dated recordings, counters and validation limits remain in PROGRESS.md.
   recovery (see CONSENT_ENFORCEMENT.md).
 
 **Topology and scale**
+- Replace authorized-peer scans/full-mesh link maintenance in
+  `ba_buffee_control:connect_missing/1` (currently on the 250 ms expiry tick)
+  with a scoped topology before claiming large-Session support. Explicit
+  `monitor --all` is concurrent diagnostic work, not a scalable background
+  liveness algorithm. No topology or polling behavior changed in cleanup.
 - Clock: one logical master on an ON AIR Device, distributing time about every
   30 s; keep the broadcasting master until it stops.
 - Policy/route changes reset all peer links; Session list/start/stop can block

@@ -1,5 +1,43 @@
 # Current implementation and validation
 
+## Second unused-code cleanup — 2026-11-19
+
+Removed the old Windows meter-only capture server and its unused native helper
+(`ba_windows_audio` / `audio_input.cpp`), plus the abandoned Python WebRTC receiver
+left after the first pass removed its launcher. Current Windows capture/playback
+use `ba_windows_input`, `ba_windows_output`, `audio_capture.cpp` and
+`audio_output.cpp`; their callers/build inputs are retained.
+
+Removed the obsolete per-packet GStreamer scheduling planner, its five tests,
+standalone proof/escript and Windows proof launcher. Removed the unreferenced RTP
+target-extension prototype/tests for that superseded design. The live legacy
+Opus path has separate RTP target handling and remains wired; it was not mistaken
+for dead code. The native AAC timing/lifetime checks remain the maintained
+replacement. Removed an unused native capture-position accumulator; actual PTS
+continues to use Core Audio sample positions.
+
+The retained comparison had imported SDK setup from the removed proof. Extracted
+that setup to a small `experiments/gstreamer/runtime.py` and reused it from both
+the comparison and raw-audio measurement tools, removing their duplicate loader.
+Updated experiment instructions and current architecture documentation instead
+of leaving commands for deleted implementations.
+
+Validation: core compile and **268 remaining EUnit tests pass** (five removed
+tests belonged to the retired planner); all three receiver-analyzer tests pass.
+The shared runtime loads pinned GStreamer 1.28.8 and finds the required WebRTC/
+jitter-buffer factories without starting media. Mac native-host syntax and
+remaining Python entry-point checks pass. No Windows build, app build/deployment,
+new listening test, broad registered-suite run or live Device operation.
+Core test log: builds/test-results/cleanup-pass2-20261119/core-eunit.log.
+
+Scale requirement recorded in AGENTS.md, ARCHITECTURE.md and PLAN.md: ordinary
+Devices must avoid periodic Session-wide pings/scans; routine checks should be
+scoped and concurrent. Inspection confirms that explicit CLI `monitor --all`
+collects peers concurrently, but current control still scans authorized peers
+and maintains their links from a 250 ms tick. That is an existing scaling limit,
+not removed or benchmarked here. Cleanup adds no polling, fan-out or central
+coordinator; topology/liveness redesign remains separate work.
+
 ## First unused-code cleanup — 2026-11-19
 
 Owner reports audio works OK, pauses the audio migration and requests an
