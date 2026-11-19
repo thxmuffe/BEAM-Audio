@@ -132,12 +132,13 @@ def main():
         revision=a.request('snapshot')['membership']['revision']
         for r in participants[1:]:control.wait(r,lambda s:s['membership']['state']=='authorized' and s['membership']['revision']==revision)
         for r in publishers:
-            # The control owner already initiates missing peer links. A second
-            # initiator here can collide with its authenticated handshake.
+            # Control relationships start on demand; introduce the pair.
+            reply=b.request('connect',peer=r.identity['id']);assert reply.get('ok'),reply
             control.wait(b,lambda s:s['sessions'].get(r.identity['id'],{}).get('stage')=='authorized')
             control.wait(r,lambda s:s['sessions'].get(b.identity['id'],{}).get('stage')=='authorized')
         if inspector:
             for r in runtimes:
+                reply=inspector.request('connect',peer=r.identity['id']);assert reply.get('ok'),reply
                 control.wait(inspector,lambda s:s['sessions'].get(r.identity['id'],{}).get('stage')=='authorized')
         if args.buffee_time:
             for r in runtimes:

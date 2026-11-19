@@ -35,7 +35,7 @@ init([]) ->
         _ -> #{policy => Empty,routes => #{},until => now_ms()}
     end,
     Config = maps:with([policy,routes],View),
-    Protocol = (ba_buffee_control_protocol:new(Identity,maps:get(policy,View)))#{
+    Protocol = (ba_buffee_control_protocol:new(Identity,maps:get(policy,View),now_ms()))#{
         membership_deadline => maps:get(until,View),lease_ms => ba_settings:app(control_session_lease_ms,60000)},
     erlang:send_after(250,self(),expire),
     {ok,#{protocol => Protocol,config => Config,callers => #{},peer_names => #{},jobs => #{},
@@ -47,9 +47,9 @@ handle_call(snapshot,_,S) ->
     {reply,Public#{peer_errors => maps:with(maps:keys(maps:get(sessions,Public)),maps:get(peer_errors,S,#{})),peer_names => maps:with(maps:keys(maps:get(sessions,Public)),maps:get(peer_names,S)),relay => ba_buffee_desks:status(),membership => ba_buffee_membership:status(),rejected => maps:get(rejected,S),
         last_rejection => maps:get(last_rejection,S),diagnostics => ba_diagnostics:view(S),jobs => maps:map(fun(_,J) -> public_job(J) end,maps:get(jobs,S))},S};
 handle_call({exclude,Peer},_,#{protocol := P}=S) ->
-    case maps:find(Peer,maps:get(sessions,P)) of {ok,Session} -> drop_session(Peer,maps:get(id,Session));error -> ok end,
+    case maps:find(Peer,live(P)) of {ok,Session} -> drop_session(Peer,maps:get(id,Session));error -> ok end,
     Next=fence_peer_jobs(Peer,reply(Peer,{error,peer_excluded},S)),
-    {reply,ok,Next#{protocol := P#{sessions := maps:remove(Peer,maps:get(sessions,P))}}};
+    {reply,ok,Next#{protocol := ba_buffee_control_protocol:close(Peer,now_ms(),P)}};
 handle_call({chat_message,Peer,Id,Text},{Owner,_},S) ->
     case Owner=:=ba_session_scope:whereis(ba_buffee_chat) of
         false -> {reply,{error,not_chat_owner},S};
@@ -150,7 +150,7 @@ handle_info({membership_authorized,View},S) ->
         false ->
             Cleared = reset(policy_changed,S),
             Cleared#{config := Config,protocol := ba_buffee_control_protocol:new(
-                ba_device_store:identity(),maps:get(policy,View))}
+                ba_device_store:identity(),maps:get(policy,View),now_ms())}
     end,
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => maps:get(until,View),
         lease_ms => ba_settings:app(control_session_lease_ms,60000)}}};
@@ -173,14 +173,7 @@ handle_info({desk_delivery,_,Peer,Packet},S0) ->
                         _ -> Applied
                     end,
                     case lists:all(fun(P) -> send(Peer,P,Next) =:= ok end,Packets) of
-                        true ->
-                            OldSession=maps:get(Peer,maps:get(sessions,maps:get(protocol,S)),#{}),
-                            NewSession=maps:get(Peer,maps:get(sessions,Protocol),#{}),
-                            case {maps:get(stage,OldSession,undefined),maps:get(stage,NewSession,undefined)} of
-                                {Old,authorized} when Old=/=authorized -> self() ! {discover_name,Peer};
-                                _ -> ok
-                            end,
-                            {noreply,Next};
+                        true -> {noreply,Next};
                         false -> {noreply,rejected(transport_failed,Next)}
                     end;
                 {error,Reason,_} -> {noreply,rejected(Reason,S)}
@@ -213,7 +206,8 @@ handle_info(expire,S) ->
             _ -> reply(Peer,{error,Reason},Acc)
         end
     end,S#{protocol := Protocol},Events),
-    Final = connect_missing(renew_sessions(expire_jobs(ensure_handler_monitor(Next)))),
+    %% Nothing here contacts peers: relationships start with an actual request.
+    Final = expire_jobs(ensure_handler_monitor(Next)),
     erlang:send_after(250,self(),expire), {noreply,Final};
 handle_info({'DOWN',Ref,process,_,_},#{handler_monitor := Ref} = S) ->
     {noreply,reset(handler_restarted,S#{handler_monitor := undefined})};
@@ -317,28 +311,17 @@ event(_,{session_renewed,Context},S) ->
     audio_notify({audio_session_renewed,Context}),S;
 event(Peer,authorized,S) ->
     Context=ba_buffee_control_protocol:context(Peer,now_ms(),maps:get(protocol,S)),
-    critical_audio_notify({audio_session_up,Context}),S.
+    critical_audio_notify({audio_session_up,Context}),
+    self() ! {discover_name,Peer},S.
 
 discover_name(Peer,S) ->
-    %% One asynchronous ordinary capability read after authentication and after
-    %% sending ready, so both sides accept authenticated traffic. Snapshots
-    %% consume the result without making UI polling wait for a network request.
+    %% One asynchronous ordinary capability read when a peer's relationship
+    %% starts. Snapshots consume the result without making UI polling wait.
     Names=maps:remove(Peer,maps:get(peer_names,S)),
     case ba_buffee_control_protocol:request_capabilities(Peer,now_ms(),maps:get(protocol,S)) of
         {ok,Packet,P} -> _=send(Peer,Packet,S),S#{protocol := P,peer_names := Names};
         _ -> S#{peer_names := Names}
     end.
-renew_sessions(S) ->
-    lists:foldl(fun(Peer,Acc) ->
-        case ba_buffee_control_protocol:renew(Peer,now_ms(),maps:get(protocol,Acc)) of
-            {ok,Packet,P} ->
-                case send(Peer,Packet,Acc) of
-                    ok -> Acc#{protocol := P};
-                    _ -> rejected(renewal_transport_failed,Acc#{protocol := P})
-                end;
-            _ -> Acc
-        end
-    end,S,ba_buffee_control_protocol:renew_due(now_ms(),maps:get(protocol,S))).
 reply(Peer,Result,#{callers := Callers} = S) ->
     case maps:take(Peer,Callers) of
         {From,Rest} -> gen_server:reply(From,Result), S#{callers := Rest};
@@ -346,11 +329,11 @@ reply(Peer,Result,#{callers := Callers} = S) ->
     end.
 reset(Reason,#{callers := Callers,protocol := Protocol} = S) ->
     maps:foreach(fun(_,From) -> gen_server:reply(From,{error,Reason}) end,Callers),
-    maps:foreach(fun(Peer,Session) -> drop_session(Peer,maps:get(id,Session)) end,maps:get(sessions,Protocol)),
+    maps:foreach(fun(Peer,Session) -> drop_session(Peer,maps:get(id,Session)) end,live(Protocol)),
     lists:foreach(fun({Ref,_}) -> try gen_server:receive_response(Ref,0) catch _:_ -> ok end end,
                   gen_server:reqids_to_list(maps:get(handler_requests,S))),
     Jobs = maps:map(fun(_,J) -> fence_job(J) end,maps:get(jobs,S)),
-    S#{callers := #{},peer_names := #{},peer_errors => #{},protocol := ba_buffee_control_protocol:reset(Protocol),
+    S#{callers := #{},peer_names := #{},peer_errors => #{},protocol := ba_buffee_control_protocol:reset(Protocol,now_ms()),
        handler_requests := gen_server:reqids_new(),jobs := Jobs}.
 rejected(Reason,S) -> ba_diagnostics:count(Reason,S#{rejected := maps:get(rejected,S)+1,last_rejection := Reason}).
 now_ms() -> erlang:monotonic_time(millisecond).
@@ -413,12 +396,11 @@ fence_job(J) ->
 fence_peer_jobs(Peer,#{jobs := Jobs} = S) ->
     S#{jobs := maps:map(fun(_,#{peer := P} = J) -> case P =:= Peer of true -> fence_job(J); false -> J end end,Jobs)}.
 close_peer(Peer,Reason,#{protocol := Protocol} = S) ->
-    Sessions = maps:get(sessions,Protocol),
-    case maps:find(Peer,Sessions) of
+    case maps:find(Peer,live(Protocol)) of
         {ok,Session} -> drop_session(Peer,maps:get(id,Session));
         error -> ok
     end,
-    fence_peer_jobs(Peer,reply(Peer,{error,Reason},S#{protocol := Protocol#{sessions := maps:remove(Peer,Sessions),rekeys => maps:remove(Peer,maps:get(rekeys,Protocol,#{}))}})).
+    fence_peer_jobs(Peer,reply(Peer,{error,Reason},S#{protocol := ba_buffee_control_protocol:close(Peer,now_ms(),Protocol)})).
 drop_session(Peer,Session) ->
     time_notify({time_session_down,Peer,Session}),
     audio_notify({audio_session_down,Peer,Session}),
@@ -478,25 +460,5 @@ connect_peer(Peer,S) ->
         {error,Reason,_} -> {reply,{error,Reason},S}
     end.
 
-%% Peer liveness belongs to the runtime, not to an optional UI/CLI monitor.
-%% The lower Device ID initiates at once. The higher one also initiates after the
-%% peer has been missing for ?LATE_INITIATE_MS: after its own control owner
-%% restarted, the other side may still hold the old session until its lease
-%% expires, and the signed handshake replaces it (rekey). Simultaneous hellos
-%% are resolved in the protocol (the lower ID's hello wins). Admission, routes
-%% and local exclusions still gate it.
--define(LATE_INITIATE_MS,3000).
-connect_missing(#{protocol := Protocol,config := #{routes := Routes}}=S) ->
-    Id=maps:get(id,Protocol),Sessions=maps:get(sessions,Protocol),
-    Peers=maps:keys(maps:get(peers,maps:get(policy,Protocol))),Now=now_ms(),
-    Missing0=maps:get(missing_since,S,#{}),
-    Missing=maps:from_list([{P,maps:get(P,Missing0,Now)} || P <- Peers,not maps:is_key(P,Sessions)]),
-    lists:foldl(fun(Peer,Acc) ->
-        Due=Id<Peer orelse Now-maps:get(Peer,Missing,Now)>=?LATE_INITIATE_MS,
-        case Due andalso not maps:is_key(Peer,Sessions) andalso
-             maps:is_key(Peer,Routes) andalso not ba_app_session:excluded(Peer) andalso
-             ba_buffee_desks:peer_online(Peer) of
-            true -> {reply,_,Next}=connect_peer(Peer,Acc),Next;
-            false -> Acc
-        end
-    end,S#{missing_since => Missing},Peers).
+%% Relationships whose lapse has already been reported are closed.
+live(Protocol) -> maps:filter(fun(_,R) -> not maps:get(lapsed,R,false) end,maps:get(sessions,Protocol)).

@@ -1,4 +1,4 @@
-# Buffee control protocol v1 — steps 2–8d
+# Session control protocol v2 — authenticated per request
 
 
 
@@ -9,9 +9,13 @@ operation grants. Membership alone grants no operations. `job_offer` additionall
 requires the job_offer grant and recipient's matching local Contract/consent.
 The [Handler guide](DEVICE_HANDLER.md) describes that local lifecycle.
 
-Call `ba_buffee_control:connect(PeerId)` on one endpoint, then wait until both
-`snapshot/0` results show `stage => authorized` for the peer. Both endpoints can
-call `read_status(PeerId)`. Successful replies contain only
+No connection is needed before a request: every packet authenticates itself and
+the receiving Device decides it through `ba_device_request` (authenticate,
+authorize, approve, execute). A relationship with a peer starts when its first
+valid packet arrives and lapses when packets stop. `ba_buffee_control:connect(PeerId)`
+sends one `hello` (answered by `ready`) for consumers that need a relationship
+before they have anything to ask, such as audio discovery and the clock. Both
+endpoints can call `read_status(PeerId)`. Successful replies contain only
 `#{<<"protocol">> => 1, <<"session">> => <<"authorized">>}`.
 `read_capabilities(PeerId)` returns the Handler's bounded test capability snapshot
 when the peer has the separate capability grant; reading never enables Workers.
@@ -34,27 +38,22 @@ with `beamaudio-buffee-control/v1:`. The body has these exact fields:
 
 | Fields | Meaning |
 | --- | --- |
-| `v` | Integer 1. |
+| `v` | Integer 2. Version 1 (handshake and lease renewal) is no longer accepted. |
 | `from`, `to`, `buffee` | Sender, intended recipient, Buffee. Reception `from` must match the signer; recipient must be local. |
 | `authority`, `manager`, `epoch`, `revision` | Pinned authority/Manager Device IDs and exact locally installed policy version. |
-| `session` | Fresh 128-bit/32-hex session ID. |
-| `seq` | Nonnegative integer up to 9007199254740991; strictly increasing per application-message direction. |
+| `session` | The sender's instance: fresh 128-bit/32-hex ID per control state (start, policy change, restart). |
+| `seq` | Nonnegative integer up to 9007199254740991; strictly increasing per sender instance. |
+| `sent` | Sender's wall-clock time, Unix milliseconds. |
 | `op`, `request`, `payload` | Fixed operation, 128-bit/32-hex correlation ID, exact operation-specific object. |
 
 | Operation | Payload and required state |
 | --- | --- |
-| `hello` | Fresh 256-bit/64-hex initiator nonce `a`; `b`: null. Configured peer with no existing session. |
-| `challenge` | Echoes `a`, supplies fresh 256-bit/64-hex responder nonce `b`. Matching pending hello. |
-| `proof` | Echoes both nonces. Matching pending challenge. |
-| `ready` | Echoes both nonces. Matching pending proof. Completes mutual authentication. |
-| `lease.request` | Fresh correlation ID and nonce `a`, `b`: null, within an already authorized session. Starts bounded proactive renewal. |
-| `lease.challenge` | Echoes `a`, supplies fresh `b`; must match the pending renewal request. |
-| `lease.proof` | Echoes both renewal nonces; a valid matching fresh proof permits the responder's lease extension. |
-| `lease.ready` | Confirms both renewal nonces; a valid matching confirmation permits the initiator's extension. |
-| `status.read` | Empty object. Authorized unexpired session, new sequence and peer's local `status_read` grant. |
+| `hello` | Empty object. Introduces the sender; answered with `ready`. |
+| `ready` | Empty object. No reply. |
+| `status.read` | Empty object. Peer's local `status_read` grant. |
 | `status.reply` | `protocol`: 1, `session`: `authorized`. Matching outstanding unexpired read to that peer. |
 | `status.error` | `reason`: `forbidden`. Correlated response when peer lacks read permission. |
-| `capabilities.read` | Empty object. Authorized session/new sequence and a `capabilities_read` grant. |
+| `capabilities.read` | Empty object. A `capabilities_read` grant. |
 | `capabilities.reply` | Exact Handler instance/revision and test capability described in [DEVICE_HANDLER.md](DEVICE_HANDLER.md#capability-advertisement). Must match a pending capability query. |
 | `capabilities.error` | `reason`: `forbidden` or `unavailable`. Matching pending capability query. |
 | `time.message` | Exact timestamp/Offset schemas in the [Time guide](BUFFEE_TIME.md); separate time_read/offset_write grants and correlated authority replies. |
@@ -63,11 +62,19 @@ with `beamaudio-buffee-control/v1:`. The body has these exact fields:
 | `job.cancel` | Empty object; verified coordinator, same grant and owned Job/session scope. |
 | `job.report` | Exact attempt/state/reason object. Adapter checks the Manager record's assignee, session, Job ID, attempt and result fence. |
 
-Initial handshake messages use sequence 0 and `request == session`; application
-messages, including lease renewal, use the existing strictly increasing sequence.
-All messages bind both identities, Buffee, session and policy version;
-handshake continuations bind both nonces. Replayed hello can obtain a bounded
-fresh challenge after an old session is gone, but captured proof cannot answer it.
+Every message binds both identities, Session, sender instance, sequence, send
+time and policy version. A receiver accepts a packet only if all of these hold:
+
+- its `sent` is within 5 minutes of the receiver's wall clock;
+- for a known sender instance, `seq` is higher than the last one accepted;
+- the instance is not one this peer has since replaced (the last four are
+  remembered for 10 minutes);
+- for an unknown instance, `sent` is no earlier than 2 s before the receiver's
+  control state started, so a restarted receiver cannot be fed recorded traffic.
+
+The rights each operation needs are one table in `ba_device_request:authorize/3`;
+refusals keep the operation's error reply listed above. Verification results are
+never cached: each packet's signature and policy are checked on arrival.
 
 Reject unknown fields/versions/operations, duplicate keys, arrays, extra JSON
 values, excess nesting, malformed IDs/types and wrong policy/recipient. Size is
@@ -87,14 +94,20 @@ and its DTLS fingerprint binding are not implemented or claimed by this step.
 
 ## Limits and failure behavior
 
-Initial handshake expiry is 10 seconds; authorization lasts at most 60 seconds
-from the latest completed fresh proof, capped by current local membership.
-The lower Device ID initiates renewal after one third of that interval (normally
-20 s). An exchange has a 5 s timeout and one pending record per peer; premature
-or repeated exchanges are rejected. Failed exchanges retry while the old lease
-remains valid; failure never extends it. Exact current policy, fresh nonce proof
-and the replay sequence remain mandatory. The session ID/sequence continue, so
-eligible media retains its transport and buffers on ordinary renewal.
+A relationship lasts 60 seconds from the latest accepted packet, capped by
+current local membership. Nothing is exchanged in the background to keep it:
+traffic extends it, and the owner is told (`session_renewed`) at most once per
+third of that interval so dependent media leases follow. An idle relationship
+lapses (`session_expired`); its replay state is kept until its packets could no
+longer be fresh, and the same instance's next packet resumes it. A new sender
+instance replaces it (`session_replaced`). Devices no longer connect to every
+admitted peer; the 250 ms full-mesh connect loop is gone. Audio discovery still
+introduces itself to every peer while audio automation runs (its catalogue
+polling is the separate topology limitation in PLAN.md). The Session membership
+handshake is separate and unchanged.
+
+Wall clocks must agree within 5 minutes; a Device outside that window cannot
+exchange control messages.
 
 One status or capability request per peer may be outstanding,
 with a 5-second response deadline. Local monotonic deadlines are checked on
@@ -103,10 +116,9 @@ affected sessions and completes waiting callers with an error. Reception loss al
 does not reset authorization or healthy sessions. Routes can use another configured
 Reception; lack of timely fresh authorization still enforces expiry. Presence cleanup
 checks other live Receptions before declaring a peer unavailable. Duplicate/lower
-sequences and replies without a live correlation are rejected. The clock reconnects
-to its authority if a session is actually lost. A bounded parallel challenge permits
-a fresh proof to replace a surviving remote session after owner restart; a hello
-alone never tears it down. General simultaneous-open resolution is not implemented.
+sequences and replies without a live correlation are rejected. The clock
+introduces itself to its authority (at most every 2 s) when it has no relationship.
+Simultaneous hellos need no resolution: each is simply answered.
 
 Relay deliveries are dropped when the control owner's mailbox already has 64
 messages; outgoing traffic retains existing relay queue/frame bounds. The Reception
@@ -122,8 +134,8 @@ request triggers a bounded 100 ms local Handler read; failure produces unavailab
 Capability responses include a signed instance/revision, fixed support/consent/
 availability flags and bounded capacity/duration counts, without process IDs.
 Public snapshots expose
-identity, session stages/deadlines/renewal counts, relay status, bounded diagnostic
-counters and rejection summaries, without keys or nonce state. OTP status
+identity, relationship stages (`authorized`/`lapsed`), deadlines and renewal counts, relay status, bounded diagnostic
+counters and rejection summaries, without keys or replay state. OTP status
 and termination formatting redact private keys and internal message/log content.
 
 

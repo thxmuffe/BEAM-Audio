@@ -7,8 +7,8 @@ fixture() ->
     A = binary:encode_hex(PA), B = binary:encode_hex(PB),
     Common = #{buffee => binary:copy(<<"A">>,32),authority => A,manager => A,epoch => 1,revision => 1},
     {A,B,KA,KB,
-     ba_buffee_control_protocol:new(KA,Common#{peers => #{B => [status_read]}}),
-     ba_buffee_control_protocol:new(KB,Common#{peers => #{A => [status_read]}})}.
+     ba_buffee_control_protocol:new(KA,Common#{peers => #{B => [status_read]}},0),
+     ba_buffee_control_protocol:new(KB,Common#{peers => #{A => [status_read]}},0)}.
 
 otp_diagnostics_redact_keys_test() ->
     {_,_,_,_,P,_} = fixture(),
@@ -18,17 +18,16 @@ otp_diagnostics_redact_keys_test() ->
     [?assertEqual(nomatch,binary:match(term_to_binary(Formatted),Secret)) || Formatted <-
         [ba_buffee_control:format_status(Status),ba_relay:format_status(Status)]].
 
-handshake() ->
+%% One hello and its ready: both sides now hold the relationship.
+connected() ->
     {A,B,KA,KB,SA,SB} = fixture(),
     {ok,Hello,A1} = p(connect,[B,0,SA]),
-    {ok,[Challenge],[],B1} = p(receive_packet,[A,Hello,1,SB]),
-    {ok,[Proof],[],A2} = p(receive_packet,[B,Challenge,2,A1]),
-    {ok,[Ready],[],B2} = p(receive_packet,[A,Proof,3,B1]),
-    {ok,[],[authorized],A3} = p(receive_packet,[B,Ready,4,A2]),
-    {A,B,KA,KB,A3,B2,Hello,Challenge,Proof,Ready}.
+    {ok,[Ready],[authorized],B1} = p(receive_packet,[A,Hello,1,SB]),
+    {ok,[],[authorized],A2} = p(receive_packet,[B,Ready,2,A1]),
+    {A,B,KA,KB,A2,B1}.
 
 status_roundtrip_and_replay_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    {A,B,_,_,SA,SB} = connected(),
     {ok,Request,A1} = p(request_status,[B,5,SA]),
     {ok,[Response],[],B1} = p(receive_packet,[A,Request,6,SB]),
     {ok,[],[{reply,<<"status.reply">>,#{<<"protocol">> := 1}}],A2} =
@@ -37,7 +36,7 @@ status_roundtrip_and_replay_test() ->
     ?assertMatch({error,_,A2},p(receive_packet,[B,Response,8,A2])).
 
 capability_permissions_and_reply_test() ->
-    {A,B,_,KB,SA,SB,_,_,_,_} = handshake(),
+    {A,B,_,KB,SA,SB} = connected(),
     {ok,Denied,A0} = p(request_capabilities,[B,5,SA]),
     {ok,[Error],[],_} = p(receive_packet,[A,Denied,6,SB]),
     ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"forbidden">>}}],_},
@@ -63,7 +62,7 @@ capability_permissions_and_reply_test() ->
         p(receive_packet,[B,Unavailable,8,A1])).
 
 jobs_use_grants_not_a_manager_role_test() ->
-    {A,B,KA,_,SA,SB,_,_,_,_} = handshake(),
+    {A,B,KA,_,SA,SB} = connected(),
     Id = binary:copy(<<"C">>,32), Offer = job_offer(),
     {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
     ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
@@ -82,7 +81,7 @@ jobs_use_grants_not_a_manager_role_test() ->
     ?assertMatch({error,_,GrantedB},p(receive_packet,[A,BadManager,6,GrantedB])).
 
 job_schema_and_expiry_test() ->
-    {A,B,KA,_,SA,SB,_,_,_,_} = handshake(),
+    {A,B,KA,_,SA,SB} = connected(),
     Id = binary:copy(<<"C">>,32), Offer = job_offer(),
     Policy = maps:get(policy,SB), Granted = SB#{policy := Policy#{peers := #{A => [job_offer]}}},
     {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
@@ -91,31 +90,15 @@ job_schema_and_expiry_test() ->
         [Offer#{<<"module">> => <<"os">>},Offer#{<<"capability">> := <<"microphone">>},
          Offer#{<<"lease_ms">> := 0},Offer#{<<"lease_ms">> := 10001},
          Offer#{<<"contract_revision">> := 0},Offer#{<<"duration_ms">> := 20.5}]],
-    ?assertMatch({error,_,SA},p(job_message,[B,<<"job.offer">>,Id,Offer,60004,SA])),
     ?assertException(error,_,ba_buffee_job:validate_report(
         #{<<"state">> => <<"accepted">>,<<"attempt">> => null,<<"reason">> => <<"none">>})).
 
 job_offer() -> #{<<"contract">> => binary:copy(<<"D">>,32),<<"contract_revision">> => 1,
     <<"capability">> => <<"test">>,<<"duration_ms">> => 1000,<<"lease_ms">> => 5000}.
 
-preauth_and_nonce_replay_test() ->
-    {A,B,KA,_,SA,SB,Hello,Challenge,Proof,Ready} = handshake(),
-    {_,_,_,_,_,FreshB} = fixture(),
-    %% A fully valid signed application packet still needs an authorized session.
-    {ok,Request,_} = p(request_status,[B,5,SA]),
-    ?assertMatch({error,_,_},p(receive_packet,[A,Request,5,p(reset,[SB])])),
-    ?assertMatch({error,_,SA},p(receive_packet,[B,Challenge,5,SA])),
-    ?assertMatch({error,_,SB},p(receive_packet,[A,Proof,5,SB])),
-    ?assertMatch({error,_,SA},p(receive_packet,[B,Ready,5,SA])),
-    %% Replayed hello obtains a fresh responder nonce; the captured proof fails.
-    {ok,[_],[],NewB} = p(receive_packet,[A,Hello,10,p(reset,[SB])]),
-    ?assertMatch({error,_,NewB},p(receive_packet,[A,Proof,11,NewB])),
-    ?assertMatch({error,_,FreshB},p(receive_packet,[A,Hello,10,FreshB])),
-    BadHello = resign(Hello,KA,fun(M) -> M#{<<"payload">> := #{<<"a">> => binary:copy(<<"0">>,64),<<"b">> => 12}} end),
-    ?assertMatch({error,_,_},p(receive_packet,[A,BadHello,10,p(reset,[SB])])).
 
 forgery_recipient_scope_and_policy_test() ->
-    {A,B,KA,KB,SA,SB,_,_,_,_} = handshake(),
+    {A,B,KA,KB,SA,SB} = connected(),
     {ok,Request,_} = p(request_status,[B,5,SA]),
     BadSigner = resign(Request,KB,fun(M) -> M end),
     ?assertMatch({error,_,SB},p(receive_packet,[A,BadSigner,6,SB])),
@@ -135,14 +118,14 @@ forgery_recipient_scope_and_policy_test() ->
     ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Request,7,SB])).
 
 forbidden_operation_test() ->
-    {A,B,KA,_,SA,SB,_,_,_,_} = handshake(),
+    {A,B,KA,_,SA,SB} = connected(),
     {ok,Request,_} = p(request_status,[B,5,SA]),
     [?assertEqual({error,forbidden_operation,SB},p(receive_packet,
         [A,resign(Request,KA,fun(M) -> M#{<<"op">> := Op} end),6,SB])) ||
         Op <- [<<"worker.start">>,<<"rpc">>,<<"os.cmd">>,<<"broadcast_start">>]].
 
 permission_and_correlation_test() ->
-    {A,B,_,KB,SA,SB,_,_,_,_} = handshake(),
+    {A,B,_,KB,SA,SB} = connected(),
     {ok,Request,A1} = p(request_status,[B,5,SA]),
     Policy = maps:get(policy,SB),
     Denied = SB#{policy := Policy#{peers := #{A => []}}},
@@ -155,24 +138,10 @@ permission_and_correlation_test() ->
     ?assertMatch({error,_,A1},p(request_status,[B,8,A1])),
     ?assertMatch({error,_,A1},p(receive_packet,[B,Response,5005,A1])).
 
-expiry_timeout_and_reset_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
-    {ok,Request,A1} = p(request_status,[B,5,SA]),
-    ?assertMatch({[{B,request_timeout}],_},p(expire,[5005,A1])),
-    ?assertMatch({error,_,SB},p(receive_packet,[A,Request,60003,SB])),
-    ?assertMatch({[{B,session_expired}],_},p(expire,[60004,A1])),
-    ?assertEqual(#{},maps:get(sessions,p(snapshot,[p(reset,[SA])]))),
-    ?assertMatch({error,_,_},p(request_status,[B,60004,SA])).
 
-handshake_timeout_test() ->
-    {A,B,_,_,SA,SB} = fixture(),
-    {ok,Hello,A1} = p(connect,[B,0,SA]),
-    {ok,[Challenge],[],_} = p(receive_packet,[A,Hello,1,SB]),
-    ?assertMatch({error,_,A1},p(receive_packet,[B,Challenge,10000,A1])),
-    ?assertMatch({[{B,session_expired}],_},p(expire,[10000,A1])).
 
 malformed_and_size_test() ->
-    {A,B,KA,_,SA,SB,_,_,_,_} = handshake(),
+    {A,B,KA,_,SA,SB} = connected(),
     {ok,Request,_} = p(request_status,[B,5,SA]),
     [?assertMatch({error,_,SB},p(receive_packet,[A,Wire,6,SB])) ||
         Wire <- [binary:copy(<<"x">>,32769),<<"garbage">>,<<"[]">>,<<"{}">>,<<255>>,42,
@@ -187,15 +156,15 @@ malformed_and_size_test() ->
     ?assertMatch({error,_,SB},p(receive_packet,[A,<<Request/binary,"x">>,6,SB])).
 
 membership_and_limits_test() ->
-    {A,B,KA,_,SA,SB,Hello,_,_,_} = handshake(),
+    {A,B,KA,_,SA,SB} = fixture(),
+    {ok,Hello,_} = p(connect,[B,0,SA]),
     Policy = maps:get(policy,SB),
     Removed = SB#{policy := Policy#{authority := B,peers := #{}}},
     ?assertMatch({error,_,Removed},p(receive_packet,[A,Hello,6,Removed])),
-    ?assertException(error,_,p(new,[KA,(maps:get(policy,SA))#{extra => true}])),
+    ?assertException(error,_,p(new,[KA,(maps:get(policy,SA))#{extra => true},0])),
     ?assertMatch({error,_,SA},p(connect,[binary:copy(<<"0">>,64),6,SA])),
-    ?assertMatch({error,_,SA},p(connect,[B,6,SA])),
     TooMany = maps:from_list([{binary:encode_hex(crypto:strong_rand_bytes(32)),[]} || _ <- lists:seq(1,33)]),
-    ?assertException(error,_,p(new,[KA,(maps:get(policy,SA))#{peers := TooMany}])).
+    ?assertException(error,_,p(new,[KA,(maps:get(policy,SA))#{peers := TooMany},0])).
 
 p(F,Args) -> apply(ba_buffee_control_protocol,F,Args).
 body(Wire) -> json:decode(base64:decode(maps:get(<<"body">>,json:decode(Wire)))).
@@ -205,7 +174,7 @@ raw_seal(Data,Private) ->
     iolist_to_binary(json:encode(#{<<"body">> => base64:encode(Data),<<"signature">> => binary:encode_hex(Sig)})).
 
 membership_deadline_is_synchronous_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    {A,B,_,_,SA,SB} = connected(),
     Expired = SA#{membership_deadline => 5},
     ?assertMatch({error,_,_},p(request_status,[B,5,Expired])),
     {ok,Packet,_} = p(request_status,[A,5,SB]),
@@ -214,14 +183,14 @@ membership_deadline_is_synchronous_test() ->
     ?assertMatch({error,_,_},p(connect,[Peer,5,Fresh#{membership_deadline => 5}])).
 
 catalogue_change_uses_authenticated_audio_channel_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),
+    {A,B,_,_,SA,SB} = connected(),
     Id=binary:copy(<<"C">>,32),Payload=#{<<"kind">> => <<"catalog.changed">>},
     {ok,Packet,_}=p(audio_message,[B,Id,Payload,5,SA]),
     {ok,[],[{audio,Id,Payload,#{peer := A}}],Received}=p(receive_packet,[A,Packet,6,SB]),
     ?assertMatch({error,_,_},p(receive_packet,[A,Packet,7,Received])).
 
 stream_control_requires_grants_and_exact_schema_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
+    {A,B,_,_,SA,SB} = connected(),
     Id = binary:copy(<<"A">>,32),P = #{<<"kind">> => <<"catalog.read">>},
     {ok,Packet,_} = p(audio_message,[B,Id,P,5,SA]),
     ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
@@ -232,20 +201,9 @@ stream_control_requires_grants_and_exact_schema_test() ->
     ?assertMatch({error,_,_},p(audio_message,[B,Id,Base#{<<"kind">> => <<"signal.offer">>,<<"sdp">> => <<"unsigned generic SDP">>},5,SA])),
     ?assertMatch({error,_,_},p(audio_message,[B,Id,P#{<<"pcm">> => <<"audio is not control">>},5,SA])).
 
-fresh_reconnect_does_not_replace_active_session_until_proven_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
-    Old = maps:get(id,maps:get(A,maps:get(sessions,SB))),
-    {ok,Hello,A1} = p(connect,[B,10,p(reset,[SA])]),
-    {ok,[Challenge],[],B1} = p(receive_packet,[A,Hello,11,SB]),
-    ?assertEqual(maps:get(sessions,SB),maps:get(sessions,B1)),
-    {ok,Proof,A2} = case p(receive_packet,[B,Challenge,12,A1]) of {ok,[P],[],N} -> {ok,P,N} end,
-    {ok,[Ready],[{session_replaced,Old}],B2} = p(receive_packet,[A,Proof,13,B1]),
-    {ok,[],[authorized],_} = p(receive_packet,[B,Ready,14,A2]),
-    ?assertNotEqual(Old,maps:get(id,maps:get(A,maps:get(sessions,B2)))),
-    ?assertMatch({error,_,B2},p(receive_packet,[A,Proof,15,B2])).
 
 time_permission_is_not_implied_by_status_or_membership_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),Id = binary:copy(<<"A">>,32),
+    {A,B,_,_,SA,SB} = connected(),Id = binary:copy(<<"A">>,32),
     P = #{<<"kind">> => <<"offset.set">>,<<"revision">> => 1,<<"offset_ms">> => 250},
     {ok,Packet,_} = p(time_message,[B,Id,P,5,SA]),
     ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Packet,6,SB])),
@@ -258,7 +216,7 @@ time_permission_is_not_implied_by_status_or_membership_test() ->
     ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Granted])).
 
 ordinary_time_reader_can_request_more_time_but_cannot_enable_automatic_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Id=binary:copy(<<"E">>,32),
+    {A,B,_,_,SA,SB} = connected(),Id=binary:copy(<<"E">>,32),
     Policy=maps:get(policy,SB),Reader=SB#{policy := Policy#{peers := #{A => [time_read]}}},
     Required=#{<<"kind">> => <<"offset.required">>,<<"revision">> => 2,<<"offset_ms">> => 450},
     {ok,Packet,_}=p(time_message,[B,Id,Required,5,SA]),
@@ -267,66 +225,20 @@ ordinary_time_reader_can_request_more_time_but_cannot_enable_automatic_test() ->
     {ok,Change,_}=p(time_message,[B,Id,Auto,5,SA]),
     ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Change,6,Reader])).
 
-new_handshake_after_expiry_discards_an_older_candidate_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
-    {ok,FirstHello,_} = p(connect,[B,59000,p(reset,[SA])]),
-    {ok,[_],[],CandidateB} = p(receive_packet,[A,FirstHello,59001,SB]),
-    {_,ExpiredB} = p(expire,[60004,CandidateB]),
-    {ok,Hello,A1} = p(connect,[B,61000,p(reset,[SA])]),
-    {ok,[Challenge],[],B1} = p(receive_packet,[A,Hello,61001,ExpiredB]),
-    {ok,[Proof],[],A2} = p(receive_packet,[B,Challenge,61002,A1]),
-    {ok,[Ready],[],_} = p(receive_packet,[A,Proof,61003,B1]),
-    ?assertMatch({ok,[],[authorized],_},p(receive_packet,[B,Ready,61004,A2])).
 
-renewal_requires_fresh_nonce_proof_and_preserves_session_test() ->
-    {A,B,KA,_,SA,SB,_,_,_,_} = handshake(),
-    OldA = p(context,[B,100,SA]),OldB = p(context,[A,100,SB]),
-    {ok,Request,A1} = p(renew,[B,20000,SA]),
-    {ok,[Challenge],[],B1} = p(receive_packet,[A,Request,20001,SB]),
-    ?assertEqual(OldB,p(context,[A,20001,B1])),
-    {ok,[Proof],[],A2} = p(receive_packet,[B,Challenge,20002,A1]),
-    Bad = resign(Proof,KA,fun(M) -> M#{<<"payload">> := (maps:get(<<"payload">>,M))#{<<"b">> := binary:copy(<<"0">>,64)}} end),
-    ?assertMatch({error,_,B1},p(receive_packet,[A,Bad,20003,B1])),
-    {ok,[Ready],[{session_renewed,CB}],B2} = p(receive_packet,[A,Proof,20003,B1]),
-    {ok,[],[{session_renewed,CA}],A3} = p(receive_packet,[B,Ready,20004,A2]),
-    ?assertEqual(maps:get(session,OldA),maps:get(session,CA)),
-    ?assertEqual(maps:get(session,OldB),maps:get(session,CB)),
-    ?assert(maps:get(deadline,CA)>maps:get(deadline,OldA)),
-    ?assertMatch({error,_,A3},p(receive_packet,[B,Ready,20005,A3])),
-    ?assertMatch({error,_,B2},p(receive_packet,[A,Proof,20005,B2])),
-    {ok,Query,A4} = p(request_status,[B,60005,A3]),
-    ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Query,60006,B2])),
-    ?assertMatch({error,_,A4},p(renew,[B,90000,A4])).
 
-withheld_renewal_does_not_extend_authorization_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
-    {ok,Request,A1} = p(renew,[B,20000,SA]),
-    {ok,[_],[],B1} = p(receive_packet,[A,Request,20001,SB]),
-    {_,A2} = p(expire,[25001,A1]),{_,B2} = p(expire,[25002,B1]),
-    ?assertEqual(p(context,[B,100,SA]),p(context,[B,30000,A2])),
-    ?assertEqual(p(context,[A,100,SB]),p(context,[A,30000,B2])),
-    ?assertMatch({error,_,_},p(request_status,[B,60005,A2])),
-    ?assertEqual(1,length(p(renew_due,[30000,A2]))+length(p(renew_due,[30000,B2]))).
 
-renewal_is_capped_by_fresh_membership_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_} = handshake(),
-    {ok,Request,A1} = p(renew,[B,20000,SA#{membership_deadline => 65000}]),
-    {ok,[Challenge],[],B1} = p(receive_packet,[A,Request,20001,SB#{membership_deadline => 66000}]),
-    {ok,[Proof],[],A2} = p(receive_packet,[B,Challenge,20002,A1]),
-    {ok,[Ready],_,_} = p(receive_packet,[A,Proof,20003,B1]),
-    {ok,[],[{session_renewed,#{deadline := 65000}}],A3} = p(receive_packet,[B,Ready,20004,A2]),
-    ?assertMatch({error,_,A3},p(request_status,[B,65000,A3])).
 
 chat_is_authenticated_bounded_and_replay_protected_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Id=binary:copy(<<"D">>,32),
+    {A,B,_,_,SA,SB} = connected(),Id=binary:copy(<<"D">>,32),
     {ok,Packet,A1}=p(chat_message,[B,Id,<<"hello">>,5,SA]),
     {ok,[],[{chat,Id,<<"hello">>,#{peer := A}}],B1}=p(receive_packet,[A,Packet,6,SB]),
     ?assertMatch({error,_,B1},p(receive_packet,[A,Packet,7,B1])),
     ?assertMatch({error,_,A1},p(chat_message,[B,Id,binary:copy(<<"x">>,4097),8,A1])),
-    ?assertMatch({error,_,SB},p(chat_message,[A,Id,<<"later">>,100000,SB])).
+    ?assertMatch({error,_,_},p(chat_message,[A,Id,<<"later">>,6,SB#{membership_deadline => 5}])).
 
 audio_capability_shape_is_bounded_and_authenticated_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Policy=maps:get(policy,SB),
+    {A,B,_,_,SA,SB} = connected(),Policy=maps:get(policy,SB),
     Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read,status_read]}}},
     {ok,Query,A1}=p(request_capabilities,[B,5,SA]),
     {ok,[],[{capabilities_read,Id}],B1}=p(receive_packet,[A,Query,6,Granted]),
@@ -341,7 +253,7 @@ audio_capability_shape_is_bounded_and_authenticated_test() ->
     ?assertMatch({error,_,B1},p(reply_capabilities,[A,Id,Bad,7,B1])).
 
 meter_request_and_reply_are_opt_in_and_bounded_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Policy=maps:get(policy,SB),
+    {A,B,_,_,SA,SB} = connected(),Policy=maps:get(policy,SB),
     Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read,status_read]}}},
     {ok,Query,A1}=p(request_capabilities,[B,true,5,SA]),
     {ok,[],[{capabilities_read,Id,true}],B1}=p(receive_packet,[A,Query,6,Granted]),
@@ -359,7 +271,7 @@ meter_request_and_reply_are_opt_in_and_bounded_test() ->
     ?assertMatch({error,_,B1},p(reply_capabilities,[A,Id,Bad,7,B1])).
 
 remote_diagnostics_control_is_permission_gated_and_replay_safe_test() ->
-    {A,B,KA,_,SA,SB,_,_,_,_}=handshake(),
+    {A,B,KA,_,SA,SB} = connected(),
     Options=#{<<"meters">> => false,<<"analysis">> => true},
     {ok,Query,A1}=p(request_capabilities,[B,Options,5,SA]),
     {ok,[Denied],[],_}=p(receive_packet,[A,Query,6,SB]),
@@ -373,7 +285,7 @@ remote_diagnostics_control_is_permission_gated_and_replay_safe_test() ->
     ?assertMatch({error,_,Granted},p(receive_packet,[A,Bad,6,Granted])).
 
 monitor_payload_roundtrip_with_dual_meters_and_trace_test() ->
-    {A,B,_,_,SA,SB,_,_,_,_}=handshake(),Policy=maps:get(policy,SB),
+    {A,B,_,_,SA,SB} = connected(),Policy=maps:get(policy,SB),
     Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read]}}},
     {ok,Q,A1}=p(request_capabilities,[B,true,5,SA]),
     {ok,[],[{capabilities_read,Id,true}],B1}=p(receive_packet,[A,Q,6,Granted]),
@@ -389,17 +301,78 @@ monitor_payload_roundtrip_with_dual_meters_and_trace_test() ->
     end,[{#{},#{}},{#{<<"receive_max">> => Meter},#{}},
         {#{<<"receive_max">> => Meter},#{<<"1">> => #{<<"stage">> => <<"mixer">>,<<"reason">> => <<"missed_packet_target">>,<<"age_ms">> => 1}}}]).
 
-%% Both Devices say hello at once (e.g. after one restarted its control owner):
-%% the lower ID's hello wins on both sides and the handshake completes once.
-simultaneous_hellos_resolve_to_lower_id_test() ->
+id(N) -> binary:encode_hex(<<N:128>>).
+chat(Peer,N,Now,S) -> p(chat_message,[Peer,id(N),<<"text">>,Now,S]).
+
+%% The point of the design: a request authenticates itself; nobody connects first.
+requests_need_no_prior_contact_test() ->
     {A,B,_,_,SA,SB} = fixture(),
-    {Low,High,SLow,SHigh} = case A<B of true -> {A,B,SA,SB};false -> {B,A,SB,SA} end,
-    {ok,HelloLow,L1} = p(connect,[High,0,SLow]),
-    {ok,HelloHigh,H1} = p(connect,[Low,0,SHigh]),
-    %% The lower side rejects the higher side's hello and keeps its own attempt.
-    ?assertMatch({error,_,_},p(receive_packet,[High,HelloHigh,1,L1])),
-    %% The higher side drops its pending hello and answers the lower one.
-    {ok,[Challenge],[],H2} = p(receive_packet,[Low,HelloLow,1,H1]),
-    {ok,[Proof],[],L2} = p(receive_packet,[High,Challenge,2,L1]),
-    {ok,[Ready],[],_H3} = p(receive_packet,[Low,Proof,3,H2]),
-    ?assertMatch({ok,[],[authorized],_},p(receive_packet,[High,Ready,4,L2])).
+    {ok,Request,_} = p(request_status,[B,5,SA]),
+    ?assertMatch({ok,[_],[authorized],_},p(receive_packet,[A,Request,6,SB])).
+
+freshness_and_replay_test() ->
+    {A,B,KA,_,SA,SB} = connected(),
+    {ok,First,A1} = chat(B,1,5,SA),
+    {ok,[],[{chat,_,_,_}],B1} = p(receive_packet,[A,First,6,SB]),
+    ?assertMatch({error,_,B1},p(receive_packet,[A,First,7,B1])),
+    {ok,Second,A2} = chat(B,2,10,A1),
+    %% Outside the accepted clock difference, in either direction.
+    ?assertMatch({error,_,B1},p(receive_packet,[A,Second,10+300001,B1])),
+    Future = resign(Second,KA,fun(M) -> M#{<<"sent">> := maps:get(<<"sent">>,M)+300010} end),
+    ?assertMatch({error,_,B1},p(receive_packet,[A,Future,11,B1])),
+    ?assertMatch({ok,[],[{chat,_,_,_}],_},p(receive_packet,[A,Second,11,B1])),
+    %% A restarted receiver does not accept traffic recorded before it started.
+    ?assertMatch({error,_,_},p(receive_packet,[A,First,5001,p(reset,[SB,5000])])),
+    %% A sender restart replaces the relationship; the old instance never returns.
+    Old = maps:get(id,maps:get(A,maps:get(sessions,B1))),
+    {ok,Again,_} = chat(B,3,20,p(reset,[A2,20])),
+    {ok,[],[{session_replaced,Old},authorized,{chat,_,_,_}],B2} = p(receive_packet,[A,Again,21,B1]),
+    {ok,Stale,_} = chat(B,4,22,A2),
+    ?assertMatch({error,_,B2},p(receive_packet,[A,Stale,23,B2])).
+
+%% Nothing is renewed in the background: an idle relationship lapses, and the
+%% next authenticated request resumes it under the same instance.
+idle_relationship_lapses_and_resumes_test() ->
+    {A,B,_,_,SA,SB} = connected(),
+    {ok,Request,A1} = p(request_status,[B,5,SA]),
+    ?assertMatch({[{B,request_timeout}],_},p(expire,[5005,A1])),
+    Session = maps:get(session,p(context,[A,100,SB])),
+    {[{A,session_expired}],B1} = p(expire,[60004,SB]),
+    ?assertError(_,p(context,[A,60004,B1])),
+    ?assertMatch({[],_},p(expire,[60005,B1])),
+    {ok,[_],[authorized],B2} = p(receive_packet,[A,Request,60005,B1]),
+    ?assertEqual(Session,maps:get(session,p(context,[A,60005,B2]))),
+    %% Not yet reported as lapsed: closed like a replaced one, then resumed.
+    {ok,[_],[{session_replaced,Session},authorized],_} = p(receive_packet,[A,Request,60005,SB]),
+    ?assertEqual(#{},maps:get(sessions,p(snapshot,[p(reset,[SA,0])]))).
+
+closed_relationship_keeps_replay_state_test() ->
+    {A,B,_,_,SA,SB} = connected(),
+    {ok,First,_} = chat(B,1,5,SA),
+    {ok,[],_,B1} = p(receive_packet,[A,First,6,SB]),
+    Closed = p(close,[A,7,B1]),
+    ?assertError(_,p(context,[A,7,Closed])),
+    ?assertMatch({error,_,Closed},p(receive_packet,[A,First,8,Closed])).
+
+traffic_extends_relationship_and_reports_renewal_test() ->
+    {A,B,_,_,SA,SB} = connected(),
+    Old = p(context,[A,100,SB]),
+    {ok,Early,A1} = chat(B,1,10000,SA),
+    {ok,[],[{chat,_,_,_}],B1} = p(receive_packet,[A,Early,10001,SB]),
+    {ok,Later,A2} = chat(B,2,25000,A1),
+    {ok,[],[{session_renewed,C},{chat,_,_,_}],B2} = p(receive_packet,[A,Later,25001,B1]),
+    ?assertEqual(maps:get(session,Old),maps:get(session,C)),
+    ?assertEqual(85001,maps:get(deadline,C)),
+    %% Capped by the installed membership.
+    {ok,Capped,_} = chat(B,3,50000,A2),
+    ?assertMatch({ok,[],[{session_renewed,#{deadline := 65000}},_],_},
+        p(receive_packet,[A,Capped,50001,B2#{membership_deadline => 65000}])).
+
+simultaneous_hellos_both_complete_test() ->
+    {A,B,_,_,SA,SB} = fixture(),
+    {ok,HelloA,A1} = p(connect,[B,0,SA]),
+    {ok,HelloB,B1} = p(connect,[A,0,SB]),
+    {ok,[ReadyB],[authorized],B2} = p(receive_packet,[A,HelloA,1,B1]),
+    {ok,[ReadyA],[authorized],A2} = p(receive_packet,[B,HelloB,1,A1]),
+    ?assertMatch({ok,[],[],_},p(receive_packet,[B,ReadyB,2,A2])),
+    ?assertMatch({ok,[],[],_},p(receive_packet,[A,ReadyA,2,B2])).

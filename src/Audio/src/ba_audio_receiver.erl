@@ -183,9 +183,10 @@ handle_info({buffee_audio,Context,Id,P},S) ->
         end
     end;
 handle_info({audio_session_renewed,#{peer := Peer,session := Session,deadline := Until}},S) ->
-    %% The authenticated owner emits this only after a fresh two-way nonce proof.
+    %% The owner emits this while the peer's authenticated packets keep
+    %% arriving; a later packet may already have moved the deadline further.
     case context(Peer) of
-        {ok,#{session := Session,deadline := Until}} ->
+        {ok,#{session := Session,deadline := Current}} when Current>=Until ->
             Subs = maps:map(fun(Id,R) -> renew_media(Id,Peer,Session,Until,R) end,maps:get(subscriptions,S)),
             Providers = maps:map(fun(_,R) -> renew_media(undefined,Peer,Session,Until,R) end,maps:get(providers,S)),
             {noreply,S#{subscriptions := Subs,providers := Providers}};

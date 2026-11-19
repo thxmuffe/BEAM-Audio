@@ -1,15 +1,29 @@
-%% Pure, bounded application sessions. No OTP distribution, processes or device I/O.
+%% Pure, bounded control messages. No OTP distribution, processes or device I/O.
+%%
+%% Every packet authenticates itself: the sender signs the exact body, which
+%% names the recipient, the installed Session policy, the sender's instance (one
+%% per protocol state), a rising sequence number and the sender's wall-clock
+%% time. There is no handshake and no background renewal: a Device verifies each
+%% request when it arrives, and ba_device_request decides it. A relationship
+%% with a peer exists while its packets keep arriving and lapses when idle.
 -module(ba_buffee_control_protocol).
--export([new/2, connect/3, request_status/3, request_capabilities/3,request_capabilities/4, reply_capabilities/5,chat_message/5,
-         receive_packet/4, expire/2, reset/1,
-         snapshot/1, seal/2,renew/3,renew_due/2,job_message/6,context/3,audio_message/5,time_message/5]).
+-export([new/3, connect/3, request_status/3, request_capabilities/3,request_capabilities/4, reply_capabilities/5,chat_message/5,
+         receive_packet/4, expire/2, reset/2, close/3,
+         snapshot/1, seal/2,job_message/6,context/3,audio_message/5,time_message/5]).
 -define(DOMAIN, <<"beamaudio-buffee-control/v1:">>).
+-define(VERSION, 2).
 -define(MAX, 32768).
 -define(INT, 9007199254740991).
+%% Accepted difference between sender and receiver wall clocks.
+-define(SKEW, 300000).
+%% In-flight packets sent just before this state started are still accepted.
+-define(START_SLACK, 2000).
+%% Retired sender instances remembered per peer.
+-define(RETIRED, 4).
 
 %% Policy is explicitly installed local configuration, not a peer-supplied grant.
 new({Public, Private}, #{buffee := Buffee, authority := Authority,manager := Manager,epoch := Epoch,
-                       revision := Revision, peers := Peers} = Policy) ->
+                       revision := Revision, peers := Peers} = Policy, Now) ->
     true = lists:sort(maps:keys(Policy)) =:= [authority,buffee,epoch,manager,peers,revision],
     Id = binary:encode_hex(Public), true = hex(Id,64) andalso hex(Buffee,32),
     true = hex(Authority,64) andalso uint(Epoch) andalso Epoch > 0 andalso
@@ -27,37 +41,25 @@ new({Public, Private}, #{buffee := Buffee, authority := Authority,manager := Man
     %% Reject an accidentally mismatched local key before opening a Desk route.
     Probe = crypto:sign(eddsa,none,?DOMAIN,[Private,ed25519]),
     true = crypto:verify(eddsa,none,?DOMAIN,Probe,[Public,ed25519]),
-    #{id => Id, private => Private, policy => Policy, sessions => #{},rekeys => #{}}.
+    reset(#{id => Id, private => Private, policy => Policy},Now).
 
+%% A fresh instance: peers see it as a new relationship and close the old one.
+%% Packets from before this moment are not accepted from unknown instances, so
+%% a restarted receiver cannot be fed recorded traffic.
+reset(S,Now) ->
+    S#{instance => fresh(16),seq => 0,started => wall(Now),sessions => #{},retired => #{},
+       pending => #{},answering => #{}}.
+
+%% Introduces this Device to a peer that has not heard from it; the peer answers
+%% ready, after which both sides hold the relationship. Requests need no hello.
 connect(Peer, Now, S) ->
     attempt(fun() ->
-        true = Now < maps:get(membership_deadline,S,infinity),
-        true = maps:is_key(Peer,maps:get(peers,maps:get(policy,S))),
-        false = maps:is_key(Peer,maps:get(sessions,S)),
-        Session = #{id => fresh(16), a => fresh(32), b => null, stage => hello,
-                    deadline => Now+10000, sent => 0, received => 0},
-        {Packet,Next} = outgoing(Peer,<<"hello">>,maps:get(id,Session),
-                                 nonces(Session),Session,S),
+        sendable(Peer,Now,S),
+        {Packet,Next} = outgoing(Peer,<<"hello">>,fresh(16),#{},Now,S),
         {ok,Packet,Next}
     end,S).
 
-%% Stable session/replay sequence, fresh two-way nonce proof for each lease.
-%% One deterministic initiator avoids simultaneous renewals.
-renew_due(Now,S) ->
-    [Peer || {Peer,#{stage := authorized}=Session} <- maps:to_list(maps:get(sessions,S)),
-        maps:get(id,S)<Peer,Now>=maps:get(renew_after,Session,infinity),
-        not maps:is_key(renewal,Session),Now<maps:get(deadline,Session)].
-renew(Peer,Now,S) ->
-    attempt(fun() ->
-        Session = active(Peer,Now,S),false = maps:is_key(renewal,Session),
-        R = #{id => fresh(16),a => fresh(32),b => null,stage => request,deadline => Now+5000},
-        {Packet,Next} = outgoing(Peer,<<"lease.request">>,maps:get(id,R),nonces(R),Session#{renewal => R},S),
-        {ok,Packet,Next}
-    end,S).
 lease_ms(S) -> maps:get(lease_ms,S,60000).
-extend(Session,Now,S) ->
-    (maps:remove(renewal,Session))#{deadline := min(Now+lease_ms(S),maps:get(membership_deadline,S,infinity)),
-        renew_after => Now+lease_ms(S) div 3,renewals => maps:get(renewals,Session,0)+1}.
 
 request_status(Peer, Now, S) ->
     request(Peer,status,<<"status.read">>,Now,S).
@@ -71,28 +73,29 @@ request_capabilities(Peer,Options,Now,S) when is_map(Options) ->
 request(Peer,Kind,Operation,Now,S) -> request(Peer,Kind,Operation,#{},Now,S).
 request(Peer,Kind,Operation,Payload,Now,S) ->
     attempt(fun() ->
-        Session = active(Peer,Now,S),
-        false = maps:is_key(pending,Session),
+        sendable(Peer,Now,S),
+        Pending = maps:get(pending,S),
+        false = maps:is_key(Peer,Pending),
         Request = fresh(16),
-        {Packet,Next} = outgoing(Peer,Operation,Request,Payload,
-            Session#{pending => Request,pending_kind => Kind,request_deadline => Now+5000},S),
-        {ok,Packet,Next}
+        {Packet,Next} = outgoing(Peer,Operation,Request,Payload,Now,S),
+        {ok,Packet,Next#{pending := Pending#{Peer => #{request => Request,kind => Kind,deadline => Now+5000}}}}
     end,S).
 
 %% Only the local adapter supplies capability data, after verified dispatch.
 reply_capabilities(Peer,Request,Value,Now,S) ->
     attempt(fun() ->
-        #{capability_request := Request} = Session = active(Peer,Now,S),
+        #{Peer := Request} = Answering = maps:get(answering,S),
         {Op,Payload} = case Value of
             unavailable -> {<<"capabilities.error">>,#{<<"reason">> => <<"unavailable">>}};
             _ -> capability_payload(Value), {<<"capabilities.reply">>,Value}
         end,
-        {Packet,Next} = outgoing(Peer,Op,Request,Payload,maps:remove(capability_request,Session),S),
-        {ok,Packet,Next}
+        {Packet,Next} = outgoing(Peer,Op,Request,Payload,Now,S),
+        {ok,Packet,Next#{answering := maps:remove(Peer,Answering)}}
     end,S).
 
 %% Authentication stage of ba_device_request: every packet is verified against
-%% its sender's key and the current installed policy before anything else.
+%% its sender's key, the current installed policy, freshness and replay state
+%% before anything else. A failure leaves the state unchanged.
 receive_packet(From, Packet, Now, S) ->
     attempt(fun() ->
         true = Now < maps:get(membership_deadline,S,infinity),
@@ -100,12 +103,56 @@ receive_packet(From, Packet, Now, S) ->
           epoch := Epoch,revision := Revision} = maps:get(policy,S),
         true = maps:is_key(From,Peers),
         Body = verify(Packet,From),
-        #{<<"v">> := 1, <<"from">> := From, <<"to">> := To, <<"buffee">> := Buffee,
+        #{<<"v">> := ?VERSION, <<"from">> := From, <<"to">> := To, <<"buffee">> := Buffee,
           <<"authority">> := Authority,<<"manager">> := Manager,
-          <<"epoch">> := Epoch, <<"revision">> := Revision} = Body,
+          <<"epoch">> := Epoch, <<"revision">> := Revision,
+          <<"session">> := Instance,<<"seq">> := Sequence,<<"sent">> := Sent} = Body,
         To = maps:get(id,S),
-        dispatch(From,Body,Now,S)
+        true = abs(wall(Now)-Sent) =< ?SKEW,
+        {Admitted,Next} = admit(From,Instance,Sequence,Sent,Now,S),
+        {ok,Packets,Events,Final} = dispatch(From,Body,Now,Next),
+        {ok,Packets,Admitted++Events,Final}
     end,S).
+
+%% Replay protection without a handshake: within one sender instance the
+%% sequence only rises; a retired instance never returns; an unknown instance
+%% must have been sent after this state started. Events tell the owner when a
+%% relationship starts, is replaced or should extend its dependent leases.
+admit(Peer,Instance,Sequence,Sent,Now,S) ->
+    Retired = [R || {_,Until}=R <- maps:get(Peer,maps:get(retired,S),[]),Until > Now],
+    false = lists:keymember(Instance,1,Retired),
+    Sessions = maps:get(sessions,S),
+    case maps:find(Peer,Sessions) of
+        {ok,#{id := Instance,received := Last}=R} ->
+            true = Sequence > Last,
+            Live = R#{received := Sequence},
+            case {Now < maps:get(deadline,R),maps:get(lapsed,R,false)} of
+                {true,_} ->
+                    Next = put(Peer,extend(Live,Now,S),S),
+                    case Now >= maps:get(renew_after,R) of
+                        false -> {[],Next};
+                        true ->
+                            Renewed = put(Peer,(extend(Live,Now,S))#{renew_after := Now+lease_ms(S) div 3,
+                                renewals := maps:get(renewals,R)+1},S),
+                            {[{session_renewed,context(Peer,Now,Renewed)}],Renewed}
+                    end;
+                %% Lapsed and already reported: the same instance resumes.
+                {false,true} -> {[authorized],put(Peer,start(Live,Now,S),S)};
+                %% Lapsed but not yet reported: close it like a replaced one.
+                {false,false} -> {[{session_replaced,Instance},authorized],put(Peer,start(Live,Now,S),S)}
+            end;
+        Found ->
+            true = Sent >= maps:get(started,S)-?START_SLACK,
+            {Replaced,NowRetired} = case Found of
+                {ok,#{id := Old}} -> {[{session_replaced,Old}],lists:sublist([{Old,Now+2*?SKEW}|Retired],?RETIRED)};
+                error -> {[],Retired}
+            end,
+            New = start(#{id => Instance,received => Sequence},Now,S),
+            Next = put(Peer,New,S#{retired := (maps:get(retired,S))#{Peer => NowRetired}}),
+            {Replaced++[authorized],Next}
+    end.
+start(R,Now,S) -> (extend(maps:remove(lapsed,R),Now,S))#{renew_after => Now+lease_ms(S) div 3,renewals => 0}.
+extend(R,Now,S) -> R#{deadline => min(Now+lease_ms(S),maps:get(membership_deadline,S,infinity))}.
 
 context(Peer,Now,S) ->
     Session = active(Peer,Now,S),
@@ -117,98 +164,48 @@ job_message(Peer,Op,Id,Payload,Now,S) ->
         true = hex(Id,32),
         true = lists:member(Op,[<<"job.offer">>,<<"job.cancel">>,<<"job.report">>]),
         payload(Op,Payload),
-        {Packet,Next} = outgoing(Peer,Op,Id,Payload,active(Peer,Now,S),S),
+        sendable(Peer,Now,S),
+        {Packet,Next} = outgoing(Peer,Op,Id,Payload,Now,S),
         {ok,Packet,Next}
     end,S).
 
 chat_message(Peer,Id,Text,Now,S) ->
     attempt(fun() ->
         true=hex(Id,32),Payload=#{<<"text">> => Text},payload(<<"chat.message">>,Payload),
-        {Packet,Next}=outgoing(Peer,<<"chat.message">>,Id,Payload,active(Peer,Now,S),S),{ok,Packet,Next}
+        sendable(Peer,Now,S),
+        {Packet,Next}=outgoing(Peer,<<"chat.message">>,Id,Payload,Now,S),{ok,Packet,Next}
     end,S).
 
 audio_message(Peer,Id,Payload,Now,S) ->
     attempt(fun() ->
         true = hex(Id,32),ok = ba_audio_stream_protocol:validate(Payload),
-        {Packet,Next} = outgoing(Peer,<<"stream.message">>,Id,Payload,active(Peer,Now,S),S),
+        sendable(Peer,Now,S),
+        {Packet,Next} = outgoing(Peer,<<"stream.message">>,Id,Payload,Now,S),
         {ok,Packet,Next}
     end,S).
 
 time_message(Peer,Id,Payload,Now,S) ->
     attempt(fun() ->
         true = hex(Id,32),ok = ba_buffee_time_protocol:validate(Payload),
-        {Packet,Next} = outgoing(Peer,<<"time.message">>,Id,Payload,active(Peer,Now,S),S),
+        sendable(Peer,Now,S),
+        {Packet,Next} = outgoing(Peer,<<"time.message">>,Id,Payload,Now,S),
         {ok,Packet,Next}
     end,S).
 
-%% A fresh proof may replace a surviving remote session after a local owner restart.
-%% A replayed hello only prepares a challenge; it cannot tear down active work.
-dispatch(Peer,#{<<"op">> := <<"proof">>,<<"session">> := Id}=Body,Now,#{rekeys := Rekeys}=S)
-        when is_map_key(Peer,Rekeys) ->
-    #{id := Id}=Candidate = maps:get(Peer,Rekeys),
-    Sessions = maps:get(sessions,S),
-    Events = case maps:find(Peer,Sessions) of {ok,#{id := Old}} -> [{session_replaced,Old}];error -> [] end,
-    Temp = S#{rekeys := maps:remove(Peer,Rekeys),sessions := Sessions#{Peer => Candidate}},
-    {ok,Packets,More,Next} = dispatch(Peer,Body,Now,Temp),
-    {ok,Packets,Events++More,Next};
-dispatch(Peer, #{<<"op">> := <<"hello">>,<<"seq">> := 0,<<"session">> := Id,
-                 <<"request">> := Id,<<"payload">> := Payload}, Now, S) ->
-    Sessions0 = maps:get(sessions,S),
-    %% Both sides said hello at once: the lower Device ID's hello wins. The
-    %% higher side drops its own pending hello and answers this one; the lower
-    %% side rejects this hello (no clause) and keeps waiting for its challenge.
-    Sessions = case maps:find(Peer,Sessions0) of
-        error -> Sessions0;
-        {ok,#{stage := authorized,id := Old}} -> true = Id=/=Old,Sessions0;
-        {ok,#{stage := hello}} when Peer < map_get(id,S) -> maps:remove(Peer,Sessions0)
-    end,
-    #{<<"a">> := A,<<"b">> := null} = Payload,
-    Session = #{id => Id,a => A,b => fresh(32),stage => challenge,
-                deadline => Now+10000,sent => 0,received => 0},
-    {Packet,Next} = outgoing(Peer,<<"challenge">>,Id,nonces(Session),Session,S#{sessions := Sessions}),
-    case maps:is_key(Peer,Sessions) of
-        false -> {ok,[Packet],[],Next#{rekeys => maps:remove(Peer,maps:get(rekeys,S,#{}))}};
-        true ->
-            Rekeys = maps:get(rekeys,S,#{}),
-            {ok,[Packet],[],Next#{sessions := Sessions,rekeys => Rekeys#{Peer => Session}}}
-    end;
-dispatch(Peer, #{<<"op">> := Op,<<"seq">> := 0,<<"session">> := Id,
-                 <<"request">> := Id,<<"payload">> := Payload}, Now, S)
-        when Op =:= <<"challenge">>; Op =:= <<"proof">>; Op =:= <<"ready">> ->
-    #{id := Id,deadline := Deadline} = Session = maps:get(Peer,maps:get(sessions,S)),
-    true = Now < Deadline,
-    {Reply,Updated} = case {Op,maps:get(stage,Session)} of
-        {<<"challenge">>,hello} ->
-            #{<<"a">> := A,<<"b">> := B} = Payload,
-            A = maps:get(a,Session), true = hex(B,64),
-            {<<"proof">>,Session#{b := B,stage := proof}};
-        {<<"proof">>,challenge} ->
-            Payload = nonces(Session),
-            {<<"ready">>,Session#{stage := authorized,deadline := min(Now+lease_ms(S),maps:get(membership_deadline,S,infinity)),renew_after => Now+lease_ms(S) div 3}};
-        {<<"ready">>,proof} ->
-            Payload = nonces(Session),
-            {none,Session#{stage := authorized,deadline := min(Now+lease_ms(S),maps:get(membership_deadline,S,infinity)),renew_after => Now+lease_ms(S) div 3}}
-    end,
-    case Reply of
-        none -> {ok,[],[authorized],put(Peer,Updated,S)};
-        _ ->
-            {Packet,Next} = outgoing(Peer,Reply,Id,nonces(Updated),Updated,S),
-            {ok,[Packet],[],Next}
-    end;
-dispatch(Peer, #{<<"op">> := Op,<<"seq">> := Sequence,<<"session">> := Id,
-                 <<"request">> := Request,<<"payload">> := Payload}, Now, S) ->
-    #{id := Id,received := Last} = Session = active(Peer,Now,S),
-    true = Sequence > Last,
-    Received = Session#{received := Sequence},
+dispatch(Peer,#{<<"op">> := <<"hello">>,<<"request">> := Request},Now,S) ->
+    {Packet,Next} = outgoing(Peer,<<"ready">>,Request,#{},Now,S),
+    {ok,[Packet],[],Next};
+dispatch(_,#{<<"op">> := <<"ready">>},_,S) -> {ok,[],[],S};
+dispatch(Peer, #{<<"op">> := Op,<<"request">> := Request,<<"payload">> := Payload}, Now, S) ->
     Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
     case ba_device_request:authorize(Op,Payload,Permissions) of
-        ok -> authorized(Peer,Op,Request,Payload,Session,Received,Now,S);
-        {error,forbidden} -> forbidden(Peer,Op,Request,Payload,Received,S)
+        ok -> authorized(Peer,Op,Request,Payload,Now,S);
+        {error,forbidden} -> forbidden(Peer,Op,Request,Payload,Now,S)
     end.
 
 %% A refusal keeps each operation's established error reply; operations
 %% without one are dropped without changing replay state.
-forbidden(Peer,Op,Request,Payload,Received,S) ->
+forbidden(Peer,Op,Request,Payload,Now,S) ->
     {Reply,Value} = case Op of
         <<"status.read">> -> {<<"status.error">>,#{<<"reason">> => <<"forbidden">>}};
         <<"capabilities.read">> -> {<<"capabilities.error">>,#{<<"reason">> => <<"forbidden">>}};
@@ -216,115 +213,100 @@ forbidden(Peer,Op,Request,Payload,Received,S) ->
                                     <<"reason">> => <<"forbidden">>}};
         _ -> error(forbidden)
     end,
-    {Packet,Next} = outgoing(Peer,Reply,Request,Value,Received,S),
+    {Packet,Next} = outgoing(Peer,Reply,Request,Value,Now,S),
     {ok,[Packet],[],Next}.
 
-authorized(Peer,Op,Request,Payload,Session,Received,Now,S) ->
+authorized(Peer,Op,Request,Payload,Now,S) ->
     case Op of
         <<"chat.message">> ->
-            {ok,[],[{chat,Request,maps:get(<<"text">>,Payload),context(Peer,Now,put(Peer,Received,S))}],put(Peer,Received,S)};
-        _ when Op=:= <<"lease.request">>;Op=:= <<"lease.challenge">>;
-               Op=:= <<"lease.proof">>;Op=:= <<"lease.ready">> ->
-            lease(Peer,Op,Request,Payload,Received,Now,S);
+            {ok,[],[{chat,Request,maps:get(<<"text">>,Payload),context(Peer,Now,S)}],S};
         <<"time.message">> ->
-            {ok,[],[{time,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
+            {ok,[],[{time,Request,Payload,context(Peer,Now,S)}],S};
         <<"stream.message">> ->
-            {ok,[],[{audio,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
+            {ok,[],[{audio,Request,Payload,context(Peer,Now,S)}],S};
         _ when Op =:= <<"job.offer">>; Op =:= <<"job.cancel">> ->
-            {ok,[],[{job,Op,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
+            {ok,[],[{job,Op,Request,Payload,context(Peer,Now,S)}],S};
         <<"job.report">> ->
-            {ok,[],[{job_report,Request,Payload,context(Peer,Now,S)}],put(Peer,Received,S)};
+            {ok,[],[{job_report,Request,Payload,context(Peer,Now,S)}],S};
         <<"status.read">> ->
             Value = #{<<"protocol">> => 1,<<"session">> => <<"authorized">>},
-            {Packet,Next} = outgoing(Peer,<<"status.reply">>,Request,Value,Received,S),
+            {Packet,Next} = outgoing(Peer,<<"status.reply">>,Request,Value,Now,S),
             {ok,[Packet],[],Next};
         <<"capabilities.read">> ->
-            false = maps:is_key(capability_request,Session),
+            Answering = maps:get(answering,S),
+            false = maps:is_key(Peer,Answering),
             Event=case maps:find(<<"diagnostics">>,Payload) of
                 {ok,Options} -> {capabilities_read,Request,true,Options};
                 error -> case maps:get(<<"metrics">>,Payload,false) of true -> {capabilities_read,Request,true};false -> {capabilities_read,Request} end
             end,
-            {ok,[],[Event],put(Peer,Received#{capability_request => Request},S)};
+            {ok,[],[Event],S#{answering := Answering#{Peer => Request}}};
         _ when Op =:= <<"status.reply">>; Op =:= <<"status.error">>;
                Op =:= <<"capabilities.reply">>; Op =:= <<"capabilities.error">> ->
-            Request = maps:get(pending,Session),
+            Pending = maps:get(pending,S),
+            #{request := Request,kind := Kind,deadline := Deadline} = maps:get(Peer,Pending),
             Kind = case Op of
                 <<"status.",_/binary>> -> status;
                 _ -> capabilities
             end,
-            Kind = maps:get(pending_kind,Session),
-            true = Now < maps:get(request_deadline,Session),
-            Next = put(Peer,maps:without([pending,pending_kind,request_deadline],Received),S),
-            {ok,[],[{reply,Op,Payload}],Next}
-    end.
-
-lease(Peer,<<"lease.request">>,Id,#{<<"a">> := A,<<"b">> := null},Session,Now,S) ->
-    %% One bounded exchange per renewal interval, even for an authenticated peer.
-    %% Critical local renewal notifications cannot become a per-packet flood.
-    false = maps:is_key(renewal,Session),
-    true = Now+min(1000,lease_ms(S) div 6)>=maps:get(renew_after,Session),
-    R = #{id => Id,a => A,b => fresh(32),stage => challenge,deadline => Now+5000},
-    {Packet,Next} = outgoing(Peer,<<"lease.challenge">>,Id,nonces(R),Session#{renewal => R},S),
-    {ok,[Packet],[],Next};
-lease(Peer,Op,Id,Payload,Session,Now,S) ->
-    #{id := Id,deadline := Until}=R = maps:get(renewal,Session),true = Now<Until,
-    case {Op,maps:get(stage,R)} of
-        {<<"lease.challenge">>,request} ->
-            #{<<"a">> := A,<<"b">> := B} = Payload,A = maps:get(a,R),true = hex(B,64),
-            NextR = R#{b := B,stage := proof},
-            {Packet,Next} = outgoing(Peer,<<"lease.proof">>,Id,nonces(NextR),Session#{renewal := NextR},S),
-            {ok,[Packet],[],Next};
-        {<<"lease.proof">>,challenge} ->
-            Payload = nonces(R),Updated = extend(Session,Now,S),
-            {Packet,Next} = outgoing(Peer,<<"lease.ready">>,Id,Payload,Updated,S),
-            {ok,[Packet],[{session_renewed,context(Peer,Now,Next)}],Next};
-        {<<"lease.ready">>,proof} ->
-            Payload = nonces(R),Next = put(Peer,extend(Session,Now,S),S),
-            {ok,[],[{session_renewed,context(Peer,Now,Next)}],Next}
+            true = Now < Deadline,
+            {ok,[],[{reply,Op,Payload}],S#{pending := maps:remove(Peer,Pending)}}
     end.
 
 active(Peer, Now, S) ->
-    #{stage := authorized,deadline := Deadline} = Session = maps:get(Peer,maps:get(sessions,S)),
+    #{deadline := Deadline} = Session = maps:get(Peer,maps:get(sessions,S)),
     true = Now < Deadline,true = Now < maps:get(membership_deadline,S,infinity), Session.
+sendable(Peer,Now,S) ->
+    true = Now < maps:get(membership_deadline,S,infinity),
+    true = maps:is_key(Peer,maps:get(peers,maps:get(policy,S))).
 
 %% Expiry is also checked synchronously on every receive/request, never just by a timer.
-expire(Now, #{sessions := Sessions} = S) ->
-    {Kept,Events} = maps:fold(fun(Peer,Session,{Acc,Es}) ->
-        case Now >= maps:get(deadline,Session) of
-            true -> {Acc,[{Peer,session_expired}|Es]};
-            false ->
-                case maps:get(request_deadline,Session,infinity) =< Now of
-                    true -> {Acc#{Peer => maps:without([pending,pending_kind,request_deadline],Session)},
-                             [{Peer,request_timeout}|Es]};
-                    false ->
-                        Live = case maps:get(renewal,Session,undefined) of
-                            #{deadline := Due} when Now>=Due -> maps:remove(renewal,Session#{renew_after => Now+1000});
-                            _ -> Session
-                        end,
-                        {Acc#{Peer => Live},Es}
+%% A lapsed relationship keeps its replay state until its packets are too old.
+expire(Now, #{sessions := Sessions,pending := Pending} = S) ->
+    {Kept,Events} = maps:fold(fun(Peer,R,{Acc,Es}) ->
+        case {Now >= maps:get(deadline,R),maps:get(lapsed,R,false)} of
+            {false,_} -> {Acc#{Peer => R},Es};
+            {true,false} -> {Acc#{Peer => R#{lapsed => true}},[{Peer,session_expired}|Es]};
+            {true,true} ->
+                case Now >= maps:get(deadline,R)+2*?SKEW of
+                    true -> {Acc,Es};
+                    false -> {Acc#{Peer => R},Es}
                 end
         end
     end,{#{},[]},Sessions),
-    Rekeys = maps:filter(fun(_,R) -> maps:get(deadline,R)>Now end,maps:get(rekeys,S,#{})),
-    {Events,S#{sessions := Kept,rekeys => Rekeys}}.
-reset(S) -> S#{sessions := #{},rekeys => #{}}.
+    {Waiting,Timeouts} = maps:fold(fun(Peer,#{deadline := Due}=P,{Acc,Es}) ->
+        case Due =< Now of
+            true -> {Acc,[{Peer,request_timeout}|Es]};
+            false -> {Acc#{Peer => P},Es}
+        end
+    end,{#{},[]},Pending),
+    Retired = maps:filter(fun(_,L) -> L=/=[] end,
+        maps:map(fun(_,L) -> [R || {_,Until}=R <- L,Until > Now] end,maps:get(retired,S))),
+    {Events++Timeouts,S#{sessions := Kept,pending := Waiting,retired := Retired}}.
+%% The owner closed a relationship (peer offline, excluded). Replay state stays
+%% until expiry forgets it, so recorded packets cannot reopen it.
+close(Peer,Now,#{sessions := Sessions}=S) ->
+    case maps:find(Peer,Sessions) of
+        {ok,R} -> S#{sessions := Sessions#{Peer := R#{lapsed => true,deadline := min(Now,maps:get(deadline,R))}},
+                     pending := maps:remove(Peer,maps:get(pending,S)),answering := maps:remove(Peer,maps:get(answering,S))};
+        error -> S
+    end.
 snapshot(S) ->
     #{id => maps:get(id,S),sessions => maps:map(fun(_,V) ->
-        maps:with([stage,deadline,renewals],V) end,maps:get(sessions,S))}.
+        (maps:with([deadline,renewals],V))#{stage => case maps:get(lapsed,V,false) of true -> lapsed;false -> authorized end}
+    end,maps:get(sessions,S))}.
 
-outgoing(Peer, Op, Request, Payload, Session, S) ->
+outgoing(Peer, Op, Request, Payload, Now, S) ->
     #{buffee := Buffee,authority := Authority,manager := Manager,epoch := Epoch,revision := Revision} = maps:get(policy,S),
-    Sequence = case maps:get(stage,Session) of
-        authorized when Op =/= <<"ready">> -> maps:get(sent,Session)+1;
-        _ -> 0
-    end,
+    Sequence = maps:get(seq,S)+1,
     true = uint(Sequence),
-    Body = #{<<"v">> => 1,<<"from">> => maps:get(id,S),<<"to">> => Peer,
+    Body = #{<<"v">> => ?VERSION,<<"from">> => maps:get(id,S),<<"to">> => Peer,
         <<"buffee">> => Buffee,<<"authority">> => Authority,<<"manager">> => Manager,
         <<"epoch">> => Epoch,<<"revision">> => Revision,
-        <<"session">> => maps:get(id,Session),<<"seq">> => Sequence,
+        <<"session">> => maps:get(instance,S),<<"seq">> => Sequence,<<"sent">> => wall(Now),
         <<"op">> => Op,<<"request">> => Request,<<"payload">> => Payload},
-    {seal(Body,maps:get(private,S)),put(Peer,Session#{sent := Sequence},S)}.
+    {seal(Body,maps:get(private,S)),S#{seq := Sequence}}.
+%% Callers pass monotonic milliseconds; the wire carries wall-clock time.
+wall(Now) -> Now+erlang:time_offset(millisecond).
 
 %% Exact body bytes are signed, with no term decoding, canonicalization or atom creation.
 seal(Body, Private) ->
@@ -342,19 +324,14 @@ verify(Packet, From) when is_binary(Packet), byte_size(Packet) =< ?MAX ->
                          [binary:decode_hex(From),ed25519]),
     Body = decode(Data),
     exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"buffee">>,<<"authority">>,<<"manager">>,<<"epoch">>,<<"revision">>,
-                <<"session">>,<<"seq">>,<<"op">>,<<"request">>,<<"payload">>]),
+                <<"session">>,<<"seq">>,<<"sent">>,<<"op">>,<<"request">>,<<"payload">>]),
     [true = hex(maps:get(K,Body),N) || {K,N} <-
         [{<<"from">>,64},{<<"to">>,64},{<<"authority">>,64},{<<"manager">>,64},{<<"buffee">>,32},
          {<<"session">>,32},{<<"request">>,32}]],
-    [true = uint(maps:get(K,Body)) || K <- [<<"seq">>,<<"epoch">>,<<"revision">>]],
+    [true = uint(maps:get(K,Body)) || K <- [<<"seq">>,<<"epoch">>,<<"revision">>,<<"sent">>]],
     payload(maps:get(<<"op">>,Body),maps:get(<<"payload">>,Body)), Body.
 
-payload(Op,P) when Op =:= <<"hello">>; Op =:= <<"challenge">>;
-                   Op =:= <<"proof">>; Op =:= <<"ready">>;
-                   Op =:= <<"lease.request">>;Op =:= <<"lease.challenge">>;
-                   Op =:= <<"lease.proof">>;Op =:= <<"lease.ready">> ->
-    exact(P,[<<"a">>,<<"b">>]), true = hex(maps:get(<<"a">>,P),64),
-    B = maps:get(<<"b">>,P), true = B =:= null orelse hex(B,64);
+payload(Op,P) when Op =:= <<"hello">>; Op =:= <<"ready">> -> exact(P,[]);
 payload(<<"chat.message">>,P) ->
     exact(P,[<<"text">>]),Text=maps:get(<<"text">>,P),
     true=is_binary(Text) andalso byte_size(Text)>0 andalso byte_size(Text)=<4096,
@@ -434,7 +411,6 @@ hex(B,N) when is_binary(B), byte_size(B) =:= N ->
     re:run(B,<<"^[0-9A-F]+$">>,[{capture,none}]) =:= match;
 hex(_,_) -> false.
 fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).
-nonces(#{a := A,b := B}) -> #{<<"a">> => A,<<"b">> => B}.
 put(Peer,Session,#{sessions := Sessions} = S) -> S#{sessions := Sessions#{Peer => Session}}.
 attempt(Fun,S) ->
     try Fun() catch

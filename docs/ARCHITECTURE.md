@@ -23,9 +23,10 @@ See the current [native stream contract](AUDIO_ENGINE_INTERFACE.md).
 Routine liveness and timing must stay scoped to relevant peers/streams and use
 bounded concurrent work, not per-Device Session-wide pings. The explicit CLI
 Inspector can request Session-wide diagnostics; ordinary app snapshots read
-local state. Current control still scans authorized peers and maintains peer
-links (`ba_buffee_control:connect_missing/1`, every 250 ms); making Session
-topology scale is separate unfinished work. Concurrent collection by the
+local state. Control requests authenticate themselves and no longer keep a link
+with every peer; audio discovery still reads every peer's catalogue while audio
+automation runs, and the Session membership handshake still pairs every present
+Device. Making Session topology scale is separate unfinished work. Concurrent collection by the
 Inspector does not make that full-mesh topology scalable.
 
 DSP interfaces and reference implementations remain in BEAM Audio. Keep optional

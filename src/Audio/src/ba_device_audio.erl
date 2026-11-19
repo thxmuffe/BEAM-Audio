@@ -120,7 +120,7 @@ capture(K,true,Adapter,S) ->
 connect_peers(Peers,S) ->
     {Pub,_}=ba_device_store:identity(),Self=binary:encode_hex(Pub),Now=erlang:monotonic_time(millisecond),
     Due=lists:foldl(fun(P,Acc) ->
-        case Self<P andalso not ba_app_session:excluded(P) andalso Now>=maps:get(P,Acc,Now) of
+        case P=/=Self andalso not ba_app_session:excluded(P) andalso Now>=maps:get(P,Acc,Now) of
             true ->
                 case ba_buffee_control:audio_context(P) of {ok,_} -> ok;_ -> ba_buffee_control:connect(P) end,
                 Acc#{P => Now+2000};

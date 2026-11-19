@@ -32,11 +32,8 @@ read(Self,Self,Metrics) ->
     end;
 read(Peer,_,Metrics) ->
     try
-        %% The control owner maintains authenticated peer connections.
-        case ba_buffee_control:audio_context(Peer) of
-            {ok,_} -> fetch(Peer,Metrics);
-            _ -> #{id => Peer,state => connecting}
-        end
+        %% Each read authenticates itself; no prior connection is needed.
+        fetch(Peer,Metrics)
     catch exit:_ -> #{id => Peer,state => unavailable} end.
 fetch(Peer,Metrics) ->
     Result=ba_buffee_control:read_capabilities(Peer,Metrics),

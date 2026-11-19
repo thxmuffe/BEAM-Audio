@@ -29,9 +29,9 @@ and cosmetic cleanup still wait.
   Retain signed Session policy/revocations as state and check freshness/replay.
   First increment done (2026-11-19): `ba_device_request` holds the one rights
   table and the Always/Ask/No approval stage for remote control requests; job
-  offers now Ask. Remaining, in order: (1) authenticate each request on its own
-  (signed, fresh, replay-checked) so Devices no longer keep a handshake/lease
-  with every peer in the Session; (2) route membership requests
+  offers now Ask. Control requests now authenticate on their own (control
+  protocol v2: signed, wall-clock fresh, replay-checked; no handshake or
+  background renewal). Remaining: route membership requests
   (`privilege_request`, `rename_request`, `remove_request`) through the same
   approval stage instead of their own Always/Ask/No storage.
 - **OTP ownership is mandatory.** Native streams stop when their owning OTP
@@ -240,9 +240,10 @@ path. Dated recordings, counters and validation limits remain in PROGRESS.md.
   recovery (see CONSENT_ENFORCEMENT.md).
 
 **Topology and scale**
-- Replace authorized-peer scans/full-mesh link maintenance in
-  `ba_buffee_control:connect_missing/1` (currently on the 250 ms expiry tick)
-  with a scoped topology before claiming large-Session support. Explicit
+- Control links are on demand (2026-11-19). Remaining full-Session work:
+  audio discovery introduces itself to and polls every peer's catalogue every
+  5 s while audio automation runs, and membership pairs every present Device;
+  scope both before claiming large-Session support. Explicit
   `monitor --all` is concurrent diagnostic work, not a scalable background
   liveness algorithm. No topology or polling behavior changed in cleanup.
 - Clock: one logical master on an ON AIR Device, distributing time about every

@@ -1,5 +1,45 @@
 # Current implementation and validation
 
+## Control requests authenticate themselves (protocol v2) — 2026-11-19
+
+Owner direction: authenticate when something needs approval, not by keeping
+every Device in the Session authenticated. `ba_buffee_control_protocol` v2
+removes the hello/challenge/proof handshake and nonce lease renewal. Each packet
+carries the sender instance, a rising sequence and the sender's wall-clock time.
+The receiver accepts it if all of these hold: the signature and current policy
+check out, it was sent within ±5 minutes, its sequence rises within that
+instance, the instance has not been replaced, and an unknown instance's packet
+was sent no more than 2 s before the receiver's state started.
+
+A relationship starts with the first valid packet, is extended by traffic and
+lapses when idle; lapsed and closed relationships keep replay state.
+`ba_buffee_control` no longer runs the 250 ms connect-everyone loop or
+background renewal; `connect/1` is one `hello`/`ready`. Consumers follow:
+
+- the clock introduces itself to its authority, at most every 2 s;
+- the monitor reads peers directly;
+- audio discovery no longer limits introductions to the lower Device ID;
+- the receiver accepts renewals whose deadline has since moved later;
+- the app's Device list shows Session presence (membership participants)
+  instead of control-link state.
+
+Decided during implementation: the first proposal's timestamp-only approach was
+kept rather than a lazy handshake, because chat and other one-shot requests then
+need no send queue. Accepted consequence: Devices whose wall clocks differ by
+more than 5 minutes cannot exchange control messages. Residual replay window:
+packets sent in the 2 s before a receiver restart. v1 Devices cannot talk to v2
+Devices; every Device needs the update.
+
+Validation: full eunit 267 tests, 0 failures (handshake/lease tests replaced by
+freshness, replay, restart, lapse/resume, renewal and simultaneous-hello tests).
+Local-relay smokes `crash-chat-smoke.py` and `buffee-membership-smoke.py` pass.
+`buffee-reconnect-smoke.py` fails at the grant holder's restarted Session-name
+check, a membership persistence step; whether it failed before this change was
+not established. `buffee-control-smoke.py` defaults to the public Reception and
+was run once against it before its beams were rebuilt (old code); it was not
+rerun. `device-session-e2e.py` was updated to introduce peers explicitly and was
+not run. No app build or live multi-Device check was performed.
+
 ## One request/approval pipeline, first increment — 2026-11-19
 
 `ba_device_request` now holds the stages a Device applies to every remote

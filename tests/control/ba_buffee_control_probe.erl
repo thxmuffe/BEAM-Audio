@@ -169,10 +169,10 @@ command(#{<<"op">> := <<"attack">>,<<"peer">> := Peer},Id,_) ->
     %% Local harness access only: sign forbidden/replayed packets as the real sender.
     #{protocol := P,config := #{policy := #{buffee := Buffee,authority := Authority,manager := Manager,epoch := Epoch,revision := Revision},routes := _Routes}} =
         sys:get_state(ba_buffee_control),
-    #{id := Session,sent := Seq} = maps:get(Peer,maps:get(sessions,P)),
-    Body = #{<<"v">> => 1,<<"from">> => Id,<<"to">> => Peer,<<"buffee">> => Buffee,
+    #{instance := Session,seq := Seq} = P,
+    Body = #{<<"v">> => 2,<<"from">> => Id,<<"to">> => Peer,<<"buffee">> => Buffee,
         <<"authority">> => Authority,<<"manager">> => Manager,<<"epoch">> => Epoch,<<"revision">> => Revision,
-        <<"session">> => Session,<<"seq">> => Seq+1,
+        <<"session">> => Session,<<"seq">> => Seq+1,<<"sent">> => os:system_time(millisecond),
         <<"request">> => binary:copy(<<"0">>,32),<<"op">> => <<"worker.start">>,<<"payload">> => #{}},
     Private = maps:get(private,P),
     Forbidden = ba_buffee_control_protocol:seal(Body,Private),

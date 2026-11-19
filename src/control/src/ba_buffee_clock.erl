@@ -258,9 +258,9 @@ follow(#{view := V} = S0) ->
                     A = periodic(<<"sample.request">>,sample_due,#{<<"t1">> => ns(mono())},S),
                     periodic(<<"offset.get">>,offset_due,#{},A);
                 _ ->
-                    %% The control owner connects every admitted peer pair.
-                    %% A second initiator here can collide with its handshake.
-                    invalidate(S)
+                    %% No relationship with the authority yet (or it lapsed):
+                    %% introduce this Device; the next follow uses it.
+                    introduce(Authority,invalidate(S))
             end
     end.
 periodic(Kind,Due,Extra,S) ->
@@ -511,6 +511,12 @@ expire(#{pending := Pending}=S) ->
     case maps:get(upstream,Next) of
         #{deadline := Due} when Due=<Current -> upstream_failed(cancel_upstream(Next));
         _ -> Next
+    end.
+introduce(Peer,S) ->
+    Now=now_ms(),
+    case Now>=maps:get(introduce_after,S,Now) of
+        true -> _ = try ba_buffee_control:connect(Peer) catch exit:_ -> ok end,S#{introduce_after => Now+2000};
+        false -> S
     end.
 invalidate(S) ->
     maps:foreach(fun(_,P) -> answer(P,{error,unconfirmed}) end,maps:get(pending,S)),
