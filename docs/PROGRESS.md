@@ -1,5 +1,34 @@
 # Current implementation and validation
 
+## Native output latency budget — 2026-11-19
+
+The native jitterbuffer used the entire Session Response time, while the sink
+also needed downstream/output lead. The sink offset added render delay again.
+The host now uses GStreamer's negotiated downstream latency to reserve that
+lead within the existing Response budget, reduces RTP buffering accordingly,
+and lets BaseSink submit early for render delay. Capture timestamps, Session
+policy and native clock-rate correction remain in force.
+
+The silent native test now simulates a sink with 200 ms render delay and a
+20 ms lateness limit. Before the fix it fails with 205 ms presentation error;
+afterward it passes with 5.1 ms maximum error, 244,736 decoded frames, 265 mapped
+RTP packets, mapping in 621 ms and a 580 ms jitter budget within 800 ms total.
+Stop/control loss/timeout/clock expiry/hung-media/source-owner checks also pass.
+iOS native source passes a targeted compile check; Mac app packages successfully;
+7 native-control tests pass after the diagnostics change. Owner rebuilt both
+apps through Xcode and reports **still wavering at 2 s**. Thus the reproduced
+software-budget bug is fixed, but the audible wavering is unresolved. Owner
+requested stopping for today; no further testing or tuning. The newly enabled
+live timing summaries were not read before stopping. Resume from those local
+logs next time. Physical synchronization and sound quality remain unqualified.
+
+Added analysis-consented, bounded local timing summaries every five seconds:
+clock correction, capture sample-clock skew, decoded/mapped frames/packets,
+rendered/dropped output buffers, render delay and jitter budget. No audio data,
+SDP or candidate addresses are logged. Initial info-level summaries were filtered
+by the default Logger level; corrected to notice. No Inspector remains connected.
+
+
 ## Empty ICE candidate closed native streams — 2026-11-19
 
 Owner clarified the next consent change: Calibration (combined mic/speaker),
@@ -38,6 +67,25 @@ clarification; continue diagnosis from the Mac/iPhone's local logs.
   Do not claim that this signalling fix also fixes the native crash.
 - Initial native clock-plan failures now retain their reason instead of being
   flattened into `native_lifecycle_handshake_failed`.
+
+## Native capture follow-up — 2026-11-19
+
+After both apps updated, owner reports one open transport on each Device;
+150 ms is silent, 800 ms plays with wavering, and 2 s has the same wavering.
+This establishes audible native Mac→iPhone transport, not acceptable quality.
+Mac logs also show `native_capture_discontinuity` (capture sample position
+before the stream anchor). The capture helper previously rewrote the tap
+process list for every system audio-process-list notification, even when the
+excluded set did not change. It now compares sets and skips those no-op writes.
+Mac helper and app compile/package successfully; owner listening retest pending.
+The relation between these writes, observed resets and wavering remains an
+inference. Legitimate capture-clock resets still terminate a media stream;
+no speculative timestamp-recovery engine or library upgrade was introduced.
+Owner retest reports essentially unchanged wavering. Later logs show repeated
+`presentation_changed` provider failures; added old/new delay and policy revision
+to that diagnostic and rebuilt the Mac. The steady-run log showed manual changes
+150→300→800→2000 ms with the same timeline; autonomous policy churn was not
+established. Follow-up native output-budget regression/fix is documented above.
 
 ## Evening live testing — 2026-11-19
 

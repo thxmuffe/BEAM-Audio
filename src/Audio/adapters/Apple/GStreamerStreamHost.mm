@@ -67,7 +67,9 @@ static void enqueue(dispatch_block_t block) {
     GSource *_rtcpTimer;
     std::atomic<uint64_t> _clockExpires,_clockUpdates,_mappedPackets,_unmappedPackets,_senderReports,_renderedFrames,_maxScheduleError;
     std::atomic<uint64_t> _connectedAt,_firstMappedAt;
-    uint64_t _clockRevision,_responseNS,_sourceAnchorTime;
+    uint64_t _clockRevision,_responseNS,_sourceAnchorTime,_sourceAnchorHost;
+    std::atomic<int64_t> _captureClockSkew;
+    std::atomic<double> _correctionPPM;
     int64_t _sourceAnchorPosition;
     bool _sourceAnchored,_rtcpObserved;
     NSString *_timeline;
@@ -75,7 +77,7 @@ static void enqueue(dispatch_block_t block) {
     NSMutableArray<NSDictionary *> *_candidates;
     bool _prepared,_remoteReady,_provider,_synthetic,_offered;
     NSString *_generation;
-    uint32_t _rate,_channels;
+    uint32_t _rate,_channels,_jitterLatencyMS;
 #if TARGET_OS_IPHONE
     void *_audioSessionToken;
 #endif
@@ -96,8 +98,21 @@ static void fail(BANativePeer *self,NSString *reason) {
 static void sinkSchedule(BANativePeer *self) {
     if(!self->_output)return;
     GstClockTime latency=gst_base_sink_get_latency(GST_BASE_SINK(self->_output));
-    GstClockTime render=gst_base_sink_get_render_delay(GST_BASE_SINK(self->_output));
-    g_object_set(self->_output,"ts-offset",(gint64)self->_responseNS-(gint64)latency+(gint64)render,NULL);
+    if(!GST_CLOCK_TIME_IS_VALID(latency))return;
+    // Response time is the whole capture-to-presentation budget. Reserve the
+    // downstream latency reported by GStreamer before budgeting RTP buffering.
+    GstClockTime jitter=(GstClockTime)self->_jitterLatencyMS*GST_MSECOND;
+    GstClockTime downstream=latency>jitter?latency-jitter:0;
+    guint budget=(guint)((self->_responseNS>downstream?self->_responseNS-downstream:0)/GST_MSECOND);
+    if(budget!=self->_jitterLatencyMS){
+        self->_jitterLatencyMS=budget;g_object_set(self->_peer,"latency",budget,NULL);
+        gst_bin_recalculate_latency(GST_BIN(self->_pipeline));
+        latency=gst_base_sink_get_latency(GST_BASE_SINK(self->_output));
+        if(!GST_CLOCK_TIME_IS_VALID(latency))return;
+    }
+    // BaseSink already submits early by render-delay. Adding that delay here
+    // would make physical presentation late by the same amount.
+    g_object_set(self->_output,"ts-offset",(gint64)self->_responseNS-(gint64)latency,NULL);
 }
 static void requestReport(BANativePeer *self) {
     if(!self->_rtpbin || !self->_provider || self->_stopping)return;
@@ -145,7 +160,10 @@ static GstPadProbeReturn mappedRTP(GstPad *,GstPadProbeInfo *info,gpointer data)
 static void rendered(GstElement *,GstBuffer *buffer,GstPad *,gpointer data) {
     BANativePeer *self=(__bridge BANativePeer *)data;
     if(!GST_BUFFER_PTS_IS_VALID(buffer))return;
-    uint64_t target=GST_BUFFER_PTS(buffer)+self->_responseNS,now=gst_clock_get_time(self->_clock);
+    uint64_t target=GST_BUFFER_PTS(buffer)+self->_responseNS;
+    // The silent sink simulates output latency: compare its presentation time,
+    // not the earlier handoff at which a real device needs the buffer.
+    uint64_t now=gst_clock_get_time(self->_clock)+gst_base_sink_get_render_delay(GST_BASE_SINK(self->_output));
     uint64_t error=now>target?now-target:target-now,old=self->_maxScheduleError.load();
     while(error>old && !self->_maxScheduleError.compare_exchange_weak(old,error)){}
     self->_renderedFrames+=gst_buffer_get_size(buffer)/(4*self->_channels);
@@ -203,7 +221,7 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
         _clock=(GstClock *)g_object_new(GST_TYPE_SYSTEM_CLOCK,NULL);
         _clockExpires=0;_clockUpdates=0;_mappedPackets=0;_unmappedPackets=0;_senderReports=0;_renderedFrames=0;_maxScheduleError=0;
         _connectedAt=0;_firstMappedAt=0;
-        _frames=0;_dropped=0;_candidates=[NSMutableArray array];
+        _frames=0;_dropped=0;_captureClockSkew=0;_correctionPPM=0;_candidates=[NSMutableArray array];
         int yes=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&yes,sizeof(yes));
         setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&yes,sizeof(yes));
         timeval timeout={1,0};setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
@@ -292,6 +310,7 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
         uint64_t external=gst_clock_adjust_with_calibration(_clock,now,i,e,n,d);
         gst_clock_set_calibration(_clock,now,external,1000000000LL+llround(ppm*1000),1000000000);
     }
+    _correctionPPM=ppm;
     _timeline=[timeline copy];_clockRevision=revision;_clockExpires=monotonicMS()+12000;++_clockUpdates;
     [self send:@{@"event":@"clock_mapped",@"revision":@(revision)}];return YES;
 }
@@ -311,7 +330,7 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
         _rate=[c[@"rate"] unsignedIntValue];_channels=[c[@"channels"] unsignedIntValue];
         int delay=[c[@"buffer_ms"] intValue];
         if((_rate!=44100 && _rate!=48000) || _channels!=2 || delay<0 || delay>10000){fail(self,@"unsupported_native_format_or_buffer");return;}
-        _responseNS=(uint64_t)delay*GST_MSECOND;
+        _responseNS=(uint64_t)delay*GST_MSECOND;_jitterLatencyMS=(uint32_t)delay;
         NSString *source=_synthetic ? @"audiotestsrc name=generator is-live=true wave=sine volume=0.02 samplesperbuffer=1024" : @"appsrc name=capture is-live=true format=time block=false max-bytes=4194304";
         NSString *graph;
         if(_provider)graph=[NSString stringWithFormat:
@@ -321,7 +340,7 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
 #if TARGET_OS_IPHONE
             @"osxaudiosink name=output sync=true provide-clock=false slave-method=resample"
 #else
-            [c[@"silent"] isEqual:@YES] ? @"fakesink name=output sync=true async=false signal-handoffs=true" : @"osxaudiosink name=output sync=true provide-clock=false slave-method=resample"
+            [c[@"silent"] isEqual:@YES] ? @"fakesink name=output sync=true async=false signal-handoffs=true render-delay=200000000 max-lateness=20000000" : @"osxaudiosink name=output sync=true provide-clock=false slave-method=resample"
 #endif
         ];
 #if TARGET_OS_IPHONE
@@ -415,7 +434,14 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
         if(_volume)g_object_set(_volume,"mute",[op isEqual:@"pause"],NULL);
         [self send:@{@"event":[op isEqual:@"play"] ? @"playing" : @"paused"}];
     } else if([op isEqual:@"gain"]){double gain=[c[@"gain"] doubleValue];if(gain>=0 && gain<=1 && _volume)g_object_set(_volume,"volume",gain,NULL);
-    } else if([op isEqual:@"stats"]){[self send:@{@"event":@"stats",@"frames":@(_frames.load()),@"dropped":@(_dropped.load()),@"synchronized":@NO,
+    } else if([op isEqual:@"stats"]){
+        guint64 rendered=0,dropped=0;
+        if(_output){GstStructure *stats=gst_base_sink_get_stats(GST_BASE_SINK(_output));
+            gst_structure_get_uint64(stats,"rendered",&rendered);gst_structure_get_uint64(stats,"dropped",&dropped);gst_structure_free(stats);}
+        [self send:@{@"event":@"stats",@"frames":@(_frames.load()),@"dropped":@(_dropped.load()),@"synchronized":@NO,
+        @"sink_rendered_buffers":@(rendered),@"sink_dropped_buffers":@(dropped),@"jitter_buffer_ms":@(_jitterLatencyMS),
+        @"render_delay_ns":_output?nsText(gst_base_sink_get_render_delay(GST_BASE_SINK(_output))):@"0",
+        @"capture_clock_skew_ns":[NSString stringWithFormat:@"%lld",(long long)_captureClockSkew.load()],@"correction_ppm":@(_correctionPPM.load()),
         @"clock_updates":@(_clockUpdates.load()),@"rtcp_mapped_packets":@(_mappedPackets.load()),@"unmapped_packets":@(_unmappedPackets.load()),
         @"sender_reports":@(_senderReports.load()),@"rendered_frames":@(_renderedFrames.load()),@"max_schedule_error_ns":nsText(_maxScheduleError.load()),
         @"mapping_acquired_ms":_firstMappedAt.load()?@(MAX((int64_t)_firstMappedAt.load()-(int64_t)_connectedAt.load(),0)):(id)NSNull.null,
@@ -432,10 +458,12 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
     if(!_sourceAnchored){
         uint64_t nativeNow=hostNS(),clockNow=gst_clock_get_time(_clock);
         _sourceAnchorTime=host<=nativeNow?clockNow-(nativeNow-host):clockNow+(host-nativeNow);
-        _sourceAnchorPosition=position;_sourceAnchored=true;
+        _sourceAnchorPosition=position;_sourceAnchorHost=host;_sourceAnchored=true;
     }
     if(position<_sourceAnchorPosition){gst_buffer_unref(buffer);fail(self,@"native_capture_discontinuity");return;}
-    GST_BUFFER_PTS(buffer)=_sourceAnchorTime+gst_util_uint64_scale(position-_sourceAnchorPosition,GST_SECOND,_rate);
+    uint64_t sampleElapsed=gst_util_uint64_scale(position-_sourceAnchorPosition,GST_SECOND,_rate);
+    _captureClockSkew=(int64_t)sampleElapsed-((int64_t)host-(int64_t)_sourceAnchorHost);
+    GST_BUFFER_PTS(buffer)=_sourceAnchorTime+sampleElapsed;
     GST_BUFFER_DURATION(buffer)=gst_util_uint64_scale(frames,GST_SECOND,_rate);
     gst_app_src_push_buffer(GST_APP_SRC(_input),buffer);
 }

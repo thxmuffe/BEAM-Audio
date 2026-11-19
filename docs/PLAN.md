@@ -149,7 +149,7 @@ everything not listed has no audio until a native host exists.
 |---|---|---|---|---|
 | Windows | none | none | none | — |
 | macOS | none in the app (GStreamer not packaged); none in CLI | none | CLI helper (Core Audio tap → AAC) | headless native smoke passes; not listened to |
-| iOS | native host (always started) | none | none | not built or listened to since this change |
+| iOS | native host (always started) | none | none | Mac→iPhone audible at 800 ms / 2 s, wavering; 150 ms silent |
 
 Earlier observations below describe the deleted PCM path and are history.
 
@@ -178,47 +178,51 @@ native selection/continuity work when requested.
 
 ## Resume here (2026-11-19 evening)
 
-Live state: Mac app, iPhone app and web Device see each other in one Session
-(after a Mac restart cleared a two-day-old web Device process). ON AIR runs on
-the Mac app (bundled native helper), but the iPhone plays nothing.
+**Paused at owner's request; no more testing today.** Mac, iPhone and web
+Devices join one Session. Native Mac→iPhone transport connects and produces
+audible audio, but the owner still hears wavering after the latest rebuild.
 
-1. **iPhone no audio: signalling bug fixed; listening check pending.** The
-   rebuilt Mac logged `Native provider closed: signal_send_failed`. A native
-   reproduction showed GStreamer emitting `candidate=""` at the end of ICE
-   gathering. Our stream validator required a nonempty candidate, so the local
-   send failed and closed the media attempt before the answer arrived. It now
-   accepts that standard end-of-candidates marker, retaining the binary type
-   and 1,024-byte limit. A signed-control round-trip regression failed before
-   the fix and passes afterward (41 focused tests pass). Update **both apps**:
-   each side can emit the marker. Mac app rebuilt; iPhone runtime prepared
-   for the next Xcode run. Verify actual Mac→iPhone playback;
-   the separate native crash below is not yet explained. The first silent retry
-   still used a Mac process started at 21:29, before the fix was built; a full
-   app quit/reopen is required (confirmed by process start time). After the
-   real Mac restart, the owner hears short iPhone audio bursts and the Mac logs
-   `remote_close` about every 3.5 s. The iPhone likely still runs the old schema;
-   asked for Xcode Stop then Run to install the prepared runtime. Continuous
-   playback remains unverified.
-2. **Two additional confirmed failures:** the first discard logger crashed on
-   an unset timestamp (fixed; owner confirmed ON AIR now stays on). A fresh
-   iPhone log contains repeated `native_lifecycle_handshake_failed` up to 21:20;
-   a later run had a negotiating endpoint without new handshake errors. The
-   owner's 21:22 Xcode screenshot shows a native `EXC_BAD_ACCESS` on `peer:ice`
-   in libnice 0.1.24 `_tcp_sock_is_writable`, preceded by GLib bad-descriptor
-   warnings. Suspected lifetime/cleanup error; root cause unproven. Preserve
-   the complete crash backtrace if it recurs. Do not infer an upstream fix
-   from a similar crash in a different libnice consumer.
-3. **Levels N/A** while sending: expected; Erlang PCM meters were deleted.
-   Add GStreamer `level` in the native helper, report peak/RMS only.
-4. **"0 STUN" in diagnostics** is likely a field only the deleted PCM session
-   filled; verify and report the native session's ICE servers.
-5. **Headless end-to-end test** (source → Session → native receiver host,
-   synthetic audio) is missing; it would have caught tonight's bugs.
-6. **Web launcher** silently reuses a running Device even after a rebuild;
-   restart it when the code is newer. Its display label includes the web port,
-   so the short ID looks different on every start (the key is stable).
-7. Then: Mac app native receiving host, native microphone, packet recovery,
-   background playback check, rights model, simplification plan below.
+1. **Latest fix: native output latency budget; wavering still unresolved.**
+   The jitterbuffer consumed the full Response time, leaving no output lead;
+   sink scheduling also added render delay twice. Native now reserves the
+   downstream latency reported by GStreamer before assigning RTP-buffer time.
+   A silent regression with 200 ms simulated output delay failed at ~205 ms
+   presentation error before the fix and passes at ~5.1 ms afterward (580 ms
+   RTP buffering within an 800 ms total budget). Native/lifecycle checks pass;
+   Mac app rebuilt and iOS source compile checked. Owner rebuilt both through
+   Xcode and reports **still wavering at 2 s**. This fix corrects the reproduced
+   scheduling-budget error, but did not fix the audible problem. Next time,
+   first read the already-enabled local `Native provider/receiver timing`
+   summaries to assess capture skew, rate correction and sink drops; these
+   latest live summaries have not yet been read. Do not repeat tuning without
+   evidence. Software scheduling remains distinct from physical synchronization.
+2. **Earlier confirmed fix:** empty ICE end-of-candidates messages were rejected
+   by our nonempty-string schema, closing media before answers arrived. The
+   schema now accepts the standard empty marker. A signed-control round-trip
+   regression failed before the fix; 41 focused tests pass afterward. Both
+   apps needed updating. ON AIR no longer flaps from the old logging crash.
+3. **Known listening/diagnostic evidence before the output-budget fix:** 150 ms
+   silent; 800 ms and 2 s audible but wavering. Skipping unchanged capture-tap
+   process-list writes did not audibly fix it. Capture sample-position resets
+   still produce `native_capture_discontinuity`; recovery remains incomplete.
+   Logged presentation-policy changes matched manual Response adjustments,
+   with the same clock timeline; no autonomous clock churn was established.
+   Analysis-consented local logs now include `Native provider/receiver timing`
+   every five seconds: clock correction, capture skew, decoded/mapped counts,
+   rendered/dropped output buffers and jitter budget; no audio data or SDP.
+4. **Native crash still unproven:** owner's Xcode screenshot shows libnice 0.1.24
+   `_tcp_sock_is_writable` (`peer:ice`, EXC_BAD_ACCESS), preceded by GLib bad-file-
+   descriptor warnings. Keep the full backtrace if it recurs. Neither signalling
+   nor latency fixes establish a fix for that crash.
+5. **Diagnostics gaps:** levels N/A (native metering still missing), and the
+   monitor's 0 STUN/candidate counts describe old fields, not a failed native
+   connection. Project existing native counters into the monitor next as needed.
+6. **Remaining checks/work:** full public Session→native receiver synthetic
+   integration test; web launcher must reload stale code; Mac app native receive,
+   microphone, recovery, background playback. Then implement the accepted
+   Calibration / Processing / Inspect consent and requester-held signed grants
+   in Decisions in force, followed by simplification. The temporary Inspector
+   created for this investigation has been stopped.
 
 ## Simplification plan (owner concern 2026-11-19; tackle soon)
 

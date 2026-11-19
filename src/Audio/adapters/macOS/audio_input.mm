@@ -199,10 +199,15 @@ public:
             if (changed.load()) throw Failure{-1, "Default audio device or capture format changed; toggle capture off and on"};
             if (!microphone && processesChanged.exchange(false)) {
                 CATapDescription *description = CFBridgingRelease(property<CFTypeRef>(tap, kAudioTapPropertyDescription));
-                description.processes = localAudioProcesses();
-                CFTypeRef raw = (__bridge CFTypeRef)description;
-                auto a = address(kAudioTapPropertyDescription);
-                check(AudioObjectSetPropertyData(tap, &a, 0, nullptr, sizeof(raw), &raw), "Exclude local playback from capture");
+                NSArray<NSNumber *> *excluded = localAudioProcesses();
+                // An unrelated process change must not rewrite a running tap.
+                // Its capture sample clock can restart when its description changes.
+                if (![[NSSet setWithArray:description.processes ?: @[]] isEqualToSet:[NSSet setWithArray:excluded]]) {
+                    description.processes = excluded;
+                    CFTypeRef raw = (__bridge CFTypeRef)description;
+                    auto a = address(kAudioTapPropertyDescription);
+                    check(AudioObjectSetPropertyData(tap, &a, 0, nullptr, sizeof(raw), &raw), "Exclude local playback from capture");
+                }
             }
             const uint64_t host = mach_absolute_time(); packet(5, &host, sizeof(host));
             // Drain at most one ring's worth per pass into the native encoder.

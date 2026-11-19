@@ -13,7 +13,11 @@ plan(#{<<"internal_ns">> := I,<<"session_ns">> := Native},Sent,Received,Descript
         case Previous of
             #{timeline := Timeline,offset_ms := Delay,policy_revision := Policy} -> ok;
             P when map_size(P)=:=0 -> ok;
-            _ -> throw(presentation_changed)
+            _ ->
+                logger:warning("Native presentation changed: response ~p -> ~p ms, policy ~p -> ~p, same timeline ~p",
+                    [maps:get(offset_ms,Previous,undefined),Delay,maps:get(policy_revision,Previous,undefined),Policy,
+                     maps:get(timeline,Previous,undefined)=:=Timeline]),
+                throw(presentation_changed)
         end,
         Limit=500,
         PPM=case Native of null -> 0;_ ->

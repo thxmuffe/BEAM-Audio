@@ -121,7 +121,17 @@ native_event(#{<<"event">> := <<"candidate">>}=E,S) ->
     maps:get(owner,S) ! {audio_signal,self(),#{<<"kind">> => <<"signal.candidate">>,<<"candidate">> => maps:get(<<"candidate">>,E),
         <<"mid">> => maps:get(<<"mid">>,E),<<"line">> => maps:get(<<"line">>,E)}},{noreply,S};
 native_event(#{<<"event">> := <<"connected">>},S) -> maps:get(owner,S) ! {audio_transport,self(),open},{noreply,S#{open := true}};
-native_event(#{<<"event">> := <<"stats">>}=E,S) -> {noreply,S#{stats := E}};
+native_event(#{<<"event">> := <<"stats">>}=E,S) ->
+    Count=maps:get(stat_samples,S,0)+1,
+    case Count rem 5=:=0 andalso ba_audio_diagnostics:enabled(analysis) of
+        true ->
+            Summary=maps:with([<<"frames">>,<<"dropped">>,<<"rtcp_mapped_packets">>,<<"unmapped_packets">>,
+                <<"sink_rendered_buffers">>,<<"sink_dropped_buffers">>,<<"capture_clock_skew_ns">>,<<"correction_ppm">>,
+                <<"jitter_buffer_ms">>,<<"render_delay_ns">>],E),
+            logger:notice("Native ~p timing: ~p",[maps:get(role,S),Summary]);
+        false -> ok
+    end,
+    {noreply,S#{stats := E,stat_samples => Count}};
 native_event(#{<<"event">> := <<"error">>,<<"error">> := R},S) -> {stop,{native_media,R},S};
 native_event(_,S) -> {noreply,S}.
 live(S) -> now_ms()<maps:get(deadline,S) andalso ba_device_permission:valid(maps:get(permission,S),maps:get(token,S)) andalso ba_audio_native_clock:ready().

@@ -12,7 +12,8 @@ the next audio work.
 
 Mac ON AIR uses a Core Audio process tap, so capture selection and speaker output
 are separate. The tap excludes our configured playback-helper executable across
-local instances and refreshes when audio processes change. See Apple's
+local instances and updates its process list only when the excluded set changes;
+unrelated audio-process notifications do not rewrite the running tap. See Apple's
 [process-filtered device tap](https://developer.apple.com/documentation/coreaudio/catapdescription/initexcludingprocesses%3Aanddeviceuid%3Awithstream%3A).
 
 ## Native AAC
@@ -43,7 +44,8 @@ SDP or audio. Rebuild/restart the affected app to load Erlang changes; an iPhone
 runtime update requires a new app build.
 
 ICE signalling accepts an empty candidate string as the standard end of
-candidate gathering and forwards it to GStreamer. Both sending and receiving
+candidate gathering and forwards it to GStreamer (see
+[GStreamer's candidate API](https://gstreamer.freedesktop.org/documentation/webrtc/#webrtcbin::add-ice-candidate)). Both sending and receiving
 apps must include this schema fix; older validators close their local media
 attempt when the native host emits the marker.
 
@@ -73,14 +75,18 @@ RTCP sender reports map it to the calibrated clock in the NTP epoch. Reports
 start with a short burst, then refresh about every five seconds. GStreamer's
 native reference-timestamp metadata reconstructs capture time at the receiver;
 unmapped initial packets are dropped. The output schedules that time plus the
-Session Response time, compensating for native pipeline latency. No arrival-time
+Session Response time. GStreamer's reported downstream/output latency is
+reserved inside that total budget before configuring the RTP jitterbuffer;
+BaseSink's render-delay mechanism submits buffers early for native output. No arrival-time
 fallback or per-packet Erlang decision is used. Apple output uses GStreamer's
 native resampling clock-slave mechanism; sustained correction needs hardware
 qualification. A timeline or Response-policy revision change ends/recreates the
 stream rather than retiming queued audio.
 
-The initial jitter latency follows Session Response time (normally 800 ms),
-within 0–10,000 ms. Demand-based buffer policy, combined queue budgets and packet
+The initial jitter budget starts at the selected Session Response time,
+within 0–10,000 ms, and decreases by negotiated downstream latency. A Response
+time below the native output minimum is not yet rejected explicitly; it can
+still miss the presentation deadline. Demand-based buffer policy, combined queue budgets and packet
 recovery remain to do. TURN configuration currently returns an explicit
 unsupported error; STUN/ICE is reused and Reception is unchanged. There is no
 native microphone capture yet.
@@ -119,7 +125,9 @@ python3 tests/transport/native-stream-smoke.py
 rebar3 eunit --module=ba_native_stream_tests
 ```
 
-The native smoke uses generated audio and `fakesink` in two helper processes;
+The native smoke uses generated audio and `fakesink` in two helper processes.
+The sink simulates 200 ms output latency and a 20 ms lateness limit, checking
+that RTP buffering leaves output lead within the total Response budget;
 it routes JSON control/signalling only. Its reference is deliberately three
 hours away from OS UTC. It checks prompt RTCP mapping, periodic clock refresh,
 decoded/scheduled output, correlated stop, control loss/timeout, clock expiry,

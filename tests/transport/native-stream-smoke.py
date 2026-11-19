@@ -160,6 +160,12 @@ def main():
                             assert stats[1]['rtcp_mapped_packets'] > 0 and stats[0]['sender_reports'] > 0, stats
                             assert stats[1]['clock_updates'] >= 2 and stats[1]['rendered_frames'] > 0, stats
                             assert stats[1]['mapping_acquired_ms'] < 1500, stats
+                            # A device needs audio before its presentation time.
+                            # The fake sink simulates 200 ms of output latency;
+                            # RTP buffering must leave room for it in the 800 ms budget.
+                            assert int(stats[1]['render_delay_ns']) == 200_000_000, stats
+                            assert stats[1]['jitter_buffer_ms'] <= 600, stats
+                            assert stats[1]['sink_rendered_buffers'] > 0, stats
                             assert int(stats[1]['max_schedule_error_ns']) < 50_000_000, stats
                             for target in range(2):
                                 send(target, {'op': 'stop', 'request_id': 101 + target})
@@ -174,7 +180,9 @@ def main():
                                   'clock_updates': stats[1]['clock_updates'],
                                   'mapping_acquired_ms': stats[1]['mapping_acquired_ms'],
                                   'sender_reports': stats[0]['sender_reports'],
-                                  'max_schedule_error_ns': stats[1]['max_schedule_error_ns']}))
+                                  'max_schedule_error_ns': stats[1]['max_schedule_error_ns'],
+                                  'simulated_output_latency_ms': 200,
+                                  'jitter_buffer_ms': stats[1]['jitter_buffer_ms']}))
                 return
         raise AssertionError(('native stream timed out', prepared, connected, stats))
     finally:
