@@ -163,6 +163,44 @@ adapters and shared measurement tools. The working PCM path and opt-in AAC trial
 remain. Further cleanup follows actual callers, not a general redesign. Resume
 native selection/continuity work when requested.
 
+## Resume here (2026-11-19 evening)
+
+Live state: Mac app, iPhone app and web Device see each other in one Session
+(after a Mac restart cleared a two-day-old web Device process). ON AIR runs on
+the Mac app (bundled native helper), but the iPhone plays nothing.
+
+1. **iPhone no audio (open).** Monitor: iPhone speaker ready, clock synced,
+   one stream stuck `native_negotiating` with no ICE candidates; it never gets
+   the Mac's offer (the Mac/provider always offers). The Mac discards incoming
+   stream messages as stale (~2/s). **Found (Mac log `Discarded …`):** the
+   iPhone does answer — the Mac receives its `signal.answer`, candidates and
+   `close` — but the Mac then has 0 providers (`unknown_attempt,0,0`): the
+   Mac's provider stream ends normally between offer and answer. Suspects:
+   `ba_mac_native_audio` heartbeat rebinds the publication whenever
+   `ba_buffee_clock:id()` changes (rebind closes providers), possibly churned by
+   the clock provider choice now following the Reception neighbour sample; or
+   publish-contract churn in `ba_device_audio`. Log provider exits next.
+   Earlier: read the Mac's
+   `~/Library/Application Support/org.opensound.beamaudio/cluster/runtime.log`
+   for `Discarded … : <reason>` (one line/s, exact check that failed); run
+   the iPhone from Xcode for `Native media:` lines.
+2. **Fixed tonight:** the new discard logging crashed the audio receiver
+   (subtraction on an unset timestamp); repeated crashes hit the restart limit
+   and took down the Session runtime, so ON AIR flapped and the Mac left the
+   Session. Fixed, guarded so diagnostics can never crash the receiver; Mac
+   app rebuilt. Not yet re-run live.
+3. **Levels N/A** while sending: expected; Erlang PCM meters were deleted.
+   Add GStreamer `level` in the native helper, report peak/RMS only.
+4. **"0 STUN" in diagnostics** is likely a field only the deleted PCM session
+   filled; verify and report the native session's ICE servers.
+5. **Headless end-to-end test** (source → Session → native receiver host,
+   synthetic audio) is missing; it would have caught tonight's bugs.
+6. **Web launcher** silently reuses a running Device even after a rebuild;
+   restart it when the code is newer. Its display label includes the web port,
+   so the short ID looks different on every start (the key is stable).
+7. Then: Mac app native receiving host, native microphone, packet recovery,
+   background playback check, rights model, simplification plan below.
+
 ## Simplification plan (owner concern 2026-11-19; tackle soon)
 
 Owner: the system rests on simple principles but the code is large. Analysis

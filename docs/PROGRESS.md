@@ -1,5 +1,15 @@
 # Current implementation and validation
 
+## Evening live testing — 2026-11-19
+
+- Gossip ON AIR crash fixed (atom vs binary note kind crashed membership).
+- Web Device could not join: its process had run since 17 Nov (old protocol);
+  a Mac restart fixed it. Joining a second Session verified with CLI Devices.
+- Apps now also log to `runtime.log` in the Device state folder (rotated).
+- Receiver logs the reason for discarded stream messages; its first version
+  crashed the receiver (fixed, guarded). iPhone audio still not playing; see
+  PLAN "Resume here".
+
 ## One Mac, one Device key — 2026-11-19
 
 The Mac app lacked admin rights in a Session because it had started as a second

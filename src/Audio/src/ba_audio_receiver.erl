@@ -182,6 +182,8 @@ handle_info({buffee_audio,Context,Id,P},S) ->
     catch _:_ ->
         %% Signalling for an attempt that already ended (e.g. after a setup
         %% timeout) is expected noise; keep it apart from invalid control.
+        %% Diagnostics must never take the receiver down.
+        try explain(Context,Id,P,S) catch _:_ -> ok end,
         case P of
             #{<<"kind">> := <<"signal.",_/binary>>} ->
                 {noreply,ba_diagnostics:count(stale_media_signal,S#{rejected := maps:get(rejected,S)+1})};
@@ -515,6 +517,42 @@ disconnect_all(S) -> stop_matching(fun(_) -> true end,S).
 persist(S) ->
     ok = ba_subscription:save(maps:map(fun(_,R) -> maps:get(intent,R) end,maps:get(subscriptions,S))),S.
 reject(S) -> ba_diagnostics:count(invalid_control_or_attempt,S#{rejected := maps:get(rejected,S)+1}).
+%% Why a stream message was discarded, logged at most once a second, so a
+%% failing setup can be read from runtime.log instead of guessed from counters.
+explain(Context,Id,P,S) ->
+    Now = now_ms(),
+    case Now-(case get(last_explained) of undefined -> Now-1000;T -> T end) >= 1000 of
+        false -> ok;
+        true ->
+            put(last_explained,Now),
+            Kind = maps:get(<<"kind">>,P,<<"?">>),
+            Peer = maps:get(peer,Context,<<"?">>),Session = maps:get(session,Context,undefined),
+            Reason = try
+                case context(Peer) of
+                    {ok,#{session := Session}} -> ok;
+                    {ok,_} -> throw(relationship_changed);
+                    _ -> throw(no_relationship)
+                end,
+                case now_ms() < maps:get(deadline,Context,0) of true -> ok;false -> throw(context_expired) end,
+                {Side,R} = case maps:find(Id,maps:get(subscriptions,S)) of
+                    {ok,Sub} -> {receiver,Sub};
+                    error -> case maps:find({Peer,Session,Id},maps:get(providers,S)) of
+                        {ok,Prov} -> {provider,Prov};
+                        error -> throw({unknown_attempt,map_size(maps:get(providers,S)),map_size(maps:get(subscriptions,S))})
+                    end
+                end,
+                Bound = maps:with([<<"source">>,<<"incarnation">>,<<"attempt">>],P),
+                case (try binding(R) catch _:_ -> none end) of Bound -> ok;_ -> throw({old_attempt,Side}) end,
+                case maps:find(context,R) of
+                    {ok,#{session := Session}} -> ok;
+                    {ok,_} -> throw({attempt_from_other_relationship,Side});
+                    error -> throw({no_context,Side})
+                end,
+                case Side=:=provider orelse is_pid(maps:get(session,R,undefined)) of true -> ok;false -> throw({not_open,maps:get(state,R,undefined)}) end,
+                handler_failed
+            catch throw:Why -> Why;_:Error -> {check_failed,Error} end,
+            logger:warning("Discarded ~ts from ~ts (~ts): ~p",[Kind,binary:part(Peer,0,min(8,byte_size(Peer))),Id,Reason])
+    end.
 fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
 now_ms() -> erlang:monotonic_time(millisecond).
 terminate(_,S) ->

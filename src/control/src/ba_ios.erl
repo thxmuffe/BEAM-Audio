@@ -5,6 +5,7 @@ main() ->
     Root = code:root_dir(),
     code:add_paths(filelib:wildcard(filename:join([Root, "lib", "*", "ebin"]))),
     ok = application:load(ba_core),
+    ba_bridge:file_log(),
     %% iOS cannot spawn inet_gethost. Resolve through the statically linked
     %% prim_net NIF, then let Gun look up the original hostname in this VM.
     ok = inet_db:set_lookup([file]),
