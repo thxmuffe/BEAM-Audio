@@ -1,7 +1,8 @@
-# Session membership and privileges
+# Session rights and joining (dark Sessions)
 
-A Device's identity, its privileges, observed presence and live transport are
-separate. The model is defined in the [terminology](TERMINOLOGY.md): Devices
+A Device's identity, its privileges and live transport are separate. There is no
+membership list and no presence list: in a dark Session a Device sees only the
+Devices it bumps into, plus the Manager, and knows nothing about the rest. The model is defined in the [terminology](TERMINOLOGY.md): Devices
 hold privileges; there are no roles. Module and wire names still say `buffee`.
 
 ## Privileges and administration
@@ -80,21 +81,30 @@ a Session. The link is a bearer credential and is not encrypted. v5 links
 (`beamaudio://session/v5?ticket=…`, signed JSON with name) still parse so saved
 Sessions keep loading; v3/v4 links and their saved records are refused.
 
-### Joining is pairwise
+### Joining: a join certificate
 
-Holding the link is enough to participate. Every present Device advertises the
-Session mailbox, sha256("beamaudio-session-mailbox/v1:" ‖ secret), on the link's
-Receptions; Reception sees that value, never the secret. A Device looks up who
-is present and runs a handshake with each of them independently: `hello`,
-`challenge`, `proof`, `welcome`. Both sides prove the secret with an HMAC bound
-to the direction, the challenge and both Device IDs, and exchange their policies.
-No Device waits for a creator, a `grant` holder or a Manager, and none admits
-others on everyone's behalf. A Device arriving at an empty Session is simply its
-only participant: it keeps the Session ID, gains no privilege and is found by
-later arrivals. A Device listed as removed in the receiver's policy is refused.
-A participant that vanishes without an `offline` message (crash, power loss) is
-dropped when two successive successful lookups no longer list it; it rejoins by
-the same handshake when it returns.
+Holding the link is enough to participate. The invitation key is derived from
+the link's secret, sha256("beamaudio-session-invitation-key/v1:" ‖ secret) as an
+Ed25519 seed, so links already shared keep working. A joining Device signs
+"beamaudio-session-join/v1:" ‖ Session ID ‖ its Device ID with it; nobody needs
+to be online. Every control request carries that join certificate, and the
+receiver checks it against the public invitation key on every request, with no
+handshake, pairing or cache (see BUFFEE_CONTROL_PROTOCOL.md). A Device listed as
+removed in the receiver's statement is refused.
+
+Every Device advertises the Session mailbox, sha256("beamaudio-session-mailbox/v1:"
+‖ secret), on the link's Receptions, so any Device ID is addressable there.
+Reception's lookup is a source of neighbours (at most 32 kept), not membership.
+A Device without a signed statement yet (just joined) checks in with the Manager,
+whom everyone can see; the encounter makes the newer side share its statement.
+The Device list shows this Device, the Manager and the Devices it has
+encountered (at most 64).
+
+The signed rights statement travels to the Devices it concerns when a `grant`
+holder changes it (rights holders before and after, the removed, the Manager and
+the Devices that holder has encountered) and spreads on contact: on every new
+relationship the side with the newer revision sends it. A Device that never
+meets anyone holding a newer statement keeps its older one.
 
 ### Leave and return
 
@@ -118,11 +128,11 @@ in the current UI). A signed End tears down reached Devices and clears saved
 return intent (the return link and that Session's saved privilege policy).
 End does not retire the link: by owner decision (2026-11-18) anyone holding it
 can still open the Session again, arriving as an unprivileged participant of an
-empty Session with the same ID. End reaches only Devices paired at that moment. Without the privilege the call returns `end_privilege_required`;
+empty Session with the same ID. End reaches the Devices the ending Device can reach or has encountered. Without the privilege the call returns `end_privilege_required`;
 a `grant` holder can request the privilege for itself first. Ordinary Leave or
-transport loss never substitutes for End. End is bound to each pair's handshake.
-`revoke/1` lists the Device as removed in the next policy and tells every
-present Device, including the removed one, which stays visible as `revoked`.
+transport loss never substitutes for End. End is an ordinary signed request (`session.request`, kind `ended`) that needs `end_session`.
+`revoke/1` lists the Device as removed in the next statement and sends it to the
+Devices it concerns, including the removed one, which stays visible as `revoked`.
 Forwarding the link does not clear a removal; explicitly inviting that contact
 may.
 
@@ -133,14 +143,14 @@ empty Session is alone there until such a Device arrives.
 
 ## Privilege requests
 
-`request_privilege/1` sends a fresh signed request to the known `grant` holders
-and returns `grant_holder_unavailable` if none is reachable. Only admitted
-identities can request. `grant` holders see open requests per Device in
+`request_privilege/1` sends a signed `session.request` to the `grant` holders this
+Device can reach and returns `grant_holder_unavailable` if none is. Each holder
+decides it through `ba_device_request` (its On-air / Moderator request answer:
+Always, Ask or No). `grant` holders see open requests per Device in
 `requests`; granting the privilege clears the request. Requests do not change
 consent. They are a `grant` holder's live runtime state, not signed Session
 state or an offline queue. Automatic approval and time-limited grants are not
-implemented. Reception remains unchanged: its existing capability-scoped lookup
-already lists every Device advertising the same mailbox.
+implemented. Reception remains unchanged.
 
 ## Device API
 

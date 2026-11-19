@@ -9,15 +9,18 @@ idle_ticks_do_not_query_peers_test() ->
         no_message()
     end).
 
-initial_catalogue_and_peer_reconnect_test() ->
+%% Dark Sessions: a listener discovers nothing. It reads a catalogue when an ON
+%% AIR Device announces one, and re-reads only sources it already knows.
+listener_reads_only_announced_or_known_sources_test() ->
     fixture(fun(S,[A,B],Contexts) ->
-        {noreply,Started}=ba_audio_receiver:handle_info(catalog_bootstrap,S),
-        Reads=messages(2),?assertEqual(lists:sort([A,B]),lists:sort([P || {P,_,#{<<"kind">> := <<"catalog.read">>}} <- Reads])),
+        {noreply,Started}=ba_audio_receiver:handle_info(catalog_bootstrap,S),no_message(),
         {noreply,_}=ba_audio_receiver:handle_info({audio_session_up,maps:get(A,Contexts)},Started),no_message(),
-        Done=lists:foldl(fun({P,Id,_},Acc) -> deliver(P,Id,#{<<"kind">> => <<"catalog.end">>},Contexts,Acc) end,Started,Reads),
-        no_message(),
-        {noreply,_}=ba_audio_receiver:handle_info({audio_session_up,maps:get(A,Contexts)},Done),
-        ?assertMatch([{A,_,#{<<"kind">> := <<"catalog.read">>}}],messages(1)),no_message()
+        Announced=deliver(A,id(),#{<<"kind">> => <<"catalog.changed">>},Contexts,Started),
+        [{A,Read,#{<<"kind">> := <<"catalog.read">>}}]=messages(1),
+        Done=deliver(A,Read,#{<<"kind">> => <<"catalog.end">>},Contexts,Announced),no_message(),
+        Listening=Done#{subscriptions := #{id() => #{intent => #{device => B}}}},
+        {reply,ok,_}=ba_audio_receiver:handle_call(refresh,undefined,Listening),
+        ?assertMatch([{B,_,#{<<"kind">> := <<"catalog.read">>}}],messages(1)),no_message()
     end).
 
 notifications_during_read_are_coalesced_test() ->

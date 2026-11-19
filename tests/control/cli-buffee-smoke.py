@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-buffee-') as directory:
             if {row.get('name') for row in named_frame['devices']} == {'test1', 'test2', 'Buffee monitor'}:
                 break
         else:
-            raise AssertionError('Monitor did not receive Device names')
+            raise AssertionError(('Monitor did not receive Device names',[(r.get('name'),r.get('state')) for r in named_frame['devices']]))
         for row in named_frame['devices']:
             if row.get('name') in ('test1', 'test2'):
                 diagnostics = row['capabilities']['audio_diagnostics']

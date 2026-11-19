@@ -1,5 +1,57 @@
 # Current implementation and validation
 
+## Dark Sessions: join certificates replace membership — 2026-11-19
+
+Owner direction: Devices only see the Devices they bump into, plus the Manager;
+nobody knows who else is in the Session. Implemented:
+
+- **Admission per request.** The invitation key is derived from the existing
+  link secret (old links keep working). Each Device signs its own join
+  certificate; control protocol v3 carries it on every packet and the receiver
+  checks it against the public invitation key, with no cache. The membership
+  pairing handshake, participant list, `pairs`, presence handling, the
+  `membership` Reception message type, `peer_online/1`, route exchange and
+  the 32-peer/15-participant limits are removed.
+- **Rights.** The control layer takes members' rights from the signed
+  statement and default rights for every other joined Device, refusing removed
+  Devices. Rights changes apply in place without restarting relationships. A
+  grant holder's change goes to rights holders before and after, the removed,
+  the Manager and its encountered Devices; on every new relationship the side
+  with the newer revision sends its statement (`session.request` kind
+  `policy`). A Device with no statement yet checks in with the Manager.
+- **Addressing.** Any Device ID is reachable at the Session mailbox; Reception
+  lookup supplies at most 32 neighbours (`participants` in status).
+- **Device list.** This Device, the Manager and Devices it has encountered (at
+  most 64); Connected means a live relationship. An explicit `monitor --all`
+  also reads Reception's reachable Devices.
+- **Clock.** Authority placement uses Reception reachability; this fixes the
+  regression where the timeline changed after the first grant holder left.
+- **ON AIR push.** A Device with live sources sends `catalog.changed` to the
+  Devices it can reach on each change, to newly reachable ones, and to all every
+  30 s. Listeners read only announced sources and sources they already know
+  (offers, saved subscriptions), re-reading those every 5 s; a lapsed known
+  source gets a hello. Hello-to-everyone audio discovery is gone. An offer
+  arriving while Playback is not allowed asks this Device's user, naming the
+  ON AIR Device ("open your speakers").
+
+Validation: eunit 269 tests, 0 failures. Local-relay smokes pass:
+`crash-chat`, `session-moderation`, `session-privileges` (after narrowing one
+expectation to need-to-know and waiting for the 2 s reachability report),
+`buffee-membership`, `buffee-time`, `parallel-sessions`, `cli-session-memory`,
+`cli-smoke`, all rerun after the ON AIR push change except `cli-smoke`.
+`session-moderation-smoke` no longer waits for the moderator to see its target
+(dark Sessions: kicking needs only the Device ID). `cli-buffee-smoke` reads all three Devices but fails
+its name check because labels now read `Mac | test1 | …` rather than `test1`;
+this is label format, not this change. `session-peer-admission-smoke` asserts
+v5 links and was already outdated; `device-label-smoke` needs a Windows
+runtime. `device-session-e2e.py` (headless WebRTC with a test sink): the ON AIR
+push delivers both offers and the listener subscribes, but media setup never
+reaches active (receiver rejects `accepted`/signals: invalid_media_signal 4,
+invalid_control_or_attempt 2, stale signals). The same test at 97770c0 (before
+today's control work) fails at the same step with the same counts, so this is
+pre-existing and not yet diagnosed. No audio was heard; no app build or live
+multi-Device check.
+
 ## Session requests through the pipeline — 2026-11-19
 
 `privilege_request`, `privilege_release`, `rename_request`, `remove_request` and

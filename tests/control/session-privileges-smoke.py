@@ -84,7 +84,8 @@ def main():
             control.wait(a,lambda s: s['membership']['requests'].get(b.identity['id']) == ['on_air'])
             assert a.request('grant_privilege',peer=b.identity['id'],privilege='on_air')['ok']
             holds(b,'on_air')
-            for d in (a, b, c): told(d, b, 'can now go on air')
+            # Need-to-know: the grant holder and the Device concerned learn it; c does not.
+            for d in (a, b): told(d, b, 'can now go on air')
             assert a.request('take_privilege',peer=b.identity['id'],privilege='on_air')['ok']
             holds(b)
             # Losing a privilege is debug-level: not in anyone's visible history.
@@ -128,7 +129,8 @@ def main():
             holds(b,'on_air')
             clocks(b, c)
             assert b.request('clock_snapshot')['timeline']==timeline
-            assert not b.request('snapshot')['membership']['grant_holder_present']
+            # Reachability is Reception's report (refreshed every 2 s), not live pairing.
+            control.wait(b, lambda s: not s['membership']['grant_holder_present'])
             assert b.request('start_runtime')['connection']['state']=='joined'
             a.close()
             a = device('creator', first_seed)

@@ -197,7 +197,7 @@ handle_cast(_,S) -> {noreply,S}.
 
 handle_info(tick,S0) ->
     Now = now_ms(),
-    S2 = case Now-maps:get(last_lookup,S0) >= ?LOOKUP_MS of true -> discover(S0);false -> S0 end,
+    S2 = case Now-maps:get(last_lookup,S0) >= ?LOOKUP_MS of true -> check_in(discover(S0));false -> S0 end,
     erlang:send_after(250,self(),tick),{noreply,S2};
 handle_info({desk_event,_,connected},S) ->
     %% Do not wait for the next lookup after a Desk becomes usable.
@@ -221,6 +221,11 @@ discover(#{state := authorized,urls := URLs,cap := Cap}=S) ->
     end) || URL <- URLs],
     S#{last_lookup := now_ms()};
 discover(S) -> S#{last_lookup := now_ms()}.
+%% Everyone can see the Manager. Without a signed statement yet (just joined),
+%% go to it: the encounter makes the side with the newer statement share it.
+check_in(#{state := authorized,signed := undefined,id := Id}=S) ->
+    case manager(S) of Id -> ok;Manager -> ba_buffee_control:introduce(Manager) end,S;
+check_in(S) -> S.
 %% Execution of approved Session requests. Rights were checked by the control
 %% protocol; only this Device's own ability to execute is checked here.
 session_request(Peer,#{<<"kind">> := <<"privilege_request">>,<<"privilege">> := Wire},S) ->
@@ -312,9 +317,10 @@ update(Change,#{policy := P0,id := Id,buffee := Buffee}=S) ->
             St = #{<<"name">> => maps:get(name,S),<<"policy">> => P,<<"delegations">> => D},
             Next = checkpoint(adopt(Id,sign(St,S),St,S)),
             %% Tell the Devices the change concerns (rights holders before and
-            %% after, the removed) and the ones this Device deals with.
-            tell_all(lists:usort(maps:keys(maps:get(<<"members">>,P0))++maps:keys(maps:get(<<"members">>,P))++
-                maps:get(<<"removed">>,P)++maps:get(encountered,S))--[Id],Next),
+            %% after, the removed), the Manager everyone can ask, and the ones
+            %% this Device deals with.
+            tell_all(lists:usort([manager(Next)|maps:keys(maps:get(<<"members">>,P0))++maps:keys(maps:get(<<"members">>,P))++
+                maps:get(<<"removed">>,P)++maps:get(encountered,S)])--[Id],Next),
             {ok,self_check(publish(Next))};
         Error -> Error
     end.
@@ -355,7 +361,7 @@ view(#{id := Id,policy := P}=S) ->
           revision => maps:get(<<"revision">>,P)+1,invitation => maps:get(invitation,S),join => maps:get(join,S),
           members => maps:remove(Id,Members),defaults => Rights(defaults()),removed => removed(S),
           peers => maps:from_list([{D,Rights(permissions(D,P))} || D <- contacts(S)])},
-      routes => #{},until => infinity}.
+      reachable => reachable(S),routes => #{},until => infinity}.
 permissions(Id,#{<<"members">> := Members}) ->
     case maps:find(Id,Members) of {ok,#{<<"permissions">> := Perms}} -> Perms;error -> defaults() end.
 %% Participants without a policy entry; the creator's own defaults are wider.
@@ -378,10 +384,13 @@ policy_state(#{signed := Packet,signer := Signer}) -> #{<<"signer">> => Signer,<
 same_session(P,S) ->
     maps:get(<<"buffee">>,P)=:=maps:get(buffee,S) andalso maps:get(<<"authority">>,P)=:=maps:get(authority,S).
 removed(#{policy := P}) -> maps:get(<<"removed">>,P).
-%% The Devices shown: this one and the ones it has encountered.
-known(#{id := Id}=S) -> [Id|maps:get(encountered,S)].
+%% Dark Sessions: the Devices shown are this one, the Manager (named in the
+%% signed statement, so everyone can go to it, e.g. to check new requests) and
+%% the ones this Device has bumped into. Nobody knows the rest.
+known(#{id := Id}=S) -> [Id|lists:delete(Id,lists:usort([manager(S)|maps:get(encountered,S)]))].
+manager(#{policy := P}) -> maps:get(<<"manager">>,P).
 reachable(#{reachable := R}) -> lists:usort(lists:append(maps:values(R))).
-contacts(S) -> lists:usort(maps:get(encountered,S)++reachable(S)).
+contacts(#{id := Id}=S) -> lists:delete(Id,lists:usort([manager(S)|maps:get(encountered,S)++reachable(S)])).
 grant_holder(#{id := Id,policy := P,state := authorized}) -> ba_session_privileges:has(grant,Id,P);
 grant_holder(_) -> false.
 grant_holder_present(#{policy := P,id := Self}=S) ->

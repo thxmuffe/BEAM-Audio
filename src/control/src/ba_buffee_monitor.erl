@@ -11,7 +11,9 @@ configure(Device,Options) ->
     end.
 snapshot(#{metrics := Metrics,plain := Plain}) when is_boolean(Metrics),is_list(Plain),length(Plain)=<32 ->
     Local=ba_app_session:snapshot(),Buffee=maps:get(buffee,Local),Self=maps:get(device,Local),
-    Peers=lists:usort([Self|maps:get(members,Buffee,[])]),Parent=self(),Ref=make_ref(),
+    %% An explicit observer reads the Devices it knows plus the ones Reception
+    %% reports reachable; reading them is how it bumps into them.
+    Peers=lists:usort([Self|maps:get(members,Buffee,[])++maps:get(participants,Buffee,[])]),Parent=self(),Ref=make_ref(),
     Workers=[{Peer,ba_session_scope:spawn_monitor(fun() -> Parent ! {Ref,Peer,read(Peer,Self,Metrics andalso not lists:member(Peer,Plain))} end)} || Peer <- Peers],
     Rows=collect(Workers,Ref,erlang:monotonic_time(millisecond)+6500,[]),
     #{buffee => Buffee,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(contacts,Local)) || Row <- Rows],

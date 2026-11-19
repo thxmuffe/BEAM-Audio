@@ -556,9 +556,10 @@ live(Deadline) when is_integer(Deadline) -> now_ms()<Deadline;
 live(_) -> false.
 
 %% Clock service placement grants nothing. Prefer the original reference while
-%% it is present; an online on-air Device can continue an acquired clock.
-provider(Reference,Self,#{device_privileges := Privileges}) ->
-    Online=fun(Id) -> Id=:=Self orelse ba_buffee_desks:peer_online(Id) end,
+%% it is reachable; a reachable on-air Device can continue an acquired clock.
+%% Reachability is what Reception reports, not a Session-wide presence list.
+provider(Reference,Self,#{device_privileges := Privileges}=V) ->
+    Online=fun(Id) -> Id=:=Self orelse lists:member(Id,maps:get(reachable,V,[])) end,
     case maps:is_key(Reference,Privileges) andalso Online(Reference) of
         true -> Reference;
         false ->

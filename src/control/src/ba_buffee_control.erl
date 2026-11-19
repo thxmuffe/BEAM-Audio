@@ -2,7 +2,7 @@
 -module(ba_buffee_control).
 -behaviour(gen_server).
 -export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1,read_capabilities/2]).
--export([session_request/2,offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,chat_message/3,audio_context/1,time_message/3]).
+-export([session_request/2,introduce/1,offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,chat_message/3,audio_context/1,time_message/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 
 chat_message(Peer,Id,Text) -> gen_server:call(ba_session_scope:ref(?MODULE),{chat_message,Peer,Id,Text}).
@@ -10,6 +10,9 @@ time_message(Peer,Id,Payload) -> gen_server:call(ba_session_scope:ref(?MODULE),{
 audio_message(Peer,Id,Payload) -> gen_server:call(ba_session_scope:ref(?MODULE),{audio_message,Peer,Id,Payload}).
 audio_context(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{audio_context,Peer}).
 
+%% One hello to a Device that should know this one (e.g. the Manager).
+%% Asynchronous for the same reason as session_request/2.
+introduce(Peer) -> gen_server:cast(ba_session_scope:ref(?MODULE),{introduce,Peer}).
 %% Signed Session requests from membership to the Devices that execute them.
 %% Asynchronous: membership is called by this process for snapshots.
 session_request(Peers,Payload) -> gen_server:cast(ba_session_scope:ref(?MODULE),{session_request,Peers,Payload}).
@@ -149,6 +152,8 @@ handle_call({Operation,Peer},From,#{callers := Callers} = S)
         {error,Reason,_} -> {reply,{error,Reason},S}
     end;
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
+handle_cast({introduce,Peer},S) ->
+    {_,_,Next} = connect_peer(Peer,S),{noreply,Next};
 handle_cast({session_request,Peers,Payload},S) ->
     {noreply,lists:foldl(fun(Peer,Acc) ->
         Id = binary:encode_hex(crypto:strong_rand_bytes(16)),
@@ -205,18 +210,6 @@ handle_info({desk_delivery,_,Peer,Packet},S0) ->
     end;
 handle_info({discover_name,Peer},S) -> {noreply,discover_name(Peer,S)};
 handle_info({desk_event,_,disconnected},S) -> {noreply,S};
-handle_info({desk_event,URL,{presence,Online}},#{config := #{routes := Routes}} = S) ->
-    Peers = maps:keys(maps:get(sessions,maps:get(protocol,S))),
-    Next = lists:foldl(fun(Peer,Acc) ->
-        case maps:find(Peer,Routes) of
-            {ok,#{<<"desk">> := URL}} ->
-                case lists:member(Peer,Online) of
-                    true -> Acc;false ->
-                        case ba_buffee_desks:peer_online(Peer) of true -> Acc;false -> close_peer(Peer,peer_disconnected,Acc) end
-                end;
-            _ -> Acc
-        end
-    end,S,Peers),{noreply,Next};
 handle_info({desk_event,_,_},S) -> {noreply,S};
 handle_info(expire,S) ->
     {Events,Protocol} = ba_buffee_control_protocol:expire(now_ms(),maps:get(protocol,S)),
@@ -422,12 +415,6 @@ fence_job(J) ->
     end.
 fence_peer_jobs(Peer,#{jobs := Jobs} = S) ->
     S#{jobs := maps:map(fun(_,#{peer := P} = J) -> case P =:= Peer of true -> fence_job(J); false -> J end end,Jobs)}.
-close_peer(Peer,Reason,#{protocol := Protocol} = S) ->
-    case maps:find(Peer,live(Protocol)) of
-        {ok,Session} -> drop_session(Peer,maps:get(id,Session));
-        error -> ok
-    end,
-    fence_peer_jobs(Peer,reply(Peer,{error,Reason},S#{protocol := ba_buffee_control_protocol:close(Peer,now_ms(),Protocol)})).
 drop_session(Peer,Session) ->
     time_notify({time_session_down,Peer,Session}),
     audio_notify({audio_session_down,Peer,Session}),

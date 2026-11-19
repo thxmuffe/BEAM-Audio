@@ -1,11 +1,13 @@
-# Session control protocol v2 — authenticated per request
+# Session control protocol v3 — authenticated per request (dark Sessions)
 
 
 
 ## Runtime and local configuration
 
-Current runtime policy pins Buffee, authority, Manager, epoch/revision and per-sender
-operation grants. Membership alone grants no operations. `job_offer` additionally
+The receiver checks each request against its current signed rights statement:
+members' rights, default rights for every other joined Device, and removed
+Devices. There is no peer list: any Device whose join certificate checks out
+against the invitation key may ask (see BUFFEE_MEMBERSHIP.md). `job_offer` additionally
 requires the job_offer grant and recipient's matching local Contract/consent.
 The [Handler guide](DEVICE_HANDLER.md) describes that local lifecycle.
 
@@ -38,9 +40,10 @@ with `beamaudio-buffee-control/v1:`. The body has these exact fields:
 
 | Fields | Meaning |
 | --- | --- |
-| `v` | Integer 2. Version 1 (handshake and lease renewal) is no longer accepted. |
+| `v` | Integer 3. Earlier versions are not accepted. |
 | `from`, `to`, `buffee` | Sender, intended recipient, Buffee. Reception `from` must match the signer; recipient must be local. |
-| `authority`, `manager`, `epoch`, `revision` | Pinned authority/Manager Device IDs and exact locally installed policy version. |
+| `join` | Sender's join certificate (128 hex): its Device ID and the Session signed by the invitation key. |
+| `revision` | Sender's rights-statement revision. Informational: the newer side shares its statement. |
 | `session` | The sender's instance: fresh 128-bit/32-hex ID per control state (start, policy change, restart). |
 | `seq` | Nonnegative integer up to 9007199254740991; strictly increasing per sender instance. |
 | `sent` | Sender's wall-clock time, Unix milliseconds. |
@@ -61,9 +64,10 @@ with `beamaudio-buffee-control/v1:`. The body has these exact fields:
 | `job.offer` | Exact test capability/Contract/duration/lease fields; job_offer grant and matching local coordinator Contract. Header request is the Job ID. Handler independently accepts/rejects. |
 | `job.cancel` | Empty object; verified coordinator, same grant and owned Job/session scope. |
 | `job.report` | Exact attempt/state/reason object. Adapter checks the Manager record's assignee, session, Job ID, attempt and result fence. |
+| `session.request` | `kind` plus exact fields: `privilege_request`/`privilege_release` (`privilege`), `rename_request` (`name`, needs on_air), `remove_request` (`device`, needs end_session), `ended` (needs end_session), `policy` (`signer`, signed `state`). |
 
-Every message binds both identities, Session, sender instance, sequence, send
-time and policy version. A receiver accepts a packet only if all of these hold:
+Every message binds both identities, Session, join certificate, sender
+instance, sequence and send time. A receiver accepts a packet only if all of these hold:
 
 - its `sent` is within 5 minutes of the receiver's wall clock;
 - for a known sender instance, `seq` is higher than the last one accepted;

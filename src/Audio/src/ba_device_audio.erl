@@ -8,7 +8,7 @@ start_link(Owner) -> gen_server:start_link(?MODULE,Owner,[]).
 changed(Pid) -> gen_server:cast(Pid,changed).
 init(Owner) ->
     process_flag(trap_exit,true),monitor(process,Owner),self() ! tick,
-    {ok,#{owner => Owner,contracts => [],connecting => #{},errors => #{}}}.
+    {ok,#{owner => Owner,contracts => [],errors => #{}}}.
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(changed,S) -> {noreply,reconcile(S#{errors := #{}})};
 handle_cast(_,S) -> {noreply,S}.
@@ -41,7 +41,7 @@ reconcile(S) ->
     case ba_buffee_membership:current() of
         {ok,#{policy := #{buffee := Buffee,peers := Peers},routes := _}} ->
             ok=ba_audio_sup:ensure_started(),
-            Connected=connect_peers(maps:keys(Peers),S),
+            Connected=S,
             Captured=lists:foldl(fun(K,Acc) -> capture(K,maps:get(K,Consent),Adapter,Acc) end,Connected,[microphone,broadcast]),
             View=ba_audio_receiver:snapshot(),
             {Pub,_}=ba_device_store:identity(),Self=binary:encode_hex(Pub),
@@ -49,6 +49,12 @@ reconcile(S) ->
             Publish=[{publish,P,maps:get(source_key,O),ba_app_session:contract(Buffee,Self,#{receiver => P,source => maps:get(source_key,O)})}
                 || P <- maps:keys(Peers),not ba_app_session:excluded(P),O <- Local],
             Offers=[O || O <- maps:get(offers,View),not ba_app_session:excluded(maps:get(device,O))],
+            %% "Open your speakers": an ON AIR Device's offer asks this Device's
+            %% Playback consent; with Ask, its user sees which Device asks.
+            case maps:get(speaker,Gates) of
+                false -> [ba_device_request:approve(speaker,maps:get(device,O)) || O <- Offers];
+                true -> ok
+            end,
             Receive=case maps:get(speaker,Consent) of
                 true -> [{receive_audio,maps:get(device,O),maps:get(source_key,O),
                     ba_app_session:contract(Buffee,maps:get(device,O),#{receiver => Self,source => maps:get(source_key,O)})} || O <- Offers];
@@ -117,16 +123,6 @@ capture(K,true,Adapter,S) ->
     end,
     Errors=case Result of #{state := error,error := Reason} -> (maps:get(errors,S))#{K => Reason};_ -> maps:get(errors,S) end,
     S#{audio => (maps:get(audio,S,#{}))#{K => Result},errors := Errors}.
-connect_peers(Peers,S) ->
-    {Pub,_}=ba_device_store:identity(),Self=binary:encode_hex(Pub),Now=erlang:monotonic_time(millisecond),
-    Due=lists:foldl(fun(P,Acc) ->
-        case P=/=Self andalso not ba_app_session:excluded(P) andalso Now>=maps:get(P,Acc,Now) of
-            true ->
-                case ba_buffee_control:audio_context(P) of {ok,_} -> ok;_ -> ba_buffee_control:connect(P) end,
-                Acc#{P => Now+2000};
-            false -> Acc
-        end
-    end,maps:get(connecting,S),Peers),S#{connecting := Due}.
 printable(R) when is_binary(R) -> R;
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
 terminate(_,_) ->

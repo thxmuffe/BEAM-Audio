@@ -131,8 +131,9 @@ handle_cast(network_changed,S) -> {noreply,S#{poll_at => now_ms()}};
 handle_cast(_,S) -> {noreply,S}.
 handle_info(catalog_bootstrap,S) -> {noreply,refresh_all(S)};
 handle_info({audio_session_up,#{peer := Peer,session := Session}},S) ->
-    case context(Peer) of
-        {ok,#{session := Session}} ->
+    %% Only a source this Device already knows is re-read; others announce.
+    case {lists:member(Peer,known_sources(S)),context(Peer)} of
+        {true,{ok,#{session := Session}}} ->
             Cs=maps:get(catalogs,S),
             Pending=case maps:find(Peer,Cs) of
                 {ok,#{session := Session}} -> Cs;
@@ -144,12 +145,14 @@ handle_info({audio_session_up,#{peer := Peer,session := Session}},S) ->
 handle_info(tick,S) ->
     erlang:send_after(250,self(),tick),
     Catalogs = maps:filter(fun(_,C) -> maps:get(deadline,C)>now_ms() end,maps:get(catalogs,S)),
-    %% Push (catalog.changed, link up) is the fast path; this re-read every 5 s
-    %% repairs a notice or reply lost on the relay. Each read is independent.
-    Next = case now_ms()>=maps:get(poll_at,S,0) of
+    %% Push (catalog.changed) is the path; this re-read of known sources every
+    %% 5 s repairs a lost notice and keeps those relationships alive while
+    %% listening. Each read is independent.
+    Polled = case now_ms()>=maps:get(poll_at,S,0) of
         true -> refresh_all(S#{catalogs := Catalogs,poll_at => now_ms()+5000});
         false -> S#{catalogs := Catalogs}
     end,
+    Next = announce_new(Polled),
     Final = lists:foldl(fun(Id,Acc) -> restore_one(Id,true,Acc) end,Next,maps:keys(maps:get(subscriptions,Next))),
     Recovered=case maps:get(suspended,Final) of
         true -> Final;
@@ -437,23 +440,39 @@ catalog(Peer,#{catalogs := Cs} = S) ->
                 ok -> {ok,S#{catalogs := Cs#{Peer => #{id => Id,session => Session,deadline => now_ms()+5000,offers => #{}}}}};
                 Error -> {Error,S}
             end;
-        _ -> {{error,no_session_or_pending},S}
+        %% A known source whose relationship lapsed: say hello; its start
+        %% (audio_session_up) triggers the read.
+        {false,_} -> ba_buffee_control:introduce(Peer),{{error,no_session},S};
+        _ -> {{error,pending},S}
     end.
+%% Dark Sessions: an ON AIR Device tells the Devices it can reach that it has
+%% something to subscribe to ("subscribe to my audio"); each decides under its
+%% own Playback consent ("open your speakers"). Nobody discovers sources.
 announce_catalog(S) ->
+    Readers = readers(),announce(Readers,S),
+    S#{announced => Readers,announce_at => now_ms()+30000}.
+%% New reachable Devices hear about live sources; all hear again every 30 s.
+announce_new(#{sources := Sources}=S) when map_size(Sources)>0 ->
+    case now_ms()>=maps:get(announce_at,S,0) of
+        true -> announce_catalog(S);
+        false ->
+            Readers = readers(),New = Readers--maps:get(announced,S,[]),
+            announce(New,S),S#{announced => lists:usort(maps:get(announced,S,[])++New)}
+    end;
+announce_new(S) -> S.
+announce(Peers,_) -> [send(Peer,fresh(),#{<<"kind">> => <<"catalog.changed">>}) || Peer <- Peers],ok.
+%% Devices this one can reach that may read catalogues.
+readers() ->
     case membership() of
         {ok,#{policy := #{peers := Peers}}} ->
-            [send(Peer,fresh(),#{<<"kind">> => <<"catalog.changed">>}) ||
-                {Peer,Permissions} <- maps:to_list(Peers),lists:member(stream_read,Permissions),
-                not ba_app_session:excluded(Peer)],S;
-        _ -> S
+            [Peer || {Peer,Permissions} <- maps:to_list(Peers),lists:member(stream_read,Permissions),
+                not ba_app_session:excluded(Peer)];
+        _ -> []
     end.
-%% No membership process (yet, or restarting) means no peers to read, not a
-%% receiver crash that would also drop every live subscription.
-refresh_all(S) ->
-    case membership() of
-        {ok,#{policy := #{peers := Peers}}} -> maps:fold(fun(Peer,_,Acc) -> {_,Next}=catalog(Peer,Acc),Next end,S,Peers);
-        _ -> S
-    end.
+%% Sources this Device knows of: current offers and saved subscriptions.
+known_sources(#{offers := Offers,subscriptions := Subs}) ->
+    lists:usort([P || {P,_} <- maps:keys(Offers)]++[maps:get(device,I) || #{intent := I} <- maps:values(Subs)]).
+refresh_all(S) -> lists:foldl(fun(Peer,Acc) -> {_,Next}=catalog(Peer,Acc),Next end,S,known_sources(S)).
 membership() -> try ba_buffee_membership:current() catch exit:_ -> {error,unavailable} end.
 context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
 send(Peer,Id,P) -> ba_buffee_control:audio_message(Peer,Id,P).

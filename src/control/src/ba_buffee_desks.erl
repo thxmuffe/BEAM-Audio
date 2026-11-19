@@ -1,7 +1,7 @@
 %% A bounded set of independent Desk connections; no membership authority here.
 -module(ba_buffee_desks).
 -behaviour(gen_server).
--export([start_link/0,reset/0,configure/4,route/0,advertise/1,lookup/2,send/3,send_route/4,status/0,peer_online/1]).
+-export([start_link/0,reset/0,configure/4,route/0,advertise/1,lookup/2,send/3,send_route/4,status/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 reset() -> gen_server:call(ba_session_scope:ref(?MODULE),reset).
@@ -12,7 +12,6 @@ lookup(URL,Cap) -> gen_server:call(ba_session_scope:ref(?MODULE),{lookup,URL,Cap
 send(To,Type,Packet) -> gen_server:call(ba_session_scope:ref(?MODULE),{send,To,Type,Packet},3000).
 send_route(To,Route,Type,Packet) -> gen_server:call(ba_session_scope:ref(?MODULE),{send_route,To,Route,Type,Packet},3000).
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
-peer_online(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{peer_online,Peer}).
 init([]) ->
     true = ba_settings:env("BA_IDENTITY_SEED") =/= false,
     true = ba_settings:env("BA_STATE_DIR") =/= false,
@@ -38,12 +37,6 @@ handle_call({lookup,URL,Cap},_,S) ->
     catch _:_ -> {error,desk_unavailable} end,
     {reply,Result,S};
 handle_call(route,_,S) -> {reply,#{<<"desk">> => maps:get(primary,S),<<"mailbox">> => maps:get(mailbox,S)},S};
-handle_call({peer_online,Peer},_,S) ->
-    Connections = ba_desk_connections_sup:connections(),
-    Online = maps:is_key(Peer,maps:get(routes,S)) andalso lists:any(fun(URL) ->
-        V = connection_status(URL,maps:get(URL,Connections,undefined)),
-        maps:get(connected,V,false) andalso lists:member(Peer,maps:get(online,V,[]))
-    end,maps:get(urls,S)),{reply,Online,S};
 handle_call(status,_,S) ->
     Connections = ba_desk_connections_sup:connections(),
     Views = maps:from_list([{URL,connection_status(URL,maps:get(URL,Connections,undefined))} || URL <- maps:get(urls,S)]),

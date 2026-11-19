@@ -43,11 +43,11 @@ and cosmetic cleanup still wait.
   protocol v2: signed, wall-clock fresh, replay-checked; no handshake or
   background renewal). Session requests (privilege request/release, rename,
   remove, End) are signed control requests decided by the same pipeline.
-  Remaining: admission still depends on the membership pairing handshake
-  (control accepts only paired participants); owner proposes replacing
-  membership with per-request join credentials (see PROGRESS 2026-11-19).
-  Open regression: `session-privileges-smoke.py` clock timeline changes after
-  the first grant holder leaves (fails twice since control v2).
+  Admission is a join certificate checked per request (control v3); the
+  pairing handshake and participant list are gone (dark Sessions, PROGRESS
+  2026-11-19). The clock regression after the grant holder leaves is fixed.
+  Next: clock follows the ON AIR stream a listener is subscribed to; relaying
+  to unreachable Devices stays deferred.
 - **OTP ownership is mandatory.** Native streams stop when their owning OTP
   process, required supervisor, authority or runtime stops or crashes. Independent
   native teardown and forced termination must prevent orphan media connections;
@@ -254,10 +254,11 @@ path. Dated recordings, counters and validation limits remain in PROGRESS.md.
   recovery (see CONSENT_ENFORCEMENT.md).
 
 **Topology and scale**
-- Control links are on demand (2026-11-19). Remaining full-Session work:
-  audio discovery introduces itself to and polls every peer's catalogue every
-  5 s while audio automation runs, and membership pairs every present Device;
-  scope both before claiming large-Session support. Explicit
+- Dark Sessions (2026-11-19): no pairing, presence list or catalogue polling of
+  everyone. Remaining full-Session-shaped work: Reception's mailbox lookup (we
+  keep at most 32 neighbours) and an ON AIR Device announcing to every Device it
+  can reach (concurrent requests, no relay). Measure fan-out before claiming
+  large-Session support. Explicit
   `monitor --all` is concurrent diagnostic work, not a scalable background
   liveness algorithm. No topology or polling behavior changed in cleanup.
 - Clock: one logical master on an ON AIR Device, distributing time about every

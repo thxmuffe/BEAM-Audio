@@ -71,7 +71,8 @@ def main():
                 assert 'grant' not in api('moderator','snapshot')['buffee']['privileges']
                 assert api('moderator','grant_privilege',device=ids['target'],privilege='grant')['error']=='Only a Device with the grant privilege can change privileges.'
                 for target in ('target','admin','independent'):
-                    wait('moderator',lambda s:any(d['id']==ids[target] and d['state']=='authorized' for d in s['devices']))
+                    # Dark Sessions: the moderator need not have bumped into the target;
+                    # a signed End reaches any Device ID at the Session mailbox.
                     assert not api('moderator','remove_device',device=ids[target])['error']
                     wait(target,lambda s:s['buffee']['state']=='idle')
                     assert api('moderator','snapshot')['buffee']['state']=='authorized'
