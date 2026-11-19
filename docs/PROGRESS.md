@@ -1,5 +1,67 @@
 # Current implementation and validation
 
+## CLI confirmation of the active audio path — 2026-11-19
+
+Joined Paavo 007 with a fresh, audio-disabled Inspector through the public CLI.
+After discovery settled, both Mac and iPhone returned current metrics. The
+running Mac runtime has no `BA_NATIVE_STREAM_TRIAL` setting and uses
+`ba_audio_input`; the catalogue advertises legacy float32 PCM. The iPhone reports
+the Erlang Mixer and the existing iOS output backend. **The observed stream is
+legacy PCM, not the new native AAC trial.** This resolves the uncertainty in the
+earlier listening report for the presently running apps; it does not prove which
+settings every earlier app instance used.
+
+Across about 30 seconds: Mac sent 2,847 media packets and its capture-drop count
+increased by one. iPhone received 2,823 packets, submitted 1,435,392 frames, and
+dropped **21 overlapping blocks**. Its late/missed-target counters did not grow
+in that interval; two additional long mixer wakeup gaps were recorded. The
+cumulative maximum mixer wakeup gap was **3,074 ms**, not a newly measured stall
+duration. Receiver and source reported Response time **840 ms**; the older local
+Web Device still reported 150 ms. Capture and phone speaker both reported running
+with fresh nonzero meters. Counters do not establish audible output or explain
+every discontinuity, but ongoing overlap rejection is confirmed independently
+of the historical lateness counts.
+
+The native AAC implementation therefore still needs a real-device test with its
+profile positively selected. Do not infer AAC codec quality from this legacy
+run or expand the Erlang media path to address it. No capture, playback, Response
+time, consent or app-instance settings were changed. The temporary Inspector was
+stopped after collecting the samples. Private local snapshots and a bounded
+summary are in builds/CLI/private/audio-path-check/; invitations are not copied
+into this report. No implementation changes or automated test run.
+
+## Manual Mac → iPhone feedback — 2026-11-19
+
+Owner reports music plays and iPhone speaker activation stays on reliably, but
+quality is imperfect and playback remains discontinuous. Mac ON AIR behavior
+was incorrect; the exact start/stop/button-state failure needs clarification.
+50 ms Response time is too short in this run; other tested values worked.
+Switching from 50 ms to Automatic produced roughly 10–20 seconds of glitchy
+audio before settling around 150 ms. At 150 ms playback works but still has
+interruptions. This establishes audible playback, not music-quality acceptance
+or synchronized speakers.
+
+**Backend qualification remains open.** Read-only CLI inspection through the
+existing local Web Device sees a `Mac default output` offer with a PCM descriptor
+and no native handler/transport marker. This is a legacy offer, not evidence for
+`gst_aac_rtp_v2`. Direct Mac/iPhone metrics timed out, so that catalogue observation
+does not conclusively identify the entire listening run. Do not count it as
+native AAC acceptance without confirming the active offer/backend. No settings,
+audio toggles or user Devices were changed during inspection.
+
+Code inspection: legacy lateness summaries run every five seconds, consistent
+with multi-interval Automatic settling but not a proven explanation for this
+run. The native trial does not yet submit lateness advice to Automatic and
+currently recreates streams on Response-policy changes. Both remain step-4 gaps.
+
+Reverse ON AIR testing is blocked by this build's explicit iOS ≤26 capability
+gate. Its other-app capture implementation uses the iOS-27 ScreenCaptureKit path;
+there is no ReplayKit broadcast extension for iOS 26. Microphone sharing remains
+available through the existing path; it would not qualify reverse native AAC.
+Apple documents the older [ReplayKit broadcast-extension mechanism](https://developer.apple.com/documentation/replaykit/rpbroadcastsamplehandler).
+No implementation changes, build, deployment or automated tests in this feedback
+triage; current code and user observations were inspected and recorded.
+
 ## Native Session-clock scheduling — 2026-11-19
 
 Connected plan step 3 in the opt-in AAC trial. New `ba_audio_native_clock` maps

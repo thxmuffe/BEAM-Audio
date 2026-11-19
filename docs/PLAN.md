@@ -79,6 +79,18 @@ STUN is configured on every platform. The owner confirmed Mac→iPhone playback
 at 800 ms after shorter Response times caused dropouts. Sustained quality and
 physical synchronization remain unqualified.
 
+Latest manual feedback (2026-11-19): music plays and iPhone output remains on,
+but audio is discontinuous, Mac ON AIR behaves incorrectly, and 50 ms fails.
+Automatic takes about 10–20 seconds to recover from 50 ms and settles near
+150 ms. Other tested Response times work, with quality still unacceptable.
+Follow-up with a fresh CLI Inspector confirms that the running Mac uses legacy
+PCM (`BA_NATIVE_STREAM_TRIAL` absent) and the iPhone uses the Erlang Mixer.
+Over 30 seconds the iPhone rejected 21 overlapping blocks; two more long mixer
+wakeup gaps were recorded (historical maximum 3,074 ms). Both ends reported
+840 ms Response time. Positively select and qualify the native profile next;
+this run does not assess AAC quality. iPhone ON AIR is blocked on iOS 26 by
+the current build; reverse native capture is not implemented.
+
 ## Next 5 steps
 
 1. **GStreamer backend and enforced control lifetime — prototype implemented.**
@@ -121,6 +133,10 @@ physical synchronization remain unqualified.
    Response time, qualify recovery and continuous audio-rate correction, and
    handle timing-policy changes without losing assigned targets. The trial
    currently ends/recreates a stream on a changed timeline or Response policy.
+   Current apps are confirmed legacy; first select and verify the native trial
+   on both hosts, then investigate its actual continuity counters/listening.
+   Add native deadline/lateness feedback to Automatic and remove the repeated
+   stream restart during policy adjustment; do not extend the legacy media path.
 5. **Recovery/listening checks, then remaining platforms and inputs.**
    Check startup, ON AIR off/on, receiver restart, owner/supervisor crash and
    fresh consent after recovery. Report each stream stage and its last error.
@@ -176,7 +192,8 @@ path. Dated recordings, counters and validation limits remain in PROGRESS.md.
 - Improvement plan for buffers/timing from listening results (e.g. mixer lead
   at short Response times; OS stalls > 50 ms drop blocks on loaded Windows).
 - Long-term audio objects: overlapping packets mixed by default.
-- iOS ON AIR on iOS 27; iPhone background playback (if wanted).
+- iOS ON AIR on iOS 27; iOS 26 needs a ReplayKit broadcast extension/native
+  integration (current build has neither); iPhone background playback (if wanted).
 - Opus path qualification (`--opus` scenario needs `BA_GSTREAMER_PYTHON`).
 - A playback test with a known tone started/stopped by the test (counters alone
   can pass for silence).
