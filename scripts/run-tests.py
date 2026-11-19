@@ -107,6 +107,10 @@ def catalog(product):
                 platform = 'darwin'
             if relative.startswith(('tests/control/', 'tests/transport/')):
                 required.append(CORE/'builds/intermediates/control/default/lib/ba_core/ebin')
+            if p.name == 'native-stream-smoke.py':
+                platform = 'darwin'
+                required.extend([CORE/'builds/CLI/ba_native_stream',
+                                 CORE/'builds/intermediates/gstreamer/plugins'])
             if p.name == 'desktop-web-instances-smoke.py':
                 required.append(product/'builds/WebApp')
             if p.name == 'test_analyze_receivers.py':

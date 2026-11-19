@@ -1,5 +1,68 @@
 # Current implementation and validation
 
+## Native Session-clock scheduling — 2026-11-19
+
+Connected plan step 3 in the opt-in AAC trial. New `ba_audio_native_clock` maps
+five local native clock probes through the existing Session presentation API;
+the lowest-round-trip observation establishes the clock before prepare. Refreshes
+every five seconds command bounded ±500 ppm correction without a clock phase
+step. Native mapping expires after twelve seconds independently of control
+heartbeats. A changed Session timeline or Response-policy revision ends the
+stream; the source publication rebinds when the Session timeline changes.
+
+Core Audio sample positions and the first matching host-time anchor determine
+capture timestamps. A private calibrated GstClock supplies the Session reference
+in the NTP epoch; native RTP/RTCP sender reports carry the sample-clock mapping.
+The receiver uses GStreamer's reconstructed reference timestamps, gates unmapped
+packets and schedules output at capture time plus Session Response time, accounting
+for native pipeline latency. A short initial sender-report burst fixes an observed
+4–5-second acquisition wait when the first report precedes usable RTP state.
+The media profile is now `gst_aac_rtp_v2`; both hosts must rebuild, with no
+fallback to unscheduled v1 media. PCM/encoded audio remains entirely native.
+
+Validation: core compile/EUnit **284 tests, zero failures**. The native helper
+builds and shared iOS source passes a targeted arm64 compiler check. The silent
+synthetic test uses a reference three hours away from OS UTC: both peers connected,
+mapping acquired in **427 ms**, two clock calibrations occurred, **243,712 frames**
+decoded, and maximum software-sink target error was **5,074,897 ns**. Both stops
+were confirmed. All five native lifetime cases pass: control EOF/timeout, expired
+clock mapping despite live heartbeats, blocked media loop and source-owner EOF.
+The test runner now declares this smoke's macOS/helper prerequisites.
+Logs: builds/test-results/native-clock-20261119/.
+
+Limits: this measures local software scheduling, not Session clock accuracy
+between Devices or physical speaker synchronization; status stays
+`synchronized=false`. Local control RTT is exposed, not a global uncertainty
+bound. Real Mac capture → iPhone listening, full app builds/deployment, hardware
+rate correction and physical stop tail remain untested. Demand-based capacity,
+combined queue accounting, loss recovery and seamless policy changes remain step 4.
+No live Devices were changed.
+
+## Full registered test run — 2026-11-19
+
+Ran OpenSound/scripts/test-all.sh against the current checkout: all 60 registered
+suites/scenarios were selected. Result: **35 passed, 14 failed, 11 unavailable**.
+The core EUnit suite passed all **283 tests**. Native AAC media/lifetime smoke,
+OpenSoundKit Swift and web frontend tests passed. Clock production cadence,
+125-second renewal and maximum-delay renewal also passed.
+
+The full suite is not green. Failures include DeviceWeb's socket-bridge test,
+the older core Swift UI tests (removed ChatRuntime/ChatSnapshot types), older
+control/layout/reconnect/identity assertions, two clock/startup/reference-restart
+audio cases and legacy Reception/transport/trust smoke tests. Follow-up triage
+found **no confirmed AAC-refactor regression**: runtime scenarios also fail
+with the pre-refactor modules, while two fail at different timing/connectivity
+assertions; stale UI/launcher/API assertions are unchanged. This is a bounded
+comparison, not proof that every failure has the same cause. See
+[the triage report](TEST-TRIAGE-2026-11-19.md). No failing application/test code was changed in this
+verification. Unavailable scenarios need another platform, missing bundles,
+BA_GSTREAMER_PYTHON or the configured Chromium executable.
+
+Machine-readable results:
+builds/test-results/20261119-092300/summary.json.
+This supersedes any interpretation that the earlier focused checks established
+an entirely passing repository suite; device listening remains unverified.
+
 ## Native AAC stream prototype — 2026-11-19
 
 Implemented the first opt-in native Mac source → iPhone receiver path, using
@@ -37,8 +100,9 @@ passes. Initial socket tests were denied by the execution sandbox and passed
 when rerun with loopback access. No live Device was inspected or changed.
 
 Limits: **development trial only**, `BA_NATIVE_STREAM_TRIAL=1`; default remains
-legacy. Shared Session-clock mapping/presentation and rate correction are not
-connected, and status reports synchronized=false. Buffer-demand policy and the
+legacy. At this prototype stage Session timing was not connected; the later
+step-3 work above supersedes that limitation. Status reports synchronized=false.
+Buffer-demand policy and the
 combined ten-second queue budget are unqualified (trial starts at 800 ms).
 TURN is explicitly unsupported in this new binding. Full iPhone/Mac app builds,
 real capture → iPhone connection/listening, OS route changes and physical stop

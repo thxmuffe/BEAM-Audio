@@ -14,8 +14,9 @@ GStreamer is selected for the first complete native integration. The
 [replacement control contract](../../docs/AUDIO_ENGINE_INTERFACE.md#native-stream-decision--2026-11-18)
 requires teardown on OTP owner/supervisor loss and variable native buffering up
 to ten seconds. The first AAC implementation is a development trial below;
-Session timing, continuous rate correction and ten-second buffering qualification
-remain unfinished. The default remains the legacy path described later.
+Session timing is connected in the trial; continuous playback correction and
+ten-second buffering qualification remain unfinished. The default remains the
+legacy path described later.
 
 ## Native AAC development trial
 
@@ -29,7 +30,7 @@ lossy encoding and is not a bit-exact float transport. No voice processing,
 automatic gain control or noise suppression is inserted.
 
 `ba_mac_native_audio` owns the capture helper port and a normal Source publication.
-The `gst_aac_rtp_v1` catalogue profile selects `ba_native_media_session` through
+The `gst_aac_rtp_v2` catalogue profile selects `ba_native_media_session` through
 the installed handler allowlist. The Media Session owns the native control socket
 and routes only SDP/ICE through existing authenticated Session signalling. It
 registers Playback execution with the existing permission registry and validates
@@ -45,12 +46,34 @@ source helper separately watches its owning pipe, including during capture
 startup. Stop flushes instead of draining buffered music. EOF triggers
 cleanup but never substitutes for a stop acknowledgement.
 
-**This trial is unsynchronized.** It deliberately requires
-`BA_NATIVE_STREAM_TRIAL=1` on both hosts and reports `synchronized=false`.
-Initial trial jitter latency is 800 ms; the native prepare protocol accepts
-0–10,000 ms, but demand-based buffer policy, combined queue budgets, recovery,
-shared-clock mapping and smooth rate correction are subsequent steps. The trial
-must not become the default before the Session schedule is implemented. TURN
+**Session scheduling is implemented but physical synchronization is unqualified.**
+The trial requires `BA_NATIVE_STREAM_TRIAL=1` on both hosts and continues to
+report `synchronized=false`. Rebuild both hosts for the v2 media profile; the
+older unscheduled v1 profile is rejected.
+
+Before prepare, OTP takes five local control clock observations, selects the
+lowest round trip and maps a private native GstClock to the existing Session
+reference. Nanosecond values cross JSON as decimal strings. Refreshes every
+five seconds preserve clock phase and adjust its rate within ±500 ppm over a
+five-second correction horizon. A mapping expires after twelve seconds even
+if control heartbeats continue. Status exposes the local control round trip;
+that is not a bound on Session clock error or acoustic accuracy.
+
+Core Audio sample positions and their initial host-time anchor determine native
+source timestamps, including capture gaps. RTP uses the sample clock; standard
+RTCP sender reports map it to the calibrated clock in the NTP epoch. Reports
+start with a short burst, then refresh about every five seconds. GStreamer's
+native reference-timestamp metadata reconstructs capture time at the receiver;
+unmapped initial packets are dropped. The output schedules that time plus the
+Session Response time, compensating for native pipeline latency. No arrival-time
+fallback or per-packet Erlang decision is used. Apple output uses GStreamer's
+native resampling clock-slave mechanism; sustained correction needs hardware
+qualification. A timeline or Response-policy revision change ends/recreates the
+trial stream rather than retiming queued audio.
+
+The initial jitter latency follows Session Response time (normally 800 ms),
+within 0–10,000 ms. Demand-based buffer policy, combined queue budgets and packet
+recovery remain step 4. This trial must remain opt-in pending qualification. TURN
 configuration currently returns an explicit unsupported error; this increment
 reuses STUN/ICE and does not change Reception. Microphone and other existing
 inputs remain on their previous implementations.
@@ -93,10 +116,13 @@ rebar3 eunit --module=ba_native_stream_tests
 ```
 
 The native smoke uses generated audio and `fakesink` in two helper processes;
-it routes JSON signalling only. It checks decode progress, correlated stop,
-control loss/timeout, source-owner exit and a deliberately blocked media loop.
+it routes JSON control/signalling only. Its reference is deliberately three
+hours away from OS UTC. It checks prompt RTCP mapping, periodic clock refresh,
+decoded/scheduled output, correlated stop, control loss/timeout, clock expiry,
+source-owner exit and a deliberately blocked media loop. Schedule error is
+measured at a silent software sink, not a speaker.
 The OTP checks cover explicit native offers, owner/session/supervisor/registry
-loss and revocation acknowledgement. These are software lifecycle/media checks,
+loss, revocation acknowledgement and clock-policy mapping. These are software lifecycle/media checks,
 not music-quality, hardware-tail or acoustic-synchronization evidence. The iOS
 native source and Swift session/bridge API pass targeted compile checks; the
 full app was not built or installed.

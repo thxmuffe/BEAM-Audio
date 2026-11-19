@@ -96,9 +96,11 @@ Control closure is an enforcement trigger, never a stop acknowledgement.
 ### Replacement control contract
 
 This section specifies the complete replacement contract. The AAC trial implements
-hello/prepare/signalling, heartbeats, play/pause, gain, stats and confirmed stop.
-Clock mapping, scheduled presentation, rate correction and changing buffer policy
-remain unimplemented. The trial uses packet-4 JSON control framing with a
+hello/prepare/signalling, heartbeats, play/pause, gain, stats, confirmed stop,
+initial/periodic clock mapping and native scheduled presentation. Clock-rate
+correction is bounded and phase-preserving; continuous hardware playback,
+effective-sample revisions and changing buffer policy remain unqualified or
+unimplemented. The trial uses packet-4 JSON control framing with a
 version/capability handshake before creating media resources. Payloads
 are limited to control, signalling, timing and bounded diagnostic summaries.
 Native sender and receiver use the same lifetime rules.
@@ -160,12 +162,22 @@ pipeline teardown; a stalled media context forces helper/host exit. Older
 `ba_audio_native_engine` receivers still refuse the current profile and are not
 silently substituted.
 
-The AAC trial currently reports `synchronized=false` and requires explicit
-`BA_NATIVE_STREAM_TRIAL=1` locally. Its prepare message carries
-`diagnostic_unsynchronized=true`; ordinary activation is blocked pending the
-Session clock/schedule integration. Native encode/transport/decode plus normal
-stop and independent guard checks pass with synthetic audio and silent output.
-The iPhone host has source/bridge checks, not a deployed or listening result.
+The AAC trial reports `synchronized=false` and requires explicit
+`BA_NATIVE_STREAM_TRIAL=1` locally. Its `gst_aac_rtp_v2` profile requires a native
+clock mapping before prepare. OTP supplies Session policy and refreshes the
+mapping every five seconds; native RTP/RTCP reconstructs capture time and output
+adds Session Response time. Mapping expiry ends media after twelve seconds even
+with live heartbeats. A changed timeline or Response-policy revision ends/recreates
+the stream rather than changing queued targets. Status exposes local control
+RTT, not a global uncertainty bound. Synthetic tests verify prompt RTCP mapping,
+software scheduling, decode, normal stop and independent guards. The iPhone
+host has source/bridge checks, not a deployed or listening result. See
+[current validation](PROGRESS.md#native-session-clock-scheduling--2026-11-19).
+
+Implementation references: GStreamer's [RTP/RTCP synchronization and reference
+timestamp metadata](https://gstreamer.freedesktop.org/documentation/rtpmanager/rtpbin.html),
+[sender-report requests](https://gstreamer.freedesktop.org/documentation/rtpmanager/RTPSession.html)
+and [clock calibration](https://gstreamer.freedesktop.org/documentation/gstreamer/gstclock.html).
 
 Critical checks are normal stop, consent revocation, owner `kill`, parent
 supervisor `kill`, permission-authority/registry loss, BEAM exit, blocked media

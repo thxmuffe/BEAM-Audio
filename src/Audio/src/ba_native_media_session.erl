@@ -19,35 +19,43 @@ init(#{owner := Owner,role := Role,descriptor := D,context := #{deadline := Dead
                 receiver -> list_to_integer(ba_settings:env("BA_NATIVE_STREAM_PORT"))
             end,
             G=binary:encode_hex(crypto:strong_rand_bytes(16)),
-            case connect(Port,G) of
-                {ok,Socket} ->
+            case connect(Port,G,D) of
+                {ok,Socket,Clock} ->
                     true=ba_device_permission:valid(Permission,Token),
                     ok=send(Socket,G,#{op => <<"prepare">>,role => atom_to_binary(Role),rate => maps:get(sample_rate,D),
-                        channels => maps:get(channel_count,D),ice_servers => ba_media_session:ice_servers(),buffer_ms => 800,
-                        diagnostic_unsynchronized => true}),
+                        channels => maps:get(channel_count,D),ice_servers => ba_media_session:ice_servers(),buffer_ms => maps:get(offset_ms,Clock)}),
                     ok=inet:setopts(Socket,[{active,once}]),
                     erlang:send_after(250,self(),heartbeat),erlang:send_after(10000,self(),setup_timeout),
                     {ok,Args#{socket => Socket,generation => G,permission => Permission,token => Token,
-                        open => false,playing => false,deadline => Deadline,stats => #{}}};
+                        open => false,playing => false,deadline => Deadline,stats => #{},clock => Clock}};
                 Error -> {stop,Error}
             end;
         {error,R} -> {stop,R}
     end.
-connect(Port,G) ->
-    case gen_tcp:connect({127,0,0,1},Port,[binary,{packet,4},{active,false},{packet_size,131072},
+connect(Port,G,D) ->
+    case gen_tcp:connect({127,0,0,1},Port,[binary,{packet,4},{active,false},{nodelay,true},{packet_size,131072},
             {send_timeout,1000},{send_timeout_close,true}],2000) of
         {ok,S} ->
             Result=try
                 ok=send(S,G,#{op => <<"hello">>,version => 2}),{ok,B}=gen_tcp:recv(S,0,1000),
                 #{<<"event">> := <<"hello">>,<<"version">> := 2,<<"generation">> := G,
-                  <<"profile">> := <<"gst_aac_rtp_v1">>,<<"owner_loss_stop">> := true,<<"stop_ack">> := true}=json:decode(B),{ok,S}
+                  <<"profile">> := <<"gst_aac_rtp_v2">>,<<"owner_loss_stop">> := true,<<"stop_ack">> := true,<<"schedule">> := true}=json:decode(B),
+                Probes=[probe(S,G,D) || _ <- lists:seq(1,5)],
+                [{_,Plan,Clock}|_]=lists:sort(Probes),ok=send(S,G,Plan),{ok,S,Clock}
             catch _:_ -> {error,native_lifecycle_handshake_failed} end,
-            case Result of {ok,S} -> Result;_ -> gen_tcp:close(S),Result end;
+            case Result of {ok,S,_} -> Result;_ -> gen_tcp:close(S),Result end;
         Error -> Error
     end.
+probe(S,G,D) ->
+    Sent=erlang:monotonic_time(nanosecond),
+    ok=send(S,G,#{op => <<"clock">>,sent_ns => integer_to_binary(Sent)}),
+    {ok,B}=gen_tcp:recv(S,0,1000),Received=erlang:monotonic_time(nanosecond),
+    #{<<"event">> := <<"clock">>,<<"generation">> := G}=E=json:decode(B),
+    {ok,Plan,Meta}=ba_audio_native_clock:plan(E,Sent,Received,D,#{}),
+    {Received-Sent,Plan,Meta}.
 handle_call(status,_,S) ->
     {reply,#{open => maps:get(open,S),role => maps:get(role,S),native_payload_bypass => true,
-        synchronized => false,codec => aac_lc,bitrate => 320000,stats => maps:get(stats,S),
+        synchronized => false,codec => aac_lc,bitrate => 320000,stats => maps:get(stats,S),clock => maps:get(clock,S),
         setup => #{stage => case maps:get(open,S) of true -> open;false -> native_negotiating end}},S};
 handle_call({output,Action},_,S) when Action=:=play;Action=:=pause ->
     case live(S) of
@@ -76,8 +84,12 @@ handle_info(heartbeat,S) ->
         false -> {stop,authorization_expired,S};
         true -> erlang:send_after(250,self(),heartbeat),
             Count=maps:get(heartbeats,S,0)+1,
+            Updated=case Count rem 20 of
+                0 -> Sent=erlang:monotonic_time(nanosecond),command(#{op => <<"clock">>,sent_ns => integer_to_binary(Sent)},S),S#{clock_request => Sent};
+                _ -> S
+            end,
             case Count rem 4 of 0 -> command(#{op => <<"stats">>},S);_ -> ok end,
-            case command(#{op => <<"heartbeat">>},S) of ok -> {noreply,S#{heartbeats => Count}};_ -> {stop,native_control_failed,S} end
+            case command(#{op => <<"heartbeat">>},S) of ok -> {noreply,Updated#{heartbeats => Count}};_ -> {stop,native_control_failed,S} end
     end;
 handle_info({tcp,Socket,B},#{socket := Socket,generation := G}=S) ->
     try true=live(S),#{<<"generation">> := G}=E=json:decode(B),ok=inet:setopts(Socket,[{active,once}]),native_event(E,S)
@@ -87,6 +99,14 @@ handle_info({tcp_error,Socket,_},#{socket := Socket}=S) -> {stop,native_endpoint
 handle_info({'DOWN',_,process,_,_},S) -> {stop,owner_down,S};
 handle_info(setup_timeout,#{open := false}=S) -> {stop,native_setup_timeout,S};
 handle_info(_,S) -> {noreply,S}.
+native_event(#{<<"event">> := <<"clock">>,<<"sent_ns">> := Text}=E,#{clock_request := Sent}=S) ->
+    case Text=:=integer_to_binary(Sent) of
+        false -> {stop,invalid_native_clock_reply,S};
+        true -> case ba_audio_native_clock:plan(E,Sent,erlang:monotonic_time(nanosecond),maps:get(descriptor,S),maps:get(clock,S)) of
+            {ok,Plan,Clock} -> ok=command(Plan,S),{noreply,maps:remove(clock_request,S#{clock := Clock})};
+            {error,R} -> {stop,R,S}
+        end
+    end;
 native_event(#{<<"event">> := Kind}=E,S) when Kind=:= <<"offer">>;Kind=:= <<"answer">> ->
     maps:get(owner,S) ! {audio_signal,self(),#{<<"kind">> => <<"signal.",Kind/binary>>,<<"sdp">> => maps:get(<<"sdp">>,E)}},{noreply,S};
 native_event(#{<<"event">> := <<"candidate">>}=E,S) ->
@@ -96,7 +116,7 @@ native_event(#{<<"event">> := <<"connected">>},S) -> maps:get(owner,S) ! {audio_
 native_event(#{<<"event">> := <<"stats">>}=E,S) -> {noreply,S#{stats := E}};
 native_event(#{<<"event">> := <<"error">>,<<"error">> := R},S) -> {stop,{native_media,R},S};
 native_event(_,S) -> {noreply,S}.
-live(S) -> now_ms()<maps:get(deadline,S) andalso ba_device_permission:valid(maps:get(permission,S),maps:get(token,S)).
+live(S) -> now_ms()<maps:get(deadline,S) andalso ba_device_permission:valid(maps:get(permission,S),maps:get(token,S)) andalso ba_audio_native_clock:ready().
 command(C,#{socket := Socket,generation := G}) -> send(Socket,G,C).
 send(Socket,G,C) -> gen_tcp:send(Socket,json:encode(C#{generation => G})).
 stop_native(#{socket := Socket,generation := G}) ->

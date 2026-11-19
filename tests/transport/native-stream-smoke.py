@@ -52,6 +52,15 @@ def start_host():
     return proc, port, stop, thread
 
 
+def clock_map(event, revision, reference):
+    received = time.perf_counter_ns()
+    target = reference + (int(event['sent_ns']) + received) // 2
+    error = 0 if event['session_ns'] is None else target - int(event['session_ns'])
+    return dict(op='clock_map', revision=revision, internal_ns=event['internal_ns'],
+                session_ns=str(target), timeline='native-test-clock',
+                correction_ppm=max(-500, min(500, error / 5000)), max_absolute_ppm=500)
+
+
 def main():
     hosts = []
     sockets = []
@@ -74,7 +83,12 @@ def main():
 
         for index in range(2):
             send(index, {'op': 'hello', 'version': 2})
-        deadline = time.monotonic() + 15
+        # Deliberately different from OS UTC: scheduled output must use this reference.
+        reference = time.time_ns() - time.perf_counter_ns() + 3 * 3600 * 1_000_000_000
+        revisions = [0, 0]
+        preparing = set()
+        last_clock = time.monotonic()
+        deadline = time.monotonic() + 18
         last_heartbeat = 0
         started = None
         stopping = False
@@ -86,10 +100,14 @@ def main():
                     if index not in stopped:
                         send(index, {'op': 'heartbeat'})
                 last_heartbeat = now
+            if now - last_clock > 5:
+                for index in range(2):
+                    send(index, {'op': 'clock', 'sent_ns': str(time.perf_counter_ns())})
+                last_clock = now
             if len(connected) == 2 and started is None:
                 started = now
                 send(1, {'op': 'play'})
-            if started and now - started > 2 and not stopping:
+            if started and now - started > 6.2 and not stopping:
                 for index in range(2):
                     send(index, {'op': 'stats'})
                 stopping = True
@@ -111,10 +129,18 @@ def main():
                     assert event['generation'] == generations[index]
                     assert kind != 'error', event
                     if kind == 'hello':
-                        assert event['profile'] == 'gst_aac_rtp_v1' and event['owner_loss_stop'] and event['stop_ack']
+                        assert event['profile'] == 'gst_aac_rtp_v2' and event['owner_loss_stop'] and event['stop_ack']
+                        assert event['schedule']
+                        send(index, {'op': 'clock', 'sent_ns': str(time.perf_counter_ns())})
+                    elif kind == 'clock':
+                        revisions[index] += 1
+                        send(index, clock_map(event, revisions[index], reference))
+                        if index in preparing:
+                            continue
+                        preparing.add(index)
                         send(index, dict(op='prepare', role='provider' if index == 0 else 'receiver',
                                          rate=48000, channels=2, buffer_ms=800, ice_servers=[],
-                                         diagnostic_unsynchronized=True, synthetic=index == 0, silent=True))
+                                         synthetic=index == 0, silent=True))
                     elif kind == 'prepared':
                         prepared.add(index)
                     elif kind in ('offer', 'answer'):
@@ -128,6 +154,10 @@ def main():
                         stats[index] = event
                         if len(stats) == 2:
                             assert stats[1]['frames'] > 0, stats
+                            assert stats[1]['rtcp_mapped_packets'] > 0 and stats[0]['sender_reports'] > 0, stats
+                            assert stats[1]['clock_updates'] >= 2 and stats[1]['rendered_frames'] > 0, stats
+                            assert stats[1]['mapping_acquired_ms'] < 1500, stats
+                            assert int(stats[1]['max_schedule_error_ns']) < 50_000_000, stats
                             for target in range(2):
                                 send(target, {'op': 'stop', 'request_id': 101 + target})
                     elif kind == 'stopped':
@@ -136,7 +166,12 @@ def main():
             if len(stopped) == 2:
                 print(json.dumps({'native_aac': 'pass', 'prepared': len(prepared),
                                   'connected': len(connected), 'decoded_frames': stats[1]['frames'],
-                                  'confirmed_stops': len(stopped), 'synchronized': False}))
+                                  'confirmed_stops': len(stopped), 'synchronized': False,
+                                  'rtcp_mapped_packets': stats[1]['rtcp_mapped_packets'],
+                                  'clock_updates': stats[1]['clock_updates'],
+                                  'mapping_acquired_ms': stats[1]['mapping_acquired_ms'],
+                                  'sender_reports': stats[0]['sender_reports'],
+                                  'max_schedule_error_ns': stats[1]['max_schedule_error_ns']}))
                 return
         raise AssertionError(('native stream timed out', prepared, connected, stats))
     finally:
@@ -159,7 +194,7 @@ def main():
 
 def lifecycle():
     results = []
-    for mode in ['control_eof', 'control_timeout', 'hung_media', 'source_owner_eof']:
+    for mode in ['control_eof', 'control_timeout', 'clock_expiry', 'hung_media', 'source_owner_eof']:
         proc, port, stop, thread = start_host()
         peer = socket.create_connection(('127.0.0.1', port), timeout=2)
         generation = 'c' * 32
@@ -183,8 +218,12 @@ def lifecycle():
         try:
             send({'op': 'hello', 'version': 2})
             assert event()['event'] == 'hello'
+            send({'op': 'clock', 'sent_ns': str(time.perf_counter_ns())})
+            observation = event()
+            send(clock_map(observation, 1, time.time_ns() - time.perf_counter_ns()))
+            assert event()['event'] == 'clock_mapped'
             send(dict(op='prepare', role='receiver', rate=48000, channels=2, buffer_ms=800,
-                      diagnostic_unsynchronized=True, silent=True, ice_servers=[]))
+                      silent=True, ice_servers=[]))
             assert event()['event'] == 'prepared'
             started = time.monotonic()
             if mode == 'control_eof':
@@ -196,6 +235,19 @@ def lifecycle():
                 peer.settimeout(4)
                 assert event() is None
                 assert time.monotonic() - started < 3.8 and proc.poll() is None
+            elif mode == 'clock_expiry':
+                # Control remains alive; an expired Session mapping still ends media.
+                peer.settimeout(.2)
+                while time.monotonic() - started < 13:
+                    send({'op': 'heartbeat'})
+                    try:
+                        assert event() is None
+                        break
+                    except socket.timeout:
+                        continue
+                else:
+                    raise AssertionError('stream survived an expired Session mapping')
+                assert 11 < time.monotonic() - started < 13 and proc.poll() is None
             elif mode == 'hung_media':
                 send({'op': 'test_block_media'})
                 time.sleep(.1)

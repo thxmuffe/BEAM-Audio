@@ -40,9 +40,9 @@ offer(Key,Inc,#{name := Name,paused := Paused,profiles := #{channel := D}}) ->
           <<"name">> => Name,<<"paused">> => Paused,<<"rate">> => maps:get(sample_rate,D),
           <<"channels">> => maps:get(channel_count,D),<<"format">> => atom_to_binary(maps:get(sample_format,D)),
           <<"clock">> => maps:get(clock,D)},
-    Native=case maps:get(stream_handler,D,undefined) of native_gst_aac -> P#{<<"transport">> => <<"gst_aac_rtp_v1">>};_ -> P end,
+    Native=case maps:get(stream_handler,D,undefined) of native_gst_aac -> P#{<<"transport">> => <<"gst_aac_rtp_v2">>};_ -> P end,
     ok=validate(Native),Native.
-descriptor(#{<<"transport">> := <<"gst_aac_rtp_v1">>,<<"rate">> := R,<<"channels">> := 2,
+descriptor(#{<<"transport">> := <<"gst_aac_rtp_v2">>,<<"rate">> := R,<<"channels">> := 2,
         <<"format">> := <<"float32_le">>,<<"clock">> := Clock}) when R=:=44100;R=:=48000 ->
     text(Clock,128),#{encoding => pcm,sample_format => float32_le,sample_rate => R,channel_count => 2,
         clock => Clock,stream_handler => native_gst_aac};

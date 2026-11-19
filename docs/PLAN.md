@@ -101,16 +101,26 @@ physical synchronization remain unqualified.
    Native synthetic sender/receiver and confirmed-stop checks pass locally;
    no real Mac tap → iPhone listening check or app build/deployment was performed.
    See src/Audio/README.md for the build/opt-in steps and limits.
-3. **Sample positions mapped to Session time.**
-   Acquire the initial RTP/RTCP media/shared-clock mapping promptly and refresh
-   it periodically. Native execution follows the Session schedule without
-   per-packet Erlang decisions. Keep clock accuracy/uncertainty visible and
-   preserve the existing rapid initial calibration work.
+3. **Sample positions mapped to Session time — implemented in the development trial.**
+   OTP maps a private native clock to the Session reference before prepare,
+   then refreshes it every five seconds with bounded, phase-preserving rate
+   correction. Core Audio sample positions anchor the RTP timeline; native
+   RTP/RTCP reconstructs capture time and output adds Session Response time.
+   A short initial sender-report burst avoids waiting for a periodic report.
+   The shifted-clock silent test acquired mapping in 427 ms and rendered within
+   5.1 ms of its software target; this does not measure physical speaker timing
+   or establish clock accuracy between Devices. Clock expiry stops the stream.
+   Both hosts need the new gst_aac_rtp_v2 profile. Real Mac capture → iPhone
+   listening/scheduling remains the next manual qualification.
 4. **Continuous, resilient native playback under OTP control.**
    Variable buffering on demand up to ten seconds, packet reordering, recovery
    before deadlines and smooth rate correction. Buffer capacity is distinct
    from Response time and actual occupancy. Stop flushes queues immediately;
    buffering never extends a dead owner's stream or permits autonomous restart.
+   Next implementation: distinguish buffer capacity/occupancy from Session
+   Response time, qualify recovery and continuous audio-rate correction, and
+   handle timing-policy changes without losing assigned targets. The trial
+   currently ends/recreates a stream on a changed timeline or Response policy.
 5. **Recovery/listening checks, then remaining platforms and inputs.**
    Check startup, ON AIR off/on, receiver restart, owner/supervisor crash and
    fresh consent after recovery. Report each stream stage and its last error.

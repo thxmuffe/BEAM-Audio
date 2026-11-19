@@ -36,7 +36,15 @@ handle_call(_,_,S) -> {reply,{error,native_endpoint_unavailable},S}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info(heartbeat,#{port := Port,token := T}=S) ->
     case ba_device_permission:valid(broadcast,T) of
-        true -> try true=port_command(Port,<<$h>>),erlang:send_after(250,self(),heartbeat),{noreply,S}
+        true -> try true=port_command(Port,<<$h>>),erlang:send_after(250,self(),heartbeat),
+                Next=case maps:find(source,S) of
+                    {ok,Source} -> Clock=ba_buffee_clock:id(),
+                        case Clock=:=maps:get(source_clock,S,Clock) of
+                            true -> S;false -> ok=ba_audio:rebind(Source,Clock),S#{source_clock => Clock}
+                        end;
+                    error -> S
+                end,
+                {noreply,Next}
             catch _:_ -> {stop,native_capture_closed,S} end;
         false -> {stop,consent_revoked,S}
     end;
@@ -46,7 +54,7 @@ handle_info({Port,{data,<<1,B/binary>>}},#{port := Port}=S) ->
     D=#{encoding => pcm,sample_format => float32_le,sample_rate => maps:get(rate,Format),channel_count => maps:get(channels,Format),
         clock => ba_buffee_clock:id(),stream_handler => native_gst_aac},
     case ba_audio:publish(#{source_key => <<"default-output">>,name => <<"Mac output — AAC 320 kb/s (native trial)">>,profiles => #{channel => D}},self()) of
-        {ok,Source} -> monitor(process,Source),{noreply,S#{state := running,source => Source,format => Format}};E -> {stop,E,S} end;
+        {ok,Source} -> monitor(process,Source),{noreply,S#{state := running,source => Source,source_clock => maps:get(clock,D),format => Format}};E -> {stop,E,S} end;
 handle_info({Port,{data,<<3,_Code:32/little-signed,Text/binary>>}},#{port := Port}=S) ->
     {noreply,S#{error => Text}};
 handle_info({Port,{exit_status,Code}},#{port := Port}=S) ->
