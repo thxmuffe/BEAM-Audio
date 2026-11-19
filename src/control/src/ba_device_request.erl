@@ -5,7 +5,8 @@
 %%      Device and the current Session policy (ba_buffee_control_protocol).
 %%   2. authorize/3:  the sender's Session rights allow the operation.
 %%   3. approve/2:    this Device's user consents. Always approves automatically,
-%%      Ask records the request in Requests for the user, No refuses.
+%%      Ask leaves the request for the user, No refuses. Requests that only
+%%      exercise a Session right the requester holds approve automatically.
 %%   4. execute:      the caller acts only on an approved request.
 %%
 %% Each stage is evaluated per request against current state; no decision is
@@ -35,8 +36,20 @@ required(<<"stream.message">>,#{<<"kind">> := <<"subscribe">>}) -> [stream_subsc
 required(<<"time.message">>,#{<<"kind">> := <<"offset.set">>}) -> [owner,stream_publish];
 required(<<"time.message">>,#{<<"kind">> := Kind}) ->
     case ba_buffee_time_protocol:permission(Kind) of none -> [];P -> [P] end;
+%% Session requests, answered by the Device able to execute them (a grant holder,
+%% or the target of End). Anyone may ask for or give up a privilege.
+required(<<"session.request">>,#{<<"kind">> := <<"rename_request">>}) -> [stream_publish];
+required(<<"session.request">>,#{<<"kind">> := Kind}) when Kind=:= <<"remove_request">>;Kind=:= <<"ended">> -> [end_session];
 required(_,_) -> [].
 
+%% Requests for Session rights follow this Device's user's answer for them.
+%% Pending requests are kept by the component that would execute them.
+approve(Answer,_) when Answer=:=on_air_requests;Answer=:=moderator_requests ->
+    case try ba_device_config:policy(Answer) catch exit:_ -> ask end of
+        always -> ok;
+        ask -> {error,waiting_for_approval};
+        no -> {error,refused}
+    end;
 %% Consent is a protected local use (ba_device_config). Never blocks on the user.
 approve(Use,Requester) ->
     case ba_device_permission:allowed(Use) of

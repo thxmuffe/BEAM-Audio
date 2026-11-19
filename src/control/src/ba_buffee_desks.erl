@@ -24,7 +24,6 @@ init([]) ->
           primary => maps:get(primary,Saved,undefined),urls => maps:get(urls,Saved,[]),
           routes => maps:get(routes,Saved,#{}),aliases => [],bound => #{},rejected => 0}}.
 handle_call(reset,_,S) ->
-    offline(S),
     [gen_server:cast(P,{detach,self()}) || P <- maps:values(ba_desk_connections_sup:connections())],
     {reply,ok,S#{mailbox := fresh(),buffee := undefined,primary := undefined,
         urls := [],routes := #{},aliases := [],bound := #{}}};
@@ -61,16 +60,19 @@ handle_call({configure,Buffee,URLs,Primary,Routes},_,S) ->
     ok = ba_device_store:save(buffee_desks,Saved#{buffee => Buffee,urls => URLs,primary => Primary,routes => Routes}),
     Next = S#{buffee := Buffee,primary := Primary,urls := URLs,routes := Routes,bound := #{}},
     {reply,ok,repair(Next)};
+%% Every Device in a Session opens the Session mailbox, so any Device ID is
+%% addressable there without exchanging routes first.
 handle_call({send,To,Type,Packet},From,S) ->
-    case maps:find(To,maps:get(routes,S)) of
-        {ok,R} -> handle_call({send_route,To,R,Type,Packet},From,S);
-        error -> {reply,{error,no_route},S}
+    case {maps:find(To,maps:get(routes,S)),maps:get(aliases,S)} of
+        {{ok,R},_} -> handle_call({send_route,To,R,Type,Packet},From,S);
+        {error,[Cap|_]} -> handle_call({send_route,To,#{<<"desk">> => maps:get(primary,S),<<"mailbox">> => Cap},Type,Packet},From,S);
+        {error,[]} -> {reply,{error,no_route},S}
     end;
 handle_call({send_route,To,Route,Type,Packet},_,S) ->
     Result = try
         true = ba_buffee_job:hex(To,64),false = ba_app_session:excluded(To),
         true = is_binary(Packet) andalso byte_size(Packet) =< 32768,
-        true = Type =:= <<"membership">> orelse Type =:= <<"buffee_control">>,
+        true = Type =:= <<"buffee_control">>,
         valid_route(Route,maps:get(urls,S)),
         %% Every configured Desk opens this Device's same scoped mailbox.
         %% Try the advertised route first, then another live Desk; never fan out.
@@ -139,7 +141,7 @@ send_available([URL|Rest],Connections,To,Cap,Payload) ->
 delivery(URL,From,Payload,Buffee,S) ->
     Delivery = case Payload of
         #{<<"type">> := Type,<<"buffee">> := Buffee,<<"packet">> := Packet} when map_size(Payload) =:= 3 ->
-            Target = case Type of <<"membership">> -> ba_buffee_membership;<<"buffee_control">> -> ba_buffee_control;_ -> undefined end,
+            Target = case Type of <<"buffee_control">> -> ba_buffee_control;_ -> undefined end,
             case Target =/= undefined andalso is_binary(Packet) andalso byte_size(Packet) =< 32768 of
                 true -> notify(Target,{desk_delivery,URL,From,Packet});
                 false -> {error,invalid_desk_payload}
@@ -149,15 +151,3 @@ delivery(URL,From,Payload,Buffee,S) ->
     Next = case Delivery of {error,R} -> ba_diagnostics:count(R,S);_ -> S end,
     {noreply,Next}.
 
-%% Leaving one Session must not require disconnecting this Device's shared socket.
-offline(#{buffee := undefined}) -> ok;
-offline(#{id := Id,buffee := Buffee,routes := Routes,urls := URLs,primary := Primary,mailbox := Mailbox}) ->
-    {_,Private}=ba_device_store:identity(),
-    OwnRoute=#{<<"desk">> => Primary,<<"mailbox">> => Mailbox},
-    maps:foreach(fun(Peer,R) -> case Peer=:=Id of true -> ok;false ->
-        B=#{<<"v">> => 1,<<"type">> => <<"offline">>,<<"from">> => Id,<<"to">> => Peer,
-            <<"buffee">> => Buffee,<<"request">> => fresh(),<<"payload">> => #{<<"route">> => OwnRoute}},
-        Packet=ba_buffee_passport:sign(B,Private),
-        Body=#{<<"type">> => <<"membership">>,<<"buffee">> => Buffee,<<"packet">> => Packet},
-        send_available(URLs,ba_desk_connections_sup:connections(),Peer,maps:get(<<"mailbox">>,R),Body),ok
-    end end,Routes),ok.

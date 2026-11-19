@@ -15,6 +15,17 @@ authorize_test() ->
     ?assertEqual(ok,A(<<"time.message">>,Set,[owner])),
     ?assertEqual({error,forbidden},A(<<"time.message">>,Set,[offset_write,time_read])),
     ?assertEqual({error,forbidden},A(<<"time.message">>,#{<<"kind">> => <<"offset.get">>},[])),
-    %% Chat and replies need no right; leases are authentication itself.
+    %% Chat and replies need no right.
     ?assertEqual(ok,A(<<"chat.message">>,#{},[])),
     ?assertEqual(ok,A(<<"status.reply">>,#{},[])).
+
+session_requests_test() ->
+    A = fun(Kind,Perms) -> ba_device_request:authorize(<<"session.request">>,#{<<"kind">> => Kind},Perms) end,
+    ?assertEqual(ok,A(<<"privilege_request">>,[])),
+    ?assertEqual(ok,A(<<"privilege_release">>,[])),
+    ?assertEqual({error,forbidden},A(<<"rename_request">>,[owner])),
+    ?assertEqual(ok,A(<<"rename_request">>,[stream_publish])),
+    ?assertEqual({error,forbidden},A(<<"remove_request">>,[owner,stream_publish])),
+    ?assertEqual(ok,A(<<"remove_request">>,[end_session])),
+    ?assertEqual({error,forbidden},A(<<"ended">>,[owner])),
+    ?assertEqual(ok,A(<<"ended">>,[end_session])).

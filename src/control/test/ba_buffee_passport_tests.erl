@@ -53,23 +53,33 @@ short_link_test() ->
     ?assertException(error,_,ba_buffee_passport:parse_invitation(binary:part(Link,0,byte_size(Link)-8))),
     <<"beamaudio://s/",T/binary>>=Link,<<_,Rest/binary>>=base64:decode(T,#{mode => urlsafe,padding => false}),
     ?assertException(error,_,ba_buffee_passport:parse_invitation(<<"beamaudio://s/",(base64:encode(<<5,Rest/binary>>,#{mode => urlsafe,padding => false}))/binary>>)),
-    %% The 128-bit secret works for mailbox and proof.
+    %% The 128-bit secret works for the mailbox and the invitation key.
     ?assertEqual(32,byte_size(ba_buffee_passport:mailbox(Secret))).
 
-mailbox_and_proof_depend_on_the_secret_test() ->
+mailbox_depends_on_the_secret_test() ->
     S1=binary:copy(<<"B">>,64),S2=binary:copy(<<"C">>,64),
     ?assertNotEqual(ba_buffee_passport:mailbox(S1),ba_buffee_passport:mailbox(S2)),
-    ?assertEqual(32,byte_size(ba_buffee_passport:mailbox(S1))),
-    P=[<<"joiner">>,<<"X">>,<<"A">>,<<"B">>],
-    ?assertNotEqual(ba_buffee_passport:proof(S1,P),ba_buffee_passport:proof(S2,P)),
-    ?assertNotEqual(ba_buffee_passport:proof(S1,P),ba_buffee_passport:proof(S1,[<<"joiner">>,<<"X">>,<<"B">>,<<"A">>])).
+    ?assertEqual(32,byte_size(ba_buffee_passport:mailbox(S1))).
+
+%% Holding the link lets a Device sign its own join certificate; anyone checks
+%% it against the public invitation key. It names one Device in one Session.
+join_certificate_test() ->
+    Buffee=binary:copy(<<"A">>,32),A=binary:copy(<<"B">>,64),B=binary:copy(<<"C">>,64),
+    {Public,Private}=ba_buffee_passport:invitation_key(binary:copy(<<"5">>,32)),
+    ?assertEqual({Public,Private},ba_buffee_passport:invitation_key(binary:copy(<<"5">>,32))),
+    {Other,_}=ba_buffee_passport:invitation_key(binary:copy(<<"6">>,32)),
+    Join=ba_buffee_passport:join(Buffee,A,Private),
+    ?assert(ba_buffee_passport:joined(Buffee,A,Join,Public)),
+    ?assertNot(ba_buffee_passport:joined(Buffee,B,Join,Public)),
+    ?assertNot(ba_buffee_passport:joined(binary:copy(<<"D">>,32),A,Join,Public)),
+    ?assertNot(ba_buffee_passport:joined(Buffee,A,Join,Other)),
+    ?assertNot(ba_buffee_passport:joined(Buffee,A,<<"00">>,Public)).
 
 genesis_and_participant_permissions_test() ->
-    {A,Key}=key(),{I,_}=invitation(A,Key),B=binary:copy(<<"B">>,64),
+    {A,Key}=key(),{I,_}=invitation(A,Key),
     G=ba_buffee_passport:genesis(I,[<<"status_read">>]),
     ?assertEqual(ok,ba_buffee_passport:policy(G)),?assertEqual(0,maps:get(<<"revision">>,G)),
     ?assert(ba_session_privileges:has(grant,A,G)),
-    ?assertEqual(#{B=>[status_read]},maps:get(peers,ba_buffee_passport:runtime_policy(G,A,#{A=>[],B=>[<<"status_read">>]}))),
     ?assertException(error,_,ba_buffee_passport:policy(G#{<<"removed">> := [A]})),
     ?assertException(error,_,ba_buffee_passport:permissions([<<"spawn">>])),
     ?assertException(error,_,ba_buffee_passport:permissions([<<"status_read">>,<<"status_read">>])).
@@ -102,21 +112,7 @@ statement_round_trip_test() ->
     ?assertEqual(St,ba_buffee_passport:statement(Packet,A)),
     {B,_}=key(),?assertException(error,_,ba_buffee_passport:statement(Packet,B)).
 
-stale_handshake_response_is_rejected_test() ->
-    {A,Key}=key(),B=binary:copy(<<"B">>,64),Buffee=binary:copy(<<"A">>,32),Req=binary:copy(<<"A">>,32),
-    S=#{id=>B,buffee=>Buffee,rejected=>0,participants=>#{},outgoing=>#{},pending=>#{}},
-    Body=#{<<"v">>=>1,<<"type">>=><<"welcome">>,<<"from">>=>A,<<"to">>=>B,
-        <<"buffee">>=>Buffee,<<"request">>=>Req,<<"payload">>=>#{<<"policy">>=>null}},
-    Packet=ba_buffee_passport:sign(Body,Key),
-    ?assertEqual({noreply,S#{rejected:=1}},ba_buffee_membership:handle_info({desk_delivery,unused,A,Packet},S)).
 
-non_participant_cannot_end_the_session_test() ->
-    {A,Key}=key(),B=binary:copy(<<"B">>,64),Buffee=binary:copy(<<"A">>,32),
-    S=#{id=>B,buffee=>Buffee,rejected=>0,participants=>#{},outgoing=>#{},pending=>#{},pairs=>#{}},
-    Body=#{<<"v">>=>1,<<"type">>=><<"ended">>,<<"from">>=>A,<<"to">>=>B,
-        <<"buffee">>=>Buffee,<<"request">>=>Buffee,<<"payload">>=>#{<<"pair">>=>Buffee}},
-    Packet=ba_buffee_passport:sign(Body,Key),
-    ?assertEqual({noreply,S#{rejected:=1}},ba_buffee_membership:handle_info({desk_delivery,unused,A,Packet},S)).
 
 %% Equal revisions with different content converge: whichever a Device holds,
 %% exactly one of the two statements wins, and the same one everywhere.

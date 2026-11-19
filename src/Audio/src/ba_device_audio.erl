@@ -22,12 +22,12 @@ reconcile(S) ->
     %% The mic button is on but Recording is not allowed: with Ask, raise a
     %% request this Device's user answers in Requests (deduplicated there).
     case ba_settings:get(mic_live,false)=:=true andalso not maps:get(microphone,Gates,false) of
-        true -> try ba_device_config:request(microphone,<<"local">>) catch exit:_ -> ok end;
+        true -> ba_device_request:approve(microphone,<<"local">>);
         false -> ok
     end,
     %% Likewise the speaker: unmuted while Playback is not allowed.
     case ba_settings:get(muted,false)=/=true andalso not maps:get(speaker,Gates,false) of
-        true -> try ba_device_config:request(speaker,<<"local">>) catch exit:_ -> ok end;
+        true -> ba_device_request:approve(speaker,<<"local">>);
         false -> ok
     end,
     Requested=Gates#{microphone := maps:get(microphone,Gates) andalso ba_settings:get(mic_live,false) =:= true,

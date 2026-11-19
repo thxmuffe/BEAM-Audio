@@ -5,10 +5,16 @@ fixture() ->
     KA = {PA,_} = crypto:generate_key(eddsa,ed25519),
     KB = {PB,_} = crypto:generate_key(eddsa,ed25519),
     A = binary:encode_hex(PA), B = binary:encode_hex(PB),
-    Common = #{buffee => binary:copy(<<"A">>,32),authority => A,manager => A,epoch => 1,revision => 1},
     {A,B,KA,KB,
-     ba_buffee_control_protocol:new(KA,Common#{peers => #{B => [status_read]}},0),
-     ba_buffee_control_protocol:new(KB,Common#{peers => #{A => [status_read]}},0)}.
+     ba_buffee_control_protocol:new(KA,policy(A,#{B => [status_read]}),0),
+     ba_buffee_control_protocol:new(KB,policy(B,#{A => [status_read]}),0)}.
+buffee() -> binary:copy(<<"A">>,32).
+invitation() -> ba_buffee_passport:invitation_key(binary:copy(<<"5">>,32)).
+%% Each Device signs its own join certificate with the link's invitation key.
+policy(Self,Members) ->
+    {Invitation,Key} = invitation(),
+    #{buffee => buffee(),authority => Self,manager => Self,revision => 1,invitation => Invitation,
+      join => ba_buffee_passport:join(buffee(),Self,Key),members => Members,defaults => [],removed => []}.
 
 otp_diagnostics_redact_keys_test() ->
     {_,_,_,_,P,_} = fixture(),
@@ -42,7 +48,7 @@ capability_permissions_and_reply_test() ->
     ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"forbidden">>}}],_},
         p(receive_packet,[B,Error,7,A0])),
     Policy = maps:get(policy,SB),
-    Granted = SB#{policy := Policy#{peers := #{A => [capabilities_read,status_read]}}},
+    Granted = SB#{policy := Policy#{members := #{A => [capabilities_read,status_read]}}},
     {ok,Query,A1} = p(request_capabilities,[B,5,SA]),
     {ok,[],[{capabilities_read,Request}],B1} = p(receive_packet,[A,Query,6,Granted]),
     Caps = #{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0,<<"test">> => #{
@@ -67,23 +73,24 @@ jobs_use_grants_not_a_manager_role_test() ->
     {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
     ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
     PolicyB = maps:get(policy,SB),
-    GrantedB = SB#{policy := PolicyB#{peers := #{A => [job_offer,status_read]}}},
-    ?assertMatch({ok,[],[{job,<<"job.offer">>,Id,Offer,#{peer := A,manager := A}}],_},
+    GrantedB = SB#{policy := PolicyB#{members := #{A => [job_offer,status_read]}}},
+    ?assertMatch({ok,[],[{job,<<"job.offer">>,Id,Offer,#{peer := A}}],_},
         p(receive_packet,[A,Packet,6,GrantedB])),
     {ok,MemberPacket,_} = p(job_message,[A,<<"job.offer">>,Id,Offer,5,SB]),
     ?assertMatch({error,_,SA},p(receive_packet,[B,MemberPacket,6,SA])),
     PolicyA = maps:get(policy,SA),
-    GrantedA = SA#{policy := PolicyA#{peers := #{B => [job_offer,status_read]}}},
+    GrantedA = SA#{policy := PolicyA#{members := #{B => [job_offer,status_read]}}},
     ?assertMatch({ok,[],[{job,<<"job.offer">>,Id,Offer,#{peer := B}}],_},p(receive_packet,[B,MemberPacket,6,GrantedA])),
     Impostor = resign(MemberPacket,KA,fun(M) -> M end),
     ?assertMatch({error,_,GrantedA},p(receive_packet,[B,Impostor,6,GrantedA])),
-    BadManager = resign(Packet,KA,fun(M) -> M#{<<"manager">> := B} end),
-    ?assertMatch({error,_,GrantedB},p(receive_packet,[A,BadManager,6,GrantedB])).
+    %% A Device's join certificate cannot be reused by another Device.
+    Borrowed = resign(Packet,KA,fun(M) -> M#{<<"join">> := maps:get(<<"join">>,body(MemberPacket))} end),
+    ?assertMatch({error,_,GrantedB},p(receive_packet,[A,Borrowed,6,GrantedB])).
 
 job_schema_and_expiry_test() ->
     {A,B,KA,_,SA,SB} = connected(),
     Id = binary:copy(<<"C">>,32), Offer = job_offer(),
-    Policy = maps:get(policy,SB), Granted = SB#{policy := Policy#{peers := #{A => [job_offer]}}},
+    Policy = maps:get(policy,SB), Granted = SB#{policy := Policy#{members := #{A => [job_offer]}}},
     {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
     [?assertMatch({error,_,Granted},p(receive_packet,[A,
         resign(Packet,KA,fun(M) -> M#{<<"payload">> := Bad} end),6,Granted])) || Bad <-
@@ -106,9 +113,7 @@ forgery_recipient_scope_and_policy_test() ->
     [?assertMatch({error,_,SB},p(receive_packet,[A,resign(Request,KA,F),6,SB])) || F <-
         [fun(M) -> M#{<<"to">> := A} end,
          fun(M) -> M#{<<"buffee">> := binary:copy(<<"B">>,32)} end,
-         fun(M) -> M#{<<"authority">> := B} end,
-         fun(M) -> M#{<<"epoch">> := 2} end,
-         fun(M) -> M#{<<"revision">> := 0} end,
+         fun(M) -> M#{<<"join">> := binary:copy(<<"0">>,128)} end,
          fun(M) -> M#{<<"v">> := 999} end,
          fun(M) -> M#{<<"extra">> => true} end,
          fun(M) -> M#{<<"payload">> := #{<<"module">> => <<"os">>}} end]],
@@ -128,7 +133,7 @@ permission_and_correlation_test() ->
     {A,B,_,KB,SA,SB} = connected(),
     {ok,Request,A1} = p(request_status,[B,5,SA]),
     Policy = maps:get(policy,SB),
-    Denied = SB#{policy := Policy#{peers := #{A => []}}},
+    Denied = SB#{policy := Policy#{members := #{A => []}}},
     {ok,[Error],[],_} = p(receive_packet,[A,Request,6,Denied]),
     ?assertMatch({ok,[],[{reply,<<"status.error">>,_}],_},p(receive_packet,[B,Error,7,A1])),
     {ok,[Response],[],_} = p(receive_packet,[A,Request,6,SB]),
@@ -159,12 +164,29 @@ membership_and_limits_test() ->
     {A,B,KA,_,SA,SB} = fixture(),
     {ok,Hello,_} = p(connect,[B,0,SA]),
     Policy = maps:get(policy,SB),
-    Removed = SB#{policy := Policy#{authority := B,peers := #{}}},
+    Removed = SB#{policy := Policy#{removed := [A]}},
     ?assertMatch({error,_,Removed},p(receive_packet,[A,Hello,6,Removed])),
-    ?assertException(error,_,p(new,[KA,(maps:get(policy,SA))#{extra => true},0])),
-    ?assertMatch({error,_,SA},p(connect,[binary:copy(<<"0">>,64),6,SA])),
+    ?assertMatch({error,_,_},p(connect,[B,6,SA#{policy := (maps:get(policy,SA))#{removed := [B]}}])),
+    ?assertException(error,_,p(new,[KA,(maps:get(policy,SA))#{join := maps:get(join,maps:get(policy,SB))},0])),
+    ?assertMatch({error,_,SA},p(connect,[binary:copy(<<"0">>,63),6,SA])),
     TooMany = maps:from_list([{binary:encode_hex(crypto:strong_rand_bytes(32)),[]} || _ <- lists:seq(1,33)]),
-    ?assertException(error,_,p(new,[KA,(maps:get(policy,SA))#{peers := TooMany},0])).
+    ?assertException(error,_,p(new,[KA,(maps:get(policy,SA))#{members := TooMany},0])).
+
+%% No membership list: any Device with a valid join certificate may ask, with
+%% default rights unless the signed statement gives it more.
+any_joined_device_may_ask_with_default_rights_test() ->
+    {A,B,_,_,SA,SB} = fixture(),
+    {C,_} = KC = crypto:generate_key(eddsa,ed25519),Cid = binary:encode_hex(C),
+    SC = p(new,[KC,policy(Cid,#{}),0]),
+    {ok,Status,_} = p(request_status,[B,5,SC]),
+    ?assertMatch({ok,[_],[authorized],_},p(receive_packet,[Cid,Status,6,SB#{policy := (maps:get(policy,SB))#{defaults := [status_read]}}])),
+    {ok,Chat,_} = p(chat_message,[A,binary:copy(<<"C">>,32),<<"hi">>,5,SC]),
+    ?assertMatch({ok,[],[authorized,{chat,_,<<"hi">>,_}],_},p(receive_packet,[Cid,Chat,6,SA])),
+    %% A certificate from another Session's invitation key does not count.
+    {Stranger,Key} = ba_buffee_passport:invitation_key(binary:copy(<<"6">>,32)),
+    Outsider = (policy(Cid,#{}))#{invitation := Stranger,join := ba_buffee_passport:join(buffee(),Cid,Key)},
+    {ok,Forged,_} = p(request_status,[B,5,p(new,[KC,Outsider,0])]),
+    ?assertMatch({error,_,SB},p(receive_packet,[Cid,Forged,6,SB])).
 
 p(F,Args) -> apply(ba_buffee_control_protocol,F,Args).
 body(Wire) -> json:decode(base64:decode(maps:get(<<"body">>,json:decode(Wire)))).
@@ -195,7 +217,7 @@ stream_control_requires_grants_and_exact_schema_test() ->
     {ok,Packet,_} = p(audio_message,[B,Id,P,5,SA]),
     ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
     Policy = maps:get(policy,SB),
-    Granted = SB#{policy := Policy#{peers := #{A => [stream_read,stream_subscribe]}}},
+    Granted = SB#{policy := Policy#{members := #{A => [stream_read,stream_subscribe]}}},
     ?assertMatch({ok,[],[{audio,Id,P,#{peer := A}}],_},p(receive_packet,[A,Packet,6,Granted])),
     Base = #{<<"source">> => <<"music">>,<<"incarnation">> => Id,<<"attempt">> => Id},
     ?assertMatch({error,_,_},p(audio_message,[B,Id,Base#{<<"kind">> => <<"signal.offer">>,<<"sdp">> => <<"unsigned generic SDP">>},5,SA])),
@@ -208,16 +230,16 @@ time_permission_is_not_implied_by_status_or_membership_test() ->
     {ok,Packet,_} = p(time_message,[B,Id,P,5,SA]),
     ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Packet,6,SB])),
     Policy = maps:get(policy,SB),
-    GuestWithOldFlag = SB#{policy := Policy#{peers := #{A => [offset_write]}}},
+    GuestWithOldFlag = SB#{policy := Policy#{members := #{A => [offset_write]}}},
     ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Packet,6,GuestWithOldFlag])),
-    Owner = SB#{policy := Policy#{peers := #{A => [owner]}}},
+    Owner = SB#{policy := Policy#{members := #{A => [owner]}}},
     ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Owner])),
-    Granted = SB#{policy := Policy#{peers := #{A => [stream_publish]}}},
+    Granted = SB#{policy := Policy#{members := #{A => [stream_publish]}}},
     ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Granted])).
 
 ordinary_time_reader_can_request_more_time_but_cannot_enable_automatic_test() ->
     {A,B,_,_,SA,SB} = connected(),Id=binary:copy(<<"E">>,32),
-    Policy=maps:get(policy,SB),Reader=SB#{policy := Policy#{peers := #{A => [time_read]}}},
+    Policy=maps:get(policy,SB),Reader=SB#{policy := Policy#{members := #{A => [time_read]}}},
     Required=#{<<"kind">> => <<"offset.required">>,<<"revision">> => 2,<<"offset_ms">> => 450},
     {ok,Packet,_}=p(time_message,[B,Id,Required,5,SA]),
     ?assertMatch({ok,[],[{time,Id,Required,_}],_},p(receive_packet,[A,Packet,6,Reader])),
@@ -239,7 +261,7 @@ chat_is_authenticated_bounded_and_replay_protected_test() ->
 
 audio_capability_shape_is_bounded_and_authenticated_test() ->
     {A,B,_,_,SA,SB} = connected(),Policy=maps:get(policy,SB),
-    Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read,status_read]}}},
+    Granted=SB#{policy := Policy#{members := #{A => [capabilities_read,status_read]}}},
     {ok,Query,A1}=p(request_capabilities,[B,5,SA]),
     {ok,[],[{capabilities_read,Id}],B1}=p(receive_packet,[A,Query,6,Granted]),
     Entry=#{<<"consent">> => true,<<"available">> => false,<<"state">> => <<"waiting_for_clock">>},
@@ -254,7 +276,7 @@ audio_capability_shape_is_bounded_and_authenticated_test() ->
 
 meter_request_and_reply_are_opt_in_and_bounded_test() ->
     {A,B,_,_,SA,SB} = connected(),Policy=maps:get(policy,SB),
-    Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read,status_read]}}},
+    Granted=SB#{policy := Policy#{members := #{A => [capabilities_read,status_read]}}},
     {ok,Query,A1}=p(request_capabilities,[B,true,5,SA]),
     {ok,[],[{capabilities_read,Id,true}],B1}=p(receive_packet,[A,Query,6,Granted]),
     E=#{<<"consent">> => true,<<"available">> => true,<<"state">> => <<"running">>,
@@ -277,7 +299,7 @@ remote_diagnostics_control_is_permission_gated_and_replay_safe_test() ->
     {ok,[Denied],[],_}=p(receive_packet,[A,Query,6,SB]),
     ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"forbidden">>}}],_},
         p(receive_packet,[B,Denied,7,A1])),
-    Policy=maps:get(policy,SB),Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read]}}},
+    Policy=maps:get(policy,SB),Granted=SB#{policy := Policy#{members := #{A => [capabilities_read]}}},
     ?assertMatch({ok,[],[{capabilities_read,_,true,Options}],_},p(receive_packet,[A,Query,6,Granted])),
     {ok,[],_,B1}=p(receive_packet,[A,Query,6,Granted]),
     ?assertMatch({error,_,B1},p(receive_packet,[A,Query,7,B1])),
@@ -286,7 +308,7 @@ remote_diagnostics_control_is_permission_gated_and_replay_safe_test() ->
 
 monitor_payload_roundtrip_with_dual_meters_and_trace_test() ->
     {A,B,_,_,SA,SB} = connected(),Policy=maps:get(policy,SB),
-    Granted=SB#{policy := Policy#{peers := #{A => [capabilities_read]}}},
+    Granted=SB#{policy := Policy#{members := #{A => [capabilities_read]}}},
     {ok,Q,A1}=p(request_capabilities,[B,true,5,SA]),
     {ok,[],[{capabilities_read,Id,true}],B1}=p(receive_packet,[A,Q,6,Granted]),
     Meter=#{<<"peak_db">> => -3.0,<<"rms_db">> => -6.0,<<"meter_age_ms">> => 1,<<"meter_stage">> => <<"receive_max">>},
@@ -376,3 +398,24 @@ simultaneous_hellos_both_complete_test() ->
     {ok,[ReadyA],[authorized],A2} = p(receive_packet,[B,HelloB,1,A1]),
     ?assertMatch({ok,[],[],_},p(receive_packet,[B,ReadyB,2,A2])),
     ?assertMatch({ok,[],[],_},p(receive_packet,[A,ReadyA,2,B2])).
+
+%% Session requests (rights, name, removal, End) are ordinary signed requests:
+%% exact schema, the rights table, replay protection.
+session_requests_are_signed_requests_test() ->
+    {A,B,_,_,SA,SB} = connected(),
+    Id = id(9),
+    End = #{<<"kind">> => <<"ended">>},
+    {ok,Packet,_} = p(session_message,[B,Id,End,5,SA]),
+    ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
+    Policy = maps:get(policy,SB),
+    Moderator = SB#{policy := Policy#{members := #{A => [end_session]}}},
+    {ok,[],[{session,Id,End,#{peer := A}}],Done} = p(receive_packet,[A,Packet,6,Moderator]),
+    ?assertMatch({error,_,Done},p(receive_packet,[A,Packet,7,Done])),
+    Ask = #{<<"kind">> => <<"privilege_request">>,<<"privilege">> => <<"stream_publish">>},
+    {ok,AskPacket,_} = p(session_message,[B,id(10),Ask,8,SA]),
+    ?assertMatch({ok,[],[{session,_,Ask,_}],_},p(receive_packet,[A,AskPacket,9,SB])),
+    [?assertMatch({error,_,_},p(session_message,[B,id(11),Bad,8,SA])) || Bad <-
+        [#{<<"kind">> => <<"privilege_request">>,<<"privilege">> => <<"root">>},
+         #{<<"kind">> => <<"rename_request">>,<<"name">> => <<>>},
+         #{<<"kind">> => <<"remove_request">>,<<"device">> => <<"x">>},
+         End#{<<"extra">> => true},#{<<"kind">> => <<"rpc">>}]].

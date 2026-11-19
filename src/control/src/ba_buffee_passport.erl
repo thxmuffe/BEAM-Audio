@@ -2,9 +2,10 @@
 %% versioned privilege policy and `grant` delegation certificates. The module
 %% keeps its historical name; there is no separate passport credential.
 -module(ba_buffee_passport).
--export([sign/2,verify/2,decode/1,exact/2,session_id/2,mailbox/1,proof/2,
+-export([sign/2,verify/2,decode/1,exact/2,session_id/2,mailbox/1,
          invitation/1,link/1,parse_invitation/1,genesis/2,policy/1,statement/2,delegation/4,
-         grant_revision/3,runtime_policy/3,urls/1,route/2,permissions/1]).
+         grant_revision/3,urls/1,permissions/1,permission/1,
+         invitation_key/1,join/3,joined/4]).
 -define(DOMAIN,<<"beamaudio-buffee-membership/v1:">>).
 -define(MAILBOX,<<"beamaudio-session-mailbox/v1:">>).
 sign(Body,Private) ->
@@ -26,10 +27,21 @@ session_id(Creator,Nonce) ->
 mailbox(Secret) ->
     true = secret(Secret),
     binary:part(binary:encode_hex(crypto:hash(sha256,[?MAILBOX,Secret])),0,32).
-%% Proof of holding the link, bound to direction, challenge and both Devices.
-proof(Secret,Parts) ->
+%% The invitation key is derived from the link's secret, so links already
+%% shared keep working. A joining Device signs its own ID with it; any Device
+%% checks that join certificate against the public invitation key, per request.
+-define(INVITATION_KEY,<<"beamaudio-session-invitation-key/v1:">>).
+-define(JOIN,<<"beamaudio-session-join/v1:">>).
+invitation_key(Secret) ->
     true = secret(Secret),
-    binary:encode_hex(crypto:mac(hmac,sha256,Secret,lists:join(<<":">>,Parts))).
+    {Public,Private} = crypto:generate_key(eddsa,ed25519,crypto:hash(sha256,[?INVITATION_KEY,Secret])),
+    {binary:encode_hex(Public),Private}.
+join(Buffee,Device,Private) ->
+    true = hex(Buffee,32) andalso hex(Device,64),
+    binary:encode_hex(crypto:sign(eddsa,none,[?JOIN,Buffee,Device],[Private,ed25519])).
+joined(Buffee,Device,Join,Invitation) ->
+    hex(Join,128) andalso hex(Invitation,64) andalso
+        crypto:verify(eddsa,none,[?JOIN,Buffee,Device],binary:decode_hex(Join),[binary:decode_hex(Invitation),ed25519]).
 %% v6 links carry a 128-bit secret; v5 links carried 256 bits.
 secret(Secret) -> hex(Secret,32) orelse hex(Secret,64).
 
@@ -117,13 +129,6 @@ chain(Grantee,Creator,Buffee,D,Seen) ->
     true = is_integer(R) andalso R > 0,
     _ = chain(Issuer,Creator,Buffee,D,[Grantee|Seen]),R.
 
-%% Peers: participant => permissions, already resolved against the policy.
-%% Control envelopes count revisions from 1; the link's own revision 0 is 1 there.
-runtime_policy(P,Self,Peers) ->
-    ok = policy(P),
-    #{buffee => maps:get(<<"buffee">>,P),authority => maps:get(<<"authority">>,P),
-      manager => maps:get(<<"manager">>,P),epoch => 1,revision => maps:get(<<"revision">>,P)+1,
-      peers => maps:map(fun(_,Perms) -> lists:sort([permission(X) || X <- Perms]) end,maps:remove(Self,Peers))}.
 permissions(L) ->
     true = is_list(L) andalso length(L) =< 10 andalso lists:usort(L) =:= L,
     [permission(P) || P <- L],ok.
@@ -140,8 +145,6 @@ permission(<<"stream_publish">>) -> stream_publish.
 urls(L) ->
     true = is_list(L) andalso length(L) > 0 andalso length(L) =< 4,
     true = lists:usort(L) =:= lists:sort(L),true = lists:all(fun ba_relay:valid_url/1,L),ok.
-route(#{<<"desk">> := URL,<<"mailbox">> := Cap} = R,URLs) ->
-    exact(R,[<<"desk">>,<<"mailbox">>]),true = lists:member(URL,URLs),true = hex(Cap,32),ok.
 exact(M,Keys) -> true = is_map(M),true = lists:sort(maps:keys(M)) =:= lists:sort(Keys),ok.
 natural(N) -> true = is_integer(N) andalso N >= 0 andalso N =< 9007199254740991,ok.
 hex(B,N) -> ba_buffee_job:hex(B,N).

@@ -1,5 +1,29 @@
 # Current implementation and validation
 
+## Session requests through the pipeline — 2026-11-19
+
+`privilege_request`, `privilege_release`, `rename_request`, `remove_request` and
+`ended` left the membership channel. They are one signed control operation,
+`session.request` with a `kind`, validated by schema, authorized by the
+`ba_device_request` rights table (rename: on_air; remove and End: end_session;
+privilege ask/release: anyone) and executed by membership on the grant holder or
+target. Always/Ask/No for rights requests is `ba_device_request:approve/2`;
+pending requests stay in membership's per-Device list. End no longer needs the
+pairing token; `pairs` bookkeeping was removed. Local consent asks (speaker,
+microphone, calibration) also call `approve/2`. Publisher stream admission and
+execution-time consent checks in adapters stay where they are.
+
+Remaining outside the pipeline: admission. Control accepts packets only from
+peers that completed the membership HMAC pairing, so pairing is still the
+Session-wide authentication step.
+
+Validation: eunit 269 tests, 0 failures. Local-relay smokes
+`session-moderation-smoke.py` and `crash-chat-smoke.py` pass.
+`session-privileges-smoke.py` passes every privilege request/answer step, then
+fails twice at the clock timeline check after the first grant holder leaves; not
+yet diagnosed, likely from control v2 (no standing links between remaining
+Devices). No app build or live check.
+
 ## Control requests authenticate themselves (protocol v2) — 2026-11-19
 
 Owner direction: authenticate when something needs approval, not by keeping

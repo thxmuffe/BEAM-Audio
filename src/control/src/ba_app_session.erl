@@ -87,8 +87,10 @@ snapshot() ->
                 has_error => maps:get(D,maps:get(peer_errors,Control,#{}),false),
                 privileges => maps:get(D,Privileges,[]),
                 requests => maps:get(D,maps:get(requests,Buffee,#{}),[]),
-                %% Presence in the Session; control relationships exist only on demand.
-                state => case D=:=Id orelse lists:member(D,maps:get(participants,Buffee,[])) of true -> authorized;false -> disconnected end}
+                %% Only Devices this one has encountered are listed; connected
+                %% while their requests are flowing.
+                state => case D=:=Id orelse maps:get(stage,maps:get(D,maps:get(sessions,Control,#{}),#{}),lapsed)=:=authorized of
+                    true -> authorized;false -> disconnected end}
                 || D <- maps:get(members,Buffee,[])],
             LocalJobs=[#{id => atom_to_binary(K),device => Id,capability => K,state => maps:get(state,V,waiting)}
                 || {K,V} <- maps:to_list(maps:get(audio,Handler,#{})),maps:get(state,V,disabled)=/=disabled],

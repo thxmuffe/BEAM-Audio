@@ -23,7 +23,7 @@ configure(P) -> configure(P,<<"local">>).
 configure(P,From) ->
     ok=validate_options(P),
     case lists:member(true,maps:values(P)) of
-        true -> [try ba_device_config:request(K,From) catch exit:_ -> ok end || K <- [calibrate_speaker,calibrate_microphone]];
+        true -> [ba_device_request:approve(K,From) || K <- [calibrate_speaker,calibrate_microphone]];
         false -> ok
     end,
     {ok,options()}.

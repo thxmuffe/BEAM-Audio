@@ -21,6 +21,16 @@ and cosmetic cleanup still wait.
   peers/active streams; Session-wide diagnostic reads belong to an explicit
   Inspector. Existing peer-mesh maintenance is a scaling limitation to replace,
   not a model to extend during cleanup.
+- **Need-to-know Sessions (2026-11-19).** Sessions must scale to millions of
+  Devices: no Device needs to know or reach everyone. A Device contacts a
+  neighbour and stops when it has what it needs; it only does what is requested
+  of it. No membership concept: a join certificate signed by the invitation key
+  (derived from the existing link secret) proves admission, checked per request;
+  rights and Always/Ask/No stay per Device. ON AIR Devices push two orthogonal
+  requests to Session Devices, concurrently: subscribe to my audio, and open your
+  speakers (may be bundled; order irrelevant). Listeners do not discover sources.
+  Routing/relaying to unreachable Devices is deferred. This supersedes pairwise
+  admission, participant lists, Session-wide presence and catalogue polling.
 - **One Device request/approval pipeline.** The receiving/executing Device
   authenticates the requester (including a Manager), checks applicable rights
   and local consent, explicitly approves manually or automatically, then acts.
@@ -31,9 +41,13 @@ and cosmetic cleanup still wait.
   table and the Always/Ask/No approval stage for remote control requests; job
   offers now Ask. Control requests now authenticate on their own (control
   protocol v2: signed, wall-clock fresh, replay-checked; no handshake or
-  background renewal). Remaining: route membership requests
-  (`privilege_request`, `rename_request`, `remove_request`) through the same
-  approval stage instead of their own Always/Ask/No storage.
+  background renewal). Session requests (privilege request/release, rename,
+  remove, End) are signed control requests decided by the same pipeline.
+  Remaining: admission still depends on the membership pairing handshake
+  (control accepts only paired participants); owner proposes replacing
+  membership with per-request join credentials (see PROGRESS 2026-11-19).
+  Open regression: `session-privileges-smoke.py` clock timeline changes after
+  the first grant holder leaves (fails twice since control v2).
 - **OTP ownership is mandatory.** Native streams stop when their owning OTP
   process, required supervisor, authority or runtime stops or crashes. Independent
   native teardown and forced termination must prevent orphan media connections;

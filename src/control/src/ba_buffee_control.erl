@@ -2,13 +2,17 @@
 -module(ba_buffee_control).
 -behaviour(gen_server).
 -export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1,read_capabilities/2]).
--export([offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,chat_message/3,audio_context/1,time_message/3]).
+-export([session_request/2,offer_job/2,retry_job/1,cancel_job/1,job_status/1,audio_message/3,chat_message/3,audio_context/1,time_message/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 
 chat_message(Peer,Id,Text) -> gen_server:call(ba_session_scope:ref(?MODULE),{chat_message,Peer,Id,Text}).
 time_message(Peer,Id,Payload) -> gen_server:call(ba_session_scope:ref(?MODULE),{time_message,Peer,Id,Payload}).
 audio_message(Peer,Id,Payload) -> gen_server:call(ba_session_scope:ref(?MODULE),{audio_message,Peer,Id,Payload}).
 audio_context(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{audio_context,Peer}).
+
+%% Signed Session requests from membership to the Devices that execute them.
+%% Asynchronous: membership is called by this process for snapshots.
+session_request(Peers,Payload) -> gen_server:cast(ba_session_scope:ref(?MODULE),{session_request,Peers,Payload}).
 
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 snapshot() -> gen_server:call(ba_session_scope:ref(?MODULE),snapshot).
@@ -28,8 +32,12 @@ init([]) ->
     process_flag(trap_exit,true),
     Identity = {Pub,_} = ba_device_store:identity(),
     Id = binary:encode_hex(Pub),
-    Empty = #{buffee => binary:copy(<<"0">>,32),authority => Id,manager => Id,
-              epoch => 1,revision => 1,peers => #{}},
+    %% No Session yet: an unusable placeholder (a join certificate from a
+    %% throwaway invitation key) until membership installs the real one.
+    {Invitation,Key} = ba_buffee_passport:invitation_key(binary:encode_hex(crypto:strong_rand_bytes(16))),
+    None = binary:copy(<<"0">>,32),
+    Empty = #{buffee => None,authority => Id,manager => Id,revision => 1,invitation => Invitation,
+              join => ba_buffee_passport:join(None,Id,Key),members => #{},defaults => [],removed => []},
     View = case ba_buffee_membership:current() of
         {ok,V} -> V;
         _ -> #{policy => Empty,routes => #{},until => now_ms()}
@@ -141,16 +149,31 @@ handle_call({Operation,Peer},From,#{callers := Callers} = S)
         {error,Reason,_} -> {reply,{error,Reason},S}
     end;
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
+handle_cast({session_request,Peers,Payload},S) ->
+    {noreply,lists:foldl(fun(Peer,Acc) ->
+        Id = binary:encode_hex(crypto:strong_rand_bytes(16)),
+        case ba_buffee_control_protocol:session_message(Peer,Id,Payload,now_ms(),maps:get(protocol,Acc)) of
+            {ok,Packet,Protocol} ->
+                case send(Peer,Packet,Acc) of
+                    ok -> Acc#{protocol := Protocol};
+                    _ -> ba_diagnostics:count(session_request_unsent,Acc#{protocol := Protocol})
+                end;
+            {error,_,_} -> ba_diagnostics:count(session_request_invalid,Acc)
+        end
+    end,S,Peers)};
 handle_cast(_,S) -> {noreply,S}.
 
 handle_info({membership_authorized,View},S) ->
     Config = maps:with([policy,routes],View),
-    Next = case Config =:= maps:get(config,S) of
-        true -> S;
-        false ->
+    Old = maps:get(policy,maps:get(config,S)),New = maps:get(policy,View),
+    Next = case {Config =:= maps:get(config,S),maps:get(buffee,Old)=:=maps:get(buffee,New)} of
+        {true,_} -> S;
+        %% Rights changed: checked per request from now on; nothing restarts.
+        {false,true} -> S#{config := Config,protocol := ba_buffee_control_protocol:set_policy(New,maps:get(protocol,S))};
+        {false,false} ->
             Cleared = reset(policy_changed,S),
             Cleared#{config := Config,protocol := ba_buffee_control_protocol:new(
-                ba_device_store:identity(),maps:get(policy,View),now_ms())}
+                ba_device_store:identity(),New,now_ms())}
     end,
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => maps:get(until,View),
         lease_ms => ba_settings:app(control_session_lease_ms,60000)}}};
@@ -305,6 +328,8 @@ event(_,{job,Operation,Id,Payload,Context},#{handler_requests := Requests} = S) 
             S#{handler_requests := gen_server:reqids_add(Ref,{Context,Id},Requests)}
     end;
 event(_,{job_report,Id,Report,Context},S) -> receive_job_report(Context,Id,Report,S);
+event(Peer,{session,_,Payload,_},S) ->
+    gen_server:cast(ba_session_scope:ref(ba_buffee_membership),{session_request,Peer,Payload}),S;
 event(Peer,{session_replaced,Old},S) ->
     drop_session(Peer,Old),fence_peer_jobs(Peer,reply(Peer,{error,session_replaced},S));
 event(_,{session_renewed,Context},S) ->
@@ -312,6 +337,8 @@ event(_,{session_renewed,Context},S) ->
 event(Peer,authorized,S) ->
     Context=ba_buffee_control_protocol:context(Peer,now_ms(),maps:get(protocol,S)),
     critical_audio_notify({audio_session_up,Context}),
+    Revision = ba_buffee_control_protocol:peer_revision(Peer,maps:get(protocol,S)),
+    gen_server:cast(ba_session_scope:ref(ba_buffee_membership),{encountered,Peer,Revision}),
     self() ! {discover_name,Peer},S.
 
 discover_name(Peer,S) ->

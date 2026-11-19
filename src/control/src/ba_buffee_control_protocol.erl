@@ -1,17 +1,19 @@
 %% Pure, bounded control messages. No OTP distribution, processes or device I/O.
 %%
 %% Every packet authenticates itself: the sender signs the exact body, which
-%% names the recipient, the installed Session policy, the sender's instance (one
-%% per protocol state), a rising sequence number and the sender's wall-clock
-%% time. There is no handshake and no background renewal: a Device verifies each
+%% names the recipient and Session, carries the sender's join certificate (signed
+%% by the invitation key), the sender's instance (one per protocol state), a
+%% rising sequence number and the sender's wall-clock time. Nobody keeps a list
+%% of who is in the Session; any Device with a valid join certificate that has
+%% not been removed may ask, and its rights come from the signed statement. There is no handshake and no background renewal: a Device verifies each
 %% request when it arrives, and ba_device_request decides it. A relationship
 %% with a peer exists while its packets keep arriving and lapses when idle.
 -module(ba_buffee_control_protocol).
 -export([new/3, connect/3, request_status/3, request_capabilities/3,request_capabilities/4, reply_capabilities/5,chat_message/5,
-         receive_packet/4, expire/2, reset/2, close/3,
-         snapshot/1, seal/2,job_message/6,context/3,audio_message/5,time_message/5]).
+         receive_packet/4, expire/2, reset/2, close/3, set_policy/2, peer_revision/2,
+         snapshot/1, seal/2,job_message/6,context/3,audio_message/5,time_message/5,session_message/5]).
 -define(DOMAIN, <<"beamaudio-buffee-control/v1:">>).
--define(VERSION, 2).
+-define(VERSION, 3).
 -define(MAX, 32768).
 -define(INT, 9007199254740991).
 %% Accepted difference between sender and receiver wall clocks.
@@ -21,27 +23,36 @@
 %% Retired sender instances remembered per peer.
 -define(RETIRED, 4).
 
-%% Policy is explicitly installed local configuration, not a peer-supplied grant.
-new({Public, Private}, #{buffee := Buffee, authority := Authority,manager := Manager,epoch := Epoch,
-                       revision := Revision, peers := Peers} = Policy, Now) ->
-    true = lists:sort(maps:keys(Policy)) =:= [authority,buffee,epoch,manager,peers,revision],
-    Id = binary:encode_hex(Public), true = hex(Id,64) andalso hex(Buffee,32),
-    true = hex(Authority,64) andalso uint(Epoch) andalso Epoch > 0 andalso
-           uint(Revision) andalso Revision > 0,
-    true = is_map(Peers) andalso map_size(Peers) =< 32,
-    %% Reference identities need not be online members.
-
-    true = hex(Manager,64),
-    maps:foreach(fun(Peer, Permissions) ->
-        true = hex(Peer,64) andalso Peer =/= Id,
-        true = is_list(Permissions) andalso length(Permissions) =< 9,
-        true = lists:usort(Permissions) =:= Permissions,
-        true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer,stream_read,stream_subscribe,time_read,offset_write,owner,stream_publish,end_session]) end,Permissions)
-    end,Peers),
+%% Policy is this Device's current signed rights statement, resolved locally:
+%% members' rights, defaults for everyone else, removed Devices, the public
+%% invitation key and this Device's own join certificate.
+new({Public, Private}, Policy, Now) ->
+    Id = binary:encode_hex(Public), true = hex(Id,64),
     %% Reject an accidentally mismatched local key before opening a Desk route.
     Probe = crypto:sign(eddsa,none,?DOMAIN,[Private,ed25519]),
     true = crypto:verify(eddsa,none,?DOMAIN,Probe,[Public,ed25519]),
-    reset(#{id => Id, private => Private, policy => Policy},Now).
+    set_policy(Policy,reset(#{id => Id, private => Private},Now)).
+
+%% Rights change without restarting relationships: every request is checked
+%% against the statement in force when it arrives.
+set_policy(#{buffee := Buffee,authority := Authority,manager := Manager,revision := Revision,
+             invitation := Invitation,join := Join,members := Members,defaults := Defaults,
+             removed := Removed} = Policy,#{id := Id} = S) ->
+    true = hex(Buffee,32) andalso hex(Authority,64) andalso hex(Manager,64) andalso hex(Invitation,64),
+    true = uint(Revision) andalso Revision > 0,
+    true = ba_buffee_passport:joined(Buffee,Id,Join,Invitation),
+    true = is_map(Members) andalso map_size(Members) =< 16,
+    maps:foreach(fun(Peer,Rights) -> true = hex(Peer,64),rights(Rights) end,Members),
+    rights(Defaults),
+    true = is_list(Removed) andalso length(Removed) =< 31 andalso lists:all(fun(R) -> hex(R,64) end,Removed),
+    S#{policy => Policy}.
+rights(Rights) ->
+    true = is_list(Rights) andalso length(Rights) =< 10 andalso lists:usort(Rights) =:= Rights,
+    true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer,stream_read,stream_subscribe,
+        time_read,offset_write,owner,stream_publish,end_session]) end,Rights).
+held(Peer,S) -> #{members := Members,defaults := Defaults} = maps:get(policy,S),maps:get(Peer,Members,Defaults).
+%% The rights-statement revision the peer last sent, so the newer side can share.
+peer_revision(Peer,S) -> maps:get(revision,maps:get(Peer,maps:get(sessions,S),#{}),0).
 
 %% A fresh instance: peers see it as a new relationship and close the old one.
 %% Packets from before this moment are not accepted from unknown instances, so
@@ -99,18 +110,19 @@ reply_capabilities(Peer,Request,Value,Now,S) ->
 receive_packet(From, Packet, Now, S) ->
     attempt(fun() ->
         true = Now < maps:get(membership_deadline,S,infinity),
-        #{peers := Peers,buffee := Buffee,authority := Authority,manager := Manager,
-          epoch := Epoch,revision := Revision} = maps:get(policy,S),
-        true = maps:is_key(From,Peers),
+        #{buffee := Buffee,invitation := Invitation,removed := Removed} = maps:get(policy,S),
+        false = lists:member(From,Removed),
         Body = verify(Packet,From),
         #{<<"v">> := ?VERSION, <<"from">> := From, <<"to">> := To, <<"buffee">> := Buffee,
-          <<"authority">> := Authority,<<"manager">> := Manager,
-          <<"epoch">> := Epoch, <<"revision">> := Revision,
+          <<"join">> := Join,<<"revision">> := Revision,
           <<"session">> := Instance,<<"seq">> := Sequence,<<"sent">> := Sent} = Body,
         To = maps:get(id,S),
         true = abs(wall(Now)-Sent) =< ?SKEW,
+        true = ba_buffee_passport:joined(Buffee,From,Join,Invitation),
         {Admitted,Next} = admit(From,Instance,Sequence,Sent,Now,S),
-        {ok,Packets,Events,Final} = dispatch(From,Body,Now,Next),
+        Known = maps:get(sessions,Next),
+        Noted = Next#{sessions := Known#{From := (maps:get(From,Known))#{revision => Revision}}},
+        {ok,Packets,Events,Final} = dispatch(From,Body,Now,Noted),
         {ok,Packets,Admitted++Events,Final}
     end,S).
 
@@ -192,13 +204,21 @@ time_message(Peer,Id,Payload,Now,S) ->
         {ok,Packet,Next}
     end,S).
 
+%% Requests about the Session itself (rights, name, removal, End).
+session_message(Peer,Id,Payload,Now,S) ->
+    attempt(fun() ->
+        true = hex(Id,32),payload(<<"session.request">>,Payload),
+        sendable(Peer,Now,S),
+        {Packet,Next} = outgoing(Peer,<<"session.request">>,Id,Payload,Now,S),
+        {ok,Packet,Next}
+    end,S).
+
 dispatch(Peer,#{<<"op">> := <<"hello">>,<<"request">> := Request},Now,S) ->
     {Packet,Next} = outgoing(Peer,<<"ready">>,Request,#{},Now,S),
     {ok,[Packet],[],Next};
 dispatch(_,#{<<"op">> := <<"ready">>},_,S) -> {ok,[],[],S};
 dispatch(Peer, #{<<"op">> := Op,<<"request">> := Request,<<"payload">> := Payload}, Now, S) ->
-    Permissions = maps:get(Peer,maps:get(peers,maps:get(policy,S))),
-    case ba_device_request:authorize(Op,Payload,Permissions) of
+    case ba_device_request:authorize(Op,Payload,held(Peer,S)) of
         ok -> authorized(Peer,Op,Request,Payload,Now,S);
         {error,forbidden} -> forbidden(Peer,Op,Request,Payload,Now,S)
     end.
@@ -222,6 +242,8 @@ authorized(Peer,Op,Request,Payload,Now,S) ->
             {ok,[],[{chat,Request,maps:get(<<"text">>,Payload),context(Peer,Now,S)}],S};
         <<"time.message">> ->
             {ok,[],[{time,Request,Payload,context(Peer,Now,S)}],S};
+        <<"session.request">> ->
+            {ok,[],[{session,Request,Payload,context(Peer,Now,S)}],S};
         <<"stream.message">> ->
             {ok,[],[{audio,Request,Payload,context(Peer,Now,S)}],S};
         _ when Op =:= <<"job.offer">>; Op =:= <<"job.cancel">> ->
@@ -257,7 +279,8 @@ active(Peer, Now, S) ->
     true = Now < Deadline,true = Now < maps:get(membership_deadline,S,infinity), Session.
 sendable(Peer,Now,S) ->
     true = Now < maps:get(membership_deadline,S,infinity),
-    true = maps:is_key(Peer,maps:get(peers,maps:get(policy,S))).
+    true = hex(Peer,64) andalso Peer =/= maps:get(id,S),
+    false = lists:member(Peer,maps:get(removed,maps:get(policy,S))).
 
 %% Expiry is also checked synchronously on every receive/request, never just by a timer.
 %% A lapsed relationship keeps its replay state until its packets are too old.
@@ -296,12 +319,11 @@ snapshot(S) ->
     end,maps:get(sessions,S))}.
 
 outgoing(Peer, Op, Request, Payload, Now, S) ->
-    #{buffee := Buffee,authority := Authority,manager := Manager,epoch := Epoch,revision := Revision} = maps:get(policy,S),
+    #{buffee := Buffee,join := Join,revision := Revision} = maps:get(policy,S),
     Sequence = maps:get(seq,S)+1,
     true = uint(Sequence),
     Body = #{<<"v">> => ?VERSION,<<"from">> => maps:get(id,S),<<"to">> => Peer,
-        <<"buffee">> => Buffee,<<"authority">> => Authority,<<"manager">> => Manager,
-        <<"epoch">> => Epoch,<<"revision">> => Revision,
+        <<"buffee">> => Buffee,<<"join">> => Join,<<"revision">> => Revision,
         <<"session">> => maps:get(instance,S),<<"seq">> => Sequence,<<"sent">> => wall(Now),
         <<"op">> => Op,<<"request">> => Request,<<"payload">> => Payload},
     {seal(Body,maps:get(private,S)),S#{seq := Sequence}}.
@@ -323,12 +345,12 @@ verify(Packet, From) when is_binary(Packet), byte_size(Packet) =< ?MAX ->
     true = crypto:verify(eddsa,none,[?DOMAIN,Data],binary:decode_hex(Sig),
                          [binary:decode_hex(From),ed25519]),
     Body = decode(Data),
-    exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"buffee">>,<<"authority">>,<<"manager">>,<<"epoch">>,<<"revision">>,
+    exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"buffee">>,<<"join">>,<<"revision">>,
                 <<"session">>,<<"seq">>,<<"sent">>,<<"op">>,<<"request">>,<<"payload">>]),
     [true = hex(maps:get(K,Body),N) || {K,N} <-
-        [{<<"from">>,64},{<<"to">>,64},{<<"authority">>,64},{<<"manager">>,64},{<<"buffee">>,32},
+        [{<<"from">>,64},{<<"to">>,64},{<<"buffee">>,32},{<<"join">>,128},
          {<<"session">>,32},{<<"request">>,32}]],
-    [true = uint(maps:get(K,Body)) || K <- [<<"seq">>,<<"epoch">>,<<"revision">>,<<"sent">>]],
+    [true = uint(maps:get(K,Body)) || K <- [<<"seq">>,<<"revision">>,<<"sent">>]],
     payload(maps:get(<<"op">>,Body),maps:get(<<"payload">>,Body)), Body.
 
 payload(Op,P) when Op =:= <<"hello">>; Op =:= <<"ready">> -> exact(P,[]);
@@ -336,6 +358,21 @@ payload(<<"chat.message">>,P) ->
     exact(P,[<<"text">>]),Text=maps:get(<<"text">>,P),
     true=is_binary(Text) andalso byte_size(Text)>0 andalso byte_size(Text)=<4096,
     true=is_list(unicode:characters_to_list(Text));
+payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
+    case Kind of
+        _ when Kind=:= <<"privilege_request">>;Kind=:= <<"privilege_release">> ->
+            exact(P,[<<"kind">>,<<"privilege">>]),ok = ba_buffee_passport:permissions([maps:get(<<"privilege">>,P)]);
+        <<"rename_request">> ->
+            exact(P,[<<"kind">>,<<"name">>]),Name = maps:get(<<"name">>,P),
+            true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
+            true = is_list(unicode:characters_to_list(Name));
+        <<"remove_request">> -> exact(P,[<<"kind">>,<<"device">>]),true = hex(maps:get(<<"device">>,P),64);
+        <<"ended">> -> exact(P,[<<"kind">>]);
+        %% A signed rights statement; membership verifies its signer chain.
+        <<"policy">> ->
+            exact(P,[<<"kind">>,<<"signer">>,<<"state">>]),true = hex(maps:get(<<"signer">>,P),64),
+            State = maps:get(<<"state">>,P),true = is_binary(State) andalso byte_size(State) =< 24576
+    end;
 payload(<<"status.read">>,P) -> exact(P,[]);
 payload(<<"status.reply">>,P) ->
     exact(P,[<<"protocol">>,<<"session">>]),
