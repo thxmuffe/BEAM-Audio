@@ -45,7 +45,7 @@ init([]) ->
         {ok,V} -> V;
         _ -> #{policy => Empty,routes => #{},until => now_ms()}
     end,
-    Config = maps:with([policy,routes],View),
+    Config = maps:with([policy,routes,envelope],View),
     Protocol = (ba_buffee_control_protocol:new(Identity,maps:get(policy,View),now_ms()))#{
         membership_deadline => maps:get(until,View),lease_ms => ba_settings:app(control_session_lease_ms,60000)},
     erlang:send_after(250,self(),expire),
@@ -169,7 +169,7 @@ handle_cast({session_request,Peers,Payload},S) ->
 handle_cast(_,S) -> {noreply,S}.
 
 handle_info({membership_authorized,View},S) ->
-    Config = maps:with([policy,routes],View),
+    Config = maps:with([policy,routes,envelope],View),
     Old = maps:get(policy,maps:get(config,S)),New = maps:get(policy,View),
     Next = case {Config =:= maps:get(config,S),maps:get(buffee,Old)=:=maps:get(buffee,New)} of
         {true,_} -> S;
@@ -185,9 +185,13 @@ handle_info({membership_authorized,View},S) ->
 handle_info(membership_invalidated,S) ->
     Next = reset(membership_invalidated,S),
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => now_ms()}}};
-handle_info({desk_delivery,_,Peer,Packet},S0) ->
+handle_info({desk_delivery,_,Peer,Sealed},S0) ->
     S = S0#{received_at_ns => erlang:monotonic_time(nanosecond)},
-    case now_ms() < maps:get(membership_deadline,maps:get(protocol,S)) of
+    Packet = try
+        #{envelope := Key,policy := #{buffee := Buffee}} = maps:get(config,S),
+        ba_buffee_passport:open_envelope(Key,Buffee,Sealed)
+    catch _:_ -> envelope_rejected end,
+    case Packet=/=envelope_rejected andalso now_ms() < maps:get(membership_deadline,maps:get(protocol,S)) of
         true ->
             case ba_buffee_control_protocol:receive_packet(Peer,Packet,now_ms(),maps:get(protocol,S)) of
                 {ok,Packets,Events,Protocol} ->
@@ -206,7 +210,7 @@ handle_info({desk_delivery,_,Peer,Packet},S0) ->
                     end;
                 {error,Reason,_} -> {noreply,rejected(Reason,S)}
             end;
-        false -> {noreply,rejected(membership_expired,S)}
+        false -> {noreply,rejected(case Packet of envelope_rejected -> envelope_rejected;_ -> membership_expired end,S)}
     end;
 handle_info({discover_name,Peer},S) -> {noreply,discover_name(Peer,S)};
 handle_info({desk_event,_,disconnected},S) -> {noreply,S};
@@ -250,7 +254,10 @@ read_capabilities_call(Peer,Metrics,From,#{callers := Callers}=S) ->
         {error,R,_} -> {reply,{error,R},S}
     end.
 
-send(Peer,Packet,_) -> ba_buffee_desks:send(Peer,<<"buffee_control">>,Packet).
+%% Every Session message is sealed end to end; Reception routes opaque bytes.
+send(Peer,Packet,#{config := #{envelope := Key,policy := #{buffee := Buffee}}}) ->
+    ba_buffee_desks:send(Peer,<<"buffee_control">>,ba_buffee_passport:seal_envelope(Key,Buffee,Packet));
+send(_,_,_) -> {error,no_session}.
 event(Peer,{reply,<<"status.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
 event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
 event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->

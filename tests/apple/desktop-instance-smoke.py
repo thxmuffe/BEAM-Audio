@@ -1,4 +1,4 @@
-"""Verify independent desktop slots and automatic process-exit lease release."""
+"""One Mac, one Device: a second running copy is refused; the lock releases on exit."""
 from pathlib import Path
 import os
 import subprocess
@@ -15,14 +15,14 @@ with tempfile.TemporaryDirectory() as directory:
     def start():
         p = subprocess.Popen([str(output/'probe'), directory], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         processes.append(p)
-        return p, int(p.stdout.readline())
+        return p, p.stdout.readline().strip()
     try:
-        a, one = start(); b, two = start()
-        assert (one, two) == (1, 2)
+        a, first = start(); b, second = start()
+        assert (first, second) == ('acquired', 'refused'), (first, second)
         a.stdin.close(); a.wait(timeout=5)
-        c, reused = start()
-        assert reused == 1 and b.poll() is None
-        print('PASS: simultaneous desktop processes lease distinct slots; closing one releases only its slot; no Keychain or app identity touched.')
+        c, again = start()
+        assert again == 'acquired', again
+        print('PASS: a second copy is refused while the first runs; the one identity is free again after exit; no Keychain touched.')
     finally:
         for p in processes:
             if p.poll() is None:

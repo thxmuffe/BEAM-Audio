@@ -27,7 +27,11 @@ when the peer has the separate capability grant; reading never enables Workers.
 
 ## Wire, authentication and dispatch
 
-The existing Reception v1 transport routes exactly this payload shape:
+Every packet is sealed end to end before Reception sees it: ChaCha20-Poly1305
+with a key derived from the link secret and the Session ID as associated data,
+sent as base64 of nonce, tag and ciphertext. Reception routes opaque bytes; the
+signature inside still proves the author. The Reception v1 transport routes
+exactly this payload shape:
 
 ```json
 {"type":"buffee_control","buffee":"BUFFEE_ID","packet":"ENCODED_ENVELOPE_JSON"}
@@ -64,7 +68,7 @@ with `beamaudio-buffee-control/v1:`. The body has these exact fields:
 | `job.offer` | Exact test capability/Contract/duration/lease fields; job_offer grant and matching local coordinator Contract. Header request is the Job ID. Handler independently accepts/rejects. |
 | `job.cancel` | Empty object; verified coordinator, same grant and owned Job/session scope. |
 | `job.report` | Exact attempt/state/reason object. Adapter checks the Manager record's assignee, session, Job ID, attempt and result fence. |
-| `session.request` | `kind` plus exact fields: `privilege_request`/`privilege_release` (`privilege`), `rename_request` (`name`, needs on_air), `remove_request` (`device`, needs end_session), `ended` (needs end_session), `policy` (`signer`, signed `state`). |
+| `session.request` | `kind` plus exact fields: `privilege_release` (`privilege`), `rename_request` (`name`, needs on_air), `remove_request` (`device`, needs end_session), `ended` (needs end_session), `policy` (`signer`, signed `state`), `board` (`entries`: up to 6 signed board entries by ID), `note` (`id`, signed gossip `packet`). |
 
 Every message binds both identities, Session, join certificate, sender
 instance, sequence and send time. A receiver accepts a packet only if all of these hold:

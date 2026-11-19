@@ -14,7 +14,8 @@
          snapshot/1, seal/2,job_message/6,context/3,audio_message/5,time_message/5,session_message/5]).
 -define(DOMAIN, <<"beamaudio-buffee-control/v1:">>).
 -define(VERSION, 3).
--define(MAX, 32768).
+%% Sealing (ba_buffee_passport:seal_envelope) adds a third; Reception allows 32768.
+-define(MAX, 24000).
 -define(INT, 9007199254740991).
 %% Accepted difference between sender and receiver wall clocks.
 -define(SKEW, 300000).
@@ -360,7 +361,16 @@ payload(<<"chat.message">>,P) ->
     true=is_list(unicode:characters_to_list(Text));
 payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
     case Kind of
-        _ when Kind=:= <<"privilege_request">>;Kind=:= <<"privilege_release">> ->
+        %% A gossiped note (ba_session_gossip checks its signature).
+        <<"note">> ->
+            exact(P,[<<"kind">>,<<"id">>,<<"packet">>]),true = hex(maps:get(<<"id">>,P),32),
+            Note = maps:get(<<"packet">>,P),true = is_binary(Note) andalso byte_size(Note) =< 2048;
+        %% Request board entries (ba_session_board checks each signature).
+        <<"board">> ->
+            exact(P,[<<"kind">>,<<"entries">>]),Entries = maps:get(<<"entries">>,P),
+            true = is_map(Entries) andalso map_size(Entries) =< 6,
+            maps:foreach(fun(Id,E) -> true = hex(Id,32) andalso is_binary(E) andalso byte_size(E) =< 2048 end,Entries);
+        <<"privilege_release">> ->
             exact(P,[<<"kind">>,<<"privilege">>]),ok = ba_buffee_passport:permissions([maps:get(<<"privilege">>,P)]);
         <<"rename_request">> ->
             exact(P,[<<"kind">>,<<"name">>]),Name = maps:get(<<"name">>,P),
@@ -371,7 +381,7 @@ payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
         %% A signed rights statement; membership verifies its signer chain.
         <<"policy">> ->
             exact(P,[<<"kind">>,<<"signer">>,<<"state">>]),true = hex(maps:get(<<"signer">>,P),64),
-            State = maps:get(<<"state">>,P),true = is_binary(State) andalso byte_size(State) =< 24576
+            State = maps:get(<<"state">>,P),true = is_binary(State) andalso byte_size(State) =< 16384
     end;
 payload(<<"status.read">>,P) -> exact(P,[]);
 payload(<<"status.reply">>,P) ->

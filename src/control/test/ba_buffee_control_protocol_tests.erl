@@ -411,11 +411,14 @@ session_requests_are_signed_requests_test() ->
     Moderator = SB#{policy := Policy#{members := #{A => [end_session]}}},
     {ok,[],[{session,Id,End,#{peer := A}}],Done} = p(receive_packet,[A,Packet,6,Moderator]),
     ?assertMatch({error,_,Done},p(receive_packet,[A,Packet,7,Done])),
-    Ask = #{<<"kind">> => <<"privilege_request">>,<<"privilege">> => <<"stream_publish">>},
+    Ask = #{<<"kind">> => <<"privilege_release">>,<<"privilege">> => <<"stream_publish">>},
     {ok,AskPacket,_} = p(session_message,[B,id(10),Ask,8,SA]),
     ?assertMatch({ok,[],[{session,_,Ask,_}],_},p(receive_packet,[A,AskPacket,9,SB])),
     [?assertMatch({error,_,_},p(session_message,[B,id(11),Bad,8,SA])) || Bad <-
-        [#{<<"kind">> => <<"privilege_request">>,<<"privilege">> => <<"root">>},
+        [#{<<"kind">> => <<"privilege_release">>,<<"privilege">> => <<"root">>},
+         #{<<"kind">> => <<"privilege_request">>,<<"privilege">> => <<"stream_publish">>},
+         #{<<"kind">> => <<"board">>,<<"entries">> => maps:from_list([{id(N),<<"x">>} || N <- lists:seq(1,7)])},
+         #{<<"kind">> => <<"note">>,<<"id">> => <<"x">>,<<"packet">> => <<"x">>},
          #{<<"kind">> => <<"rename_request">>,<<"name">> => <<>>},
          #{<<"kind">> => <<"remove_request">>,<<"device">> => <<"x">>},
          End#{<<"extra">> => true},#{<<"kind">> => <<"rpc">>}]].

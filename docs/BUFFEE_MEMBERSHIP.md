@@ -95,10 +95,11 @@ removed in the receiver's statement is refused.
 Every Device advertises the Session mailbox, sha256("beamaudio-session-mailbox/v1:"
 ‖ secret), on the link's Receptions, so any Device ID is addressable there.
 Reception's lookup is a source of neighbours (at most 32 kept), not membership.
-A Device without a signed statement yet (just joined) checks in with the Manager,
-whom everyone can see; the encounter makes the newer side share its statement.
-The Device list shows this Device, the Manager and the Devices it has
-encountered (at most 64).
+There is no Manager. A Device without a signed statement yet (just joined)
+introduces itself to a random reachable neighbour; the encounter makes the newer
+side share its statement and syncs the request board. Reception's list of
+present Devices is used as a sticky random sample of at most 32 neighbours.
+The Device list shows this Device and the Devices it has encountered (at most 64).
 
 The signed rights statement travels to the Devices it concerns when a `grant`
 holder changes it (rights holders before and after, the removed, the Manager and
@@ -143,14 +144,16 @@ empty Session is alone there until such a Device arrives.
 
 ## Privilege requests
 
-`request_privilege/1` sends a signed `session.request` to the `grant` holders this
-Device can reach and returns `grant_holder_unavailable` if none is. Each holder
-decides it through `ba_device_request` (its On-air / Moderator request answer:
-Always, Ask or No). `grant` holders see open requests per Device in
-`requests`; granting the privilege clears the request. Requests do not change
-consent. They are a `grant` holder's live runtime state, not signed Session
-state or an offline queue. Automatic approval and time-limited grants are not
-implemented. Reception remains unchanged.
+`request_privilege/1` posts a signed request on the Session's request board
+(`ba_session_board`). Every Device keeps a copy, syncs it on contact and passes
+new entries to its neighbours; it returns `grant_holder_unavailable` only when
+this Device has no neighbour at all. A `grant` holder decides each new request
+through `ba_device_request` (its On-air / Moderator answer): Always grants, No
+posts a signed decline, Ask leaves it open. Granting and declining both post
+signed answers, so the request closes on every copy. Open requests appear per
+Device in `requests`. Requests do not change consent. The board lives in memory
+and expires entries after a day; a returning Device gets it again on contact.
+Time-limited grants are not implemented. Reception remains unchanged.
 
 ## Device API
 

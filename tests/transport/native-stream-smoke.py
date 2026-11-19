@@ -268,7 +268,10 @@ def lifecycle():
             stop.set()
             thread.join(timeout=1)
             if not proc.stdin.closed:
-                proc.stdin.close()
+                try:
+                    proc.stdin.close()
+                except BrokenPipeError:
+                    pass  # the helper already exited; that is what some checks provoke
             try:
                 proc.wait(timeout=4)
             except subprocess.TimeoutExpired:

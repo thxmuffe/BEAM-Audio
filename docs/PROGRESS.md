@@ -1,5 +1,66 @@
 # Current implementation and validation
 
+## One Mac, one Device key — 2026-11-19
+
+The Mac app lacked admin rights in a Session because it had started as a second
+desktop Device: each window/copy took the first free identity slot, and slot 2
+is a different key from the creator named in the invitation. Owner decision:
+a Mac app always uses its one key. `NativeIdentity.loadDesktop` now always uses
+the single identity and refuses a second running copy ("OpenSound is already
+running on this Mac"); the app has one window (`Window`, not `WindowGroup`).
+The creator is recognized by the public key in the invitation and proves it by
+signing; Reception never issues keys (a fresh key is only for a kicked Device,
+in the rights plan). Existing slot-2 data is left on disk unused. Validation:
+`tests/apple/desktop-instance-smoke.py` passes; Mac Xcode scheme and app build
+succeed.
+
+## No Manager: request board, gossip and sealed messages — 2026-11-19
+
+Owner direction after the web app could not reach the Manager's request board.
+- The Manager role is gone: newcomers fetch the signed statement from a random
+  reachable neighbour; the Device list and change recipients no longer include
+  a Manager. (The `manager` field remains in the signed statement format until
+  the rename/format change.)
+- Reception's present Devices become a sticky random sample (keep present
+  neighbours, fill free places at random, at most 32).
+- `ba_session_board`: signed request entries (with the requester's join
+  certificate) and grant holders' signed `granted`/`declined` answers. Merge is
+  a union by ID; a request is open until answered, held, or a day old. Boards
+  sync on every new contact and new entries are forwarded to neighbours, a few
+  per message. Grant holders decide new requests by their Always/Ask/No answer
+  (No posts a decline). The point-to-point `privilege_request` message is gone.
+- `ba_session_gossip`: ON AIR sends a signed `on_air` note to neighbours; each
+  Device checks it, acts once (reads that source's catalogue; announced sources
+  count as known for a minute so the read follows a hello), forwards it, and
+  forgets it after two minutes. The source re-announces every 30 s.
+- Every control message is sealed with ChaCha20-Poly1305 (key from the link
+  secret, Session ID as associated data); Reception routes opaque bytes.
+  Signed messages are capped at 24,000 bytes so sealed ones fit 32,768.
+
+Validation: eunit 224 tests, 0 failures (board, gossip, envelope tests added).
+Local-relay smokes pass: crash-chat, session-moderation, session-privileges
+(request/Ask/decline/grant/take/No/Always on the board), buffee-membership,
+buffee-time, parallel-sessions, cli-session-memory. Gossip beyond direct
+neighbours and the web-app board case were not exercised by a test; no app
+build or live check of this change.
+
+## Mac app ON AIR restored through the native helper — 2026-11-19
+
+The Mac app's ON AIR greyed out after PCM was deleted: the app bundled no native
+helper or GStreamer. The app build now builds `ba_native_stream`, copies it into
+`Contents/MacOS`, and `scripts/platforms/macOS/package-gstreamer.py` copies only
+the selected plugins and the libraries they and the helper load (27 libraries,
+17 plugins, 53 MB instead of the ~700 MB runtime) into `Resources/gstreamer`.
+`MacErlangRuntime` sets `BA_MAC_NATIVE_STREAM_HELPER` and `BA_GSTREAMER_RUNTIME`.
+GStreamer's registry now lives in the Device state folder (writable, outside the
+signed bundle) and plugin scanning runs in-process (`GST_REGISTRY_FORK=no`).
+`native-stream-smoke.py` accepts the same two variables and passes against the
+bundled files; a cleanup race in its lifecycle check (broken pipe after an
+intended helper exit) is now tolerated. Not yet: the Mac app still cannot play
+received audio (no native receiving host in the app), and ON AIR was not
+pressed in the running app. Dev builds rely on `DYLD_LIBRARY_PATH`, which a
+hardened-runtime release build would block.
+
 ## One audio transport: PCM and Opus deleted — 2026-11-19
 
 Owner decision: native AAC (GStreamer RTP) is the only transport; delete PCM and

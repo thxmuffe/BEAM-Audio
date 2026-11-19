@@ -129,6 +129,17 @@ handle_call(_,_,S) -> {reply,{error,unsupported_request},S}.
 handle_cast(network_changed,S) -> {noreply,S#{poll_at => now_ms()}};
 handle_cast(_,S) -> {noreply,S}.
 handle_info(catalog_bootstrap,S) -> {noreply,refresh_all(S)};
+%% A gossiped "on air" note from a Device that may not be a neighbour: read its
+%% catalogue (saying hello first if needed). Playback consent decides the rest.
+handle_info({on_air_announced,Peer},#{offers := Offers}=S) ->
+    case lists:any(fun({P,_}) -> P=:=Peer end,maps:keys(Offers)) of
+        true -> {noreply,S};
+        false ->
+            %% Announced sources count as known for a minute, so the read follows
+            %% the hello if there was no relationship yet.
+            Wanted = (maps:get(wanted,S,#{}))#{Peer => now_ms()+60000},
+            {_,Next} = catalog(Peer,S#{wanted => Wanted}),{noreply,Next}
+    end;
 handle_info({audio_session_up,#{peer := Peer,session := Session}},S) ->
     %% Only a source this Device already knows is re-read; others announce.
     case {lists:member(Peer,known_sources(S)),context(Peer)} of
@@ -406,8 +417,13 @@ catalog(Peer,#{catalogs := Cs} = S) ->
 %% Dark Sessions: an ON AIR Device tells the Devices it can reach that it has
 %% something to subscribe to ("subscribe to my audio"); each decides under its
 %% own Playback consent ("open your speakers"). Nobody discovers sources.
-announce_catalog(S) ->
+announce_catalog(#{sources := Sources}=S) ->
     Readers = readers(),announce(Readers,S),
+    %% Beyond direct neighbours, the announcement spreads by gossip.
+    case map_size(Sources)>0 of
+        true -> try ba_buffee_membership:announce(on_air) catch exit:_ -> ok end;
+        false -> ok
+    end,
     S#{announced => Readers,announce_at => now_ms()+30000}.
 %% New reachable Devices hear about live sources; all hear again every 30 s.
 announce_new(#{sources := Sources}=S) when map_size(Sources)>0 ->
@@ -428,8 +444,10 @@ readers() ->
         _ -> []
     end.
 %% Sources this Device knows of: current offers and saved subscriptions.
-known_sources(#{offers := Offers,subscriptions := Subs}) ->
-    lists:usort([P || {P,_} <- maps:keys(Offers)]++[maps:get(device,I) || #{intent := I} <- maps:values(Subs)]).
+known_sources(#{offers := Offers,subscriptions := Subs}=S) ->
+    Now = now_ms(),
+    lists:usort([P || {P,_} <- maps:keys(Offers)]++[maps:get(device,I) || #{intent := I} <- maps:values(Subs)]++
+        [P || {P,Until} <- maps:to_list(maps:get(wanted,S,#{})),Until>Now]).
 refresh_all(S) -> lists:foldl(fun(Peer,Acc) -> {_,Next}=catalog(Peer,Acc),Next end,S,known_sources(S)).
 membership() -> try ba_buffee_membership:current() catch exit:_ -> {error,unavailable} end.
 context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.

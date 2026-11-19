@@ -13,15 +13,16 @@ public struct NativeIdentity: Sendable {
         try load(account: "device-v1", directory: "cluster")
     }
 
-    /// Desktop instances keep separate keys and state. Slot 1 preserves the
-    /// original identity; advisory locks release automatically on process exit.
+    /// One Mac, one Device: the app always uses the same key (owner decision
+    /// 2026-11-19), so a Session's creator is recognized by the key in its
+    /// invitation every time. A second running copy is refused rather than
+    /// becoming another Device; the lock releases automatically on exit.
     public static func loadDesktop() throws -> DesktopDeviceIdentity {
         let root = try FileManager.default.url(for: .applicationSupportDirectory,
             in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("org.opensound.beamaudio", isDirectory: true)
         let lease = try DesktopInstanceLease.acquire(root: root)
-        let suffix = lease.slot == 1 ? "" : "-\(lease.slot)"
-        let identity = try load(account: "device-v1\(suffix)", directory: "cluster\(suffix)")
+        let identity = try load(account: "device-v1", directory: "cluster")
         return DesktopDeviceIdentity(identity: identity, lease: lease)
     }
 
@@ -79,22 +80,21 @@ public struct DesktopDeviceIdentity: Sendable {
     public let lease: DesktopInstanceLease
 }
 
-/// A conventional OS file lock, held for the full native runtime lifetime.
+/// A conventional OS file lock on the one Device identity, held for the full
+/// native runtime lifetime.
 public final class DesktopInstanceLease: @unchecked Sendable {
-    public let slot: Int
     private let descriptor: Int32
-    private init(slot: Int, descriptor: Int32) { self.slot = slot; self.descriptor = descriptor }
+    private init(descriptor: Int32) { self.descriptor = descriptor }
     public static func acquire(root: URL) throws -> DesktopInstanceLease {
-        for slot in 1...100 {
-            let directory = root.appendingPathComponent(slot == 1 ? "cluster" : "cluster-\(slot)", isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let fd = open(directory.appendingPathComponent("runtime.lock").path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
-            guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-            if flock(fd, LOCK_EX | LOCK_NB) == 0 { return DesktopInstanceLease(slot: slot, descriptor: fd) }
-            let error = errno; close(fd)
-            guard error == EWOULDBLOCK else { throw POSIXError(POSIXErrorCode(rawValue: error) ?? .EIO) }
-        }
-        throw NSError(domain: "OpenSound", code: 1, userInfo: [NSLocalizedDescriptionKey: "All desktop Device instances are in use."])
+        let directory = root.appendingPathComponent("cluster", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let fd = open(directory.appendingPathComponent("runtime.lock").path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        if flock(fd, LOCK_EX | LOCK_NB) == 0 { return DesktopInstanceLease(descriptor: fd) }
+        let error = errno; close(fd)
+        guard error == EWOULDBLOCK else { throw POSIXError(POSIXErrorCode(rawValue: error) ?? .EIO) }
+        throw NSError(domain: "OpenSound", code: 1, userInfo: [NSLocalizedDescriptionKey:
+            "OpenSound is already running on this Mac. Use that window: this Mac is one Device with one key."])
     }
     deinit { flock(descriptor, LOCK_UN); close(descriptor) }
 }

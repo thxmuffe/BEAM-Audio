@@ -5,7 +5,7 @@
 -export([sign/2,verify/2,decode/1,exact/2,session_id/2,mailbox/1,
          invitation/1,link/1,parse_invitation/1,genesis/2,policy/1,statement/2,delegation/4,
          grant_revision/3,urls/1,permissions/1,permission/1,
-         invitation_key/1,join/3,joined/4]).
+         invitation_key/1,join/3,joined/4,envelope_key/1,seal_envelope/3,open_envelope/3]).
 -define(DOMAIN,<<"beamaudio-buffee-membership/v1:">>).
 -define(MAILBOX,<<"beamaudio-session-mailbox/v1:">>).
 sign(Body,Private) ->
@@ -32,6 +32,20 @@ mailbox(Secret) ->
 %% checks that join certificate against the public invitation key, per request.
 -define(INVITATION_KEY,<<"beamaudio-session-invitation-key/v1:">>).
 -define(JOIN,<<"beamaudio-session-join/v1:">>).
+%% End-to-end key for Session messages: every link holder has it, Reception
+%% does not. Signatures inside still prove who wrote each message.
+-define(ENVELOPE,<<"beamaudio-session-envelope/v1:">>).
+envelope_key(Secret) -> true = secret(Secret),crypto:hash(sha256,[?ENVELOPE,Secret]).
+seal_envelope(Key,Buffee,Plain) ->
+    Nonce = crypto:strong_rand_bytes(12),
+    {Cipher,Tag} = crypto:crypto_one_time_aead(chacha20_poly1305,Key,Nonce,Plain,Buffee,true),
+    base64:encode(<<Nonce/binary,Tag/binary,Cipher/binary>>).
+open_envelope(Key,Buffee,Sealed) ->
+    <<Nonce:12/binary,Tag:16/binary,Cipher/binary>> = base64:decode(Sealed),
+    case crypto:crypto_one_time_aead(chacha20_poly1305,Key,Nonce,Cipher,Buffee,Tag,false) of
+        error -> error(envelope_rejected);
+        Plain -> Plain
+    end.
 invitation_key(Secret) ->
     true = secret(Secret),
     {Public,Private} = crypto:generate_key(eddsa,ed25519,crypto:hash(sha256,[?INVITATION_KEY,Secret])),
