@@ -28,14 +28,6 @@ render_missing_levels_is_not_silence_test() ->
     ?assertEqual(nomatch,binary:match(Text,<<"-96.0">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"running">>)).
 
-capture_meter_age_and_stage_are_explicit_test() ->
-    Now=erlang:monotonic_time(millisecond),
-    S=(ba_audio_input:new())#{meter => #{<<"peak_db">> => -3.0,<<"rms_db">> => -6.0},last_capture_ms => Now},
-    M=maps:get(meter,ba_audio_input:status(S)),
-    ?assertEqual(<<"capture">>,maps:get(<<"meter_stage">>,M)),
-    ?assertEqual(-3.0,maps:get(<<"peak_db">>,M)),
-    Stale=maps:get(meter,ba_audio_input:status(S#{last_capture_ms := Now-1000})),
-    ?assert(maps:get(<<"meter_age_ms">>,Stale)>=1000).
 
 normal_capabilities_include_label_but_not_metrics_test() ->
     OldName=os:getenv("BA_DEVICE_NAME"),os:putenv("BA_DEVICE_NAME","Test Device"),

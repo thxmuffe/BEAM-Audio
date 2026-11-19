@@ -247,6 +247,7 @@ From the core root:
 ```sh
 python3 tests/control/buffee-time-smoke.py
 python3 tests/control/buffee-time-smoke.py --production-cadence
+(Historical: `device-session-e2e.py` was deleted with the PCM path on 2026-11-19.)
 BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time
 ```
 

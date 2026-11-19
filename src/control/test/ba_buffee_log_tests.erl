@@ -7,6 +7,7 @@ event(Reason) ->
          {offender,[{id,private_id},{mfargs,{ba_device_handler,start_link,[<<"PRIVATE_ARGUMENT">>]}}]}]}}}.
 
 summary_does_not_forward_exception_data_test() ->
+    _=application:stop(ba_core),
     ok=ba_buffee_log_h:log(event({{badmatch,<<"PRIVATE_EXCEPTION">>},[]}),#{config => #{recipient => self()}}),
     receive {ba_crash_notice,Text} ->
         ?assertEqual(<<"System: ba_device_handler stopped (badmatch).">>,Text),

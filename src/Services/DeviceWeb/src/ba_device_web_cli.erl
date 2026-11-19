@@ -1,9 +1,9 @@
 -module(ba_device_web_cli).
 -export([main/0,windows_main/0]).
 
-%% Web startup belongs to this service, not to the reusable audio binding.
+%% Windows has no native audio host yet: the Device runs without audio.
 windows_main() ->
-    ba_windows_device:configure(os:getenv("BA_WINDOWS_AUDIO_HELPER_DIR")),
+    os:putenv("BA_PLATFORM","windows"),
     main().
 
 main() ->

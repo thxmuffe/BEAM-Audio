@@ -13,22 +13,9 @@
 -callback push_output(pid(), map(), binary()) -> ok.
 -callback stop_output(pid()) -> ok.
 
-%% Data callbacks for the existing BEAM PCM path. A native handler must gain
-%% its actual control/handoff interface, rather than routing native buffers
-%% through these callbacks just to fit the legacy implementation.
--callback validate_block(atom(), map(), map(), binary()) -> ok | {error, term()}.
--callback encode(atom(), map(), term(), map(), binary()) -> filtered | {ok, binary()} | {error, term()}.
--callback decode(atom(), map(), binary()) -> {ok, map(), binary()} | {error, term()}.
--callback frame_bytes(map()) -> pos_integer().
--callback max_payload_bytes(atom()) -> pos_integer().
--optional_callbacks([send/3, push_output/3, validate_block/4, encode/5, decode/3,
-                     frame_bytes/1, max_payload_bytes/1]).
+-optional_callbacks([send/3, push_output/3]).
 
-%% Default PCM compatibility handler. Pin it for each worker's lifetime; add
-%% selection/negotiation only when another implementation has been demonstrated.
-default() -> ba_stream_handler_pcm.
-
-%% Explicit installed handlers only; remote descriptors cannot name modules.
-for_descriptor(#{stream_handler := native_gst_aac}) -> ba_stream_handler_native;
-for_descriptor(#{stream_handler := webrtc_audio_opus}) -> ba_stream_handler_opus;
-for_descriptor(D) when not is_map_key(stream_handler,D) -> default().
+%% One transport: native AAC (owner decision 2026-11-19). Remote descriptors
+%% cannot name modules.
+default() -> ba_stream_handler_native.
+for_descriptor(#{stream_handler := native_gst_aac}) -> ba_stream_handler_native.

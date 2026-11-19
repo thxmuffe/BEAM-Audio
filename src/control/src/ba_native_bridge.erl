@@ -34,22 +34,6 @@ command(#{<<"method">> := <<"refresh_audio_sources">>}) -> ba_audio_receiver:ref
 command(#{<<"method">> := <<"stop_audio_subscription">>}) -> ba_audio_receiver:stop();
 command(#{<<"method">> := <<"start_audio_output">>}) -> ba_audio_receiver:playback(start);
 command(#{<<"method">> := <<"stop_audio_output">>}) -> ba_audio_receiver:playback(stop);
-command(#{<<"method">> := <<"set_audio_minimum_playout_delay">>, <<"delay_ms">> := Text}) ->
-    case minimum_delay(Text) of
-        {ok,Delay} -> ba_audio_receiver:minimum_playout_delay(Delay);
-        Error -> Error
-    end;
-command(#{<<"method">> := <<"broadcast_default_output">>, <<"handler">> := <<"webrtc_audio_opus">>}) ->
-    case ba_legacy_cluster_trust:policy() of
-        #{<<"cluster">> := _} -> ba_mac_audio:stop(), ba_mac_opus_audio:start();
-        _ -> {error, <<"Create or join a cluster before broadcasting.">>}
-    end;
-command(#{<<"method">> := <<"broadcast_default_output">>}) ->
-    case ba_legacy_cluster_trust:policy() of
-        #{<<"cluster">> := _} -> ba_mac_opus_audio:stop(), ba_mac_audio:start();
-        _ -> {error, <<"Create or join a cluster before broadcasting.">>}
-    end;
-command(#{<<"method">> := <<"stop_broadcast">>}) -> ba_mac_opus_audio:stop(), ba_mac_audio:stop();
 command(#{<<"method">> := <<"set_audio_presentation_delay">>, <<"delay_ms">> := Value}) ->
     try binary_to_integer(Value) of
         Delay -> ba_legacy_cluster_trust:set_audio_sync_delay(Delay)
@@ -90,14 +74,6 @@ command(#{<<"method">> := <<"leave_buffee">>}) ->
 command(#{<<"method">> := <<"configure_desk">>}) ->
     {error, <<"This native increment uses the global Render desk. Restart to begin a fresh session.">>};
 command(_) -> {error, <<"Unsupported native request.">>}.
-
-minimum_delay(<<"automatic">>) -> {ok,automatic};
-minimum_delay(Text) ->
-    Value = try binary_to_integer(Text) catch error:badarg -> invalid end,
-    case Value of
-        N when is_integer(N), N >= 0, N =< 10000 -> {ok,N};
-        _ -> {error,<<"Minimum buffering must be 0-10000 ms, or automatic.">>}
-    end.
 
 snapshot() ->
     #{policy := Policy, event := Event, last_rejection := Rejection} = ba_legacy_cluster_desk:status(),
@@ -162,22 +138,9 @@ message(#{id := Id, text := Text, sender := Sender, sent_at_ms := Time} = M) ->
       event => atom_to_binary(maps:get(event, M, none)),
       level => case maps:find(level, M) of {ok, L} -> atom_to_binary(L); error -> null end}.
 
-audio_snapshot() ->
-    Native = ba_mac_opus_audio:status(),
-    S = case maps:get(state,Native) of stopped -> ba_mac_audio:status(); _ -> Native end,
-    F = maps:get(format, S, #{}), Meter = maps:get(meter, S, #{}),
-    #{available => maps:get(available, S), state => atom_to_binary(maps:get(state, S)),
-      handler => maps:get(handler,S,<<"legacy_webrtc">>),
-      presentation_delay_ms => ba_legacy_cluster_trust:audio_sync_delay(),
-      frames => maps:get(frames, S, 0), blocks => maps:get(blocks, S, 0),
-      dropped_callbacks => maps:get(dropped_callbacks, S, 0),
-      skipped_frames => maps:get(skipped_frames, S, 0), send_errors => maps:get(send_errors, S, 0),
-      sample_rate => maps:get(rate, F, null), channels => maps:get(channels, F, null),
-      peak_db => maps:get(<<"peak_db">>, Meter, -96.0),
-      rms_db => maps:get(<<"rms_db">>, Meter, -96.0),
-      meter_available => map_size(Meter) > 0 andalso
-          erlang:monotonic_time(millisecond) - maps:get(meter_updated,S,erlang:monotonic_time(millisecond)) < 1000,
-      error => maps:get(error, S, null)}.
+%% The historical cluster path has no audio of its own: audio is native AAC
+%% through the Session runtime only.
+audio_snapshot() -> #{available => false,state => <<"unsupported">>,error => null}.
 
 error_text(already_clustered_or_not_created) ->
     <<"One native cluster is remembered. Forget it before creating or joining another.">>;

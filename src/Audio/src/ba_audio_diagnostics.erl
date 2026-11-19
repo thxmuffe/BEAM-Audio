@@ -1,7 +1,7 @@
 %% Bounded, payload-free projection of existing local audio/clock observations.
 %% Cached by the Device Handler; remote reads never poll the audio processes.
 -module(ba_audio_diagnostics).
--export([snapshot/2,validate/1,trace/1,validate_trace/1,meters/1,validate_meters/1,options/0,configure/1,configure/2,validate_options/1,enabled/1,meter/2,meter/3]).
+-export([snapshot/2,validate/1,trace/1,validate_trace/1,meters/1,validate_meters/1,options/0,configure/1,configure/2,validate_options/1,enabled/1]).
 %% Inspection follows the user's calibration consent; there are no separate
 %% switches. Calibrate speaker covers received/output levels and playback
 %% analysis; Calibrate microphone covers capture levels. Never changes audio
@@ -27,16 +27,6 @@ configure(P,From) ->
         false -> ok
     end,
     {ok,options()}.
-%% Capture-side levels use the microphone calibration consent.
-meter(microphone,Format,PCM) ->
-    case enabled(microphone) of
-        true -> ba_audio_meter:levels(ba_audio_meter:accumulate(Format,PCM,ba_audio_meter:new()));
-        false -> #{}
-    end.
-meter(Format,PCM) -> case enabled(meters) of
-    true -> ba_audio_meter:levels(ba_audio_meter:accumulate(Format,PCM,ba_audio_meter:new()));
-    false -> #{}
-end.
 -define(MAX_INT,9007199254740991).
 snapshot(Audio,Clock) ->
     Flags=#{<<"diagnostics.meters">> => enabled(meters),<<"diagnostics.analysis">> => enabled(analysis)},

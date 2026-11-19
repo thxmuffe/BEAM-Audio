@@ -1,5 +1,33 @@
 # Current implementation and validation
 
+## One audio transport: PCM and Opus deleted — 2026-11-19
+
+Owner decision: native AAC (GStreamer RTP) is the only transport; delete PCM and
+Opus now and accept the gap. Deleted: PCM and Opus stream handlers, packet codec,
+Erlang Mixer/mix, PCM media session (ex_webrtc data channel), PCM input, meters,
+presentation/RTP-time helpers, Mac/iOS/Windows PCM adapters (Erlang, Swift, C++),
+`DeviceAudio.swift`, `opus_capture.inc`, the Opus/PCM build steps in the CLI, Mac
+and Windows builds, and their tests. `audio_input.mm` builds only the native
+helper. Native is no longer gated by `BA_NATIVE_STREAM_TRIAL`: the iPhone always
+starts its native host, the CLI always uses the native helper, and the receiver,
+source, stream protocol and handler selection accept only `gst_aac_rtp_v2`.
+`ba_no_capture` reports sending unavailable on platforms without native capture.
+Native ICE server selection moved into `ba_native_media_session`.
+
+Validation: eunit 219 tests, 0 failures; xref shows no calls to deleted modules
+(ExWebRTC entries are xref's existing blind spot for Elixir). The native helper
+rebuilt from the native-only `audio_input.mm`. `native-stream-smoke.py` passes:
+253,952 decoded frames, 283 RTCP-mapped packets, mapping in 231 ms, max software
+schedule error 5.1 ms, lifetime checks (control EOF/timeout, clock expiry, hung
+media, source-owner EOF) pass. The PCM end-to-end test was deleted with its path.
+Builds (follow-up): `build.sh all`, the Mac app `build.sh`, and the Xcode "OpenSound
+iPhone" and "OpenSound Mac" schemes (unsigned) succeed. Fixes: core `build.sh`
+built the deleted Opus preparation; the iPhone runtime used the deleted
+`IOSBroadcastAuthorization`. The iPhone app also no longer suspends audio when it
+goes to the background (it used to disconnect every stream unless broadcasting),
+per the owner's background-playback requirement; background playback on a
+phone is not yet observed. No listening test.
+
 ## Join from a copied invitation (OpenSound UI) — 2026-11-19
 
 When OpenSound starts or comes to the foreground, a `beamaudio://` link newly

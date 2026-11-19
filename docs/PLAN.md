@@ -9,6 +9,24 @@ and cosmetic cleanup still wait.
 
 ## Decisions in force
 
+- **One audio transport: native AAC (owner decision 2026-11-19).** Native AAC
+  over GStreamer RTP is the only transport. The PCM-through-Erlang path and the
+  Opus path are deleted now, accepting a period where audio may be broken on
+  platforms without native capture/playback yet. Packet recovery builds on it:
+  RTP retransmission (NACK/RTX) within the buffer first, redundant packets (RED,
+  the owner's overlapping-packets idea) for bursts; measure lost vs late vs
+  dropped before tuning. Goal: continuous playback with no audible gaps.
+- **Rights are signed grants held by the requester (owner decision 2026-11-19;
+  implement after the audio work).** Every request ends rejected, approved by
+  the user, or approved by automation; an approval is signed and given to the
+  requester, valid while it holds it. Switching a choice to No refuses future
+  requests only and does not revoke earlier grants. Rights are not invalidated
+  easily: only a kick or a ban ends them (a fresh per-Session key on rejoin, or
+  an equivalent mechanism), so old grants stop working only then.
+  Current code differs (shared statement; No revokes; one permanent key; kicked
+  Devices are refused).
+- **Playback continues in the background and when locked, on every Device;
+  joins never interrupt other Devices' playback (owner 2026-11-19).**
 - **Erlang controls the pipes; audio stays native (2026-11-18 clarification).**
   No PCM or encoded audio payloads through Erlang. Native libraries own capture,
   codecs, media transport, buffering/reordering, processing, metering and output.
@@ -100,13 +118,18 @@ and cosmetic cleanup still wait.
   debug-level. Version on every home page: `0.<OpenSound commit count>`.
 - Reception stays a small opaque service; nothing here needs a Reception update.
 
-## Where audio stands (2026-11-18)
+## Where audio stands (2026-11-19, native AAC only)
+
+PCM and Opus were deleted (owner decision). The table is the native coverage;
+everything not listed has no audio until a native host exists.
 
 | Platform | Playback | Microphone | ON AIR (system audio) | Verified |
 |---|---|---|---|---|
-| Windows | WASAPI helper | WASAPI helper | process loopback, own tree excluded | headless e2e; user saw mic + ON AIR active, listening pending |
-| macOS | AVAudioEngine | Core Audio | Core Audio tap | owner reports broadcasting after rebuild; Inspector confirmed active non-silent capture |
-| iOS | AVAudioEngine | yes | needs iOS 27 (phone has 26.6.1) | audible at 800 ms; rebuilt Automatic observed live; latest recheck ran at system volume zero; background stops receiving |
+| Windows | none | none | none | — |
+| macOS | none in the app (GStreamer not packaged); none in CLI | none | CLI helper (Core Audio tap → AAC) | headless native smoke passes; not listened to |
+| iOS | native host (always started) | none | none | not built or listened to since this change |
+
+Earlier observations below describe the deleted PCM path and are history.
 
 STUN is configured on every platform. The owner confirmed Mac→iPhone playback
 at 800 ms after shorter Response times caused dropouts. Sustained quality and
@@ -131,7 +154,43 @@ adapters and shared measurement tools. The working PCM path and opt-in AAC trial
 remain. Further cleanup follows actual callers, not a general redesign. Resume
 native selection/continuity work when requested.
 
-## Next 5 steps
+## Simplification plan (owner concern 2026-11-19; tackle soon)
+
+Owner: the system rests on simple principles but the code is large. Analysis
+(Erlang core `src/control/src`, ~514k characters, 77 modules) confirms it:
+
+- About 31% (~158k chars) is the old trusted-cluster stack, run only by the
+  unused `legacy_apps`/`native_cluster` profiles: `ba_legacy_cluster_*`,
+  `ba_native_bridge`, `ba_dist_channel`, `ba_webrtc_dist`, `ba_peer_connection`,
+  `ba_direct`, `ba_buffees`, `ba_chat`, `ba_inspector`, old relay networking.
+- The Elixir `ex_webrtc`/Rust `ex_sctp` transport and its iOS static NIFs (SRTP,
+  DTLS, CRC) now serve only that legacy stack.
+- The clock is ~51k chars (master/follower filter, handover, Automatic,
+  timestamp protocols) where the owner's model is UTC sync about once a minute.
+- Requests (control + protocol ~52k) are sound in substance but spread out.
+- The test-job demo capability is unused by the UI.
+- Dense style (very long lines), no standard formatter.
+
+Owner's model in OTP terms: the app owns the VM; one application/supervision
+tree; a supervisor per Session (rights, requests, clock, audio); one request
+handler behaviour with handlers in `pg`; the Manager is an ordinary handler on a
+deterministically chosen Device that every Device knows; clock = one gen_server
+with a 60 s timer and SNTP; native audio host linked to an OTP owner. Not Erlang
+distribution between Devices (it grants arbitrary code execution); keep signed
+messages behind an Erlang-shaped API.
+
+Order: (1) delete the legacy stack and its Elixir/Rust/iOS transport builds;
+(2) delete test jobs unless wanted; (3) rename buffee → session including wire
+constants; (4) UTC-once-a-minute clock; (5) one request behaviour; (6) erlfmt +
+elvis, one module per concept. Open owner questions: keep test jobs? Is
+millisecond-to-tens-of-ms clock accuracy acceptable for now? OK to break
+compatibility with the rename?
+
+
+Immediate (owner 2026-11-19): packet recovery on the native RTP path
+(retransmission first, redundancy for bursts, after measuring lost/late/
+dropped); package GStreamer and the native host into the Mac app (send and
+receive); native microphone capture; background playback; then the rights model.
 
 1. **GStreamer backend and enforced control lifetime — prototype implemented.**
    Backend assessment and replacement control contract are recorded in
@@ -221,9 +280,6 @@ path. Dated recordings, counters and validation limits remain in PROGRESS.md.
 
 ## Open questions for the owner
 
-- Is approving an Ask request a standing yes (current: the use stays on and
-  Settings shows Always) or "allow for now"?
-- Should iPhone playback continue in the background?
 - TURN relay: only if actual cross-network connectivity checks show it is needed.
 
 ## Backlog (after the next steps)

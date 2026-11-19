@@ -36,7 +36,7 @@ reconcile(S) ->
     Desired=Requested#{broadcast := maps:get(broadcast,Requested) andalso OnAir},
     Consent=case ba_settings:app(audio_suspended,false) of
         true -> maps:map(fun(_,_) -> false end,Desired);false -> Desired
-    end,Adapter=ba_settings:app(audio_capture_adapter,ba_mac_audio),
+    end,Adapter=ba_settings:app(audio_capture_adapter,ba_no_capture),
     [Adapter:stop(K) || K <- [microphone,broadcast],not maps:get(K,Consent),maps:get(state,Adapter:status(K))=/=stopped],
     case ba_buffee_membership:current() of
         {ok,#{policy := #{buffee := Buffee,peers := Peers},routes := _}} ->
@@ -113,12 +113,12 @@ announce_on_air(Now,S) ->
 capture(K,false,_,S) -> S#{audio => (maps:get(audio,S,#{}))#{K => #{state => disabled}}};
 capture(K,true,Adapter,S) ->
     Status=Adapter:status(K),State=maps:get(state,Status),
-    Result=case {State,maps:find(K,maps:get(errors,S)),ba_audio_input:ready()} of
-        {error,_,_} -> Status;
-        {_,{ok,E},_} -> #{state => error,error => E};
-        {stopped,_,ok} ->
+    Result=case {State,maps:find(K,maps:get(errors,S))} of
+        {error,_} -> Status;
+        {unsupported,_} -> Status;
+        {_,{ok,E}} -> #{state => error,error => E};
+        {stopped,_} ->
             case Adapter:start(K) of ok -> #{state => starting};{error,waiting_for_clock} -> #{state => waiting_for_clock};{error,R} -> #{state => error,error => printable(R)} end;
-        {stopped,_,_} -> #{state => waiting_for_clock};
         _ -> Status
     end,
     Errors=case Result of #{state := error,error := Reason} -> (maps:get(errors,S))#{K => Reason};_ -> maps:get(errors,S) end,
@@ -126,6 +126,6 @@ capture(K,true,Adapter,S) ->
 printable(R) when is_binary(R) -> R;
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
 terminate(_,_) ->
-    Adapter=ba_settings:app(audio_capture_adapter,ba_mac_audio),
+    Adapter=ba_settings:app(audio_capture_adapter,ba_no_capture),
     [try Adapter:stop(K) catch exit:_ -> ok end || K <- [microphone,broadcast]],
     case ba_session_scope:whereis(ba_audio_receiver) of undefined -> ok;_ -> try ba_audio_receiver:stop() catch exit:_ -> ok end end,ok.

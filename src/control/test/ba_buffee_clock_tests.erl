@@ -130,28 +130,6 @@ await(F) -> await(F,100).
 await(_,0) -> error(clock_not_ready);
 await(F,N) -> case F() of true -> ok;false -> receive after 10 -> await(F,N-1) end end.
 
-source_packets_use_one_current_clock_and_offset_snapshot_test() ->
-    ets:new(ba_buffee_clock,[named_table,protected]),Parent = self(),
-    Source = spawn(fun Loop() -> receive {'$gen_call',From,{push,channel,H,_}} ->
-        Parent ! {capture_target,maps:get(playback_time,H)},gen_server:reply(From,{ok,[]}),Loop() end end),
-    try
-        T = erlang:monotonic_time(nanosecond),UTC = erlang:system_time(nanosecond),
-        M = ba_buffee_clock_mapping:new(T,UTC-T),
-        D = #{role => master,mapping => M,timeline => <<"capture-reference">>,confirmed => true,
-            authorization_until => infinity,last_sync => T,filter_ready => true,sample_interval_ms => 5000,
-            offset => #{<<"revision">> => 1,<<"offset_ms">> => 1000},offset_until => infinity},
-        ets:insert(ba_buffee_clock,{clock,D}),
-        Descriptor = #{clock => <<"capture-reference">>,encoding => pcm,sample_format => pcm16_le,sample_rate => 48000,channel_count => 1},
-        Input = (ba_audio_input:new())#{descriptor => Descriptor,handler => ba_stream_handler_pcm,source => Source},
-        _ = ba_audio_input:captured(<<0:16/little-signed>>,T,Input),
-        receive {capture_target,Target} -> ?assertEqual(UTC+1000000000,Target) after 1000 -> error(no_first_target) end,
-        ets:insert(ba_buffee_clock,{clock,D#{offset := #{<<"revision">> => 2,<<"offset_ms">> => 250}}}),
-        _ = ba_audio_input:captured(<<0:16/little-signed>>,T+1000,Input),
-        receive {capture_target,Second} -> ?assertEqual(UTC+1000+250000000,Second) after 1000 -> error(no_new_offset_target) end,
-        ets:insert(ba_buffee_clock,{clock,D#{offset_until := undefined}}),
-        _ = ba_audio_input:captured(<<0:16/little-signed>>,T+2000,Input),
-        receive {capture_target,_} -> error(stale_policy_used_for_capture) after 0 -> ok end
-    after exit(Source,kill),ets:delete(ba_buffee_clock) end.
 
 master_resync_refreshes_its_host_anchor_without_losing_time_test() ->
     with_clock(authority,fun(_) ->

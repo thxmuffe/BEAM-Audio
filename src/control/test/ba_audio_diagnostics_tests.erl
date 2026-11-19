@@ -55,16 +55,11 @@ calibration_consent_gates_inspection_test() ->
     Old=application:get_env(ba_core,runtime_profile),
     try
         application:set_env(ba_core,runtime_profile,buffee_control),
-        %% Invalid PCM proves the expensive sample parser is actually bypassed.
-        ?assertEqual(#{},ba_audio_diagnostics:meter(float32_le,<<1>>)),
-        ?assertEqual(#{},ba_audio_diagnostics:meter(microphone,float32_le,<<1>>)),
         ?assertEqual(#{<<"diagnostics.meters">> => false,<<"diagnostics.analysis">> => false},
             ba_audio_diagnostics:snapshot(#{mixer => #{rendered => 10}},#{state => synchronized})),
-        ?assertNot(maps:is_key(meter,ba_audio_input:status((ba_audio_input:new())#{meter => #{<<"peak_db">> => -1.0}}))),
         ?assertEqual(#{<<"meters">> => false,<<"analysis">> => false,<<"microphone">> => false},ba_audio_diagnostics:options()),
         application:unset_env(ba_core,runtime_profile), % compatibility profile: allowed
         ?assertEqual(true,ba_audio_diagnostics:enabled(analysis)),
-        ?assertEqual(0.0,maps:get(<<"peak_db">>,ba_audio_diagnostics:meter(float32_le,<<1.0:32/little-float>>))),
         ?assertException(error,_,ba_audio_diagnostics:validate_options(#{<<"meters">> => <<"yes">>})),
         ?assertException(error,_,ba_audio_diagnostics:validate_options(#{<<"pcm">> => true}))
     after case Old of undefined -> application:unset_env(ba_core,runtime_profile);{ok,V} -> application:set_env(ba_core,runtime_profile,V) end end.

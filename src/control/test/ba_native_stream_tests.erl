@@ -12,7 +12,7 @@ profile_round_trip_test() ->
     ?assertEqual(ba_stream_handler_native,ba_stream_handler:for_descriptor(D)),
     ?assertException(error,_,ba_audio_stream_protocol:validate(Wire#{<<"transport">> := <<"unknown">>})),
     ?assertException(error,_,ba_audio_stream_protocol:validate(Wire#{<<"format">> := <<"pcm16_le">>})),
-    ?assertEqual(ba_stream_handler_pcm,ba_stream_handler:for_descriptor(maps:remove(stream_handler,D))).
+    ?assertError(function_clause,ba_stream_handler:for_descriptor(maps:remove(stream_handler,D))).
 
 owner_loss_stops_native_test() -> fixture(fun(Args,Owner) ->
     {ok,P}=ba_native_media_session:start_link(Args),unlink(P),Ref=monitor(process,P),

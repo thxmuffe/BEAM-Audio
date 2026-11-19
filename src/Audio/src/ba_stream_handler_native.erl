@@ -1,4 +1,4 @@
-%% Explicit development-only AAC profile; never selected by legacy peers.
+%% The one audio transport: native AAC over GStreamer RTP (owner decision 2026-11-19).
 -module(ba_stream_handler_native).
 -behaviour(ba_stream_handler).
 -export([info/0,validate_descriptor/2,session_module/0,output_available/0,start_output/2,stop_output/1,bind/3,close/2]).

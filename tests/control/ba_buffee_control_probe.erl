@@ -91,7 +91,7 @@ command(#{<<"op">> := <<"lifecycle">>},_,_) ->
           || P <- maps:values(ba_desk_connections_sup:connections())]),
       live => [atom_to_binary(N) || N <- [ba_buffee_runtime_sup,ba_buffee_membership,
         ba_device_sup,ba_buffee_control,ba_buffee_clock_sup,ba_buffee_clock,
-        ba_audio_sup,ba_audio_receiver,ba_audio_mixer],is_pid(whereis(N))]};
+        ba_audio_sup,ba_audio_receiver],is_pid(whereis(N))]};
 %% Scheduler evidence (OTP system_monitor): which processes/ports held a
 %% scheduler or garbage-collected for longer than 40 ms. Test diagnostics only.
 command(#{<<"op">> := <<"vm_monitor">>},_,_) ->
@@ -228,7 +228,7 @@ command(#{<<"op">> := <<"block_handshakes">>},_,_) ->
            mailbox_owners => maps:map(fun(_,O) -> maps:get(O,Filters) end,Owners)}
      end) || P <- maps:values(ba_desk_connections_sup:connections())],
     #{ok => true};
-command(Other,_,_) -> ba_audio_stream_probe:command(Other).
+command(_,_,_) -> #{ok => false,error => <<"unknown_probe_command">>}.
 ensure_started() ->
     case whereis(ba_sup) of
         undefined ->

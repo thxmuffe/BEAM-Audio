@@ -42,28 +42,3 @@ helper_environment_does_not_receive_seed_test() ->
         ?assertEqual("must-stay-in-parent",os:getenv("BA_IDENTITY_SEED"))
     after case Old of false -> os:unsetenv("BA_IDENTITY_SEED");_ -> os:putenv("BA_IDENTITY_SEED",Old) end end.
 
-output_failure_preserves_audio_processes_test() ->
-    OldProfile=application:get_env(ba_core,runtime_profile),
-    OldState=os:getenv("BA_STATE_DIR"),os:unsetenv("BA_STATE_DIR"),
-    Control=spawn(fun Loop() -> receive _ -> Loop() end end),register(ba_buffee_control,Control),
-    try
-        {ok,Sup}=ba_audio_sup:start_link(),
-        try
-            Mixer=whereis(ba_audio_mixer),Receiver=whereis(ba_audio_receiver),
-            {ok,Source}=supervisor:start_child(Sup,#{id => source_sentinel,start => {?MODULE,idle_link,[]}}),
-            {ok,Session}=supervisor:start_child(Sup,#{id => session_sentinel,start => {?MODULE,idle_link,[]}}),
-            Socket=make_ref(),
-            sys:replace_state(Mixer,fun(S) -> S#{owner => Receiver,device := {?MODULE,#{socket => Socket}}} end),
-            Mixer ! {tcp_closed,Socket},
-            %% A synchronous status request is ordered after the simulated closure.
-            ?assertEqual(output_closed,maps:get(last_error,ba_audio_mixer:status())),
-            ?assertEqual(Mixer,whereis(ba_audio_mixer)),?assertEqual(Receiver,whereis(ba_audio_receiver)),
-            ?assert(is_process_alive(Source)),?assert(is_process_alive(Session)),
-            ?assertMatch({ok,#{device := undefined}}, {ok,sys:get_state(Mixer)})
-        after gen_server:stop(Sup) end
-    after
-        exit(Control,kill),
-        case whereis(ba_buffee_control) of undefined -> ok;_ -> unregister(ba_buffee_control) end,
-        case OldProfile of undefined -> application:unset_env(ba_core,runtime_profile);{ok,P} -> application:set_env(ba_core,runtime_profile,P) end,
-        case OldState of false -> os:unsetenv("BA_STATE_DIR");_ -> os:putenv("BA_STATE_DIR",OldState) end
-    end.

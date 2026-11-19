@@ -14,7 +14,6 @@ allowed(microphone) -> allowed(record);
 allowed(calibrate_microphone) -> ba_device_config:allowed(calibrate_microphone);
 allowed(calibrate_speaker) -> ba_device_config:allowed(calibrate_speaker);
 allowed(dsp) -> ba_device_config:allowed(dsp);
-allowed(legacy_capture) -> ba_settings:app(runtime_profile,legacy_apps)=/=buffee_control;
 allowed(_) -> false.
 
 key(playback) -> speaker;

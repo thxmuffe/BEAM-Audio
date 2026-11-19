@@ -116,28 +116,11 @@ def catalog(product):
             if p.name == 'test_analyze_receivers.py':
                 modules = ('numpy',)
             variants = [('default', [])]
-            if p.name == 'device-session-e2e.py':
-                required.append(CORE/('builds/intermediates/Windows/transport/beam/dev/lib/ex_webrtc'
-                    if sys.platform == 'win32' else 'builds/intermediates/BeamTransport/dev/lib/ex_webrtc'))
-                variants += [
-                    ('two Devices, 5s, ephemeral, 150ms', ['--buffee-time', '--ephemeral', '--renewal', '--single-source', '--seconds', '5', '--lease-ms', '4000', '--offset-ms', '150']),
-                    ('shared clock', ['--buffee-time']),
-                    ('ephemeral lifecycle', ['--buffee-time', '--ephemeral']),
-                    ('sustained/reference restart', ['--buffee-time', '--sustained']),
-                    ('renewal 125s', ['--buffee-time', '--renewal', '--seconds', '125']),
-                    ('maximum delay renewal', ['--buffee-time', '--renewal', '--seconds', '85', '--offset-ms', '30000']),
-                    ('authorization expiry', ['--renewal', '--lease-ms', '4000', '--seconds', '2', '--offset-ms', '30000', '--deny-renewal']),
-                    ('Opus', ['--buffee-time', '--opus'])]
             if p.name == 'buffee-time-smoke.py':
                 variants.append(('production cadence', ['--production-cadence']))
             for name, args in variants:
-                needs = list(required)
-                if name == 'Opus':
-                    if os.environ.get('BA_GSTREAMER_PYTHON'):
-                        needs.append(Path(os.environ['BA_GSTREAMER_PYTHON']))
                 result.append(Test(f'{root.name}/{relative} [{name}]', command+args,
-                    p.parent if p.name.startswith('test_') else root, platform, tuple(needs), modules,
-                    ('BA_GSTREAMER_PYTHON',) if name == 'Opus' else ()))
+                    p.parent if p.name.startswith('test_') else root, platform, tuple(required), modules, ()))
     # Integration scripts load the default core ebin, not EUnit's test profile.
     # Build it first, even on a checkout where only test-profile artifacts exist.
     result.sort(key=lambda t: 0 if t.name == f'{CORE.name}/src/control/rebar.config (EUnit)' else 1)

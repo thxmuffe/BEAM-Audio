@@ -1,17 +1,19 @@
 %% Source-owned native capture host: only format/control crosses its port.
 -module(ba_mac_native_audio).
 -behaviour(gen_server).
--export([start/1,stop/1,status/1,start_link/0]).
+-export([start/1,stop/1,status/1,start_link/0,unavailable/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
-start(microphone) -> ba_mac_audio:start(microphone);
+%% Native microphone capture does not exist yet (owner accepted the gap).
+start(microphone) -> {error,native_microphone_unavailable};
 start(broadcast) ->
     ok=ba_audio_sup:ensure_started(),
     case supervisor:start_child(ba_session_scope:ref(ba_audio_sup),#{id => ?MODULE,start => {?MODULE,start_link,[]},restart => temporary}) of
         {ok,P} -> gen_server:call(P,start);{error,{already_started,P}} -> gen_server:call(P,start);E -> E end.
-stop(microphone) -> ba_mac_audio:stop(microphone);
+stop(microphone) -> ok;
 stop(broadcast) -> case ba_session_scope:whereis(?MODULE) of undefined -> ok;P -> gen_server:call(P,stop) end.
-status(microphone) -> ba_mac_audio:status(microphone);
+status(microphone) -> #{state => unsupported,error => <<"Native microphone capture is not available yet.">>};
 status(broadcast) -> case ba_session_scope:whereis(?MODULE) of undefined -> #{state => stopped};P -> gen_server:call(P,status) end.
+unavailable() -> #{<<"microphone">> => <<"Native microphone capture is not available yet.">>}.
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 init([]) -> process_flag(trap_exit,true),{ok,#{state => stopped}}.
 handle_call(start,{Caller,_},#{state := stopped}=S) ->
@@ -50,7 +52,7 @@ handle_info(heartbeat,#{port := Port,token := T}=S) ->
     end;
 handle_info({Port,{data,<<9,P:16>>}},#{port := Port}=S) -> {noreply,S#{endpoint => P}};
 handle_info({Port,{data,<<1,B/binary>>}},#{port := Port}=S) ->
-    Format=ba_core_audio:format(B),
+    Format=format(B),
     D=#{encoding => pcm,sample_format => float32_le,sample_rate => maps:get(rate,Format),channel_count => maps:get(channels,Format),
         clock => ba_buffee_clock:id(),stream_handler => native_gst_aac},
     case ba_audio:publish(#{source_key => <<"default-output">>,name => <<"Mac output — AAC 320 kb/s (native trial)">>,profiles => #{channel => D}},self()) of
@@ -75,11 +77,24 @@ stop_native(#{port := Port}=S) ->
 stop_native(_) -> {ok,#{state => stopped}}.
 terminate(_,S) -> stop_native(S),ok.
 
+%% Core Audio stream description from the helper: rate and channel count only.
+format(<<Rate:64/little-float,16#6c70636d:32/little,_Flags:32/little,_Packet:32/little,1:32/little,
+         _Frame:32/little,Channels:32/little,_Bits:32/little,_Numer:32/little,_Denom:32/little>>)
+        when Rate>0,Channels>0 ->
+    #{rate => round(Rate),channels => Channels}.
+%% GStreamer's plugin cache must be writable and outside a signed app bundle.
+registry(Runtime) ->
+    case ba_settings:env("BA_STATE_DIR") of
+        false -> filename:join(filename:dirname(Runtime),"native-stream-registry.bin");
+        State -> filename:join(State,"gstreamer-registry.bin")
+    end.
 child_env() ->
     case ba_settings:env("BA_GSTREAMER_RUNTIME") of
         false -> ba_native_env:without_secrets();
         Runtime -> ba_native_env:without_secrets()++[
             {"DYLD_LIBRARY_PATH",filename:join(Runtime,"lib")},
             {"GST_PLUGIN_SYSTEM_PATH_1_0",filename:join(filename:dirname(Runtime),"plugins")},
-            {"GST_REGISTRY_1_0",filename:join(filename:dirname(Runtime),"native-stream-registry.bin")}]
+            {"GST_REGISTRY_1_0",registry(Runtime)},
+            %% The app bundles plugins, not GStreamer's separate plugin scanner.
+            {"GST_REGISTRY_FORK","no"}]
     end.

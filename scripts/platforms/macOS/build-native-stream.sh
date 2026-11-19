@@ -19,4 +19,4 @@ xcrun clang++ -std=c++17 -O2 -fobjc-arc -DBA_NATIVE_STREAM -mmacosx-version-min=
   "$ROOT/src/Audio/adapters/macOS/audio_input.mm" \
   "$ROOT/src/Audio/adapters/Apple/GStreamerStreamHost.mm" -o "$OUTPUT"
 codesign --force --sign - "$OUTPUT"
-printf 'Built native trial helper: %s\n' "$OUTPUT"
+printf 'Built native stream helper: %s\n' "$OUTPUT"

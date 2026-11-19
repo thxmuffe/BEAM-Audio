@@ -1,12 +1,17 @@
 %% Supervised native RTP endpoint. Only control/signalling crosses this socket.
 -module(ba_native_media_session).
 -behaviour(gen_server).
--export([start_link/1,available/0]).
+-export([start_link/1,available/0,ice_servers/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
-available() -> ba_settings:env("BA_NATIVE_STREAM_TRIAL")=:= "1" andalso ba_settings:env("BA_NATIVE_STREAM_PORT")=/=false.
+%% The host app starts the native stream listener and names its port.
+available() -> ba_settings:env("BA_NATIVE_STREAM_PORT")=/=false.
+%% Every platform uses the same ICE servers: an explicit native_ice_servers
+%% setting, else the configured STUN URLs.
+ice_servers() ->
+    application:get_env(ba_transport,native_ice_servers,[#{urls => ba_settings:app(direct_stun_urls,[])}]).
 start_link(Args) -> gen_server:start_link(?MODULE,Args,[]).
 init(#{owner := Owner,role := Role,descriptor := D,context := #{deadline := Deadline}}=Args) ->
-    process_flag(trap_exit,true),true=ba_settings:env("BA_NATIVE_STREAM_TRIAL")=:= "1",
+    process_flag(trap_exit,true),
     Permission=case Role of provider -> broadcast;receiver -> playback end,
     case ba_device_permission:enter(Permission) of
         {ok,Token} ->
@@ -23,7 +28,7 @@ init(#{owner := Owner,role := Role,descriptor := D,context := #{deadline := Dead
                 {ok,Socket,Clock} ->
                     true=ba_device_permission:valid(Permission,Token),
                     ok=send(Socket,G,#{op => <<"prepare">>,role => atom_to_binary(Role),rate => maps:get(sample_rate,D),
-                        channels => maps:get(channel_count,D),ice_servers => ba_media_session:ice_servers(),buffer_ms => maps:get(offset_ms,Clock)}),
+                        channels => maps:get(channel_count,D),ice_servers => ice_servers(),buffer_ms => maps:get(offset_ms,Clock)}),
                     ok=inet:setopts(Socket,[{active,once}]),
                     erlang:send_after(250,self(),heartbeat),erlang:send_after(10000,self(),setup_timeout),
                     {ok,Args#{socket => Socket,generation => G,permission => Permission,token => Token,

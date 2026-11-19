@@ -19,30 +19,6 @@ unknown_native_lateness_is_never_guessed_test() ->
     One=ba_audio_response_time:summary(ba_audio_response_time:add(1000000,P,ba_audio_response_time:add(unknown,P,#{}))),
     ?assertNot(maps:is_key(required_ms,One)).
 
-mixer_summarizes_actual_late_drops_without_retiming_test() ->
-    ets:new(ba_buffee_clock,[named_table,protected]),register(ba_buffee_chat,self()),
-    try
-        T=erlang:monotonic_time(nanosecond),UTC=erlang:system_time(nanosecond),
-        Policy=#{<<"revision">> => 1,<<"offset_ms">> => 300},
-        Clock=#{role => master,mapping => ba_buffee_clock_mapping:new(T,UTC-T),timeline => <<"deadline-test">>,
-            confirmed => true,authorization_until => infinity,last_sync => T,filter_ready => true,sample_interval_ms => 5000,
-            offset => Policy,offset_until => infinity},
-        ets:insert(ba_buffee_clock,{clock,Clock}),
-        D=#{sample_rate => 48000,channel_count => 1,sample_format => float32_le,clock => <<"deadline-test">>,
-            authorization_deadline => erlang:monotonic_time(millisecond)+10000},
-        Mix=ba_audio_mix:enable(source,true,ba_audio_mix:add(source,1.0,ba_audio_mix:new(48000,<<"deadline-test">>))),
-        S=#{mix => Mix,descriptors => #{source => D},dropped => 0,last_error => null},
-        H=#{playback_time => UTC-50000000,frame_count => 1},
-        Message={packet,source,D,H,<<0.25:32/little-float>>},
-        {noreply,A}=ba_audio_mixer:handle_cast(Message,S),
-        {noreply,B}=ba_audio_mixer:handle_cast(Message,A),
-        {noreply,Done}=ba_audio_mixer:handle_info(report_lateness,B),
-        ?assertEqual(2,maps:get(dropped,Done)),?assertEqual(Mix,maps:get(mix,Done)),
-        ?assertNot(maps:is_key(lateness,Done)),
-        receive {audio_lateness,#{discarded := 2,mean_late_ms := Mean,required_ms := Required}} ->
-            ?assert(Mean>=50),?assertEqual(300+Mean,Required)
-        after 1000 -> error(no_deadline_warning) end
-    after unregister(ba_buffee_chat),ets:delete(ba_buffee_clock) end.
 
 automatic_increases_taper_and_never_jump_to_three_seconds_test() ->
     Changes=[ba_audio_response_time:increase(C,C+100)-C || C <- [300,600,1000,2000,2900]],

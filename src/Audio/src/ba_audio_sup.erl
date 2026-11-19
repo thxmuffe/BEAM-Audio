@@ -34,5 +34,4 @@ sessions() ->
     end.
 
 init([]) -> {ok, {#{strategy => rest_for_one, intensity => 5, period => 10},
-    [#{id => audio_mixer,start => {ba_audio_mixer,start_link,[]}},
-     #{id => audio_receiver,start => {ba_audio_receiver,start_link,[]}}]}}.
+    [#{id => audio_receiver,start => {ba_audio_receiver,start_link,[]}}]}}.

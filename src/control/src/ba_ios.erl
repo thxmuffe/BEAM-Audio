@@ -10,10 +10,6 @@ main() ->
     ok = inet_db:set_lookup([file]),
     application:set_env(ba_core, relay_resolver, {?MODULE, resolve_host}),
     application:set_env(ba_core, clock_resolver, {?MODULE, resolve_host}),
-    case ba_settings:env("BA_AUDIO_PORT") of
-        false -> ok;
-        _ -> application:set_env(ba_core, audio_output_adapter, ba_ios_audio)
-    end,
     CA = filename:join(code:root_dir(), "cacerts.pem"),
     case filelib:is_file(CA) of true -> application:set_env(ba_core, relay_cacertfile, CA); false -> ok end,
     %% The embedded app is always an unnamed, scoped Buffee Device.
@@ -50,7 +46,7 @@ resolve_host(Host) ->
 resolve_ice_servers() ->
     %% ExICE uses inet lookup for STUN/TURN. Seed its configured hostnames using
     %% the same in-process platform resolver as Gun; never spawn inet_gethost.
-    Servers = ba_media_session:ice_servers(),
+    Servers = ba_native_media_session:ice_servers(),
     application:set_env(ba_transport,native_ice_servers,Servers),
     URLs = lists:append([case maps:get(urls, S, []) of
         U when is_binary(U) -> [U]; Us -> Us end || S <- Servers]),

@@ -1,9 +1,11 @@
 %% Owns independent durable subscriptions and local publication permissions.
+%% Media is native AAC only: this process routes catalogue, subscription and
+%% SDP/ICE control; audio never passes through it.
 -module(ba_audio_receiver).
 -behaviour(gen_server).
 -export([start_link/0,snapshot/0,refresh/0,refresh/1,subscribe/2,subscribe/3,stop/0,stop/1,
          playback/1,playback/2,gain/2,set_contract/5,clear_contract/3,register_source/1,
-         suspend/0,resume/0,network_changed/0,minimum_playout_delay/1,control_output/1]).
+         suspend/0,resume/0,network_changed/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 snapshot() -> call(snapshot).
@@ -23,8 +25,6 @@ register_source(Pid) -> call({register,Pid}).
 suspend() -> call(suspend).
 resume() -> call(resume).
 network_changed() -> gen_server:cast(ba_session_scope:ref(?MODULE),network_changed).
-minimum_playout_delay(_) -> {error,unsupported_mixer_output_control}.
-control_output(_) -> {error,unsupported_mixer_output_control}.
 call(Request) ->
     case ba_audio_sup:ensure_started() of ok -> gen_server:call(ba_session_scope:ref(?MODULE),Request,10000);Error -> Error end.
 init([]) ->
@@ -35,18 +35,17 @@ init([]) ->
     {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
           providers => #{},catalogs => #{},contracts => #{},control => Control,
           suspended => false,resume_after => undefined,rejected => 0,poll_at => now_ms()+5000}}.
-waiting(I) -> #{intent => I,state => waiting_for_source,session => undefined,retry_at => now_ms(),packets => 0}.
+waiting(I) -> #{intent => I,state => waiting_for_source,session => undefined,retry_at => now_ms()}.
 handle_call(snapshot,_,S) ->
     View = maps:map(fun(_,R) ->
-        I = maps:get(intent,R),(maps:merge(I,maps:with([state,packets,source_paused,error,mix_ready],R)))#{transport => transport_status(R)}
+        I = maps:get(intent,R),(maps:merge(I,maps:with([state,source_paused,error,mix_ready],R)))#{transport => transport_status(R)}
     end,maps:get(subscriptions,S)),
     Rows = [O#{device => Peer,source_key => Key} || {{Peer,Key},O} <- maps:to_list(maps:get(offers,S))],
     {reply,#{subscriptions => View,offers => Rows,publications => map_size(maps:get(sources,S)),
              providers => map_size(maps:get(providers,S)),
              provider_status => [#{peer => maps:get(peer,maps:get(context,R)),source => maps:get(source,R),
-                 transport => transport_status(R)} || R <- maps:values(maps:get(providers,S))],mixer => ba_audio_mixer:status(),
-             rejected => maps:get(rejected,S),suspended => maps:get(suspended,S),
-             receive_meter => receive_meter(maps:get(subscriptions,S)),diagnostics => ba_diagnostics:view(S)},S};
+                 transport => transport_status(R)} || R <- maps:values(maps:get(providers,S))],
+             rejected => maps:get(rejected,S),suspended => maps:get(suspended,S),diagnostics => ba_diagnostics:view(S)},S};
 handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pid)=:=node(),map_size(Sources)<16 ->
     try
         Offer = gen_server:call(Pid,describe,100),Key = maps:get(source_key,Offer),
@@ -162,13 +161,6 @@ handle_info(tick,S) ->
             end end,maps:get(subscriptions,Final))}
     end,
     {noreply,Recovered};
-handle_info({audio_output_failed,Mixer,Reason},S) ->
-    case Mixer=:=ba_session_scope:whereis(ba_audio_mixer) of
-        true ->
-            Items=maps:map(fun(_,R) -> R#{mix_ready => false,error => Reason} end,maps:get(subscriptions,S)),
-            {noreply,ba_diagnostics:count(Reason,S#{subscriptions := Items})};
-        false -> {noreply,S}
-    end;
 handle_info({buffee_audio,Context,Id,P},S) ->
     try
         #{peer := Peer,session := Session,buffee := Buffee,deadline := Deadline} = Context,
@@ -217,19 +209,6 @@ handle_info({audio_transport,Pid,open},S) ->
         {provider,_,_} -> {noreply,S};
         none -> {noreply,reject(S)}
     end;
-handle_info({audio_pcm,Pid,H,PCM},S) ->
-    case transport(Pid,S) of
-        {receiver,Id,#{intent := I,descriptor := D,context := #{deadline := Deadline}} = R} ->
-            Delivery = case maps:get(playing,I) andalso maps:get(mix_ready,R,false) andalso not maps:get(source_paused,R,false) andalso now_ms()<Deadline of
-                true -> ba_audio_mixer:push(Id,ba_audio_opus:descriptor(D),H,PCM);
-                false -> {error,playback_not_enabled}
-            end,
-            Next = case Delivery of {error,playback_not_enabled} -> S;{error,R0} -> ba_diagnostics:count(R0,S);_ -> S end,
-            Format=maps:get(sample_format,ba_audio_opus:descriptor(D)),
-            Meter=ba_audio_diagnostics:meter(Format,PCM),
-            {noreply,put_sub(Id,R#{packets := maps:get(packets,R)+1,meter => Meter,meter_at => now_ms()},Next)};
-        _ -> {noreply,reject(S)}
-    end;
 handle_info({publication_rebound,Pid,Offer},#{sources := Sources}=S) ->
     case [{K,E} || {K,#{pid := P}=E} <- maps:to_list(Sources),P=:=Pid] of
         [{Key,E}] ->
@@ -275,18 +254,6 @@ handle_info({'DOWN',Ref,process,Pid,Reason},S) ->
         true -> Updated;false -> announce_catalog(Updated)
     end};
 handle_info(_,S) -> {noreply,S}.
-
-%% Max individual received-Source level, not a mixed/native speaker measurement.
-receive_meter(Items) -> case ba_audio_diagnostics:enabled(meters) of false -> #{};true -> receive_levels(Items) end.
-receive_levels(Items) ->
-    Now=now_ms(),Fresh=[{maps:get(meter,R),Now-T} || R <- maps:values(Items),
-        {ok,T} <- [maps:find(meter_at,R)],Now-T=<250,map_size(maps:get(meter,R,#{}))>0],
-    case Fresh of
-        [] -> #{};
-        _ -> #{<<"peak_db">> => lists:max([maps:get(<<"peak_db">>,M) || {M,_} <- Fresh]),
-               <<"rms_db">> => lists:max([maps:get(<<"rms_db">>,M) || {M,_} <- Fresh]),
-               <<"meter_age_ms">> => lists:max([A || {_,A} <- Fresh]),<<"meter_stage">> => <<"receive_max">>}
-    end.
 
 incoming(#{peer := Peer},_,#{<<"kind">> := <<"catalog.changed">>},#{catalogs := Cs}=S) ->
     %% Changes arriving while a snapshot is in flight request one more snapshot,
@@ -349,7 +316,7 @@ incoming(Context,Id,#{<<"kind">> := Kind} = P,S) ->
             _ = disable_output(Key,R),
             put_sub(Key,start_playback(Key,R#{source_paused => B,mix_ready => false}),S);
         _ when Kind=:= <<"signal.offer">>;Kind=:= <<"signal.answer">>;Kind=:= <<"signal.candidate">> ->
-            ba_media_session:signal(maps:get(session,R),P),S
+            gen_server:cast(maps:get(session,R),{signal,P}),S
     end.
 
 admit(#{peer := Peer,session := Session} = Context,Id,P,#{sources := Sources,providers := Providers} = S) ->
@@ -418,19 +385,10 @@ clock_ready(S) ->
 start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
     case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
 start_playback(_,R) -> R.
-enable_output(_,#{descriptor := #{stream_handler := native_gst_aac},session := P,intent := I}=R) ->
+enable_output(_,#{session := P,intent := I}=R) ->
     case native_output(P,{gain,maps:get(gain,I)}) of
         ok -> case native_output(P,{output,play}) of ok -> {ok,maps:remove(error,R#{mix_ready => true})};E -> E end;
         E -> E
-    end;
-enable_output(Id,#{descriptor := D,intent := I,context := #{deadline := Deadline}} = R) ->
-    case ba_audio_mixer:add(Id,(ba_audio_opus:descriptor(D))#{authorization_deadline => Deadline},maps:get(gain,I)) of
-        ok ->
-            case ba_audio_mixer:enable(Id,true) of
-                ok -> {ok,maps:remove(error,R#{mix_ready => true})};
-                Error -> ba_audio_mixer:remove(Id),Error
-            end;
-        Error -> Error
     end.
 catalog(Peer,#{catalogs := Cs} = S) ->
     case {maps:is_key(Peer,Cs),context(Peer)} of
@@ -496,8 +454,7 @@ transport(Pid,S) ->
     Providers = [{provider,K,R} || {K,#{session := P}=R} <- maps:to_list(maps:get(providers,S)),P=:=Pid],
     case Receivers++Providers of [Match] -> Match;_ -> none end.
 put_sub(Id,R,S) -> S#{subscriptions := (maps:get(subscriptions,S))#{Id := R}}.
-closed(Id,R) ->
-    _ = ba_audio_mixer:remove(Id),
+closed(_,R) ->
     case maps:find(monitor,R) of {ok,Ref} -> demonitor(Ref,[flush]);error -> ok end,
     (maps:without([monitor,context,attempt,incarnation,descriptor,source_paused,mix_ready],R))#{
         session := undefined,state := waiting_for_source,retry_at := now_ms()+1000}.
@@ -558,14 +515,7 @@ renew_media(Id,Peer,Session,Until,#{context := #{peer := Peer,session := Session
         when Until>Old ->
     gen_server:cast(P,{renew,self(),Until}),
     Updated = R#{context := C#{deadline := Until}},
-    case Id=/=undefined andalso maps:get(mix_ready,R,false) of
-        true ->
-            case renew_output(Id,Until,R) of
-                ok -> Updated;
-                _ -> start_playback(Id,Updated#{mix_ready => false})
-            end;
-        false -> Updated
-    end;
+    _ = Id,Updated;
 renew_media(_,_,_,_,R) -> R.
 
 transport_status(#{session := P}) when is_pid(P) ->
@@ -587,19 +537,13 @@ buffee_publication_allowed(Peer,Key) ->
         _ -> false
     end.
 
-%% Native controls never pass through the legacy PCM Mixer.
-backend_missing(#{stream_handler := native_gst_aac}) -> not ba_native_media_session:available();
-backend_missing(D) -> maps:get(encoding,D,pcm)=:=opus andalso not ba_audio_opus:available().
-disable_output(_,#{descriptor := #{stream_handler := native_gst_aac},session := P}) when is_pid(P) ->
-    native_output(P,{output,pause});
-disable_output(Id,_) -> ba_audio_mixer:remove(Id).
-output_gain(_,G,#{descriptor := #{stream_handler := native_gst_aac},session := P}) -> native_output(P,{gain,G});
-output_gain(Id,G,_) -> ba_audio_mixer:gain(Id,G).
-renew_output(_,_,#{descriptor := #{stream_handler := native_gst_aac}}) -> ok;
-renew_output(Id,Until,_) -> ba_audio_mixer:renew(Id,Until).
+%% Native output is the only output: this Device needs its native stream host.
+backend_missing(_) -> not ba_native_media_session:available().
+disable_output(_,#{session := P}) when is_pid(P) -> native_output(P,{output,pause});
+disable_output(_,_) -> ok.
+output_gain(_,G,#{session := P}) -> native_output(P,{gain,G}).
 
 native_output(P,Command) ->
     try gen_server:call(P,Command,1500) catch exit:_ -> {error,native_endpoint_unavailable} end.
 
-missing_backend_reason(#{stream_handler := native_gst_aac}) -> native_backend_unavailable;
-missing_backend_reason(_) -> opus_decoder_unavailable.
+missing_backend_reason(_) -> native_backend_unavailable.

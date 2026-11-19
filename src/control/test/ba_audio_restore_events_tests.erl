@@ -49,17 +49,6 @@ network_hints_preserve_clock_acquisition_and_live_media_test() ->
         end
     end).
 
-missing_opus_backend_keeps_intent_without_starting_transport_test() ->
-    Saved = os:getenv("BA_GSTREAMER_PCM_HELPER"),os:unsetenv("BA_GSTREAMER_PCM_HELPER"),
-    try fixture(fun(S,Id) ->
-        put(test_clock,#{state => synchronized,filter_ready => true,last_sync => 101,age_ns => 0}),
-        Offers = maps:map(fun(_,O) -> O#{profiles := #{channel => #{encoding => opus}}} end,maps:get(offers,S)),
-        {noreply,Next} = ba_audio_receiver:handle_info(tick,S#{offers := Offers}),
-        ?assertMatch(#{state := waiting_for_backend,error := opus_decoder_unavailable,session := undefined},
-            maps:get(Id,maps:get(subscriptions,Next))),no_attempt()
-    end) after
-        case Saved of false -> os:unsetenv("BA_GSTREAMER_PCM_HELPER");_ -> os:putenv("BA_GSTREAMER_PCM_HELPER",Saved) end
-    end.
 fixture(Fun) ->
     I = ba_subscription_tests:intent(<<"music">>),Id = maps:get(id,I),Peer = maps:get(device,I),
     Context = #{peer => Peer,session => binary:copy(<<"D">>,32),buffee => maps:get(buffee,I),deadline => erlang:monotonic_time(millisecond)+10000},
@@ -69,12 +58,14 @@ fixture(Fun) ->
     end end),true = register(ba_buffee_control,Control),
     Old = application:get_env(ba_core,audio_clock_adapter),application:set_env(ba_core,audio_clock_adapter,?MODULE),
     R = #{intent => I,state => waiting_for_source,session => undefined,retry_at => erlang:monotonic_time(millisecond)-1,packets => 0},
-    D = #{sample_rate => 48000,sample_format => float32_le,channel_count => 2,clock => <<"test">>},
+    D = #{encoding => pcm,sample_rate => 48000,sample_format => float32_le,channel_count => 2,clock => <<"test">>,stream_handler => native_gst_aac},
+    OldPort = os:getenv("BA_NATIVE_STREAM_PORT"),os:putenv("BA_NATIVE_STREAM_PORT","1"),
     S = #{subscriptions => #{Id => R},offers => #{{Peer,<<"music">>} => #{incarnation => binary:copy(<<"E">>,32),profiles => #{channel => D}}},
         contracts => #{{receive_audio,Peer,<<"music">>} => #{id => binary:copy(<<"C">>,32),revision => 1}},
         suspended => false,resume_after => 100,catalogs => #{},poll_at => erlang:monotonic_time(millisecond)+10000},
     try Fun(S,Id) after
         exit(Control,kill),unregister_if_present(ba_buffee_control),
+        case OldPort of false -> os:unsetenv("BA_NATIVE_STREAM_PORT");_ -> os:putenv("BA_NATIVE_STREAM_PORT",OldPort) end,
         case Old of undefined -> application:unset_env(ba_core,audio_clock_adapter);{ok,V} -> application:set_env(ba_core,audio_clock_adapter,V) end
     end.
 unregister_if_present(Name) -> case whereis(Name) of undefined -> ok;_ -> unregister(Name) end.

@@ -1,5 +1,10 @@
 # Integration checks
 
+> **2026-11-19:** audio is native AAC only. `device-session-e2e.py`, its PCM/Opus
+> audio probes and `audio-packet-target.escript` were deleted with the PCM path.
+> The headless audio test is `python3 tests/transport/native-stream-smoke.py`.
+> Commands below that name them are historical.
+
 ## Run every test
 
 Open the sibling OpenSound `Run Tests.command`, or run

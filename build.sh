@@ -22,7 +22,8 @@ export MIX_HOME="$ROOT/builds/intermediates/tools/mix"
 export REBAR_CACHE_DIR="$ROOT/builds/intermediates/rebar-cache"
 bash "$ROOT/scripts/build-native.sh"
 if [ "$TARGET" = all ] || [ "$TARGET" = mac ]; then
-  python3 "$ROOT/src/Audio/handlers/webrtc/prepare.py" --target mac
+  # Audio is native AAC only: the Mac helper captures into GStreamer.
+  bash "$ROOT/scripts/platforms/macOS/build-native-stream.sh"
 fi
 if [ "$TARGET" = all ] || [ "$TARGET" = ios ]; then
   python3 "$ROOT/scripts/platforms/iOS/prepare-runtime.py" --target device --transport native

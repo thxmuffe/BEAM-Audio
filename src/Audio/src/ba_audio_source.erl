@@ -1,4 +1,5 @@
 %% A local publication; source identity survives pause, incarnation does not restart.
+%% Its audio is captured and sent natively; only control passes through here.
 -module(ba_audio_source).
 -behaviour(gen_server).
 -export([start_link/1,init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
@@ -27,25 +28,6 @@ handle_call({rebind,Clock},{Owner,_},#{owner := Owner,offer := #{profiles := #{c
 handle_call({pause,B},{Owner,_},#{owner := Owner,offer := Offer} = S) when is_boolean(B) ->
     ba_session_scope:whereis(ba_audio_receiver) ! {publication_state,self(),B},
     {reply,ok,S#{offer := Offer#{paused := B}}};
-handle_call({push_encoded,Timing,Packet},{Owner,_},
-            #{owner := Owner,offer := #{paused := false,profiles := #{channel := #{encoding := opus}}},sessions := Sessions}=S)
-        when is_map(Timing),is_binary(Packet),byte_size(Packet)=<1275 ->
-    Replies = [{Pid,try gen_server:call(Pid,{encoded,Timing,Packet},1000) catch exit:_ -> {error,closed} end}
-        || Pid <- maps:values(Sessions)],{reply,{ok,Replies},S};
-handle_call({push_encoded,_,_},_,#{offer := #{paused := true}}=S) -> {reply,{ok,[]},S};
-handle_call({push,channel,H,PCM},{Owner,_},#{owner := Owner,offer := #{paused := false,profiles := #{channel := #{encoding := pcm}=D}},sessions := Sessions} = S) ->
-    Valid = case is_binary(PCM) andalso byte_size(PCM) div ba_audio_packet:frame_bytes(D)=<4096 of
-        true -> ba_audio_packet:validate_block(channel,D,H#{sequence => 0},PCM);
-        false -> {error,block_too_large}
-    end,
-    case Valid of
-        ok ->
-            Replies = [{Pid,try ba_media_session:push(Pid,H,PCM) catch exit:_ -> {error,closed} end}
-                       || Pid <- maps:values(Sessions)],
-            {reply,{ok,Replies},S};
-        Error -> {reply,Error,S}
-    end;
-handle_call({push,_,_,_},_,#{offer := #{paused := true}} = S) -> {reply,{ok,[]},S};
 handle_call(_,_,S) -> {reply,{error,invalid_request_or_owner},S}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info({'DOWN',Ref,process,Pid,_},#{owner := Pid} = S) -> _ = Ref,{stop,normal,S};
