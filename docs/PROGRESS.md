@@ -1,5 +1,24 @@
 # Current implementation and validation
 
+## Join from a copied invitation (OpenSound UI) — 2026-11-19
+
+When OpenSound starts or comes to the foreground, a `beamaudio://` link newly
+on the clipboard opens the Join dialog, filled in, unless a remembered Session
+(`contacts.sessions`) already has that link (each Session has one permanent
+link) or the same link was already offered. On startup this runs before the
+automatic return to the last Session. It never opens over another dialog.
+Apple hosts read through a new `native_clipboard` bridge method that only reads
+when the pasteboard change count moved and it holds text or a URL; the browser
+(Windows app window, web) uses `navigator.clipboard.readText()` and stays quiet
+where the browser refuses. Logic: `WebApp/public/clipboard-invitation.mjs`.
+
+Expected platform behaviour, not yet observed: iOS shows its "Allow Paste"
+prompt the first time new clipboard text is read (Settings can set Paste from
+Other Apps to Allow); recent macOS may show a similar paste prompt; Chrome/Edge
+ask once for clipboard permission. Validation: web unit tests 33 pass
+(node@22); OpenSoundKit `swift build` for macOS succeeds; the iOS branch and the
+apps were not built or run.
+
 ## Dark Sessions: join certificates replace membership — 2026-11-19
 
 Owner direction: Devices only see the Devices they bump into, plus the Manager;
