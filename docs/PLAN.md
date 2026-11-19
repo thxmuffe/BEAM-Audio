@@ -21,6 +21,14 @@ and cosmetic cleanup still wait.
   peers/active streams; Session-wide diagnostic reads belong to an explicit
   Inspector. Existing peer-mesh maintenance is a scaling limitation to replace,
   not a model to extend during cleanup.
+- **One Device request/approval pipeline.** The receiving/executing Device
+  authenticates the requester (including a Manager), checks applicable rights
+  and local consent, explicitly approves manually or automatically, then acts.
+  All requests follow that flow. Reverify request signatures and supplied
+  grant/delegation evidence for each request; no verification-result cache.
+  Retain signed Session policy/revocations as state and check freshness/replay.
+  This is the accepted direction,
+  not a claim that the existing action-specific paths have been unified.
 - **OTP ownership is mandatory.** Native streams stop when their owning OTP
   process, required supervisor, authority or runtime stops or crashes. Independent
   native teardown and forced termination must prevent orphan media connections;

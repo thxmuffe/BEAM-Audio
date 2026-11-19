@@ -1,5 +1,30 @@
 # Current implementation and validation
 
+## Request approval and verification direction — 2026-11-19
+
+Owner clarified that the Device receiving/executing an action approves the
+request through one common pipeline, including requests from a Manager. Approval
+can be automatic but remains an explicit stage with identity/authorization
+checks before execution. Managers receive no extra privileges from placement.
+Record this as the next control design, alongside on-demand relationships and
+local signed-policy verification; it is not implemented by the cleanup passes.
+
+The current control protocol verifies an Ed25519 signature on every received
+control envelope and checks locally installed Session policy. A one-shot
+microbenchmark on this Mac ran 5,000 OTP crypto signature verifications in
+202.1 ms, approximately 40.4 microseconds each. It used a generated diagnostic
+key and a small constant message, with no real identity, network or Device work.
+This measures the cryptographic primitive only, not parsing, delegation chains,
+full approval latency, phone performance or hostile traffic capacity.
+
+Owner decision after that measurement: **do not cache verification results**.
+Verify request signatures and supplied grant/delegation evidence per request,
+then check replay protection, current Session policy/revocations, local consent
+and the explicit approval decision. Signed Session policy and revocation records
+remain necessary state; they are not cached successful-verification decisions.
+This supersedes the earlier caching recommendation. No request/approval
+implementation or live behavior changed in this discussion.
+
 ## Second unused-code cleanup — 2026-11-19
 
 Removed the old Windows meter-only capture server and its unused native helper

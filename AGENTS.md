@@ -153,6 +153,16 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
   Select All and Copy. Do not render error messages solely as static labels or
   implement custom clipboard/context-menu handling for them.
 - Use OTP for process lifecycle, supervision, messaging, links/monitors and process-group membership. Keep admission permission distinct from observed connection/process liveness.
+- Device requests share one request/approval pipeline. The Device responsible
+  for the requested action verifies the requester and applicable permissions,
+  makes an explicit manual or automatic approval decision, then executes only
+  approved work. Automatic approval does not bypass that stage. Managers use
+  the same pipeline and gain no privileges from being Managers. Do not cache
+  authentication/authorization verification results: verify request signatures
+  and supplied grant/delegation evidence for each request, alongside replay
+  protection, current Session policy/revocations and local consent. Persisting
+  signed policy and revocation state is distinct from caching a successful
+  verification. Avoid separate per-feature authorization paths or routing matrices.
 - Design routine discovery, liveness and timing for large Sessions: keep checks
   scoped to relevant peers and active streams, with bounded concurrent work.
   Do not make every Device periodically ping or scan the whole Session. Full
