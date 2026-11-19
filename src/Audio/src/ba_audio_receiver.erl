@@ -421,7 +421,7 @@ announce_catalog(#{sources := Sources}=S) ->
     Readers = readers(),announce(Readers,S),
     %% Beyond direct neighbours, the announcement spreads by gossip.
     case map_size(Sources)>0 of
-        true -> try ba_buffee_membership:announce(on_air) catch exit:_ -> ok end;
+        true -> try ba_buffee_membership:announce(<<"on_air">>) catch exit:_ -> ok end;
         false -> ok
     end,
     S#{announced => Readers,announce_at => now_ms()+30000}.

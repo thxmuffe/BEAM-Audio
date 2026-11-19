@@ -193,10 +193,14 @@ handle_cast({session_request,Peer,Payload},#{state := authorized}=S) ->
           _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
     end;
 handle_cast({announce,Kind},#{state := authorized,id := Id}=S) ->
-    {NoteId,Packet} = ba_session_gossip:note(maps:get(buffee,S),Id,maps:get(join,S),Kind,maps:get(private,S)),
-    Note = #{<<"kind">> => <<"note">>,<<"id">> => NoteId,<<"packet">> => Packet},
-    ba_buffee_control:session_request(contacts(S),Note),
-    {noreply,S#{seen := (maps:get(seen,S))#{NoteId => erlang:system_time(second)}}};
+    %% A bad announcement must never take down the Session's rights process.
+    try ba_session_gossip:note(maps:get(buffee,S),Id,maps:get(join,S),Kind,maps:get(private,S)) of
+        {NoteId,Packet} ->
+            Note = #{<<"kind">> => <<"note">>,<<"id">> => NoteId,<<"packet">> => Packet},
+            ba_buffee_control:session_request(contacts(S),Note),
+            {noreply,S#{seen := (maps:get(seen,S))#{NoteId => erlang:system_time(second)}}}
+    catch _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
+    end;
 %% A Device this one dealt with; the side with the newer statement shares it.
 handle_cast({encountered,Peer,Revision},#{state := authorized,policy := P}=S) ->
     Seen = lists:sublist([Peer|lists:delete(Peer,maps:get(encountered,S))],?ENCOUNTERED),
