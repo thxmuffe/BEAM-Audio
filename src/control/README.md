@@ -20,7 +20,7 @@ connection authentication, live mailbox lookup and bounded opaque routing.
 Read [architecture](../../docs/ARCHITECTURE.md),
 [membership](../../docs/BUFFEE_MEMBERSHIP.md),
 [protocol](../../docs/BUFFEE_CONTROL_PROTOCOL.md),
-[jobs](../../docs/BUFFEE_JOBS.md), [streams](../../docs/BUFFEE_STREAMS.md),
+[streams](../../docs/BUFFEE_STREAMS.md),
 [timing](../../docs/BUFFEE_TIME.md) and [current limits](../../docs/PROGRESS.md).
 The explicitly trusted native-cluster profile remains for the older Windows
 native UI; it is not an alternative permission source for Buffee Devices.

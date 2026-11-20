@@ -19,7 +19,7 @@ listener_reads_only_announced_or_known_sources_test() ->
         [{A,Read,#{<<"kind">> := <<"catalog.read">>}}]=messages(1),
         Done=deliver(A,Read,#{<<"kind">> => <<"catalog.end">>},Contexts,Announced),no_message(),
         Listening=Done#{subscriptions := #{id() => #{intent => #{device => B}}}},
-        {reply,ok,_}=ba_audio_receiver:handle_call(refresh,undefined,Listening),
+        {noreply,_}=ba_audio_receiver:handle_info(catalog_bootstrap,Listening),
         ?assertMatch([{B,_,#{<<"kind">> := <<"catalog.read">>}}],messages(1)),no_message()
     end).
 

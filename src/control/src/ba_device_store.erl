@@ -1,21 +1,14 @@
 %% Small local checkpoints, owned by the worker writing each record.
 %% Private identity material is supplied by the platform Keychain, never stored here.
 -module(ba_device_store).
--export([identity/0, node_name/1, load/2, save/2,forget_session/1]).
+-export([identity/0, load/2, save/2,forget_session/1]).
 
+%% This Device's key pair, from the seed its launcher supplies (BA_IDENTITY_SEED).
 identity() ->
-    case ba_settings:env("BA_IDENTITY_SEED") of
-        false -> crypto:generate_key(eddsa, ed25519);
-        Hex ->
-            Seed = binary:decode_hex(list_to_binary(Hex)),
-            32 = byte_size(Seed),
-            crypto:generate_key(eddsa, ed25519, Seed)
-    end.
-
-node_name(Platform) ->
-    {Public, _} = identity(),
-    binary_to_atom(<<"ba_", Platform/binary, "_", (binary:encode_hex(Public))/binary,
-                     "@127.0.0.1">>).
+    Hex = ba_settings:env("BA_IDENTITY_SEED"),
+    Seed = binary:decode_hex(list_to_binary(Hex)),
+    32 = byte_size(Seed),
+    crypto:generate_key(eddsa, ed25519, Seed).
 
 load(Name, Default) ->
     case transient(Name) of

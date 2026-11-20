@@ -114,7 +114,7 @@ command(#{<<"method">> := <<"snapshot">>}) -> null;
 command(#{<<"method">> := <<"list_contacts">>}) ->
     {ok, ba_contacts:list()};
 command(#{<<"method">> := <<"save_contact">>,<<"value">> := Value,<<"name">> := Name}) ->
-    case ba_buffee_job:hex(Value,64) of
+    case ba_hex:valid(Value,64) of
         true -> ba_contacts:put(Value,Name);
         false -> {_,I}=ba_buffee_passport:parse_invitation(Value),ba_contacts:put(maps:get(<<"authority">>,I),Name)
     end;

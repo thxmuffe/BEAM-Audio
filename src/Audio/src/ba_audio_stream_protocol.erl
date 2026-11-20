@@ -1,6 +1,6 @@
 %% Exact, flat control messages; PCM/encoded audio never enter Desk envelopes.
 -module(ba_audio_stream_protocol).
--export([validate/1,offer/3,descriptor/1,identity/1]).
+-export([validate/1,offer/3,descriptor/1]).
 validate(#{<<"kind">> := K} = P) ->
     case K of
         <<"catalog.read">> -> exact(P,[<<"kind">>]);
@@ -12,7 +12,7 @@ validate(#{<<"kind">> := K} = P) ->
             true = is_boolean(maps:get(<<"paused">>,P)),_ = descriptor(P);
         <<"subscribe">> ->
             exact(P,base()++[<<"contract">>,<<"revision">>]),session(P),
-            true = ba_buffee_job:hex(maps:get(<<"contract">>,P),32),
+            true = ba_hex:valid(maps:get(<<"contract">>,P),32),
             N = maps:get(<<"revision">>,P),true = is_integer(N) andalso N>0 andalso N=<9007199254740991;
         <<"accepted">> -> exact(P,base()++[<<"paused">>]),session(P),true = is_boolean(maps:get(<<"paused">>,P));
         <<"state">> -> exact(P,base()++[<<"paused">>]),session(P),true = is_boolean(maps:get(<<"paused">>,P));
@@ -32,8 +32,8 @@ validate(#{<<"kind">> := K} = P) ->
             N = maps:get(<<"line">>,P),true = is_integer(N) andalso N>=0 andalso N=<16
     end,ok.
 base() -> [<<"kind">>,<<"source">>,<<"incarnation">>,<<"attempt">>].
-session(P) -> identity(P),true = ba_buffee_job:hex(maps:get(<<"attempt">>,P),32).
-identity(P) -> text(maps:get(<<"source">>,P),128),true = ba_buffee_job:hex(maps:get(<<"incarnation">>,P),32),ok.
+session(P) -> identity(P),true = ba_hex:valid(maps:get(<<"attempt">>,P),32).
+identity(P) -> text(maps:get(<<"source">>,P),128),true = ba_hex:valid(maps:get(<<"incarnation">>,P),32),ok.
 exact(P,K) -> ba_buffee_passport:exact(P,K).
 text(B,N) -> true = is_binary(B) andalso byte_size(B)>0 andalso byte_size(B)=<N,ok.
 offer(Key,Inc,#{name := Name,paused := Paused,profiles := #{channel := D}}) ->

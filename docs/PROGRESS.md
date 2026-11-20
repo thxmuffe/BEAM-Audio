@@ -1,5 +1,39 @@
 # Current implementation and validation
 
+## Cleanup pass 2: test jobs, single sources, dead code — 2026-11-20
+
+- Test jobs removed end to end: `ba_buffee_job`, `ba_device_test_worker`, the job
+  offer/cancel/report flow in `ba_buffee_control` and its protocol, the `job_offer`
+  right, the `"test"` entry of the signed `capabilities` reply (a wire change, as
+  accepted), Session control's monitoring of `ba_device_handler` (it only protected
+  jobs), the snapshot's `jobs` field and `BUFFEE_JOBS.md`. `ba_device_handler` keeps
+  capabilities and the audio Worker.
+- One way for each setting: the default rights list is `ba_buffee_membership:defaults/0`
+  (was an app setting written in two places plus two different literal fallbacks);
+  the default Reception is only `default_reception_desk_url` in `ba_core.app.src`
+  (`ba_buffee_passport:default_desk/0`; three literal copies removed, the CLI no longer
+  hard-codes it); the Reception CA is only the `relay_cacertfile` setting
+  (`BA_RELAY_CA_FILE` removed).
+- No fallback identity: `ba_device_store:identity/0` requires `BA_IDENTITY_SEED`
+  instead of silently making a random key; `node_name/1` (Distributed Erlang) removed.
+- One hex validator, `ba_hex:valid/2`, replacing two copies and two wrappers.
+- Dead API removed: `ba_audio` stubs/aliases (`subscribe`, `ready`, `listen`,
+  `watch_sources`, `sessions`, `handler`, `backend`, `close`, `pause`,
+  `validate_request`), `ba_audio_receiver` `refresh`/`gain` (and `output_gain`),
+  `ba_buffee_desks` `route`/`send_route`, `ba_buffee_membership:depart/0`,
+  `ba_desk_connections_sup:stop/1`, `ba_session_scope:spawn_link/1`,
+  `ba_stream_handler:default/0`, `ba_native_stop:socket/3` (with its tests); several
+  internal helpers no longer exported.
+- Tests: the job tests went; the protocol test keeps its sender-signature and
+  join-certificate checks on a capability request; tests that relied on the random
+  identity now set a seed.
+
+Validation on Windows: core eunit 182/182, DeviceWeb 6/6, web UI 35/35,
+`run-tests.py` unit tests OK, xref reports no undefined calls. Core Erlang 365k → 336k
+characters, 50 → 49 modules (`ba_hex` added; two job modules removed). Not verified:
+app builds and Session-level integration smokes; Apple apps need the new runtime
+(the capabilities wire format changed).
+
 ## Cleanup pass 1: one runtime behaviour — 2026-11-20
 
 Owner direction: cleanup first, one default way, no fallbacks, work in passes.

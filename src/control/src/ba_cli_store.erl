@@ -1,7 +1,7 @@
 %% Local CLI process records, persistent identity and last monitor selection.
 -module(ba_cli_store).
 -include_lib("kernel/include/file.hrl").
--export([home/0,dir/1,private_dir/1,identity/1,read/1,write/2,replace/2,remove/1,names/0,valid_name/1,reserve/3,
+-export([identity/1,read/1,write/2,replace/2,remove/1,names/0,valid_name/1,reserve/3,
          last_session/0,remember_session/1]).
 %% POSIX mode bits are the owner-only check on Unix. On Windows the per-user
 %% profile directory's ACL protects these files; OTP reports only read-only there.

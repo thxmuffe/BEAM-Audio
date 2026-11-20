@@ -14,7 +14,6 @@ behavior and is outside this guarantee. This work is not deployed or certified.
 | macOS/iOS microphone | Record gate, callback generation fencing, native cleanup before stop ACK | Real-device lifecycle validation |
 | System capture | Session broadcast intent and Chef checks; generation checks on Mac/iOS callbacks | Session OFF/role-loss acknowledged stop, Windows and Opus helper protocols |
 | Autonomous LibWebRTC/GStreamer playback | Current profile rejects opening with native_revocation_protocol_required | Implement and verify stop/flush protocol before enabling |
-| Delegated jobs | DSP admission/startup gate; installed test worker acknowledges termination | Real DSP executor does not exist yet |
 | Calibration | Independent Device permission exists | Typed, bounded calibration executor with purpose-specific mic/speaker gates |
 | Authority/registry failure | Missing view or changed registry denies new operations and stale handles | Proactive native shutdown and recovery audit |
 

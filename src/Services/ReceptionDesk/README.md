@@ -110,7 +110,7 @@ Separate-access-network testing remains a further check.
 
 Only `wss://` is accepted for public Reception addresses. Plain `ws://` is restricted
 to localhost development. Clients verify certificate chains and hostnames.
-`BA_RELAY_CA_FILE` may select a private CA file without changing OS trust.
+The `relay_cacertfile` setting may select a private CA file without changing OS trust.
 iOS preparation bundles public build-host trust anchors because BEAM cannot
 invoke macOS certificate-store commands inside the phone sandbox.
 

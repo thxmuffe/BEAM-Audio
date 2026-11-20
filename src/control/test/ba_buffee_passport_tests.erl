@@ -38,7 +38,7 @@ link_names_its_creator_test() ->
 %% v6: about 100 characters, same fields as v5 after parsing, no name or signature.
 short_link_test() ->
     {A,_}=key(),Nonce=binary:encode_hex(crypto:strong_rand_bytes(16)),Secret=binary:encode_hex(crypto:strong_rand_bytes(16)),
-    Default=ba_settings:app(default_reception_desk_url,<<"wss://beamaudio.onrender.com/reception">>),
+    Default=ba_buffee_passport:default_desk(),
     I=#{<<"authority">>=>A,<<"nonce">>=>Nonce,<<"secret">>=>Secret,<<"desks">>=>[Default]},
     Link=ba_buffee_passport:link(I),
     ?assertMatch(<<"beamaudio://s/",_/binary>>,Link),

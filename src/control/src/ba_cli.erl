@@ -1,6 +1,6 @@
 %% CLI presentation/lifecycle only. Device behavior and readiness live in OTP APIs.
 -module(ba_cli).
--export([main/2,spec/1,new_device/2,request/2,wait/3,timeout/1]).
+-export([main/2,spec/1,new_device/2,request/2,timeout/1]).
 main(Args,Root) ->
     try case lists:member("--help",Args) of
         true -> io:put_chars(argparse:help(spec(Root),#{progname => "beamaudio",command => [A || A <- Args,A=/="--help"]}));
@@ -100,8 +100,7 @@ new_device(A,Root) ->
         _ -> #{socket => list_to_binary(filename:join("/tmp","ba-device-"++Instance++".sock"))}
     end,
     Mode=case {Create,Join} of {true,_} -> <<"create">>;{_,undefined} -> <<"idle">>;_ -> <<"join">> end,
-    Desk=maps:get(desk,A,"wss://beamaudio.onrender.com/reception"),
-    C0=Endpoint#{instance => list_to_binary(Instance),name => list_to_binary(BaseName),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => list_to_binary(Desk),
+    C0=Endpoint#{instance => list_to_binary(Instance),name => list_to_binary(BaseName),mode => Mode,enabled => case maps:is_key(enable,A) of true -> Enabled;false -> null end,desk => case maps:find(desk,A) of {ok,Desk} -> list_to_binary(Desk);error -> null end,
         observer => maps:get(observer,A,false),invitation => case Join of undefined -> null;_ -> list_to_binary(Join) end},
     Candidate=case maps:find(web_assets,A) of
         error -> C0;
@@ -192,7 +191,7 @@ history_action(A,Method) ->
 
 forget_session(A) ->
     Id=list_to_binary(maps:get(sessionid,A)),
-    case ba_buffee_job:hex(Id,32) of
+    case ba_hex:valid(Id,32) of
         true -> emit(request(one_name(A),#{<<"method">> => <<"forget_saved_session">>,<<"entry">> => Id}));
         false -> fail(2,<<"Supply a Session ID of 32 hexadecimal characters.">>)
     end.

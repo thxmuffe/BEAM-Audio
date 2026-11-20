@@ -71,7 +71,7 @@ handle_call(Command,_,S) ->
           error:function_clause -> {reply,{error,invalid_contact_or_group},S}
     end.
 update({put,Id,Name},#{contacts := Contacts}=S) ->
-    true = ba_buffee_job:hex(Id,64),true = contact_label(Name),
+    true = ba_hex:valid(Id,64),true = contact_label(Name),
     (manual_name(Id,S))#{contacts := Contacts#{Id => Name}};
 update({delete,Id},#{contacts := Contacts,groups := Groups}=S) ->
     S#{contacts := maps:remove(Id,Contacts),groups := maps:map(fun(_,Ids) -> lists:delete(Id,Ids) end,Groups)};
@@ -84,10 +84,10 @@ label(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<128 -> is_list(unicode:c
 label(_) -> false.
 handle_cast({observe,Buffee,Name,Ids},S) ->
     try
-        true=ba_buffee_job:hex(Buffee,32),true=label(Name),
+        true=ba_hex:valid(Buffee,32),true=label(Name),
         true=not forgotten(Buffee,S),
         true=is_list(Ids) andalso length(Ids)=<32,
-        true=lists:all(fun(Id) -> ba_buffee_job:hex(Id,64) end,Ids),
+        true=lists:all(fun(Id) -> ba_hex:valid(Id,64) end,Ids),
         Collected=lists:foldl(fun(Id,Acc) -> observed_name(Id,binary:part(Id,0,12),Acc) end,S,lists:usort(Ids)),
         persist(seen(Buffee,Name,Ids,Collected),S)
     catch error:{badmatch,false} -> {noreply,S} end;
@@ -108,7 +108,7 @@ handle_cast({kicked,Session,Device},S) ->
         error -> {noreply,S}
     end;
 handle_cast({observe_name,Id,Name},S) ->
-    case ba_buffee_job:hex(Id,64) andalso contact_label(Name) of
+    case ba_hex:valid(Id,64) andalso contact_label(Name) of
         true -> persist(observed_name(Id,Name,S),S);
         false -> {noreply,S}
     end;

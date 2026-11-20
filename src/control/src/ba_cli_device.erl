@@ -50,7 +50,7 @@ boot() ->
         {ok,Pid}=supervisor:start_child(ba_sup,#{id => ?MODULE,start => {?MODULE,start_link,[Public#{dir => Dir}]},restart => temporary}),
         Command=case maps:get(<<"mode">>,C) of
             <<"idle">> -> #{<<"method">> => <<"snapshot">>};
-            <<"create">> -> #{<<"method">> => <<"create_buffee">>,<<"name">> => maps:get(<<"name">>,C),<<"desks">> => [maps:get(<<"desk">>,C)]};
+            <<"create">> -> #{<<"method">> => <<"create_buffee">>,<<"name">> => maps:get(<<"name">>,C),<<"desks">> => [case maps:get(<<"desk">>,C) of null -> ba_buffee_passport:default_desk();Desk -> Desk end]};
             <<"join">> -> #{<<"method">> => <<"join_buffee">>,<<"invitation">> => maps:get(<<"invitation">>,C)}
         end,
         Pid ! {start_buffee,Command},

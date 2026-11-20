@@ -11,7 +11,7 @@
 -module(ba_buffee_control_protocol).
 -export([new/3, connect/3, request_status/3, request_capabilities/3,request_capabilities/4, reply_capabilities/5,chat_message/5,
          receive_packet/4, expire/2, reset/2, close/3, set_policy/2, peer_revision/2,
-         snapshot/1, seal/2,job_message/6,context/3,audio_message/5,time_message/5,session_message/5]).
+         snapshot/1, seal/2,context/3,audio_message/5,time_message/5,session_message/5]).
 -define(DOMAIN, <<"beamaudio-buffee-control/v1:">>).
 -define(VERSION, 3).
 %% Sealing (ba_buffee_passport:seal_envelope) adds a third; Reception allows 32768.
@@ -28,7 +28,7 @@
 %% members' rights, defaults for everyone else, removed Devices, the public
 %% invitation key and this Device's own join certificate.
 new({Public, Private}, Policy, Now) ->
-    Id = binary:encode_hex(Public), true = hex(Id,64),
+    Id = binary:encode_hex(Public), true = ba_hex:valid(Id,64),
     %% Reject an accidentally mismatched local key before opening a Desk route.
     Probe = crypto:sign(eddsa,none,?DOMAIN,[Private,ed25519]),
     true = crypto:verify(eddsa,none,?DOMAIN,Probe,[Public,ed25519]),
@@ -39,17 +39,17 @@ new({Public, Private}, Policy, Now) ->
 set_policy(#{buffee := Buffee,authority := Authority,manager := Manager,revision := Revision,
              invitation := Invitation,join := Join,members := Members,defaults := Defaults,
              removed := Removed} = Policy,#{id := Id} = S) ->
-    true = hex(Buffee,32) andalso hex(Authority,64) andalso hex(Manager,64) andalso hex(Invitation,64),
+    true = ba_hex:valid(Buffee,32) andalso ba_hex:valid(Authority,64) andalso ba_hex:valid(Manager,64) andalso ba_hex:valid(Invitation,64),
     true = uint(Revision) andalso Revision > 0,
     true = ba_buffee_passport:joined(Buffee,Id,Join,Invitation),
     true = is_map(Members) andalso map_size(Members) =< 16,
-    maps:foreach(fun(Peer,Rights) -> true = hex(Peer,64),rights(Rights) end,Members),
+    maps:foreach(fun(Peer,Rights) -> true = ba_hex:valid(Peer,64),rights(Rights) end,Members),
     rights(Defaults),
-    true = is_list(Removed) andalso length(Removed) =< 31 andalso lists:all(fun(R) -> hex(R,64) end,Removed),
+    true = is_list(Removed) andalso length(Removed) =< 31 andalso lists:all(fun(R) -> ba_hex:valid(R,64) end,Removed),
     S#{policy => Policy}.
 rights(Rights) ->
     true = is_list(Rights) andalso length(Rights) =< 10 andalso lists:usort(Rights) =:= Rights,
-    true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,job_offer,stream_read,stream_subscribe,
+    true = lists:all(fun(P) -> lists:member(P,[status_read,capabilities_read,stream_read,stream_subscribe,
         time_read,offset_write,owner,stream_publish,end_session]) end,Rights).
 held(Peer,S) -> #{members := Members,defaults := Defaults} = maps:get(policy,S),maps:get(Peer,Members,Defaults).
 %% The rights-statement revision the peer last sent, so the newer side can share.
@@ -172,26 +172,16 @@ context(Peer,Now,S) ->
     #{buffee := Buffee,manager := Manager} = maps:get(policy,S),
     #{peer => Peer,session => maps:get(id,Session),deadline => maps:get(deadline,Session),
       buffee => Buffee,manager => Manager}.
-job_message(Peer,Op,Id,Payload,Now,S) ->
-    attempt(fun() ->
-        true = hex(Id,32),
-        true = lists:member(Op,[<<"job.offer">>,<<"job.cancel">>,<<"job.report">>]),
-        payload(Op,Payload),
-        sendable(Peer,Now,S),
-        {Packet,Next} = outgoing(Peer,Op,Id,Payload,Now,S),
-        {ok,Packet,Next}
-    end,S).
-
 chat_message(Peer,Id,Text,Now,S) ->
     attempt(fun() ->
-        true=hex(Id,32),Payload=#{<<"text">> => Text},payload(<<"chat.message">>,Payload),
+        true=ba_hex:valid(Id,32),Payload=#{<<"text">> => Text},payload(<<"chat.message">>,Payload),
         sendable(Peer,Now,S),
         {Packet,Next}=outgoing(Peer,<<"chat.message">>,Id,Payload,Now,S),{ok,Packet,Next}
     end,S).
 
 audio_message(Peer,Id,Payload,Now,S) ->
     attempt(fun() ->
-        true = hex(Id,32),ok = ba_audio_stream_protocol:validate(Payload),
+        true = ba_hex:valid(Id,32),ok = ba_audio_stream_protocol:validate(Payload),
         sendable(Peer,Now,S),
         {Packet,Next} = outgoing(Peer,<<"stream.message">>,Id,Payload,Now,S),
         {ok,Packet,Next}
@@ -199,7 +189,7 @@ audio_message(Peer,Id,Payload,Now,S) ->
 
 time_message(Peer,Id,Payload,Now,S) ->
     attempt(fun() ->
-        true = hex(Id,32),ok = ba_buffee_time_protocol:validate(Payload),
+        true = ba_hex:valid(Id,32),ok = ba_buffee_time_protocol:validate(Payload),
         sendable(Peer,Now,S),
         {Packet,Next} = outgoing(Peer,<<"time.message">>,Id,Payload,Now,S),
         {ok,Packet,Next}
@@ -208,7 +198,7 @@ time_message(Peer,Id,Payload,Now,S) ->
 %% Requests about the Session itself (rights, name, removal, End).
 session_message(Peer,Id,Payload,Now,S) ->
     attempt(fun() ->
-        true = hex(Id,32),payload(<<"session.request">>,Payload),
+        true = ba_hex:valid(Id,32),payload(<<"session.request">>,Payload),
         sendable(Peer,Now,S),
         {Packet,Next} = outgoing(Peer,<<"session.request">>,Id,Payload,Now,S),
         {ok,Packet,Next}
@@ -247,10 +237,6 @@ authorized(Peer,Op,Request,Payload,Now,S) ->
             {ok,[],[{session,Request,Payload,context(Peer,Now,S)}],S};
         <<"stream.message">> ->
             {ok,[],[{audio,Request,Payload,context(Peer,Now,S)}],S};
-        _ when Op =:= <<"job.offer">>; Op =:= <<"job.cancel">> ->
-            {ok,[],[{job,Op,Request,Payload,context(Peer,Now,S)}],S};
-        <<"job.report">> ->
-            {ok,[],[{job_report,Request,Payload,context(Peer,Now,S)}],S};
         <<"status.read">> ->
             Value = #{<<"protocol">> => 1,<<"session">> => <<"authorized">>},
             {Packet,Next} = outgoing(Peer,<<"status.reply">>,Request,Value,Now,S),
@@ -280,7 +266,7 @@ active(Peer, Now, S) ->
     true = Now < Deadline,true = Now < maps:get(membership_deadline,S,infinity), Session.
 sendable(Peer,Now,S) ->
     true = Now < maps:get(membership_deadline,S,infinity),
-    true = hex(Peer,64) andalso Peer =/= maps:get(id,S),
+    true = ba_hex:valid(Peer,64) andalso Peer =/= maps:get(id,S),
     false = lists:member(Peer,maps:get(removed,maps:get(policy,S))).
 
 %% Expiry is also checked synchronously on every receive/request, never just by a timer.
@@ -341,14 +327,14 @@ seal(Body, Private) ->
 verify(Packet, From) when is_binary(Packet), byte_size(Packet) =< ?MAX ->
     Envelope = decode(Packet), exact(Envelope,[<<"body">>,<<"signature">>]),
     Encoded = maps:get(<<"body">>,Envelope), true = is_binary(Encoded),
-    Sig = maps:get(<<"signature">>,Envelope), true = hex(Sig,128),
+    Sig = maps:get(<<"signature">>,Envelope), true = ba_hex:valid(Sig,128),
     Data = base64:decode(Encoded),
     true = crypto:verify(eddsa,none,[?DOMAIN,Data],binary:decode_hex(Sig),
                          [binary:decode_hex(From),ed25519]),
     Body = decode(Data),
     exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"buffee">>,<<"join">>,<<"revision">>,
                 <<"session">>,<<"seq">>,<<"sent">>,<<"op">>,<<"request">>,<<"payload">>]),
-    [true = hex(maps:get(K,Body),N) || {K,N} <-
+    [true = ba_hex:valid(maps:get(K,Body),N) || {K,N} <-
         [{<<"from">>,64},{<<"to">>,64},{<<"buffee">>,32},{<<"join">>,128},
          {<<"session">>,32},{<<"request">>,32}]],
     [true = uint(maps:get(K,Body)) || K <- [<<"seq">>,<<"revision">>,<<"sent">>]],
@@ -363,24 +349,24 @@ payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
     case Kind of
         %% A gossiped note (ba_session_gossip checks its signature).
         <<"note">> ->
-            exact(P,[<<"kind">>,<<"id">>,<<"packet">>]),true = hex(maps:get(<<"id">>,P),32),
+            exact(P,[<<"kind">>,<<"id">>,<<"packet">>]),true = ba_hex:valid(maps:get(<<"id">>,P),32),
             Note = maps:get(<<"packet">>,P),true = is_binary(Note) andalso byte_size(Note) =< 2048;
         %% Request board entries (ba_session_board checks each signature).
         <<"board">> ->
             exact(P,[<<"kind">>,<<"entries">>]),Entries = maps:get(<<"entries">>,P),
             true = is_map(Entries) andalso map_size(Entries) =< 6,
-            maps:foreach(fun(Id,E) -> true = hex(Id,32) andalso is_binary(E) andalso byte_size(E) =< 2048 end,Entries);
+            maps:foreach(fun(Id,E) -> true = ba_hex:valid(Id,32) andalso is_binary(E) andalso byte_size(E) =< 2048 end,Entries);
         <<"privilege_release">> ->
             exact(P,[<<"kind">>,<<"privilege">>]),ok = ba_buffee_passport:permissions([maps:get(<<"privilege">>,P)]);
         <<"rename_request">> ->
             exact(P,[<<"kind">>,<<"name">>]),Name = maps:get(<<"name">>,P),
             true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
             true = is_list(unicode:characters_to_list(Name));
-        <<"remove_request">> -> exact(P,[<<"kind">>,<<"device">>]),true = hex(maps:get(<<"device">>,P),64);
+        <<"remove_request">> -> exact(P,[<<"kind">>,<<"device">>]),true = ba_hex:valid(maps:get(<<"device">>,P),64);
         <<"ended">> -> exact(P,[<<"kind">>]);
         %% A signed rights statement; membership verifies its signer chain.
         <<"policy">> ->
-            exact(P,[<<"kind">>,<<"signer">>,<<"state">>]),true = hex(maps:get(<<"signer">>,P),64),
+            exact(P,[<<"kind">>,<<"signer">>,<<"state">>]),true = ba_hex:valid(maps:get(<<"signer">>,P),64),
             State = maps:get(<<"state">>,P),true = is_binary(State) andalso byte_size(State) =< 16384
     end;
 payload(<<"status.read">>,P) -> exact(P,[]);
@@ -400,13 +386,10 @@ payload(<<"capabilities.error">>,P) ->
     true = Reason =:= <<"forbidden">> orelse Reason =:= <<"unavailable">>;
 payload(<<"time.message">>,P) -> ba_buffee_time_protocol:validate(P);
 payload(<<"stream.message">>,P) -> ba_audio_stream_protocol:validate(P);
-payload(<<"job.offer">>,P) -> ba_buffee_job:validate_offer(P);
-payload(<<"job.cancel">>,P) -> exact(P,[]);
-payload(<<"job.report">>,P) -> ba_buffee_job:validate_report(P);
 payload(_,_) -> throw(forbidden_operation).
 
 capability_payload(P) ->
-    exact(P,[<<"instance">>,<<"revision">>,<<"test">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>,<<"audio_trace">>,<<"audio_meters">>],maps:is_key(K,P)]),
+    exact(P,[<<"instance">>,<<"revision">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>,<<"audio_trace">>,<<"audio_meters">>],maps:is_key(K,P)]),
     case maps:find(<<"audio_meters">>,P) of error -> ok;{ok,Meters} -> ba_audio_diagnostics:validate_meters(Meters) end,
     case maps:find(<<"audio_trace">>,P) of error -> ok;{ok,Trace} -> ba_audio_diagnostics:validate_trace(Trace) end,
     case maps:find(<<"audio_diagnostics">>,P) of error -> ok;{ok,D} -> ba_audio_diagnostics:validate(D) end,
@@ -434,15 +417,7 @@ capability_payload(P) ->
             end,Audio);
         error -> ok
     end,
-    true = hex(maps:get(<<"instance">>,P),32),true = uint(maps:get(<<"revision">>,P)),
-    Test = maps:get(<<"test">>,P),
-    exact(Test,[<<"supported">>,<<"available">>,<<"requires_consent">>,<<"consent">>,
-                <<"capacity">>,<<"active">>,<<"max_duration_ms">>]),
-    #{<<"supported">> := true,<<"requires_consent">> := true,
-      <<"capacity">> := 2,<<"max_duration_ms">> := 10000} = Test,
-    true = is_boolean(maps:get(<<"available">>,Test)),
-    true = is_boolean(maps:get(<<"consent">>,Test)),
-    Active = maps:get(<<"active">>,Test), true = is_integer(Active) andalso Active >= 0 andalso Active =< 2.
+    true = ba_hex:valid(maps:get(<<"instance">>,P),32),true = uint(maps:get(<<"revision">>,P)).
 
 %% Reject duplicate keys, arrays, excess nesting and oversized number strings.
 decode(Data) ->
@@ -454,9 +429,6 @@ decode(Data) ->
         integer => fun(B) -> true = byte_size(B) =< 16, binary_to_integer(B) end}), Value.
 exact(M,Keys) -> true = is_map(M), true = lists:sort(maps:keys(M)) =:= lists:sort(Keys).
 uint(N) -> is_integer(N) andalso N >= 0 andalso N =< ?INT.
-hex(B,N) when is_binary(B), byte_size(B) =:= N ->
-    re:run(B,<<"^[0-9A-F]+$">>,[{capture,none}]) =:= match;
-hex(_,_) -> false.
 fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).
 put(Peer,Session,#{sessions := Sessions} = S) -> S#{sessions := Sessions#{Peer => Session}}.
 attempt(Fun,S) ->

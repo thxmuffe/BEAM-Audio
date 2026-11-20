@@ -115,7 +115,7 @@ incoming(#{<<"op">> := <<"presence">>, <<"online">> := Online}, S) when is_list(
     notify({presence, Online}, S), S#{online := Online};
 incoming(#{<<"op">> := <<"found">>,<<"request">> := Request,<<"owners">> := Owners},S)
         when is_list(Owners),length(Owners)=<16 ->
-    true=lists:all(fun(Id) -> ba_buffee_job:hex(Id,64) end,Owners),
+    true=lists:all(fun(Id) -> ba_hex:valid(Id,64) end,Owners),
     lookup_reply(Request,{ok,Owners},S);
 incoming(#{<<"op">> := <<"error">>, <<"request">> := Request, <<"error">> := Error}, S) ->
     notify({error, Request, Error}, S), lookup_reply(Request,{error,Error},S#{error := Error});
@@ -155,11 +155,7 @@ deliver(P,Event,#{url := URL}) ->
         _ -> {error,overloaded}
     end.
 tls_options() ->
-    Setting = case ba_settings:env("BA_RELAY_CA_FILE") of
-        false -> ba_settings:app(relay_cacertfile);
-        Path0 -> {ok, Path0}
-    end,
-    CA = case Setting of
+    CA = case ba_settings:app(relay_cacertfile) of
         {ok, Path} -> [{cacertfile, Path}];
         undefined -> [{cacerts, public_key:cacerts_get()}]
     end,

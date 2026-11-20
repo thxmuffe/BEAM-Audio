@@ -30,7 +30,6 @@ main() ->
                 os:putenv("BA_DEVICE_NAME",ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name())),
                 application:load(ba_core),
                 application:set_env(ba_core,restore_buffee_on_start,true),
-                application:set_env(ba_core,buffee_default_permissions,ba_app_session:permissions()),
                 {ok,_}=ba_runtime:start();
             false -> ok
         end,

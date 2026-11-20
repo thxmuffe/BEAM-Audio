@@ -1,8 +1,6 @@
 %% Local publication API. Remote discovery/subscription belongs to Buffee control.
 -module(ba_audio).
--export([publish/1,publish/2,unpublish/1,pause/2,rebind/2,sources/0,describe/1,watch_sources/0,
-         subscribe/2,ready/1,close/1,sessions/0,listen/2,
-         validate_offer/1,validate_request/2,handler/0,backend/0]).
+-export([publish/1,publish/2,unpublish/1,rebind/2,sources/0,describe/1,validate_offer/1]).
 publish(Offer) -> publish(Offer,self()).
 publish(Offer0,undefined) -> publish(Offer0,self());
 publish(Offer0,Owner) when is_pid(Owner),node(Owner)=:=node() ->
@@ -23,19 +21,10 @@ publish(Offer0,Owner) when is_pid(Owner),node(Owner)=:=node() ->
     end.
 unpublish(Source) when node(Source)=:=node() -> gen_server:stop(Source).
 rebind(Source,Clock) when node(Source)=:=node() -> gen_server:call(Source,{rebind,Clock}).
-pause(Source,B) when node(Source)=:=node(),is_boolean(B) -> gen_server:call(Source,{pause,B}).
 sources() ->
     case ba_session_scope:whereis(ba_audio_sup) of undefined -> [];_ ->
         [P || {{source,_},P,_,_} <- supervisor:which_children(ba_session_scope:ref(ba_audio_sup)),is_pid(P)] end.
 describe(Source) when is_pid(Source),node(Source)=:=node() -> gen_server:call(Source,describe).
-watch_sources() -> {error,use_buffee_catalogue}.
-sessions() -> ba_audio_sup:sessions().
-handler() -> (ba_stream_handler_native:info())#{transport => <<"gst_aac_rtp_v2">>}.
-backend() -> handler().
-subscribe(_,_) -> {error,use_publisher_and_source_subscription}.
-ready(_) -> {error,subscription_owner_controls_setup}.
-close(Session) when node(Session)=:=node() -> gen_server:stop(Session).
-listen(_,_) -> {error,subscription_owner_controls_consumer}.
 with_runtime(Fun) -> case ba_audio_sup:ensure_started() of ok -> Fun();Error -> Error end.
 validate_offer(#{name := Name,source_key := Key,profiles := #{channel := D} = Profiles})
         when is_binary(Name),byte_size(Name)>0,byte_size(Name)=<128,
@@ -44,5 +33,4 @@ validate_offer(#{name := Name,source_key := Key,profiles := #{channel := D} = Pr
         Handler -> case Handler:validate_descriptor(channel,D) of ok -> ok;_ -> {error,unsupported_collection_format} end
     catch error:function_clause -> {error,unsupported_collection_format} end;
 validate_offer(_) -> {error,invalid_offer}.
-validate_request(#{profile := channel,selector := all},#{profiles := #{channel := D}}) -> {ok,D};
-validate_request(_,_) -> {error,invalid_request}.
+

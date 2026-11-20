@@ -1,6 +1,6 @@
 %% Local app boundary. Consent is device-local; no remote caller can enable it.
 -module(ba_app_session).
--export([configure/0,configure/1,consent/0,capability/2,snapshot/0,exclude/2,excluded/1,exclusions/0,contract/3,permissions/0]).
+-export([configure/0,configure/1,consent/0,capability/2,snapshot/0,exclude/2,excluded/1,contract/3]).
 -ifdef(TEST).
 -export([unavailable_capabilities/0]).
 -endif.
@@ -16,11 +16,8 @@ configure(#{platform := Platform}) ->
     %% Native AAC is the only audio path; output is the native stream host.
     Capture=case Platform of mac -> ba_mac_native_audio;windows -> ba_windows_native_audio;_ -> ba_no_capture end,
     application:set_env(ba_core,audio_automation,true),
-    application:set_env(ba_core,audio_capture_adapter,Capture),
-    application:set_env(ba_core,buffee_default_permissions,permissions()).
+    application:set_env(ba_core,audio_capture_adapter,Capture).
 
-permissions() -> [<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>,
-    <<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>].
 consent() ->
     case ba_session_scope:whereis(ba_device_config) of
         undefined -> #{speaker => false,microphone => false,broadcast => false,calibrate_microphone => false,calibrate_speaker => false,dsp => false};
@@ -35,7 +32,7 @@ exclusions() -> ba_device_store:load(buffee_exclusions,[]).
 excluded(Peer) -> lists:member(Peer,exclusions()).
 exclude(Peer,B) when is_boolean(B) ->
     {Public,_}=ba_device_store:identity(),Self=binary:encode_hex(Public),
-    case ba_buffee_job:hex(Peer,64) andalso Peer=/=Self andalso is_pid(ba_session_scope:whereis(ba_buffee_control)) of
+    case ba_hex:valid(Peer,64) andalso Peer=/=Self andalso is_pid(ba_session_scope:whereis(ba_buffee_control)) of
         true ->
             Old=exclusions(),New=case B of true -> lists:usort([Peer|Old]);false -> lists:delete(Peer,Old) end,
             ok=ba_device_store:save(buffee_exclusions,New),
@@ -49,8 +46,8 @@ snapshot() ->
     Buffee=ba_buffee:status(),Config=ba_device_config:snapshot(),
     Base=#{profile => buffee_control,device => Id,device_name => ba_device_label:local(Id),device_label => ba_device_label:display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name()))),buffee => Buffee,connection => ba_buffee:connection(),contacts => ba_contacts:list(),live => #{microphone => ba_settings:get(mic_live,false)=:=true,muted => ba_settings:get(muted,false)=:=true},
         desks => safe(fun ba_buffee_desks:status/0,#{}),
-        default_desk => ba_settings:app(default_reception_desk_url,<<>>),
-        configuration => maps:without([entries],Config),consent => consent(),excluded => exclusions(),messages => [],devices => [],jobs => [],
+        default_desk => ba_buffee_passport:default_desk(),
+        configuration => maps:without([entries],Config),consent => consent(),excluded => exclusions(),messages => [],devices => [],
         audio_diagnostics => ba_audio_diagnostics:options(),audio => #{},clock => #{state => idle},passport => #{},
         unavailable_capabilities => unavailable_capabilities()},
     case maps:get(state,Buffee) of
@@ -71,10 +68,7 @@ snapshot() ->
                 state => case D=:=Id orelse maps:get(stage,maps:get(D,maps:get(sessions,Control,#{}),#{}),lapsed)=:=authorized of
                     true -> authorized;false -> disconnected end}
                 || D <- maps:get(members,Buffee,[])],
-            LocalJobs=[#{id => atom_to_binary(K),device => Id,capability => K,state => maps:get(state,V,waiting)}
-                || {K,V} <- maps:to_list(maps:get(audio,Handler,#{})),maps:get(state,V,disabled)=/=disabled],
             Base#{device_name := LocalName,handler => Handler,devices := Devices,audio := Audio,clock := Clock,
-                jobs := LocalJobs++[J#{id => Key} || {Key,J} <- maps:to_list(maps:get(jobs,Control,#{}))],
                 messages := safe(fun ba_buffee_chat:history/0,[]),
                 passport := maps:with([buffee,owner,grant_holders,membership,privileges,state,epoch,revision],Buffee)}
     end.

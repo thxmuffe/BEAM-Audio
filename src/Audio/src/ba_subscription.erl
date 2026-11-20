@@ -18,9 +18,9 @@ validate(Items) ->
     true = is_map(Items) andalso map_size(Items) =< 16,
     maps:foreach(fun(Id,I) ->
         [buffee,device,gain,id,name,playing,profile,source_key] = lists:sort(maps:keys(I)),
-        Id = maps:get(id,I),true = ba_buffee_job:hex(Id,32),
-        true = ba_buffee_job:hex(maps:get(buffee,I),32),
-        true = ba_buffee_job:hex(maps:get(device,I),64),
+        Id = maps:get(id,I),true = ba_hex:valid(Id,32),
+        true = ba_hex:valid(maps:get(buffee,I),32),
+        true = ba_hex:valid(maps:get(device,I),64),
         [begin B = maps:get(K,I),true = is_binary(B) andalso byte_size(B)>0 andalso byte_size(B)=<128 end
             || K <- [name,source_key]],
         channel = maps:get(profile,I),true = is_boolean(maps:get(playing,I)),

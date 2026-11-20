@@ -2,7 +2,7 @@
 -include_lib("eunit/include/eunit.hrl").
 contract_is_scoped_to_receiver_and_source_test() ->
     Id=ba_app_session:contract(<<"buffee">>,<<"publisher">>,#{receiver => <<"one">>,source => <<"mic">>}),
-    ?assert(ba_buffee_job:hex(Id,32)),
+    ?assert(ba_hex:valid(Id,32)),
     ?assertEqual(Id,ba_app_session:contract(<<"buffee">>,<<"publisher">>,#{receiver => <<"one">>,source => <<"mic">>})),
     ?assertNotEqual(Id,ba_app_session:contract(<<"buffee">>,<<"publisher">>,#{receiver => <<"two">>,source => <<"mic">>})),
     ?assertNotEqual(Id,ba_app_session:contract(<<"buffee">>,<<"publisher">>,#{receiver => <<"one">>,source => <<"output">>})).
@@ -32,7 +32,7 @@ exclusions_are_memory_only_test() ->
 restore(Entries) -> [case V of undefined -> application:unset_env(ba_core,K);{ok,X} -> application:set_env(ba_core,K,X) end || {K,V} <- Entries],ok.
 
 ios_configuration_discards_only_old_buffee_snapshots_test() ->
-    Keys=[audio_automation,audio_capture_adapter,audio_output_adapter,buffee_default_permissions,restore_buffee_on_start],
+    Keys=[audio_automation,audio_capture_adapter,audio_output_adapter,restore_buffee_on_start],
     Old=[{K,application:get_env(ba_core,K)} || K <- Keys],
     Platform=os:getenv("BA_PLATFORM"),State=os:getenv("BA_STATE_DIR"),
     Dir=filename:join("/tmp","ba-ios-migration-"++integer_to_list(erlang:unique_integer([positive]))),

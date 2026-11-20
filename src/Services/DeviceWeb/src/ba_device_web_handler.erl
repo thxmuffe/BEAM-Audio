@@ -150,7 +150,7 @@ view(Snap) ->
             <<"subscriptions">> => maps:map(fun(_,I) when is_map(I) -> maps:with([<<"state">>,<<"device">>,<<"playing">>],I);(_,I) -> I end,
                                            maps:get(<<"subscriptions">>,Audio0,#{}))},
     Managed=maps:with([<<"name">>],maps:get(<<"managed">>,Snap,#{})),
-    (maps:without([<<"desks">>,<<"diagnostics">>,<<"jobs">>,<<"passport">>,<<"request_id">>],Snap))#{
+    (maps:without([<<"desks">>,<<"diagnostics">>,<<"passport">>,<<"request_id">>],Snap))#{
         <<"clock">> => Clock,<<"handler">> => Handler,<<"audio">> => Audio,<<"managed">> => Managed}.
 
 asset(Path,Req,#{assets := Root}) ->

@@ -2,7 +2,7 @@
 %% versioned privilege policy and `grant` delegation certificates. The module
 %% keeps its historical name; there is no separate passport credential.
 -module(ba_buffee_passport).
--export([sign/2,verify/2,decode/1,exact/2,session_id/2,mailbox/1,
+-export([default_desk/0,sign/2,verify/2,decode/1,exact/2,session_id/2,mailbox/1,
          invitation/1,link/1,parse_invitation/1,genesis/2,policy/1,statement/2,delegation/4,
          grant_revision/3,urls/1,permissions/1,permission/1,
          invitation_key/1,join/3,joined/4,envelope_key/1,seal_envelope/3,open_envelope/3]).
@@ -14,14 +14,14 @@ sign(Body,Private) ->
     Packet = iolist_to_binary(json:encode(#{<<"body">> => base64:encode(Data),<<"signature">> => binary:encode_hex(Sig)})),
     true = byte_size(Packet) =< 32768,Packet.
 verify(Packet,Signer) when is_binary(Packet),byte_size(Packet) =< 32768 ->
-    true = hex(Signer,64),E = decode(Packet),exact(E,[<<"body">>,<<"signature">>]),
-    Sig = maps:get(<<"signature">>,E),true = hex(Sig,128),Data = base64:decode(maps:get(<<"body">>,E)),
+    true = ba_hex:valid(Signer,64),E = decode(Packet),exact(E,[<<"body">>,<<"signature">>]),
+    Sig = maps:get(<<"signature">>,E),true = ba_hex:valid(Sig,128),Data = base64:decode(maps:get(<<"body">>,E)),
     true = crypto:verify(eddsa,none,[?DOMAIN,Data],binary:decode_hex(Sig),[binary:decode_hex(Signer),ed25519]),
     decode(Data).
 
 %% The Session ID names its creator: anyone can check it without a registry.
 session_id(Creator,Nonce) ->
-    true = hex(Creator,64),true = hex(Nonce,32),
+    true = ba_hex:valid(Creator,64),true = ba_hex:valid(Nonce,32),
     binary:part(binary:encode_hex(crypto:hash(sha256,[binary:decode_hex(Creator),binary:decode_hex(Nonce)])),0,32).
 %% Every participant advertises this mailbox; Reception sees it, not the secret.
 mailbox(Secret) ->
@@ -51,13 +51,13 @@ invitation_key(Secret) ->
     {Public,Private} = crypto:generate_key(eddsa,ed25519,crypto:hash(sha256,[?INVITATION_KEY,Secret])),
     {binary:encode_hex(Public),Private}.
 join(Buffee,Device,Private) ->
-    true = hex(Buffee,32) andalso hex(Device,64),
+    true = ba_hex:valid(Buffee,32) andalso ba_hex:valid(Device,64),
     binary:encode_hex(crypto:sign(eddsa,none,[?JOIN,Buffee,Device],[Private,ed25519])).
 joined(Buffee,Device,Join,Invitation) ->
-    hex(Join,128) andalso hex(Invitation,64) andalso
+    ba_hex:valid(Join,128) andalso ba_hex:valid(Invitation,64) andalso
         crypto:verify(eddsa,none,[?JOIN,Buffee,Device],binary:decode_hex(Join),[binary:decode_hex(Invitation),ed25519]).
 %% v6 links carry a 128-bit secret; v5 links carried 256 bits.
-secret(Secret) -> hex(Secret,32) orelse hex(Secret,64).
+secret(Secret) -> ba_hex:valid(Secret,32) orelse ba_hex:valid(Secret,64).
 
 %% v5 transports the exact signed JSON bytes plus the raw Ed25519 signature.
 invitation(Packet) ->
@@ -73,11 +73,12 @@ invitation(Packet) ->
 %% against the creator key, and learn the name from the signed policy.
 -define(V6,<<"beamaudio://s/">>).
 link(#{<<"authority">> := Creator,<<"nonce">> := Nonce,<<"secret">> := Secret,<<"desks">> := Desks}) ->
-    true = hex(Secret,32),urls(Desks),
+    true = ba_hex:valid(Secret,32),urls(Desks),
     Tail = case Desks =:= [default_desk()] of true -> <<>>;false -> iolist_to_binary(lists:join(<<"\n">>,Desks)) end,
     Bytes = <<6,(binary:decode_hex(Creator))/binary,(binary:decode_hex(Nonce))/binary,(binary:decode_hex(Secret))/binary,Tail/binary>>,
     <<?V6/binary,(base64:encode(Bytes,#{mode => urlsafe,padding => false}))/binary>>.
-default_desk() -> ba_settings:app(default_reception_desk_url,<<"wss://beamaudio.onrender.com/reception">>).
+%% The one default Reception: ba_core.app.src (default_reception_desk_url).
+default_desk() -> {ok,URL}=ba_settings:app(default_reception_desk_url),URL.
 %% A v6 link parses to the same fields as v5, so everything after parsing is shared.
 parse_invitation(<<"beamaudio://s/",Ticket/binary>>=Link) when byte_size(Link) =< 4096 ->
     <<6,Creator:32/binary,Nonce:16/binary,Secret:16/binary,Tail/binary>> = base64:decode(Ticket,#{mode => urlsafe,padding => false}),
@@ -96,7 +97,7 @@ parse_invitation(Link) when is_binary(Link),byte_size(Link) =< 32768 ->
     Body = verify(Packet,maps:get(<<"authority">>,decode(Data))),
     exact(Body,[<<"v">>,<<"type">>,<<"buffee">>,<<"authority">>,<<"nonce">>,<<"secret">>,<<"desks">>,<<"name">>]),
     #{<<"v">> := 1,<<"type">> := <<"invitation">>,<<"buffee">> := Buffee,<<"authority">> := Creator,<<"nonce">> := Nonce} = Body,
-    Buffee = session_id(Creator,Nonce),true = hex(maps:get(<<"secret">>,Body),64),
+    Buffee = session_id(Creator,Nonce),true = ba_hex:valid(maps:get(<<"secret">>,Body),64),
     Name = maps:get(<<"name">>,Body),true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
     urls(maps:get(<<"desks">>,Body)),{Packet,Body}.
 
@@ -110,13 +111,13 @@ genesis(Invitation,Defaults) ->
 policy(P) ->
     exact(P,[<<"v">>,<<"type">>,<<"buffee">>,<<"authority">>,<<"manager">>,<<"revision">>,<<"members">>,<<"removed">>]),
     #{<<"v">> := 2,<<"type">> := <<"policy">>,<<"members">> := Members,<<"removed">> := Removed} = P,
-    true = hex(maps:get(<<"buffee">>,P),32),
+    true = ba_hex:valid(maps:get(<<"buffee">>,P),32),
     true = is_map(Members) andalso map_size(Members) =< 16,
-    [true = hex(maps:get(K,P),64) || K <- [<<"authority">>,<<"manager">>]],
+    [true = ba_hex:valid(maps:get(K,P),64) || K <- [<<"authority">>,<<"manager">>]],
     natural(maps:get(<<"revision">>,P)),
     true = is_list(Removed) andalso length(Removed) =< 31 andalso lists:usort(Removed) =:= Removed,
-    true = lists:all(fun(D) -> hex(D,64) andalso not maps:is_key(D,Members) end,Removed),
-    maps:foreach(fun(Id,M) -> true = hex(Id,64),exact(M,[<<"permissions">>]),
+    true = lists:all(fun(D) -> ba_hex:valid(D,64) andalso not maps:is_key(D,Members) end,Removed),
+    maps:foreach(fun(Id,M) -> true = ba_hex:valid(Id,64),exact(M,[<<"permissions">>]),
         permissions(maps:get(<<"permissions">>,M)) end,Members),ok.
 %% A signed policy statement and the delegation certificates of its grant holders.
 statement(Packet,Signer) ->
@@ -147,7 +148,6 @@ permissions(L) ->
     true = is_list(L) andalso length(L) =< 10 andalso lists:usort(L) =:= L,
     [permission(P) || P <- L],ok.
 permission(<<"capabilities_read">>) -> capabilities_read;
-permission(<<"job_offer">>) -> job_offer;
 permission(<<"status_read">>) -> status_read;
 permission(<<"stream_read">>) -> stream_read;
 permission(<<"stream_subscribe">>) -> stream_subscribe;
@@ -161,7 +161,6 @@ urls(L) ->
     true = lists:usort(L) =:= lists:sort(L),true = lists:all(fun ba_relay:valid_url/1,L),ok.
 exact(M,Keys) -> true = is_map(M),true = lists:sort(maps:keys(M)) =:= lists:sort(Keys),ok.
 natural(N) -> true = is_integer(N) andalso N >= 0 andalso N =< 9007199254740991,ok.
-hex(B,N) -> ba_buffee_job:hex(B,N).
 decode(Data) when is_binary(Data),byte_size(Data) =< 32768 ->
     {V,_,<<>>} = json:decode(Data,{0,undefined},#{
         object_start => fun({D,_}) -> true = D < 5,{D+1,#{}} end,

@@ -3,14 +3,12 @@
 %% SDP/ICE control; audio never passes through it.
 -module(ba_audio_receiver).
 -behaviour(gen_server).
--export([start_link/0,snapshot/0,refresh/0,refresh/1,subscribe/2,subscribe/3,stop/0,stop/1,
-         playback/1,playback/2,gain/2,set_contract/5,clear_contract/3,register_source/1,
+-export([start_link/0,snapshot/0,subscribe/2,subscribe/3,stop/0,stop/1,
+         playback/1,playback/2,set_contract/5,clear_contract/3,register_source/1,
          suspend/0,resume/0,network_changed/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 snapshot() -> call(snapshot).
-refresh() -> call(refresh).
-refresh(Peer) -> call({refresh,Peer}).
 subscribe({Peer,Source},Profile) -> subscribe(Peer,Source,Profile);
 subscribe(_,_) -> {error,publisher_and_source_required}.
 subscribe(Peer,Source,Profile) -> call({subscribe,Peer,Source,Profile}).
@@ -18,7 +16,6 @@ stop() -> call(stop).
 stop(Id) -> call({stop,Id}).
 playback(_) -> {error,subscription_id_required}.
 playback(Id,Action) -> call({playback,Id,Action}).
-gain(Id,G) -> call({gain,Id,G}).
 set_contract(Direction,Peer,Source,Id,Revision) -> call({contract,Direction,Peer,Source,Id,Revision}).
 clear_contract(Direction,Peer,Source) -> call({clear_contract,Direction,Peer,Source}).
 register_source(Pid) -> call({register,Pid}).
@@ -62,7 +59,7 @@ handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pi
 handle_call({contract,Direction,Peer,Key,Id,Revision},_,#{contracts := Contracts} = S) ->
     try
         true = Direction=:=publish orelse Direction=:=receive_audio,
-        true = ba_buffee_job:hex(Peer,64),true = ba_buffee_job:hex(Id,32),
+        true = ba_hex:valid(Peer,64),true = ba_hex:valid(Id,32),
         true = is_binary(Key) andalso byte_size(Key)>0 andalso byte_size(Key)=<128,
         true = is_integer(Revision) andalso Revision>0 andalso Revision=<9007199254740991,
         ContractKey = {Direction,Peer,Key},
@@ -78,9 +75,6 @@ handle_call({contract,Direction,Peer,Key,Id,Revision},_,#{contracts := Contracts
 handle_call({clear_contract,Direction,Peer,Key},_,S) when Direction=:=publish;Direction=:=receive_audio ->
     C = {Direction,Peer,Key},Next = stop_contract(C,S),
     {reply,ok,Next#{contracts := maps:remove(C,maps:get(contracts,S))}};
-handle_call({refresh,Peer},_,S) ->
-    {Reply,Next} = catalog(Peer,S),{reply,Reply,Next};
-handle_call(refresh,_,S) -> {reply,ok,refresh_all(S)};
 handle_call({subscribe,Peer,Key,channel},_,#{subscriptions := Items,offers := Offers} = S) when map_size(Items)<16 ->
     Existing = lists:any(fun(R) -> I = maps:get(intent,R),maps:get(device,I)=:=Peer andalso maps:get(source_key,I)=:=Key end,maps:values(Items)),
     case {Existing,maps:find({Peer,Key},Offers),context(Peer)} of
@@ -109,13 +103,6 @@ handle_call({playback,Id,Action},_,#{subscriptions := Items} = S) when Action=:=
                 {ok,NextR} -> {reply,ok,persist(S#{subscriptions := Items#{Id := NextR#{intent := I#{playing := Playing}}}})};
                 Error -> {reply,Error,S}
             end;
-        error -> {reply,{error,unknown_subscription},S}
-    end;
-handle_call({gain,Id,G},_,#{subscriptions := Items} = S) when is_number(G),G>=0,G=<1 ->
-    case maps:find(Id,Items) of
-        {ok,#{intent := I} = R} ->
-            case maps:get(mix_ready,R,false) of true -> output_gain(Id,G,R);false -> ok end,
-            {reply,ok,persist(S#{subscriptions := Items#{Id := R#{intent := I#{gain := G}}}})};
         error -> {reply,{error,unknown_subscription},S}
     end;
 handle_call(suspend,_,S) -> {reply,ok,disconnect_all(S#{suspended := true})};
@@ -596,7 +583,6 @@ publication_allowed(Peer,Key) ->
 backend_missing(_) -> not ba_native_media_session:available().
 disable_output(_,#{session := P}) when is_pid(P) -> native_output(P,{output,pause});
 disable_output(_,_) -> ok.
-output_gain(_,G,#{session := P}) -> native_output(P,{gain,G}).
 
 native_output(P,Command) ->
     try gen_server:call(P,Command,1500) catch exit:_ -> {error,native_endpoint_unavailable} end.

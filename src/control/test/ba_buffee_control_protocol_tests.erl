@@ -64,9 +64,7 @@ capability_permissions_and_reply_test() ->
     Granted = SB#{policy := Policy#{members := #{A => [capabilities_read,status_read]}}},
     {ok,Query,A1} = p(request_capabilities,[B,5,SA]),
     {ok,[],[{capabilities_read,Request}],B1} = p(receive_packet,[A,Query,6,Granted]),
-    Caps = #{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0,<<"test">> => #{
-        <<"supported">> => true,<<"available">> => false,<<"requires_consent">> => true,
-        <<"consent">> => false,<<"capacity">> => 2,<<"active">> => 0,<<"max_duration_ms">> => 10000}},
+    Caps = #{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0},
     {ok,Reply,B2} = p(reply_capabilities,[A,Request,Caps,7,B1]),
     WrongKind = resign(Reply,KB,fun(M) -> M#{<<"op">> := <<"status.reply">>,
         <<"payload">> := #{<<"protocol">> => 1,<<"session">> => <<"authorized">>}} end),
@@ -80,42 +78,15 @@ capability_permissions_and_reply_test() ->
     ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"unavailable">>}}],_},
         p(receive_packet,[B,Unavailable,8,A1])).
 
-jobs_use_grants_not_a_manager_role_test() ->
+sender_signature_and_join_certificate_are_bound_test() ->
     {A,B,KA,_,SA,SB} = connected(),
-    Id = binary:copy(<<"C">>,32), Offer = job_offer(),
-    {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
-    ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
-    PolicyB = maps:get(policy,SB),
-    GrantedB = SB#{policy := PolicyB#{members := #{A => [job_offer,status_read]}}},
-    ?assertMatch({ok,[],[{job,<<"job.offer">>,Id,Offer,#{peer := A}}],_},
-        p(receive_packet,[A,Packet,6,GrantedB])),
-    {ok,MemberPacket,_} = p(job_message,[A,<<"job.offer">>,Id,Offer,5,SB]),
-    ?assertMatch({error,_,SA},p(receive_packet,[B,MemberPacket,6,SA])),
-    PolicyA = maps:get(policy,SA),
-    GrantedA = SA#{policy := PolicyA#{members := #{B => [job_offer,status_read]}}},
-    ?assertMatch({ok,[],[{job,<<"job.offer">>,Id,Offer,#{peer := B}}],_},p(receive_packet,[B,MemberPacket,6,GrantedA])),
-    Impostor = resign(MemberPacket,KA,fun(M) -> M end),
-    ?assertMatch({error,_,GrantedA},p(receive_packet,[B,Impostor,6,GrantedA])),
+    {ok,FromA,_} = p(request_capabilities,[B,5,SA]),
+    {ok,FromB,_} = p(request_capabilities,[A,5,SB]),
+    %% B's request re-signed with A's key is not B's.
+    ?assertMatch({error,_,SA},p(receive_packet,[B,resign(FromB,KA,fun(M) -> M end),6,SA])),
     %% A Device's join certificate cannot be reused by another Device.
-    Borrowed = resign(Packet,KA,fun(M) -> M#{<<"join">> := maps:get(<<"join">>,body(MemberPacket))} end),
-    ?assertMatch({error,_,GrantedB},p(receive_packet,[A,Borrowed,6,GrantedB])).
-
-job_schema_and_expiry_test() ->
-    {A,B,KA,_,SA,SB} = connected(),
-    Id = binary:copy(<<"C">>,32), Offer = job_offer(),
-    Policy = maps:get(policy,SB), Granted = SB#{policy := Policy#{members := #{A => [job_offer]}}},
-    {ok,Packet,_} = p(job_message,[B,<<"job.offer">>,Id,Offer,5,SA]),
-    [?assertMatch({error,_,Granted},p(receive_packet,[A,
-        resign(Packet,KA,fun(M) -> M#{<<"payload">> := Bad} end),6,Granted])) || Bad <-
-        [Offer#{<<"module">> => <<"os">>},Offer#{<<"capability">> := <<"microphone">>},
-         Offer#{<<"lease_ms">> := 0},Offer#{<<"lease_ms">> := 10001},
-         Offer#{<<"contract_revision">> := 0},Offer#{<<"duration_ms">> := 20.5}]],
-    ?assertException(error,_,ba_buffee_job:validate_report(
-        #{<<"state">> => <<"accepted">>,<<"attempt">> => null,<<"reason">> => <<"none">>})).
-
-job_offer() -> #{<<"contract">> => binary:copy(<<"D">>,32),<<"contract_revision">> => 1,
-    <<"capability">> => <<"test">>,<<"duration_ms">> => 1000,<<"lease_ms">> => 5000}.
-
+    Borrowed = resign(FromA,KA,fun(M) -> M#{<<"join">> := maps:get(<<"join">>,body(FromB))} end),
+    ?assertMatch({error,_,SB},p(receive_packet,[A,Borrowed,6,SB])).
 
 forgery_recipient_scope_and_policy_test() ->
     {A,B,KA,KB,SA,SB} = connected(),
@@ -279,9 +250,7 @@ audio_capability_shape_is_bounded_and_authenticated_test() ->
     {ok,[],[{capabilities_read,Id}],B1}=p(receive_packet,[A,Query,6,Granted]),
     Entry=#{<<"consent">> => true,<<"available">> => false,<<"state">> => <<"waiting_for_clock">>},
     Caps=#{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0,
-        <<"audio">> => #{<<"speaker">> => Entry,<<"microphone">> => Entry,<<"broadcast">> => Entry},
-        <<"test">> => #{<<"supported">> => true,<<"available">> => false,<<"requires_consent">> => true,
-            <<"consent">> => false,<<"capacity">> => 2,<<"active">> => 0,<<"max_duration_ms">> => 10000}},
+        <<"audio">> => #{<<"speaker">> => Entry,<<"microphone">> => Entry,<<"broadcast">> => Entry}},
     {ok,Reply,_}=p(reply_capabilities,[A,Id,Caps,7,B1]),
     ?assertMatch({ok,[],[{reply,<<"capabilities.reply">>,Caps}],_},p(receive_packet,[B,Reply,8,A1])),
     Bad=Caps#{<<"audio">> := (maps:get(<<"audio">>,Caps))#{<<"execute">> => Entry}},
@@ -295,9 +264,7 @@ meter_request_and_reply_are_opt_in_and_bounded_test() ->
     E=#{<<"consent">> => true,<<"available">> => true,<<"state">> => <<"running">>,
         <<"peak_db">> => -3.0,<<"rms_db">> => -6.0,<<"meter_age_ms">> => 2,<<"meter_stage">> => <<"capture">>,<<"frames">> => 480},
     Caps=#{<<"audio_diagnostics">> => #{<<"mixer.failure.missed_packet_target">> => 4,<<"clock.state">> => <<"synchronized">>},<<"device_name">> => <<"Paavo’s iPhone (2)"/utf8>>,<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 1,
-        <<"audio">> => #{<<"speaker">> => E,<<"microphone">> => E,<<"broadcast">> => E},
-        <<"test">> => #{<<"supported">> => true,<<"available">> => false,<<"requires_consent">> => true,
-            <<"consent">> => false,<<"capacity">> => 2,<<"active">> => 0,<<"max_duration_ms">> => 10000}},
+        <<"audio">> => #{<<"speaker">> => E,<<"microphone">> => E,<<"broadcast">> => E}},
     {ok,Reply,_}=p(reply_capabilities,[A,Id,Caps,7,B1]),
     ?assertMatch({ok,[],[{reply,<<"capabilities.reply">>,Caps}],_},p(receive_packet,[B,Reply,8,A1])),
     ?assertMatch({error,_,B1},p(reply_capabilities,[A,Id,Caps#{<<"device_name">> := binary:copy(<<"x">>,257)},7,B1])),
@@ -326,9 +293,7 @@ monitor_payload_roundtrip_with_dual_meters_and_trace_test() ->
     {ok,[],[{capabilities_read,Id,true}],B1}=p(receive_packet,[A,Q,6,Granted]),
     Meter=#{<<"peak_db">> => -3.0,<<"rms_db">> => -6.0,<<"meter_age_ms">> => 1,<<"meter_stage">> => <<"receive_max">>},
     Base=#{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0,
-        <<"audio_diagnostics">> => ba_audio_diagnostics:snapshot(#{},#{}),
-        <<"test">> => #{<<"supported">> => true,<<"available">> => false,<<"requires_consent">> => true,
-            <<"consent">> => false,<<"capacity">> => 2,<<"active">> => 0,<<"max_duration_ms">> => 10000}},
+        <<"audio_diagnostics">> => ba_audio_diagnostics:snapshot(#{},#{})},
     lists:foreach(fun({Meters,Trace}) ->
         Caps=Base#{<<"audio_meters">> => Meters,<<"audio_trace">> => Trace},
         {ok,Reply,_}=p(reply_capabilities,[A,Id,Caps,7,B1]),

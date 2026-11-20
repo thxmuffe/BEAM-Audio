@@ -7,9 +7,7 @@
 The receiver checks each request against its current signed rights statement:
 members' rights, default rights for every other joined Device, and removed
 Devices. There is no peer list: any Device whose join certificate checks out
-against the invitation key may ask (see BUFFEE_MEMBERSHIP.md). `job_offer` additionally
-requires the job_offer grant and recipient's matching local Contract/consent.
-The [Handler guide](DEVICE_HANDLER.md) describes that local lifecycle.
+against the invitation key may ask (see BUFFEE_MEMBERSHIP.md).
 
 No connection is needed before a request: every packet authenticates itself and
 the receiving Device decides it through `ba_device_request` (authenticate,
@@ -19,9 +17,8 @@ sends one `hello` (answered by `ready`) for consumers that need a relationship
 before they have anything to ask, such as audio discovery and the clock. Both
 endpoints can call `read_status(PeerId)`. Successful replies contain only
 `#{<<"protocol">> => 1, <<"session">> => <<"authorized">>}`.
-`read_capabilities(PeerId)` returns the Handler's bounded test capability snapshot
+`read_capabilities(PeerId)` returns the Handler's bounded capability snapshot
 when the peer has the separate capability grant; reading never enables Workers.
-`ba_runtime:connect/1` is the old OTP API and is not used by this profile.
 
 
 
@@ -61,13 +58,10 @@ with `beamaudio-buffee-control/v1:`. The body has these exact fields:
 | `status.reply` | `protocol`: 1, `session`: `authorized`. Matching outstanding unexpired read to that peer. |
 | `status.error` | `reason`: `forbidden`. Correlated response when peer lacks read permission. |
 | `capabilities.read` | Empty object. A `capabilities_read` grant. |
-| `capabilities.reply` | Exact Handler instance/revision and test capability described in [DEVICE_HANDLER.md](DEVICE_HANDLER.md#capability-advertisement). Must match a pending capability query. |
+| `capabilities.reply` | Exact Handler instance/revision, plus optional name, audio states and consented diagnostics ([DEVICE_HANDLER.md](DEVICE_HANDLER.md)). Must match a pending capability query. |
 | `capabilities.error` | `reason`: `forbidden` or `unavailable`. Matching pending capability query. |
 | `time.message` | Exact timestamp/Offset schemas in the [Time guide](BUFFEE_TIME.md); separate time_read/offset_write grants and correlated authority replies. |
 | `stream.message` | Exact flat catalogue/subscription/SDP/ICE schemas in the [stream guide](BUFFEE_STREAMS.md); requests require separate stream grants, responses must match a local attempt. |
-| `job.offer` | Exact test capability/Contract/duration/lease fields; job_offer grant and matching local coordinator Contract. Header request is the Job ID. Handler independently accepts/rejects. |
-| `job.cancel` | Empty object; verified coordinator, same grant and owned Job/session scope. |
-| `job.report` | Exact attempt/state/reason object. Adapter checks the Manager record's assignee, session, Job ID, attempt and result fence. |
 | `session.request` | `kind` plus exact fields: `privilege_release` (`privilege`), `rename_request` (`name`, needs on_air), `remove_request` (`device`, needs end_session), `ended` (needs end_session), `policy` (`signer`, signed `state`), `board` (`entries`: up to 6 signed board entries by ID), `note` (`id`, signed gossip `packet`). |
 
 Every message binds both identities, Session, join certificate, sender
@@ -87,12 +81,9 @@ never cached: each packet's signature and policy are checked on arrival.
 Reject unknown fields/versions/operations, duplicate keys, arrays, extra JSON
 values, excess nesting, malformed IDs/types and wrong policy/recipient. Size is
 checked before envelope decoding; signature verification precedes body dispatch.
-No network string becomes an atom. Invalid input changes no replay/pending state;
-the adapter also rolls back a job report's sequence if its local correlation check fails.
+No network string becomes an atom. Invalid input changes no replay/pending state.
 No executable terms, arbitrary diagnostics, module/function calls, credentials
-or audio are accepted. The separate bounded test job is fixed data, not a module/
-function invocation; its Worker is selected by the local Handler. OTP-admission
-signatures use a different domain.
+or audio are accepted. OTP-admission signatures use a different domain.
 
 Transport is currently ordered Reception WSS with verified public TLS. The Reception can
 observe payloads; signing does not supply end-to-end encryption. WebRTC control

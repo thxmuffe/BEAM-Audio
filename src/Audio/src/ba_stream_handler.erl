@@ -1,6 +1,6 @@
 %% Local media implementation boundary; existing OTP workers retain ownership.
 -module(ba_stream_handler).
--export([default/0, for_descriptor/1]).
+-export([for_descriptor/1]).
 
 -callback info() -> map().
 -callback session_module() -> module().
@@ -17,5 +17,4 @@
 
 %% One transport: native AAC (owner decision 2026-11-19). Remote descriptors
 %% cannot name modules.
-default() -> ba_stream_handler_native.
 for_descriptor(#{stream_handler := native_gst_aac}) -> ba_stream_handler_native.

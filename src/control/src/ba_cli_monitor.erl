@@ -1,6 +1,6 @@
 %% Console projection of ordinary Buffee-member observations. No PCM or audio I/O.
 -module(ba_cli_monitor).
--export([run/2,run_local/1,render/1,render/2,invitation_path/2]).
+-export([run/2,run_local/1,render/1,render/2]).
 %% Embedded launchers use the same monitor loop without a second Device/socket.
 run_local(Options) ->
     Request=fun(Command) ->

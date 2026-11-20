@@ -14,5 +14,5 @@ Manager and Inspector are predefined processes, not Device roles. Their location
 confers no administrative rights. Contracts, local consent, capacity and shared
 presentation timing remain independent requirements for performing work.
 
-See [control protocol](BUFFEE_CONTROL_PROTOCOL.md), [jobs](BUFFEE_JOBS.md),
+See [control protocol](BUFFEE_CONTROL_PROTOCOL.md),
 [streams](BUFFEE_STREAMS.md), [clock](BUFFEE_TIME.md), [architecture](ARCHITECTURE.md).

@@ -20,7 +20,7 @@ class Runtime:
     def __init__(self, paths, seed=None, state=None, executable=None, extra_env=None):
         env = dict(os.environ)
         # Never load app identities or remembered memberships/subscriptions.
-        for key in ("BA_STATE_DIR", "BA_RELAY_CA_FILE"):
+        for key in ("BA_STATE_DIR",):
             env.pop(key, None)
         self.state = tempfile.TemporaryDirectory() if state is None else None
         env["BA_STATE_DIR"] = state or self.state.name

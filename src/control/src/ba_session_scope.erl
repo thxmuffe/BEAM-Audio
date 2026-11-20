@@ -2,7 +2,7 @@
 -module(ba_session_scope).
 -export([init/0,enter/1,current/0,run/2,ref/1,registration/1,whereis/1,
          new_table/2,table/1,state_directory/1,set_env/2,unset_env/1,get_env/1,get_env/2,
-         spawn/1,spawn_link/1,spawn_monitor/1,clear/1]).
+         spawn/1,spawn_monitor/1,clear/1]).
 -define(TABLE,ba_session_registry).
 init() -> ets:new(?TABLE,[named_table,public,set,{read_concurrency,true}]),ok.
 enter(Scope) -> put(ba_session_scope,Scope),ets:insert(?TABLE,{{process,self()},Scope}),ok.
@@ -57,7 +57,6 @@ get_env(Key) -> case current() of undefined -> ba_settings:app(Key);Scope ->
     case ets:lookup(?TABLE,{env,Scope,Key}) of [{_,V}] -> {ok,V};[] -> ba_settings:app(Key) end end.
 get_env(Key,Default) -> case get_env(Key) of {ok,V} -> V;undefined -> Default end.
 spawn(F) -> Scope=current(),erlang:spawn(fun() -> run(Scope,F) end).
-spawn_link(F) -> Scope=current(),erlang:spawn_link(fun() -> run(Scope,F) end).
 spawn_monitor(F) -> Scope=current(),erlang:spawn_monitor(fun() -> run(Scope,F) end).
 clear(Scope) -> ets:match_delete(?TABLE,{{table,Scope,'_'},'_'}),
     ets:match_delete(?TABLE,{{env,Scope,'_'},'_'}),ets:match_delete(?TABLE,{{process,'_'},Scope}),ok.

@@ -9,7 +9,7 @@ validate(#{<<"kind">> := Kind} = P) ->
             [integer(maps:get(K,P)) || K <- [<<"t1">>,<<"t2">>,<<"t3">>]],
             true = integer(maps:get(<<"t2">>,P))>0,
             true = integer(maps:get(<<"t3">>,P))>=integer(maps:get(<<"t2">>,P)),
-            true = ba_buffee_job:hex(maps:get(<<"instance">>,P),32),
+            true = ba_hex:valid(maps:get(<<"instance">>,P),32),
             positive(maps:get(<<"reference_revision">>,P)),
             T = maps:get(<<"timeline">>,P),true = is_binary(T) andalso byte_size(T)=:=72,
             case maps:get(<<"uncertainty_ns">>,P) of null -> ok;B -> true = integer(B)>=0 end;

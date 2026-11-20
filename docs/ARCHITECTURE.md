@@ -34,7 +34,7 @@ backends isolated and avoid speculative abstractions. Swift hosts retain OS
 permissions and identity storage while reusing the web UI and shared BEAM APIs.
 
 Current contracts: [clock](BUFFEE_TIME.md), [audio engines](AUDIO_ENGINE_INTERFACE.md),
-[streams](BUFFEE_STREAMS.md), [jobs](BUFFEE_JOBS.md), [builds](BUILDING.md).
+[streams](BUFFEE_STREAMS.md), [builds](BUILDING.md).
 
 ## Parallel local Sessions
 

@@ -12,7 +12,6 @@ execution_gates_test() ->
         ?assertNot(ba_device_permission:allowed(broadcast)),
         ?assertNot(ba_device_permission:allowed(unknown)),
         ?assertError(badarg,ets:insert(ba_device_config,{permissions,#{speaker => true}})),
-        ?assertEqual({stop,consent_required},ba_device_test_worker:init(#{})),
         ok=ba_device_config:change(#{speaker => true,microphone => true,calibrate_microphone => true,calibrate_speaker => true},#{}),
         ?assert(ba_device_permission:allowed(playback)),
         ?assert(ba_device_permission:allowed(record)),

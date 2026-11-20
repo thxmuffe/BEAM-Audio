@@ -25,6 +25,7 @@ audio_deadline_warning_is_shared_and_rate_limited_test() ->
     Member=spawn(fun Loop() -> receive {'$gen_call',From,current} ->
         gen_server:reply(From,{ok,#{policy => #{peers => #{}}}}),Loop() end end),
     register(ba_buffee_membership,Member),
+    OldSeed=os:getenv("BA_IDENTITY_SEED"),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$A)),
     try
         Report=#{discarded => 12,mean_late_ms => 80,required_ms => 380,response_ms => 300},
         S1=step({audio_lateness,Report},#{messages => []}),
@@ -34,4 +35,7 @@ audio_deadline_warning_is_shared_and_rate_limited_test() ->
         S2=step({audio_lateness,Report},S1),?assertEqual(S1,S2),
         S3=step({audio_lateness,Report},S2#{last_audio_warning := maps:get(last_audio_warning,S2)-30000}),
         ?assertEqual(2,length(maps:get(messages,S3)))
-    after unregister(ba_buffee_membership),exit(Member,kill) end.
+    after
+        unregister(ba_buffee_membership),exit(Member,kill),
+        case OldSeed of false -> os:unsetenv("BA_IDENTITY_SEED");_ -> os:putenv("BA_IDENTITY_SEED",OldSeed) end
+    end.

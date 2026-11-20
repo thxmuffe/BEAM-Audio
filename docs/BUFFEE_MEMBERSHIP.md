@@ -48,7 +48,7 @@ microphone or system capture.
 Snapshots expose the local `privileges`, `grant_holders`, the present
 `participants`, each known Device's privileges, and (to `grant` holders) open
 `requests` per Device. A present Device without a policy entry holds the
-`buffee_default_permissions`. Limits: 16 present Devices, 16 policy entries,
+default rights (`ba_buffee_membership:defaults/0`). Limits: 16 present Devices, 16 policy entries,
 31 removed Devices and four Receptions.
 
 ## Create, join, leave and return

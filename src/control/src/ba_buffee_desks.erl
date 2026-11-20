@@ -1,16 +1,14 @@
 %% A bounded set of independent Desk connections; no membership authority here.
 -module(ba_buffee_desks).
 -behaviour(gen_server).
--export([start_link/0,reset/0,configure/4,route/0,advertise/1,lookup/2,send/3,send_route/4,status/0]).
+-export([start_link/0,reset/0,configure/4,advertise/1,lookup/2,send/3,status/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 reset() -> gen_server:call(ba_session_scope:ref(?MODULE),reset).
 configure(Buffee,URLs,Primary,Routes) -> gen_server:call(ba_session_scope:ref(?MODULE),{configure,Buffee,URLs,Primary,Routes}).
-route() -> gen_server:call(ba_session_scope:ref(?MODULE),route).
 advertise(Cap) -> gen_server:call(ba_session_scope:ref(?MODULE),{advertise,Cap}).
 lookup(URL,Cap) -> gen_server:call(ba_session_scope:ref(?MODULE),{lookup,URL,Cap},4500).
 send(To,Type,Packet) -> gen_server:call(ba_session_scope:ref(?MODULE),{send,To,Type,Packet},3000).
-send_route(To,Route,Type,Packet) -> gen_server:call(ba_session_scope:ref(?MODULE),{send_route,To,Route,Type,Packet},3000).
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 init([]) ->
     true = ba_settings:env("BA_IDENTITY_SEED") =/= false,
@@ -27,28 +25,27 @@ handle_call(reset,_,S) ->
     {reply,ok,S#{mailbox := fresh(),buffee := undefined,primary := undefined,
         urls := [],routes := #{},aliases := [],bound := #{}}};
 handle_call({advertise,Cap},_,S) ->
-    true=ba_buffee_job:hex(Cap,32),
+    true=ba_hex:valid(Cap,32),
     {reply,ok,repair(S#{aliases := lists:usort([Cap|maps:get(aliases,S)]),bound := #{}})};
 handle_call({lookup,URL,Cap},_,S) ->
     Result=try
-        true=lists:member(URL,maps:get(urls,S)),true=ba_buffee_job:hex(Cap,32),
+        true=lists:member(URL,maps:get(urls,S)),true=ba_hex:valid(Cap,32),
         Pid=maps:get(URL,ba_desk_connections_sup:connections()),
         gen_server:call(Pid,{lookup,maps:get(buffee,S),Cap},4000)
     catch _:_ -> {error,desk_unavailable} end,
     {reply,Result,S};
-handle_call(route,_,S) -> {reply,#{<<"desk">> => maps:get(primary,S),<<"mailbox">> => maps:get(mailbox,S)},S};
 handle_call(status,_,S) ->
     Connections = ba_desk_connections_sup:connections(),
     Views = maps:from_list([{URL,connection_status(URL,maps:get(URL,Connections,undefined))} || URL <- maps:get(urls,S)]),
     {reply,#{id => maps:get(id,S),desks => Views,rejected => maps:get(rejected,S),diagnostics => ba_diagnostics:view(S)},S};
 handle_call({configure,Buffee,URLs,Primary,Routes},_,S) ->
-    true = ba_buffee_job:hex(Buffee,32),
+    true = ba_hex:valid(Buffee,32),
     true = is_list(URLs) andalso length(URLs) > 0 andalso length(URLs) =< 4,
     true = length(lists:usort(URLs)) =:= length(URLs),
     true = lists:member(Primary,URLs),
     true = lists:all(fun ba_relay:valid_url/1,URLs),
     true = is_map(Routes) andalso map_size(Routes) =< 16,
-    maps:foreach(fun(Id,R) -> true = ba_buffee_job:hex(Id,64),valid_route(R,URLs) end,Routes),
+    maps:foreach(fun(Id,R) -> true = ba_hex:valid(Id,64),valid_route(R,URLs) end,Routes),
     Saved = maps:with([id,mailbox],S),
     ok = ba_device_store:save(buffee_desks,Saved#{buffee => Buffee,urls => URLs,primary => Primary,routes => Routes}),
     Next = S#{buffee := Buffee,primary := Primary,urls := URLs,routes := Routes,bound := #{}},
@@ -63,7 +60,7 @@ handle_call({send,To,Type,Packet},From,S) ->
     end;
 handle_call({send_route,To,Route,Type,Packet},_,S) ->
     Result = try
-        true = ba_buffee_job:hex(To,64),false = ba_app_session:excluded(To),
+        true = ba_hex:valid(To,64),false = ba_app_session:excluded(To),
         true = is_binary(Packet) andalso byte_size(Packet) =< 32768,
         true = Type =:= <<"buffee_control">>,
         valid_route(Route,maps:get(urls,S)),
@@ -92,7 +89,7 @@ handle_info(repair,S) ->
     erlang:send_after(1000,self(),repair),{noreply,repair(S)};
 handle_info(_,S) -> {noreply,S}.
 valid_route(#{<<"desk">> := URL,<<"mailbox">> := Cap} = R,URLs) ->
-    true = map_size(R) =:= 2,true = lists:member(URL,URLs),true = ba_buffee_job:hex(Cap,32),ok.
+    true = map_size(R) =:= 2,true = lists:member(URL,URLs),true = ba_hex:valid(Cap,32),ok.
 notify(Name,Event) ->
     case ba_session_scope:whereis(Name) of
         undefined -> ok;

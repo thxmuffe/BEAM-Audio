@@ -6,7 +6,7 @@
 %% newer side sharing it. The highest revision wins.
 -module(ba_buffee_membership).
 -behaviour(gen_server).
--export([announce/1,start_link/0,status/0,current/0,invite/1,invite_devices/2,depart/0,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1,resend_chat/0]).
+-export([announce/1,start_link/0,status/0,current/0,invite/1,invite_devices/2,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1,resend_chat/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 -ifdef(TEST).
 -export([order/3]).
@@ -28,7 +28,6 @@ start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MO
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 current() -> gen_server:call(ba_session_scope:ref(?MODULE),current).
 invite(TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite,TTL}).
-depart() -> gen_server:call(ba_session_scope:ref(?MODULE),depart).
 invite_devices(Ids,TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite_devices,Ids,TTL}).
 grant(Device,Permissions) -> gen_server:call(ba_session_scope:ref(?MODULE),{grant,Device,Permissions}).
 revoke(Device) -> gen_server:call(ba_session_scope:ref(?MODULE),{revoke,Device}).
@@ -62,7 +61,7 @@ start(Link,I,Primary,S) ->
     {Invitation,InvitationKey} = ba_buffee_passport:invitation_key(Secret),
     Base = S#{envelope => ba_buffee_passport:envelope_key(Secret),invitation => Invitation,join => ba_buffee_passport:join(Buffee,maps:get(id,S),InvitationKey),link => Link,buffee => Buffee,authority => maps:get(<<"authority">>,I),secret => Secret,
         cap => ba_buffee_passport:mailbox(Secret),name => maps:get(<<"name">>,I),urls => URLs,primary => Primary,
-        policy => ba_buffee_passport:genesis(I,ba_settings:app(buffee_default_permissions,[<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>])),signed => undefined,signer => undefined,delegations => #{},
+        policy => ba_buffee_passport:genesis(I,defaults()),signed => undefined,signer => undefined,delegations => #{},
         reachable => #{},encountered => [],board => ba_session_board:new(),seen => #{},
         state => authorized,until => infinity,last_lookup => now_ms()-?LOOKUP_MS},
     Ready = restore(maps:get(Buffee,ba_device_store:load(buffee_sessions,#{}),undefined),Base),
@@ -87,7 +86,7 @@ handle_call(current,_,S) -> {reply,{error,maps:get(state,S)},S};
 %% Every participant holds the same permanent link and may share it.
 handle_call({invite,_},_,S) -> {reply,{ok,maps:get(link,S)},S};
 handle_call({invite_devices,Ids,_},_,S) when is_list(Ids),length(Ids)>0,length(Ids)=<15 ->
-    case lists:all(fun(Id) -> Id=:=undefined orelse hex(Id,64) end,Ids) of
+    case lists:all(fun(Id) -> Id=:=undefined orelse ba_hex:valid(Id,64) end,Ids) of
         false -> {reply,{error,invalid_invitation},S};
         true ->
             %% Explicitly inviting a removed contact lifts the removal; forwarding does not.
@@ -111,7 +110,6 @@ handle_call(end_session,_,#{state := authorized,policy := P}=S) ->
     end;
 handle_call(end_session,_,S) -> {reply,{error,end_privilege_required},S};
 %% Leaving changes no signed state: Reception drops this Device's advertisement.
-handle_call(depart,_,S) -> {reply,ok,S};
 handle_call({rename,Name},_,#{state := authorized,policy := P,id := Id}=S) ->
     case {valid_name(Name),grant_holder(S),ba_session_privileges:has(on_air,Id,P)} of
         {false,_,_} -> {reply,{error,invalid_session_name},S};
@@ -161,7 +159,7 @@ handle_call({grant,Device,Permissions},_,S) ->
           _:_ -> {error,invalid_grant} end,
     case Result of {ok,Next} -> {reply,ok,Next};_ -> {reply,{error,invalid_grant},S} end;
 handle_call({revoke,Device},_,#{id := Id,policy := Policy}=S) ->
-    case {Device=/=Id andalso hex(Device,64),grant_holder(S),ba_session_privileges:has(end_session,Id,Policy)} of
+    case {Device=/=Id andalso ba_hex:valid(Device,64),grant_holder(S),ba_session_privileges:has(end_session,Id,Policy)} of
         {false,_,_} -> {reply,{error,invalid_revocation},S};
         {true,false,false} -> {reply,{error,kick_privilege_required},S};
         %% The same signed End authorization can disconnect just one target.
@@ -224,7 +222,7 @@ handle_info({desk_event,_,connected},S) ->
     {noreply,discover(S)};
 handle_info({desk_event,_,_},S) -> {noreply,S};
 handle_info({lookup,URL,{ok,Owners}},#{id := Id,reachable := Reachable}=S) when is_list(Owners) ->
-    Present = [O || O <- lists:usort(Owners),O=/=Id,hex(O,64),not lists:member(O,removed(S))],
+    Present = [O || O <- lists:usort(Owners),O=/=Id,ba_hex:valid(O,64),not lists:member(O,removed(S))],
     %% A sticky random sample (peer sampling): keep neighbours still present,
     %% fill free places at random. Nobody needs the whole Session.
     Kept = [O || O <- maps:get(URL,Reachable,[]),lists:member(O,Present)],
@@ -366,7 +364,7 @@ update(Change,#{policy := P0,id := Id,buffee := Buffee}=S) ->
     end.
 member(Device,P,S) ->
     Members = maps:get(<<"members">>,P),
-    case {maps:is_key(Device,Members),hex(Device,64),map_size(Members) < 16} of
+    case {maps:is_key(Device,Members),ba_hex:valid(Device,64),map_size(Members) < 16} of
         {true,_,_} -> {ok,P};
         {false,true,true} -> {ok,P#{<<"members">> := Members#{Device => #{<<"permissions">> => defaults()}},
                                     <<"removed">> := lists:delete(Device,removed(S))}};
@@ -404,8 +402,8 @@ view(#{id := Id,policy := P}=S) ->
       envelope => maps:get(envelope,S),reachable => reachable(S),routes => #{},until => infinity}.
 permissions(Id,#{<<"members">> := Members}) ->
     case maps:find(Id,Members) of {ok,#{<<"permissions">> := Perms}} -> Perms;error -> defaults() end.
-%% Participants without a policy entry; the creator's own defaults are wider.
-defaults() -> ba_settings:app(buffee_default_permissions,[]).
+%% What a Session member may ask of another without a privilege.
+defaults() -> [<<"capabilities_read">>,<<"status_read">>,<<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>].
 publish(#{state := authorized}=S) ->
     ba_contacts:observe(maps:get(buffee,S),maps:get(name,S),maps:get(encountered,S)),
     View = chat_view(S),
@@ -435,7 +433,6 @@ grant_holder(_) -> false.
 grant_holder_present(#{policy := P,id := Self}=S) ->
     lists:any(fun(Id) -> Id=:=Self orelse lists:member(Id,reachable(S)) end,holders(P)).
 fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).
-hex(B,N) -> ba_buffee_job:hex(B,N).
 now_ms() -> erlang:monotonic_time(millisecond).
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([id,buffee,state],S);(log,_) -> [];(_,_) -> redacted end,Status).
 

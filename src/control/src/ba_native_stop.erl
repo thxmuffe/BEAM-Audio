@@ -3,7 +3,7 @@
 %% exit_status) proves it has stopped. A helper that does not acknowledge in time
 %% is killed, like a supervisor's brutal_kill, and stops only once its exit is seen.
 -module(ba_native_stop).
--export([port/3,socket/3]).
+-export([port/3]).
 port(Port,Command,Ack) ->
     try
         OsPid=case erlang:port_info(Port,os_pid) of {os_pid,P} -> P;_ -> undefined end,
@@ -27,14 +27,4 @@ kill(Port,OsPid) ->
         _ -> "kill -9 "++integer_to_list(OsPid)
     end),
     receive {Port,{exit_status,_}} -> ok after 1500 -> {error,native_stop_timeout} end.
-socket(Socket,Command,Ack) ->
-    try ok=inet:setopts(Socket,[{active,false}]),ok=gen_tcp:send(Socket,Command),socket_reply(Socket,Ack,deadline())
-    catch _:_ -> {error,native_stop_unconfirmed} end.
-socket_reply(Socket,Ack,Deadline) ->
-    Remaining=Deadline-erlang:monotonic_time(millisecond),
-    case Remaining>0 of false -> {error,native_stop_timeout};true -> case gen_tcp:recv(Socket,0,Remaining) of
-        {ok,Ack} -> ok;
-        {ok,_} -> socket_reply(Socket,Ack,Deadline);
-        _ -> {error,native_stop_unconfirmed}
-    end end.
 deadline() -> erlang:monotonic_time(millisecond)+1500.

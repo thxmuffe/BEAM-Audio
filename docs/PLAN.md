@@ -290,22 +290,26 @@ trusted-cluster stack, the Elixir/Rust transport, the legacy Inspector, the old
 Reception HTTP directory and their builds and tests. Core Erlang 528k → 365k
 characters, 71 → 50 modules.
 
-**Pass 2 candidates** (found during pass 1; choose after committing pass 1):
-- Test jobs: `ba_buffee_job`, `ba_device_test_worker`, the job parts of
-  `ba_device_handler`, the `job_offer` permission and their tests.
-- 127 xref "unused export" warnings (many are `start_link` false positives; the
-  rest are dead API, e.g. in `ba_audio`, `ba_audio_receiver`, `ba_buffee_clock`).
-- Two ways to configure one thing: the default Reception URL is written in three
-  places (`ba_core.app.src`, `ba_buffee_passport`, `ba_sessions`); the Reception CA
-  comes from `BA_RELAY_CA_FILE` or the `relay_cacertfile` setting.
-- Fallbacks: `ba_device_store:identity/0` makes a random key when no seed is set
-  (every launcher sets one); `audio_automation=false` and its no-Worker speaker
-  states exist only for the CLI observer.
-- Release contents: `compiler` in the relx release and `inets` in the app's
-  dependencies may only have served the removed stack.
+**Pass 2 done (2026-11-20; see PROGRESS).** Test jobs removed end to end (incl. the
+`job_offer` right, `job.*` messages and the capability's `"test"` entry); one
+default permission list, one default Reception (`ba_core.app.src`), one Reception
+CA setting; no random-identity fallback; dead API and unused exports removed;
+one hex validator (`ba_hex`). Core Erlang 365k → 336k characters.
+
+**Pass 3 candidates** (found during pass 2; the order above puts the rename next):
+- Rename buffee → session (order step 3), following the model above.
+- Four modules each define the same `exact/2` map-key validator
+  (`ba_buffee_control_protocol`, `ba_buffee_passport`, `ba_buffee_time_protocol`,
+  `ba_audio_stream_protocol`); one shared validator, like `ba_hex`.
+- Per-subscription playback gain: nothing sets it any more (always 1.0), yet it is
+  stored, restored and sent to the native host (`{gain,...}`, the C++ `gain` op).
+- The `dsp` consent now gates nothing (only test jobs used it); it returns with the
+  rights model's Processing consent, so decide then whether it stays meanwhile.
+- `audio_automation=false` (the CLI observer) and its no-Worker speaker states.
+- Test-only exports (`ba_buffee_passport:invitation/1`, `ba_session_board:granted/6`)
+  and the remaining dynamically used exports, to confirm one by one.
 - Docs describing removed behaviour (older dated sections of the BUFFEE_* docs).
-- Rebuild a TLS/public-Reception check on the CLI (the old one drove the legacy
-  client and was deleted).
+- Rebuild a TLS/public-Reception check on the CLI.
 
 Audio work, after the cleanup and the rights model (owner 2026-11-20): Mac app
 native receive; packet recovery on the native RTP path (retransmission first,
