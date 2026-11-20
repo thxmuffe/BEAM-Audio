@@ -31,6 +31,20 @@ already erased names require a surviving signed copy. See PROGRESS.md.
 
 ## Decisions in force
 
+- **One Device request pipeline (owner 2026-11-20).** Requests for rights and
+  requests for control use the same authentication, authorization, approval and
+  execution pipeline. Local resources are request targets, not a second control
+  architecture. Approval now enters the same serialized Device settings handler;
+  rights still wait on the signed Session board and resource requests still wait
+  in Device configuration. Unifying that pending state and implementing
+  requester-held signed grants remain unfinished.
+- **Audio stream control** names the Erlang component that configures and
+  supervises native streams; native code owns all audio payloads.
+- **Shared Device backend and memory.** CLI, Inspector and web UI are clients of
+  the same Device API and persistent state when attached to the same Device.
+  Creating an independent observer creates another Device identity and memory;
+  it must not silently borrow the running app's identity or privileges.
+
 - **Cleanup first; one default way (owner 2026-11-20).** Clean architecture and
   code come first, even if things break meanwhile. Work towards standard
   behaviour so OTP and the libraries in use do the work, instead of custom

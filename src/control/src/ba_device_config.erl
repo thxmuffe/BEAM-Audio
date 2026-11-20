@@ -108,20 +108,15 @@ public(#{states := States,cursor := C,revision := R}=S) ->
       requests => [#{key => K,from => F} || {K,Fs} <- lists:sort(maps:to_list(maps:get(requests,S,#{}))),not maps:get(K,current(S),false),F <- Fs]}.
 handle_call(consent,_,S) -> {reply,current(S),S};
 handle_call({request,Key,From},_,S) when is_binary(From) ->
-    Requests=maps:get(requests,S,#{}),Pending=maps:get(Key,Requests,[]),
-    case {lists:member(Key,?PROTECTED),maps:get(Key,current(S),false)} of
-        {false,_} -> {reply,{error,invalid_configuration},S};
-        {true,true} -> {reply,ok,S};
-        {true,false} ->
-            case {policy_of(Key,S),lists:member(From,maps:get(Key,maps:get(declined,S,#{}),[]))} of
-                {no,_} -> {reply,{error,refused},S};
-                {_,true} -> {reply,{error,declined},S};
-                _ when length(Pending)>=8 -> {reply,{error,waiting_for_approval},S};
-                _ ->
-                    case lists:member(From,Pending) of
-                        true -> {reply,{error,waiting_for_approval},S};
-                        false -> changed(),{reply,{error,waiting_for_approval},S#{requests => Requests#{Key => Pending++[From]}}}
-                    end
+    case lists:member(Key,?PROTECTED++?ANSWERS) of
+        false -> {reply,{error,invalid_configuration},S};
+        true ->
+            case request_allowed(Key,S) of
+                true -> {reply,ok,S};
+                false -> case effective_policy(Key,S) of
+                    no -> {reply,{error,refused},S};
+                    _ -> pending_request(Key,From,S)
+                end
             end
     end;
 handle_call({answer,Key,true,Options},From,S) ->
@@ -136,11 +131,7 @@ handle_call({answer,Key,false,_},_,S) ->
     {reply,ok,S#{requests => maps:remove(Key,maps:get(requests,S,#{})),
                  declined => Declined#{Key => lists:usort(Asked++maps:get(Key,Declined,[]))}}};
 handle_call(snapshot,_,S) -> {reply,public(S),S};
-%% The answer in force: a top switch overrides the stored choice without changing
-%% it. "Auto grant" covers requests for rights; "auto accept" covers the rest.
-handle_call({policy,Key},_,S) ->
-    Override=case lists:member(Key,?GRANTS) of true -> maps:get(auto_grant,S,false);false -> auto(S) end,
-    {reply,case Override of true -> always;false -> policy_of(Key,S) end,S};
+handle_call({policy,Key},_,S) -> {reply,effective_policy(Key,S),S};
 %% Trust every Device that asks for a right. Grants nothing on this Device itself.
 handle_call({auto_grant,Enabled,_},_,S) when is_boolean(Enabled) -> {reply,ok,save_gates(S#{auto_grant => Enabled,preset => advanced})};
 %% Accept every request. The stored choices stay as they are and are ignored
@@ -291,6 +282,39 @@ changed() ->
     [gen_server:cast(Name,audio_changed) || Name <- Names],ok.
 history_allowed(Old,New) ->
     not lists:any(fun(K) -> maps:get(K,New,false) andalso not maps:get(K,Old,false) end,?PROTECTED).
+%% Protected resources require an installed consent flag; an automation switch
+%% must not bypass an unfinished stop or grant operation.
+request_allowed(Key,S) ->
+    case lists:member(Key,?PROTECTED) of
+        true -> maps:get(Key,current(S),false);
+        false -> effective_policy(Key,S)=:=always
+    end.
+
+%% Approval policy is evaluated here for both rights and resource requests.
+effective_policy(Key,S) ->
+    Override=case lists:member(Key,?GRANTS) of
+        true -> maps:get(auto_grant,S,false);
+        false -> auto(S)
+    end,
+    case Override of true -> always;false -> policy_of(Key,S) end.
+
+%% Rights requests already live on the signed Session board. Resource requests
+%% live in Device settings until answered; do not duplicate board entries here.
+pending_request(Key,From,S) ->
+    case lists:member(Key,?PROTECTED) of
+        false -> {reply,{error,waiting_for_approval},S};
+        true ->
+            Requests=maps:get(requests,S,#{}),Pending=maps:get(Key,Requests,[]),
+            case lists:member(From,maps:get(Key,maps:get(declined,S,#{}),[])) of
+                true -> {reply,{error,declined},S};
+                false ->
+                    case length(Pending)>=8 orelse lists:member(From,Pending) of
+                        true -> {reply,{error,waiting_for_approval},S};
+                        false -> changed(),{reply,{error,waiting_for_approval},S#{requests => Requests#{Key => Pending++[From]}}}
+                    end
+            end
+    end.
+
 auto(S) -> maps:get(auto_accept,S,false).
 stored(Key,S) -> maps:get(Key,maps:get(choices,S,#{}),ask).
 %% The user's own choice for one item. A grant made or taken another way

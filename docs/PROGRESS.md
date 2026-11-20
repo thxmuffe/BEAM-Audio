@@ -2693,3 +2693,19 @@ derived from the creator key and a nonce, so membership's ID check failed.
 `ba_sessions` now re-keys an empty slot to the new Session's ID before creating
 (as joining already did) and passes the nonce on. Reproduced and fixed on a copy
 of the Mac app's state; all suites pass.
+
+
+## 2026-11-20 — shared request approval cleanup
+
+Rights and resource approvals now enter `ba_device_config:request/2` through
+`ba_device_request:approve/2`. Removed the separate rights-policy decision and
+resource fast path there. One settings owner evaluates approval on each request;
+protected resources still require installed consent, including during stop
+barriers. Pending rights remain on the signed board and resource requests in
+Device configuration; requester-held signed grants remain unfinished.
+Documented audio stream control and the shared backend/memory contract for
+CLI, Inspector and web UI. No identity stores were merged.
+
+Validation: 184 core EUnit tests pass, including new coverage for Always/Ask/No
+across speaker and both rights categories, automation override separation and
+invalid requests. No native app build, deployment or live audio test in this pass.

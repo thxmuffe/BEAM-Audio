@@ -1,4 +1,4 @@
-# Shared audio runtime
+# Audio stream control and native audio
 
 **One transport: native AAC over GStreamer RTP (owner decision 2026-11-19).**
 Erlang connects, configures and supervises the pipes; audio stays in native

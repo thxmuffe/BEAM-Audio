@@ -1,5 +1,5 @@
 %% The one request/approval pipeline. The Device that would act on a request
-%% decides it here, for every requester alike (a Manager gains nothing):
+%% decides it here, for every requester alike:
 %%
 %%   1. authenticate: the request carries its sender's signature and names this
 %%      Device and the current Session policy (ba_session_control_protocol).
@@ -41,21 +41,7 @@ required(<<"session.request">>,#{<<"kind">> := <<"rename_request">>}) -> [stream
 required(<<"session.request">>,#{<<"kind">> := Kind}) when Kind=:= <<"remove_request">>;Kind=:= <<"ended">> -> [end_session];
 required(_,_) -> [].
 
-%% Requests for Session rights follow this Device's user's answer for them.
-%% Pending requests are kept by the component that would execute them.
-approve(Answer,_) when Answer=:=on_air_requests;Answer=:=moderator_requests ->
-    case try ba_device_config:policy(Answer) catch exit:_ -> ask end of
-        always -> ok;
-        ask -> {error,waiting_for_approval};
-        no -> {error,refused}
-    end;
-%% Consent is a protected local use (ba_device_config). Never blocks on the user.
+%% Every approval uses the same serialized Device settings owner.
 approve(Use,Requester) ->
-    case ba_device_permission:allowed(Use) of
-        true -> ok;
-        false ->
-            try ba_device_config:request(Use,Requester) of
-                ok -> ok;
-                {error,_}=Refused -> Refused
-            catch exit:_ -> {error,consent_required} end
-    end.
+    try ba_device_config:request(Use,Requester)
+    catch exit:_ -> {error,consent_required} end.

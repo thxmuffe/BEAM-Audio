@@ -25,6 +25,29 @@ ask_requests_wait_for_this_devices_answer_test() -> fixture(fun(_) ->
     ?assertEqual({error,waiting_for_approval},ba_device_config:request(Key,<<"PEER">>))
 end).
 
+shared_approval_pipeline_test() -> fixture(fun(_) ->
+    Keys=[speaker,on_air_requests,moderator_requests],
+    ok=ba_device_config:auto_accept(false,#{}),
+    ok=ba_device_config:auto_grant(false,#{}),
+    [begin
+        ok=ba_device_config:policy(K,ask,#{}),
+        ?assertEqual({error,waiting_for_approval},ba_device_request:approve(K,<<"PEER">>)),
+        ok=ba_device_config:policy(K,always,#{}),
+        ?assertEqual(ok,ba_device_request:approve(K,<<"PEER">>)),
+        ok=ba_device_config:policy(K,no,#{}),
+        ?assertEqual({error,refused},ba_device_request:approve(K,<<"PEER">>))
+    end || K <- Keys],
+    ok=ba_device_config:auto_grant(true,#{}),
+    ?assertEqual(ok,ba_device_request:approve(on_air_requests,<<"PEER">>)),
+    ?assertEqual(ok,ba_device_request:approve(moderator_requests,<<"PEER">>)),
+    ?assertEqual({error,refused},ba_device_request:approve(speaker,<<"PEER">>)),
+    ok=ba_device_config:auto_grant(false,#{}),
+    ok=ba_device_config:auto_accept(true,#{}),
+    ?assertEqual(ok,ba_device_request:approve(speaker,<<"PEER">>)),
+    ?assertEqual({error,refused},ba_device_request:approve(on_air_requests,<<"PEER">>)),
+    ?assertEqual({error,invalid_configuration},ba_device_request:approve(unknown,<<"PEER">>))
+end).
+
 restart_keeps_settings_not_history_test() -> fixture(fun(_) ->
     ok=ba_app_session:capability(microphone,true),
     ?assertEqual(<<"Enable microphone">>,maps:get(undo_label,ba_device_config:snapshot())),
