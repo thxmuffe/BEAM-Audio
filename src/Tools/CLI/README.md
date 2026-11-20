@@ -312,25 +312,35 @@ shape. Permission denial/disconnection also remains visible, never fake silence.
 Native capture/playback and physical timing are not enabled or qualified merely
 by running this command. A “running” state alone is not proof of sound.
 
-## Audio inspection follows calibration consent
+## Inspect consent and log downloads
 
-There are no separate inspection switches. A Device's **Calibrate speaker**
-consent covers received/output levels and playback analysis (counters, trace,
-clock); **Calibrate microphone** covers capture levels. Both are ordinary
-Always / Ask / No choices in Settings and never change audio consent or
-scheduling.
+The Device's **Inspect** choice gates private metrics, meters, playback analysis
+and runtime-log downloads, independently of Calibration. It uses the ordinary
+Always / Ask / No approval pipeline and never changes audio consent or scheduling.
 
-- Always: inspection is on.
-- No: inspection stays off; requests are refused.
-- Ask: a `monitor --metrics` read or an explicit request from another Device
-  raises a request naming that Device in this Device's **Requests** panel. Its
-  user allows (consent on) or declines (that requester is not asked again until
-  the choice changes). Replies never wait; they carry what is allowed now.
+- Always: inspection is approved.
+- No: inspection requests are refused.
+- Ask: an inspection request names the requester in the Device's **Requests**
+  panel. Its user chooses Approve or Decline; until approval, the reply reports
+  `waiting_for_approval`. Declined requesters are not asked again until the
+  choice changes. The current implementation enables local Inspect consent on
+  approval; persistent requester-held signed grants are not implemented.
 
 ```sh
 beamaudio call device --devicename ba-monitor-SESSION_ID --request '{"method":"audio_diagnostics","device":"PUBLIC_DEVICE_ID","options":{"meters":true}}'
-beamaudio call device --devicename OpenSound --request '{"method":"answer_consent","key":"calibrate_speaker","allow":true}'
+beamaudio call device --devicename OpenSound --request '{"method":"answer_consent","key":"inspect","allow":true}'
+beamaudio inspect device --devicename ba-monitor-SESSION_ID --deviceid PUBLIC_DEVICE_ID
+beamaudio inspect logs --devicename ba-monitor-SESSION_ID --deviceid PUBLIC_DEVICE_ID --output /private/path/phone-runtime.log
 ```
+
+`inspect logs` downloads over signed Session control; USB is unnecessary when
+the Device is reachable. Each chunk is at most 8 KiB and checks current Inspect
+approval. `--log` accepts only `runtime.log` (default), `runtime.log.0`,
+`runtime.log.1`, `runtime.log.2` or `audio-engine-crash.txt`; arbitrary paths,
+settings and identity files are unavailable. The output must not already exist;
+it is created with mode 0600. A download is limited to the initial file size,
+detects rotation/truncation and removes its partial output on failure. Treat
+downloaded logs as private. No USB file-copy tool is involved.
 
 `audio_diagnostics` without `options` reads the current state. Requests use the
 signed capabilities path and require `capabilities_read` on the target. The same
