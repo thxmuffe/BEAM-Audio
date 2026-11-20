@@ -52,8 +52,8 @@ executable() ->
 
 init(Opts) ->
     process_flag(trap_exit,true),
-    {Port,Crash}=connect(Opts),
-    S=#{port => Port,owner => maps:get(owner,Opts),crash_file => Crash,next => 1,calls => #{},revision => 0,
+    {Kind,Port,Crash}=connect(Opts),
+    S=#{port => Port,kind => Kind,owner => maps:get(owner,Opts),crash_file => Crash,next => 1,calls => #{},revision => 0,
         clock => maps:get(clock,Opts,fun session_time/1)},
     %% An in-process engine (iOS) takes the app down when it crashes; its report
     %% waits in the crash file for the next launch.
@@ -93,8 +93,8 @@ handle_info({Port,{exit_status,Status}},#{port := Port,crash_file := Crash}=S) -
 handle_info({'EXIT',Port,Reason},#{port := Port}=S) -> {stop,{native_engine_port,Reason},maps:remove(port,S)};
 handle_info(_,S) -> {noreply,S}.
 
-terminate(_,#{port := Port}) when is_port(Port) -> try port_close(Port) catch error:badarg -> ok end,ok;
-terminate(_,#{port := Socket}) -> gen_tcp:close(Socket);
+terminate(_,#{kind := program,port := Port}) -> try port_close(Port) catch error:badarg -> ok end,ok;
+terminate(_,#{kind := loopback,port := Socket}) -> gen_tcp:close(Socket);
 terminate(_,_) -> ok.
 
 %% ---- Control connection ------------------------------------------------------
@@ -107,13 +107,14 @@ connect(Opts) ->
                 "engine-crash-"++os:getpid()++"-"++integer_to_list(erlang:unique_integer([positive]))++".txt"),
             ok=filelib:ensure_dir(Crash),
             Exe=maps:get(executable,Opts,executable()),
-            {open_port({spawn_executable,Exe},[{packet,4},binary,exit_status,use_stdio,{args,["--crash-file",Crash]}]),Crash};
+            {program,open_port({spawn_executable,Exe},[{packet,4},binary,exit_status,use_stdio,{args,["--crash-file",Crash]}]),Crash};
         Text ->
             {ok,Socket}=gen_tcp:connect({127,0,0,1},list_to_integer(Text),[binary,{packet,4},{active,true},{nodelay,true}],2000),
-            {Socket,ba_settings:env("BA_AUDIO_ENGINE_CRASH_FILE")}
+            {loopback,Socket,ba_settings:env("BA_AUDIO_ENGINE_CRASH_FILE")}
     end.
-send(C,#{port := Port}) when is_port(Port) -> true=port_command(Port,term_to_binary(C)),ok;
-send(C,#{port := Socket}) -> ok=gen_tcp:send(Socket,term_to_binary(C)).
+%% A TCP socket is also an Erlang port: the kind, not is_port/1, tells them apart.
+send(C,#{kind := program,port := Port}) -> true=port_command(Port,term_to_binary(C)),ok;
+send(C,#{kind := loopback,port := Socket}) -> ok=gen_tcp:send(Socket,term_to_binary(C)).
 
 event(#{id := Id}=E,#{calls := Calls}=S) ->
     {Pending,Rest}=maps:take(Id,Calls),
@@ -142,16 +143,17 @@ reply(#{event := <<"error">>,error := Text}) -> {error,Text}.
 
 %% Synchronous exchange before the gen_server loop runs (init, clock mapping).
 %% Unsolicited events arriving meanwhile still reach the owner.
-sync(C,#{port := Port,owner := Owner}) ->
+sync(C,#{port := Port,owner := Owner}=S) ->
     Id=make_ref_id(),
-    send(C#{id => Id},#{port => Port}),
+    send(C#{id => Id},S),
     sync_wait(Id,Port,Owner).
 sync_wait(Id,Port,Owner) ->
     receive
         {Port,{data,B}} -> sync_frame(binary_to_term(B),Id,Port,Owner);
         {tcp,Port,B} -> sync_frame(binary_to_term(B),Id,Port,Owner);
         {Port,{exit_status,_}}=Exit -> self() ! Exit,{error,engine_exited};
-        {tcp_closed,Port}=Closed -> self() ! Closed,{error,engine_exited}
+        {tcp_closed,Port}=Closed -> self() ! Closed,{error,engine_exited};
+        {'EXIT',Port,Reason} -> exit({native_engine_connection,Reason})
     after 5000 -> exit(native_engine_timeout)
     end.
 sync_frame(#{id := Id}=E,Id,_,_) -> reply(E);
