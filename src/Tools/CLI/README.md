@@ -25,12 +25,12 @@ building. Standalone release distribution and Windows launch support are later.
 
 ## Windows
 
-The same escript runs on Windows; only the launcher differs. `bin\beamaudio.cmd`
-(alias `bin\beam-audio.cmd`) prefers the pinned OTP from `.\build.ps1`
+The same escript runs on Windows; only the launcher differs. `scripts\cli\beamaudio.cmd`
+(alias `scripts\cli\beam-audio.cmd`) prefers the pinned OTP from `.\build.ps1`
 (`builds\intermediates\Windows\otp`) and passes all arguments through:
 
 ```powershell
-.\bin\beamaudio.cmd monitor --all --metrics --invitation-file C:\private\session-link.txt
+.\scripts\cli\beamaudio.cmd monitor --all --metrics --invitation-file C:\private\session-link.txt
 ```
 
 Monitor, inspect, call, wait, get, history, stop and kill work as on macOS
@@ -52,7 +52,7 @@ clock acquisition completes. JSON carries this under `clock.master_clock`, with
 the new reading.
 Run Both updates the native apps, not an already-running managed Web Device.
 To reload that Device's core code with its existing identity, stop its exact
-name (`bin/beamaudio stop device --devicename OpenSound`) and reopen the Web
+name (`scripts/cli/beamaudio stop device --devicename OpenSound`) and reopen the Web
 shortcut. Do not use `--next-instance` for an update.
 
 One command exposes the declared public Device API, including commands that

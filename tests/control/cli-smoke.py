@@ -9,7 +9,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 # The same escript on every platform; Windows starts it through the .cmd launcher.
-CLI = ROOT / ('bin/beam-audio.cmd' if os.name == 'nt' else 'bin/beam-audio')
+CLI = ROOT / ('scripts/cli/beam-audio.cmd' if os.name == 'nt' else 'scripts/cli/beam-audio')
 
 with tempfile.TemporaryDirectory(prefix='ba-cli-check-') as directory:
     env = dict(os.environ, BA_CLI_HOME=directory)

@@ -108,8 +108,8 @@ The ordinary core/CLI also needs its usual build after Erlang source changes.
 For a Mac source, start the public CLI:
 
 ```sh
-bin/beamaudio new device --devicename Native-Mac --createbuffee
-bin/beamaudio call device --devicename Native-Mac --request '{"method":"capability","capability":"broadcast","enabled":true}'
+scripts/cli/beamaudio new device --devicename Native-Mac --createbuffee
+scripts/cli/beamaudio call device --devicename Native-Mac --request '{"method":"capability","capability":"broadcast","enabled":true}'
 ```
 
 The CLI resolves the helper and runtime from the core build directory; optional

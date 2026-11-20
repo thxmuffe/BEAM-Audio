@@ -13,7 +13,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / 'bin/beamaudio'
+CLI = ROOT / 'scripts/cli/beamaudio'
 spec = importlib.util.spec_from_file_location('relay', ROOT / 'tests/ReceptionDesk/relay-smoke.py')
 relay = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(relay)

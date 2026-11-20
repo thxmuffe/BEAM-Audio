@@ -11,4 +11,4 @@ fi
 python3 "$ROOT/scripts/platforms/macOS/package-native.py" "$ROOT/builds/CLI"
 # Audio is native AAC only: build the native stream helper (needs GStreamer).
 bash "$ROOT/scripts/platforms/macOS/build-native-stream.sh"
-printf 'Ready: %s/bin/beamaudio --help\n' "$ROOT"
+printf 'Ready: %s/scripts/cli/beamaudio --help\n' "$ROOT"

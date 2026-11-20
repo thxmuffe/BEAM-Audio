@@ -10,7 +10,7 @@ product = Path(os.environ.get('OPENSOUND_ROOT', root.parent/'OpenSound'))
 with tempfile.TemporaryDirectory() as directory:
     env = dict(os.environ, BA_CLI_HOME=directory)
     def cli(*args):
-        return subprocess.run([str(root/'bin/beamaudio'), *args], env=env, check=True,
+        return subprocess.run([str(root/'scripts/cli/beamaudio'), *args], env=env, check=True,
             capture_output=True, text=True).stdout.strip()
     names = []
     try:
@@ -31,5 +31,5 @@ with tempfile.TemporaryDirectory() as directory:
             assert response.status == 200
         print('PASS: two actual web Devices have distinct identities and ports; stopping one leaves the other serving; no Buffee or audio hardware.')
     finally:
-        subprocess.run([str(root/'bin/beamaudio'), 'stop', 'device', '--all', '--timeout', '10s'],
+        subprocess.run([str(root/'scripts/cli/beamaudio'), 'stop', 'device', '--all', '--timeout', '10s'],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

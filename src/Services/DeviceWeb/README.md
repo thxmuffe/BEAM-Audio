@@ -62,9 +62,9 @@ connections stop with it; it neither stops the Device nor changes audio consent.
 The macOS CLI can load/start this optional application during Device startup:
 
 ```sh
-bin/beamaudio new device --devicename OpenSound --web-assets /absolute/path/to/frontend
-bin/beamaudio get web --devicename OpenSound
-bin/beamaudio monitor --all --devicename OpenSound
+scripts/cli/beamaudio new device --devicename OpenSound --web-assets /absolute/path/to/frontend
+scripts/cli/beamaudio get web --devicename OpenSound
+scripts/cli/beamaudio monitor --all --devicename OpenSound
 ```
 
 Build the service first. `--web-port` selects its port (default 8766; 0 chooses a

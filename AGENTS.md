@@ -13,11 +13,11 @@ regression tests where it exposes the required operation.
 From this repository:
 
 ```sh
-bin/beamaudio monitor --all --metrics --invitation-file /private/path/session-link.txt --once --json
-bin/beamaudio inspect device --devicename DEVICE_NAME
-bin/beamaudio monitor --all --devicename DEVICE_NAME --metrics
-bin/beamaudio get methods
-bin/beamaudio call device --devicename DEVICE_NAME --request '{"method":"snapshot"}'
+scripts/cli/beamaudio monitor --all --metrics --invitation-file /private/path/session-link.txt --once --json
+scripts/cli/beamaudio inspect device --devicename DEVICE_NAME
+scripts/cli/beamaudio monitor --all --devicename DEVICE_NAME --metrics
+scripts/cli/beamaudio get methods
+scripts/cli/beamaudio call device --devicename DEVICE_NAME --request '{"method":"snapshot"}'
 ```
 
 The invitation-file form joins an independent audio-disabled observer; omit

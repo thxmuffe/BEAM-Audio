@@ -1319,7 +1319,7 @@ managed Web Device 1D354C22, whose local clock snapshot has neither
 `master_clock` nor reset-diagnostic fields. Native Run Both does not restart
 that independent VM. The native Mac source is BD29A553 and the iPhone 781EB6CB;
 neither needs to be stopped to update the Web monitor. Next manual step: stop
-only the named Web Device (`bin/beamaudio stop device --devicename OpenSound`),
+only the named Web Device (`scripts/cli/beamaudio stop device --devicename OpenSound`),
 then reopen Start Web UI.command so it reloads current core code with the same
 saved identity. This restart was not performed by the agent. Then verify the
 master UTC/age display and capture native target-lead logs without attaching a

@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / 'bin/beamaudio'
+CLI = ROOT / 'scripts/cli/beamaudio'
 with tempfile.TemporaryDirectory(prefix='ba-cli-config-') as directory:
     env = dict(os.environ, BA_CLI_HOME=directory)
     settings = Path(directory) / 'saved' / 'settings.config'

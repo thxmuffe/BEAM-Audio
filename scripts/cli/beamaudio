@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 # Preserve the legacy host's stdin/stdout/signals unchanged, only on explicit opt-in.
 if [ "${1:-}" = inspect ] && [ "${2:-}" = legacy ]; then
   shift 2

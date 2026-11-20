@@ -11,7 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 # The same escript on every platform; Windows starts it through the .cmd launcher.
-CLI = ROOT / ('bin/beamaudio.cmd' if os.name == 'nt' else 'bin/beamaudio')
+CLI = ROOT / ('scripts/cli/beamaudio.cmd' if os.name == 'nt' else 'scripts/cli/beamaudio')
 
 with tempfile.TemporaryDirectory(prefix='ba-cli-api-') as directory:
     env = dict(os.environ, BA_CLI_HOME=directory)
