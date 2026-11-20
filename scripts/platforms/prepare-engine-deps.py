@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Download the audio engine's pinned library sources and build them as static
-libraries under builds/; nothing is installed system-wide."""
+libraries under builds/ for macOS or iOS; nothing is installed system-wide."""
+import argparse
 import hashlib
 import os
 from pathlib import Path
@@ -9,10 +10,20 @@ import subprocess
 import tarfile
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]
 BASE = ROOT / "builds/intermediates/engine-deps"
 DOWNLOADS = BASE / "downloads"
-PREFIX = BASE / "macOS"
+# CMake settings per Apple platform; iOS apps link these into the app binary.
+PLATFORMS = {
+    "macOS": ["-DCMAKE_OSX_DEPLOYMENT_TARGET=14.2"],
+    "iOS": ["-DCMAKE_SYSTEM_NAME=iOS", "-DCMAKE_OSX_SYSROOT=iphoneos", "-DCMAKE_OSX_ARCHITECTURES=arm64",
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=17.0"],
+    "iOS-sim": ["-DCMAKE_SYSTEM_NAME=iOS", "-DCMAKE_OSX_SYSROOT=iphonesimulator", "-DCMAKE_OSX_ARCHITECTURES=arm64",
+                "-DCMAKE_OSX_DEPLOYMENT_TARGET=17.0"],
+}
+# The app bundle carries no DWARF: iOS crash traces use the system symbol lookup.
+PLATFORM_OPTIONS = {"cpptrace": {"iOS": ["-DCPPTRACE_GET_SYMBOLS_WITH_LIBDL=ON"],
+                                 "iOS-sim": ["-DCPPTRACE_GET_SYMBOLS_WITH_LIBDL=ON"]}}
 
 # name: (url, sha256, cmake options). Checksums match the Homebrew formulae.
 SOURCES = {
@@ -48,8 +59,8 @@ def fetch(name, url, sha256):
     return archive
 
 
-def build(name, archive, options):
-    stamp = PREFIX / f".{name}-{archive.name}.built"
+def build(name, archive, options, platform, prefix):
+    stamp = prefix / f".{name}-{archive.name}.built"
     if stamp.exists():
         return
     source = BASE / "src" / name
@@ -58,24 +69,33 @@ def build(name, archive, options):
     with tarfile.open(archive) as tar:
         tar.extractall(source, filter="data")
     (top,) = list(source.iterdir())
-    work = BASE / "work" / name
+    work = BASE / "work" / platform / name
     shutil.rmtree(work, ignore_errors=True)
-    env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET="14.2")
+    env = {k: v for k, v in os.environ.items() if k not in ("SDKROOT", "MACOSX_DEPLOYMENT_TARGET")}
+    # The iOS SDKs ship with Xcode, not the Command Line Tools.
+    xcode = Path("/Applications/Xcode.app/Contents/Developer")
+    if "DEVELOPER_DIR" not in env and xcode.is_dir():
+        env["DEVELOPER_DIR"] = str(xcode)
     subprocess.run(["cmake", "-S", top, "-B", work, "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
-                    f"-DCMAKE_INSTALL_PREFIX={PREFIX}", "-DBUILD_SHARED_LIBS=OFF",
-                    "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.2",
-                    f"-DCMAKE_PREFIX_PATH={PREFIX}", *options], check=True, env=env)
+                    f"-DCMAKE_INSTALL_PREFIX={prefix}", "-DBUILD_SHARED_LIBS=OFF",
+                    "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", f"-DCMAKE_PREFIX_PATH={prefix}",
+                    "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH", *PLATFORMS[platform],
+                    *options, *PLATFORM_OPTIONS.get(name, {}).get(platform, [])], check=True, env=env)
     subprocess.run(["cmake", "--build", work, "--parallel"], check=True, env=env)
     subprocess.run(["cmake", "--install", work], check=True, env=env)
     stamp.write_text(archive.name + "\n")
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--platform", choices=PLATFORMS, default="macOS")
+    platform = parser.parse_args().platform
+    prefix = BASE / platform
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
-    PREFIX.mkdir(parents=True, exist_ok=True)
+    prefix.mkdir(parents=True, exist_ok=True)
     for name, (url, sha256, options) in SOURCES.items():
-        build(name, fetch(name, url, sha256), options)
-    print(f"Engine libraries ready: {PREFIX}", flush=True)
+        build(name, fetch(name, url, sha256), options, platform, prefix)
+    print(f"Engine libraries ready: {prefix}", flush=True)
 
 
 if __name__ == "__main__":

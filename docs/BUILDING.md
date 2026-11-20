@@ -27,9 +27,9 @@ From either repository on Windows (Git Bash, e.g. the VS Code terminal):
 ./build.sh
 ```
 
-In BEAM-Audio these prepare/compile the core runtime and the native AAC audio
-host for the chosen targets (on Windows: pinned OTP and rebar3, the core and
-`ba_native_stream.exe`; no legacy transport or Python GStreamer runtime); they do not build commercial UIs,
+In BEAM-Audio these prepare/compile the core runtime and the native audio
+engine for the chosen targets (on Windows: pinned OTP and rebar3 and the core;
+no Windows audio engine shell yet); they do not build commercial UIs,
 Inspector or independently deployed services. In OpenSound they then build the
 products: `builds/macOS/OpenSound.app`, `builds/iOS/Debug-iphoneos/OpenSound.app` or
 `builds/Windows/OpenSound/OpenSound.exe`. Existing component builders may recheck core
@@ -100,9 +100,8 @@ identity-helper compilation were validated on Windows.
 
 Windows packages the shared frontend and `buffee_control` through DeviceWeb in
 an installed Chrome/Edge window. Python, Windows OTP/rebar3 and Visual Studio
-C++ tools are required; no native transport NIF or GStreamer/Python audio build
-is needed for this control/UI target. Native audio still needs shared PCM/consent
-integration. See the [Windows guide](../../OpenSound/docs/Windows/README.md).
+C++ tools are required. Windows has no audio until its engine shell exists
+(plan step 4). See the [Windows guide](../../OpenSound/docs/Windows/README.md).
 
 ## Ownership and checks
 

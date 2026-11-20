@@ -80,9 +80,6 @@ def main(args):
     paths = [str(p) for project in ('control', 'DeviceWeb')
              for p in (ROOT / f'builds/intermediates/{project}/default/lib').glob('*/ebin')]
     local = '--local-device' in args
-    helper = ROOT / 'builds/CLI/native-stream/ba_native_stream.exe'
-    if local and 'BA_WINDOWS_NATIVE_STREAM_HELPER' not in env and helper.is_file():
-        env['BA_WINDOWS_NATIVE_STREAM_HELPER'] = str(helper)
     if local and not env.get('BA_IDENTITY_SEED'):
         slot, _handle = lease()  # kept open for the runtime's lifetime
         state, seed = identity(slot)

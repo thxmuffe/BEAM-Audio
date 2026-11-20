@@ -60,16 +60,6 @@ apple_configuration_preserves_session_memory(PlatformName) ->
 unavailable_capabilities_from_capture_adapter_test() ->
     Old=application:get_env(ba_core,audio_capture_adapter),
     try
-        %% Without its helper, Windows capture is reported unavailable up front.
-        OldHelper=os:getenv("BA_WINDOWS_NATIVE_STREAM_HELPER"),os:unsetenv("BA_WINDOWS_NATIVE_STREAM_HELPER"),
-        application:set_env(ba_core,audio_capture_adapter,ba_windows_native_audio),
-        U=ba_app_session:unavailable_capabilities(),
-        %% With the helper only native microphone capture is missing, as on a Mac.
-        os:putenv("BA_WINDOWS_NATIVE_STREAM_HELPER",code:which(?MODULE)),
-        WithHelper=ba_app_session:unavailable_capabilities(),
-        case OldHelper of false -> os:unsetenv("BA_WINDOWS_NATIVE_STREAM_HELPER");_ -> os:putenv("BA_WINDOWS_NATIVE_STREAM_HELPER",OldHelper) end,
-        ?assertEqual([<<"broadcast">>,<<"microphone">>],lists:sort(maps:keys(U))),
-        ?assertEqual([<<"microphone">>],maps:keys(WithHelper)),
         application:set_env(ba_core,audio_capture_adapter,ba_mac_native_audio),
         ?assertEqual([<<"microphone">>],maps:keys(ba_app_session:unavailable_capabilities())),
         application:unset_env(ba_core,audio_capture_adapter),

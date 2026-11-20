@@ -7,6 +7,8 @@
 // anchor and delay; capture.cpp and speaker.cpp keep their devices on it.
 #include "engine.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -31,19 +33,21 @@ namespace ba {
 namespace {
 constexpr int MaxSpeakers = 8;
 
-// OTP {packet,4} on fd 1 with raw write(2): C stdio must never touch the
-// protocol channel. Diagnostics go to stderr only.
+// OTP {packet,4} with raw read(2)/write(2) on the control connection: stdin/
+// stdout of a port program, or an in-process loopback socket on iOS. C stdio
+// must never touch it; diagnostics go to stderr only.
 std::mutex out_mutex;
-void write_exact(const char *p, size_t n) {
+int out_fd = -1;  // guarded by out_mutex
+void write_exact(int fd, const char *p, size_t n) {
     while (n) {
-        const ssize_t w = write(1, p, n);
-        if (w <= 0) std::terminate();  // Erlang is gone; nothing left to serve.
+        const ssize_t w = write(fd, p, n);
+        if (w <= 0) return;  // Erlang is gone; the read side ends this connection.
         p += w, n -= size_t(w);
     }
 }
-bool read_exact(uint8_t *p, size_t n) {
+bool read_exact(int fd, uint8_t *p, size_t n) {
     while (n) {
-        const ssize_t r = read(0, p, n);
+        const ssize_t r = read(fd, p, n);
         if (r <= 0) return false;
         p += r, n -= size_t(r);
     }
@@ -241,6 +245,17 @@ struct Engine {
         return out;
     }
 
+    // The owner is gone: release devices and streams; the next owner starts clean.
+    void reset() {
+        if (sender.load()) stop_capture();
+        for (auto &slot : speakers)
+            if (Speaker *p = slot.load()) stop_speaker(p->ssrc());
+        if (out_rate.load()) shell.stop_output(), out_rate.store(0);
+        on_packet_thread([this] {
+            if (socket >= 0) close(socket), socket = -1;
+        });
+    }
+
     // Development check of crash reporting; Erlang's tests send this.
     [[noreturn]] static void crash(const std::string &kind) {
         if (kind == "exception") throw std::logic_error("requested test exception");
@@ -260,26 +275,34 @@ void emit(const json &event) {
     const uint32_t n = uint32_t(body.size());
     const char header[4] = {char(n >> 24), char(n >> 16), char(n >> 8), char(n)};
     std::lock_guard<std::mutex> lock(out_mutex);
-    write_exact(header, 4);
-    write_exact(body.data(), n);
+    if (out_fd < 0) return;
+    write_exact(out_fd, header, 4);
+    write_exact(out_fd, body.data(), n);
 }
 
-int run(Shell &shell, int argc, const char **argv) {
-    const char *crash_file = nullptr;
-    for (int i = 1; i + 1 < argc; ++i)
-        if (!strcmp(argv[i], "--crash-file")) crash_file = argv[i + 1];
+namespace {
+Engine &start_engine(Shell &shell, const char *crash_file) {
     install_crash_handlers(crash_file);
     if (srtp_init() != srtp_err_status_ok) throw std::runtime_error("srtp_init failed");
     term_init();
     static Engine instance(shell);
     engine = &instance;
     instance.packet_thread = std::thread([] { engine->packet_loop(); });
+    return instance;
+}
+
+// One owner's control connection, until it closes; then everything is released.
+void serve(Engine &instance, int in, int out) {
+    {
+        std::lock_guard<std::mutex> lock(out_mutex);
+        out_fd = out;
+    }
     std::vector<uint8_t> body;
     for (;;) {
         uint8_t header[4];
-        if (!read_exact(header, 4)) break;  // Erlang closed the port: stop.
+        if (!read_exact(in, header, 4)) break;
         body.resize(read32(header));
-        if (!read_exact(body.data(), body.size())) break;
+        if (!read_exact(in, body.data(), body.size())) break;
         const json c = decode(body);  // malformed control is a bug: crash
         json shown = c;
         if (shown.contains("key")) shown["key"] = "(redacted)";
@@ -295,12 +318,45 @@ int run(Shell &shell, int argc, const char **argv) {
         reply["op"] = c.at("op");
         emit(reply);
     }
-    // Erlang closed the port: release the OS devices before the shell goes away.
-    if (instance.sender.load()) instance.stop_capture();
-    if (instance.out_rate.load()) shell.stop_output();
+    {
+        std::lock_guard<std::mutex> lock(out_mutex);
+        out_fd = -1;
+    }
+    instance.reset();
+}
+}  // namespace
+
+int run(Shell &shell, int argc, const char **argv) {
+    const char *crash_file = nullptr;
+    for (int i = 1; i + 1 < argc; ++i)
+        if (!strcmp(argv[i], "--crash-file")) crash_file = argv[i + 1];
+    Engine &instance = start_engine(shell, crash_file);
+    serve(instance, 0, 1);  // until Erlang closes the port
     instance.stopping.store(true);
     instance.packet_thread.join();
     return 0;
+}
+
+uint16_t serve_loopback(Shell &shell, const char *crash_file) {
+    const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in a{};
+    a.sin_family = AF_INET, a.sin_addr.s_addr = htonl(INADDR_LOOPBACK), a.sin_port = 0;
+    socklen_t size = sizeof(a);
+    if (listener < 0 || bind(listener, reinterpret_cast<sockaddr *>(&a), sizeof(a)) || listen(listener, 1) ||
+        getsockname(listener, reinterpret_cast<sockaddr *>(&a), &size))
+        throw std::runtime_error("engine control listener failed");
+    Engine &instance = start_engine(shell, crash_file);
+    std::thread([&instance, listener] {
+        for (;;) {
+            const int fd = accept(listener, nullptr, nullptr);
+            if (fd < 0) continue;
+            int on = 1;
+            setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on));
+            serve(instance, fd, fd);
+            close(fd);
+        }
+    }).detach();
+    return ntohs(a.sin_port);
 }
 }  // namespace ba
 

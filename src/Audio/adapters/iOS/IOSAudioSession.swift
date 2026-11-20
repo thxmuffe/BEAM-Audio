@@ -28,19 +28,19 @@ final class IOSAudioSession {
     }
 }
 
-// C entry points let the native GStreamer host share the existing OS-session
-// owner with microphone/output bindings. A native stop releases only its token.
-private final class NativeStreamSessionToken {
+// C entry points let the audio engine's iOS shell share the OS-session owner
+// with other bindings. Stopping its output releases only its own token.
+private final class EngineSessionToken {
     let value: UUID
     init(_ value: UUID) { self.value = value }
 }
-@_cdecl("ba_native_stream_audio_acquire")
-func baNativeStreamAudioAcquire() -> UnsafeMutableRawPointer? {
+@_cdecl("ba_engine_audio_acquire")
+func baEngineAudioAcquire() -> UnsafeMutableRawPointer? {
     guard let token = try? IOSAudioSession.shared.acquire(microphone: false) else { return nil }
-    return Unmanaged.passRetained(NativeStreamSessionToken(token)).toOpaque()
+    return Unmanaged.passRetained(EngineSessionToken(token)).toOpaque()
 }
-@_cdecl("ba_native_stream_audio_release")
-func baNativeStreamAudioRelease(_ pointer: UnsafeMutableRawPointer?) {
+@_cdecl("ba_engine_audio_release")
+func baEngineAudioRelease(_ pointer: UnsafeMutableRawPointer?) {
     guard let pointer else { return }
-    IOSAudioSession.shared.release(Unmanaged<NativeStreamSessionToken>.fromOpaque(pointer).takeRetainedValue().value)
+    IOSAudioSession.shared.release(Unmanaged<EngineSessionToken>.fromOpaque(pointer).takeRetainedValue().value)
 }

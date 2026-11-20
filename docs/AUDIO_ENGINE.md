@@ -1,9 +1,8 @@
 # Audio engine design
 
-Owner decisions 2026-11-20. Replaces the GStreamer decision in
-[AUDIO_ENGINE_INTERFACE.md](AUDIO_ENGINE_INTERFACE.md) once milestone 1 of the
-[plan](PLAN.md#next-own-audio-engine) is measured. Until then GStreamer remains
-the working path.
+Owner decisions 2026-11-20. This engine is the only audio implementation; the
+earlier GStreamer path and its experiments were removed on 2026-11-20. Status
+and next steps are in the [plan](PLAN.md#next-own-audio-engine).
 
 ## Principle
 

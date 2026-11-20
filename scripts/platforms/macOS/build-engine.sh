@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 DEPS="$ROOT/builds/intermediates/engine-deps/macOS"
 OUTPUT="$ROOT/builds/CLI/ba_audio_engine"
-python3 "$ROOT/scripts/platforms/macOS/prepare-engine-deps.py"
+python3 "$ROOT/scripts/platforms/prepare-engine-deps.py" --platform macOS
 # OTP's ei library (erl_interface) from the Erlang that builds the core.
 EI=$(erl -noshell -eval 'io:format("~s",[code:lib_dir(erl_interface)]),halt().')
 WORK="$ROOT/builds/intermediates/engine/macOS"

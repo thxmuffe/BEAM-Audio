@@ -99,16 +99,10 @@ def catalog(product):
                     if relative == 'tests/ReceptionDesk/release-smoke.py' else product/'builds/Windows/OpenSound')
             if relative.startswith('tests/control/cli-') or p.name == 'desktop-web-instances-smoke.py':
                 platform = 'darwin'
-            if relative.startswith(('tests/control/', 'tests/transport/')):
+            if relative.startswith('tests/control/'):
                 required.append(CORE/'builds/intermediates/control/default/lib/ba_core/ebin')
-            if p.name == 'native-stream-smoke.py':
-                platform = 'darwin'
-                required.extend([CORE/'builds/CLI/ba_native_stream',
-                                 CORE/'builds/intermediates/gstreamer/plugins'])
             if p.name == 'desktop-web-instances-smoke.py':
                 required.append(product/'builds/WebApp')
-            if p.name == 'test_analyze_receivers.py':
-                modules = ('numpy',)
             variants = [('default', [])]
             if p.name == 'session-time-smoke.py':
                 variants.append(('production cadence', ['--production-cadence']))

@@ -4,13 +4,12 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")" && pwd)
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
-    # Windows (Git Bash): pinned OTP/rebar3, the core and the native AAC host.
-    # No legacy transport or Python GStreamer runtime.
+    # Windows (Git Bash): pinned OTP/rebar3 and the core. No audio engine shell
+    # for Windows yet (plan step 4).
     python "$ROOT/scripts/platforms/Windows/setup.py"
     OTP="$ROOT/builds/intermediates/Windows/otp"
     export PATH="$OTP/bin:$PATH" REBAR_CACHE_DIR="$ROOT/builds/intermediates/rebar-cache"
     (cd "$ROOT/src/control" && "$OTP/bin/escript.exe" "$ROOT/builds/intermediates/tools/rebar3" compile)
-    python "$ROOT/scripts/platforms/Windows/build-native-stream.py"
     echo "BEAM Audio build complete: windows. Artifacts: $ROOT/builds"
     exit 0 ;;
 esac

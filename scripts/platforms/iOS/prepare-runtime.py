@@ -18,7 +18,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--target', choices=HASHES, default='device')
 args = parser.parse_args()
 target = args.target
-subprocess.run([sys.executable, str(ROOT / 'scripts/platforms/iOS/prepare-gstreamer.py'), '--target', target], check=True)
 archive = ROOT / f'builds/intermediates/iOS/downloads/otp-ios-{target}-d199a49a.tar.gz'
 archive.parent.mkdir(parents=True, exist_ok=True)
 if not archive.exists():
@@ -31,6 +30,8 @@ if not (otp / 'erts-17.1.1/lib/libbeam.a').exists():
     otp.mkdir(parents=True, exist_ok=True)
     # The release tarball contains one temporary staging directory at its root.
     subprocess.run(['tar', '-xzf', str(archive), '--strip-components', '1', '-C', str(otp)], check=True)
+# The in-process audio engine links the runtime's own ei library.
+subprocess.run(['bash', str(ROOT / 'scripts/platforms/iOS/build-engine.sh'), target], check=True)
 # Same OTP version/compiler as the phone runtime; do not copy host OTP libraries.
 version = subprocess.check_output(['erl', '-noshell', '-eval',
     'io:put_chars(erlang:system_info(version)), halt().'], text=True)

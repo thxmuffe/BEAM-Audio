@@ -368,7 +368,7 @@ last. Microphone capture is deferred; iPhone background playback works.
 
 1. **GStreamer backend and enforced control lifetime — prototype implemented.**
    Backend assessment and replacement control contract are recorded in
-   [AUDIO_ENGINE_INTERFACE.md](AUDIO_ENGINE_INTERFACE.md#native-stream-decision--2026-11-18).
+   AUDIO_ENGINE_INTERFACE.md (removed with GStreamer on 2026-11-20).
    The new AAC endpoint has a versioned lifecycle handshake, native guard,
    correlated stop/flush and OTP owner/permission monitoring. Disposable native
    checks cover channel loss, heartbeat expiry, source-owner exit and a stalled
@@ -491,8 +491,12 @@ Status 2026-11-20 (details in PROGRESS.md):
   `engine_flac_srtp_v1` is the only transport; `signal.endpoint` /
   `signal.stream` (X25519 + HKDF, wrapped stream key) replace SDP; one engine
   per Device; the Mac app bundles `ba_audio_engine`. Two CLI Devices on one
-  Mac play system audio end to end. iPhone and Windows are silent until their
-  shells (steps 3, 4). Remaining: the owner's listening test in the Mac app,
+  Mac play system audio end to end.
+- Step 3 (iPhone) implemented 2026-11-20: in-process engine on a loopback
+  control socket, RemoteIO shell, static library linked by the app; the app
+  builds and links. Not yet run on a phone. GStreamer and all its scripts,
+  hosts, experiments and the Windows host are deleted; Windows has no audio
+  until step 4. Remaining: the owner's listening test in the Mac app,
   the GStreamer comparison is moot once its path is gone.
 - CLI: `new device --createsession --enable broadcast` does not turn broadcast
   on (use `call device ... {"method":"capability","capability":"broadcast","enabled":true}`).

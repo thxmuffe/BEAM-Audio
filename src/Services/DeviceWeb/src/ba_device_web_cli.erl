@@ -1,7 +1,7 @@
 -module(ba_device_web_cli).
 -export([main/0,windows_main/0]).
 
-%% Windows audio uses ba_native_stream.exe when BA_WINDOWS_NATIVE_STREAM_HELPER names it.
+%% Audio uses the native engine where the platform has one (not yet on Windows).
 windows_main() ->
     os:putenv("BA_PLATFORM","windows"),
     main().

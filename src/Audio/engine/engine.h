@@ -33,9 +33,13 @@ struct Shell {
     virtual void stop_capture() = 0;
 };
 
-// Runs the engine until stdin closes: control messages in, events out, both
-// as OTP {packet,4} JSON frames. Returns the process exit status.
+// Port program (macOS, Windows, Linux): serves Erlang on stdin/stdout as OTP
+// {packet,4} term frames until the port closes. Returns the exit status.
 int run(Shell &shell, int argc, const char **argv);
+// In-process engine (iOS, where apps cannot start programs): serves one Erlang
+// owner at a time on a 127.0.0.1 TCP port, returned here; the same frames.
+// A closed connection releases every stream; the engine waits for the next.
+uint16_t serve_loopback(Shell &shell, const char *crash_file);
 
 // Crash reporting (crash.cpp): fatal signals, std::terminate.
 void install_crash_handlers(const char *crash_file);

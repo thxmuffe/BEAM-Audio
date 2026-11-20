@@ -39,7 +39,7 @@ sample-position timestamps, RTP/RTCP timing mappings, buffering and output.
 Only control, signalling, timing metadata and bounded diagnostics cross the
 BEAM boundary. The default PCM path is legacy and still violates this target
 boundary; replace it after native playback, recovery and timing qualification.
-See the current [native stream contract](AUDIO_ENGINE_INTERFACE.md).
+See the [audio engine design](AUDIO_ENGINE.md).
 
 Routine liveness and timing must stay scoped to relevant peers/streams and use
 bounded concurrent work, not per-Device Session-wide pings. The explicit CLI
@@ -54,7 +54,7 @@ DSP interfaces and reference implementations remain in BEAM Audio. Keep optional
 backends isolated and avoid speculative abstractions. Swift hosts retain OS
 permissions and identity storage while reusing the web UI and shared BEAM APIs.
 
-Current contracts: [clock](BUFFEE_TIME.md), [audio engines](AUDIO_ENGINE_INTERFACE.md),
+Current contracts: [clock](BUFFEE_TIME.md), [audio engine](AUDIO_ENGINE.md),
 [streams](BUFFEE_STREAMS.md), [builds](BUILDING.md).
 
 ## Parallel local Sessions

@@ -25,5 +25,5 @@ The app Device Handler starts eligible audio Workers from desired settings.
 Speaker receive, microphone capture and system capture are separate actions.
 The Web UI submits commands; the browser itself does not carry audio.
 
-See [engine interface](AUDIO_ENGINE_INTERFACE.md), [clock](BUFFEE_TIME.md),
+See [audio engine](AUDIO_ENGINE.md), [clock](BUFFEE_TIME.md),
 [ownership](BUFFEE_MEMBERSHIP.md) and [current validation](PROGRESS.md).

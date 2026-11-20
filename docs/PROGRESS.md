@@ -1,5 +1,20 @@
 # Current implementation and validation
 
+## iPhone engine shell; GStreamer removed — 2026-11-20
+
+- iOS runs the engine in-process (`ba_audio_engine_start` → 127.0.0.1 control
+  port; Erlang connects with the same `{packet,4}` terms). A closed connection
+  releases all streams; a crash report left by the previous run is posted to
+  chat at next engine use. Libraries cross-built for iOS from the same pinned
+  sources; the iOS OTP runtime's own `libei` is linked.
+- Verified: iOS libraries and engine library build; a link test and an
+  unsigned `xcodebuild` of the app succeed. Not verified: running on a phone,
+  audible playback, the loopback control path at runtime.
+- Removed: Apple GStreamer host, iOS GStreamer runtime glue, Mac native-stream
+  helper and capture, GStreamer download/packaging scripts, Windows native host
+  and its build, `src/Audio/experiments`, the native-stream smoke test,
+  AUDIO_ENGINE_INTERFACE.md. Windows builds without audio. 178 core tests pass.
+
 ## Session audio switched to the engine on Mac/CLI — 2026-11-20
 
 - Transport `engine_flac_srtp_v1` replaces GStreamer AAC in Sessions
