@@ -58,7 +58,7 @@ project(Audio,Clock) ->
             end
         end,Acc,[received,sent,rejected])
     end,O,Transports),
-    T1=lists:foldl(fun engine_fields/2,T,Transports),
+    T1=lists:foldl(fun engine_fields/2,T,one_per_capture(Transports)),
     T2=lists:foldl(fun setup_fields/2,T1,Transports),
     D1=failures(<<"receiver">>,maps:get(diagnostics,Audio,#{}),T2),
     D2=failures(<<"mixer">>,maps:get(diagnostics,Mixer,#{}),D1),
@@ -69,14 +69,18 @@ project(Audio,Clock) ->
     %% Reserve three fields for switches and cache age; preserve summaries before capped reasons.
     {Failures,Summary}=lists:partition(fun({K,_}) -> binary:match(K,<<".failure.">>)=/=nomatch end,maps:to_list(Filtered)),
     maps:from_list(Summary++lists:sublist(lists:sort(Failures),max(0,125-length(Summary)))).
-%% The audio engine's counters. Received streams are summed; the one capture
-%% is reported by every provider worker, so its counters (and every scheduling
-%% error) combine as the maximum.
+%% The audio engine's counters, summed over streams. A capture serving several
+%% receivers is reported by each of its provider workers: count it once.
+%% Scheduling errors combine as the worst stream.
+one_per_capture(Transports) ->
+    {Captures,Others}=lists:partition(fun(T) -> is_map_key(capture,maps:get(stats,T,#{})) end,Transports),
+    maps:values(maps:from_list([{maps:get(capture,maps:get(stats,T)),T} || T <- Captures]))++Others.
 engine_fields(#{stats := Stats},Acc) when is_map(Stats) ->
-    Shared=[sent,send_errors,retransmits,capture_overruns,capture_jumps,capture_error_max_us,schedule_error_max_us,schedule_error_mean_us],
-    maps:fold(fun(K,V,A) when is_atom(K),is_integer(V),V>=0 ->
+    Worst=[capture_error_max_us,schedule_error_max_us,schedule_error_mean_us],
+    maps:fold(fun(capture,_,A) -> A;
+                 (K,V,A) when is_atom(K),is_integer(V),V>=0 ->
             Key=key(<<"transport">>,K),
-            case lists:member(K,Shared) of
+            case lists:member(K,Worst) of
                 false -> A#{Key => maps:get(Key,A,0)+V};
                 true -> A#{Key => max(V,maps:get(Key,A,0))}
             end;

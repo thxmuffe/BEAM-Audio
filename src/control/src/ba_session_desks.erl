@@ -7,8 +7,12 @@ start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MO
 reset() -> gen_server:call(ba_session_scope:ref(?MODULE),reset).
 configure(Session,URLs,Primary,Routes) -> gen_server:call(ba_session_scope:ref(?MODULE),{configure,Session,URLs,Primary,Routes}).
 advertise(Cap) -> gen_server:call(ba_session_scope:ref(?MODULE),{advertise,Cap}).
-lookup(URL,Cap) -> gen_server:call(ba_session_scope:ref(?MODULE),{lookup,URL,Cap},4500).
-send(To,Type,Packet) -> gen_server:call(ba_session_scope:ref(?MODULE),{send,To,Type,Packet},3000).
+%% A Reception that cannot be reached (e.g. while the network changes) is an
+%% ordinary condition: callers get {error,unavailable} instead of a timeout
+%% exit, which used to take Session control and its audio down with it.
+lookup(URL,Cap) -> available(fun() -> gen_server:call(ba_session_scope:ref(?MODULE),{lookup,URL,Cap},4500) end).
+send(To,Type,Packet) -> available(fun() -> gen_server:call(ba_session_scope:ref(?MODULE),{send,To,Type,Packet},3000) end).
+available(Call) -> try Call() catch exit:{timeout,_} -> {error,unavailable} end.
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 init([]) ->
     true = ba_settings:env("BA_IDENTITY_SEED") =/= false,

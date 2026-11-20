@@ -52,13 +52,14 @@ main(Args) ->
     Rows=[sample(T,Sender,R1,R2) || T <- lists:seq(2,Seconds,2)],
     Final=[begin {ok,S}=ba_audio_engine:command(R,#{op => status}),hd(maps:get(speakers,S)) end || R <- [R1,R2]],
     {ok,SenderFinal}=ba_audio_engine:command(Sender,#{op => status}),
-    io:format("Sender: ~p~nReceivers: ~p~n",[maps:without([error],maps:get(capture,SenderFinal)),[maps:without([error],F) || F <- Final]]),
+    [SenderCapture]=maps:get(captures,SenderFinal),
+    io:format("Sender: ~p~nReceivers: ~p~n",[maps:without([error],SenderCapture),[maps:without([error],F) || F <- Final]]),
     WorstMean=lists:max([M || {_,Ms} <- Rows,M <- Ms]),
     Faults=lists:sum([maps:get(K,F) || F <- Final,K <- [late,rejected,jumps]]),
     case Loss of
         0 -> ok;
         _ -> io:format("Loss ~p%: sender dropped ~p first transmissions and resent ~p; receivers recovered ~p~n",
-            [Loss,maps:get(test_dropped,maps:get(capture,SenderFinal)),maps:get(retransmits,maps:get(capture,SenderFinal)),
+            [Loss,maps:get(test_dropped,SenderCapture),maps:get(retransmits,SenderCapture),
              [maps:get(recovered,F) || F <- Final]])
     end,
     case WorstMean<100.0 andalso Faults=:=0 of
@@ -68,7 +69,7 @@ main(Args) ->
 
 sample(T,Sender,R1,R2) ->
     timer:sleep(2000),
-    {ok,#{capture := C}}=ba_audio_engine:command(Sender,#{op => status}),
+    {ok,#{captures := [C]}}=ba_audio_engine:command(Sender,#{op => status}),
     Rs=[begin {ok,#{speakers := [S]}}=ba_audio_engine:command(R,#{op => status}),S end || R <- [R1,R2]],
     Err=fun(#{error := #{mean_us := M,max_us := X}}) -> io_lib:format("~8.1f / ~8.1f",[float(M),float(X)]) end,
     io:format("~6B  ~-24s ~-36s ~-36s~n",[T+2,Err(C)|[[Err(S),io_lib:format("  ~B ~B",[maps:get(missing_frames,S),maps:get(late,S)])] || S <- Rs]]),

@@ -6,7 +6,7 @@
 %% 2026-11-20). See docs/AUDIO_ENGINE.md.
 -module(ba_audio_engine).
 -behaviour(gen_server).
--export([start_link/0,start_link/1,ensure/0,command/2,command/3,send_command/2,udp_port/1,mapped/1,available/0,executable/0]).
+-export([start_link/0,start_link/1,ensure/0,command/2,command/3,send_command/2,udp_port/1,mapped/1,listen/2,available/0,executable/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
 
 -define(CLOCK_INTERVAL,5000).
@@ -41,6 +41,8 @@ start_link(Opts) -> gen_server:start_link(?MODULE,Opts#{owner => maps:get(owner,
 udp_port(Pid) -> gen_server:call(Pid,udp_port).
 %% The engine socket's public address as STUN last saw it: [] or [[Host,Port]].
 mapped(Pid) -> gen_server:call(Pid,mapped).
+%% Engine events carrying this probe token go to the caller.
+listen(Pid,Token) -> gen_server:call(Pid,{listen,Token}).
 %% Returns {ok,Reply} or {error,Text}; Reply is the engine's map without id/op/event.
 command(Pid,Command) -> command(Pid,Command,5000).
 command(Pid,Command,Timeout) -> gen_server:call(Pid,{command,Command},Timeout).
@@ -76,6 +78,7 @@ init(Opts) ->
 
 handle_call(udp_port,_,S) -> {reply,maps:get(udp_port,S),S};
 handle_call(mapped,_,S) -> {reply,maps:get(mapped,S),S};
+handle_call({listen,Token},{Caller,_},S) -> {reply,ok,S#{listeners := (maps:get(listeners,S))#{Token => Caller}}};
 handle_call({command,C},{Caller,_}=From,#{next := Id}=S) ->
     send(C#{id => Id},S),
     %% Events about a stream (e.g. capture_started) go to whoever started it.

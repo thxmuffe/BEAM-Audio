@@ -200,10 +200,8 @@ render(Data,Color) ->
         _ -> "N/A"
     end,
     Names=[device_name(R) || R <- Rows],
-    [Header,master_clock_line(maps:get(<<"clock">>,Data,#{}),Rows),
-     "Response time: ",Response,"\n","  CHANNEL     STATE                  PEAK dBFS  RMS dBFS  STAGE        AGE ms\n",
-     [row_lines(R,Color,length([N || N <- Names,N=:=device_name(R)])>1) || R <- Rows],
-     "N/A = unavailable; receive_max = loudest received Source, before physical speaker output; output_submitted = PCM handed to binding, not proof of audible sound.\n"].
+    [Header,master_clock_line(maps:get(<<"clock">>,Data,#{}),Rows),"  Response time: ",Response,"\n",
+     [row_lines(R,Color,length([N || N <- Names,N=:=device_name(R)])>1) || R <- Rows]].
 master_clock_line(Clock,Rows) ->
     try
         #{<<"device">> := Id,<<"utc_time_ns">> := Value,<<"age_ms">> := Age,<<"state">> := State}=maps:get(<<"master_clock">>,Clock),
@@ -212,101 +210,81 @@ master_clock_line(Clock,Rows) ->
         UTC=calendar:system_time_to_rfc3339(Ms,[{unit,millisecond},{offset,"Z"}]),
         Name=case [R || #{<<"id">> := I}=R <- Rows,I=:=Id] of [R] -> device_name(R);_ -> device_name(#{<<"id">> => Id}) end,
         ["Master clock: ",UTC," | ",Name," | sample age: ",integer_to_list(Age)," ms",
-            case State of <<"fresh">> -> [];_ -> " (stale)" end,"\n"]
-    catch _:_ -> "Master clock: N/A\n" end.
+            case State of <<"fresh">> -> [];_ -> " (stale)" end]
+    catch _:_ -> "Master clock: N/A" end.
+%% One Device: its name and channels on one line, then only what has content.
 row_lines(#{<<"id">> := Id,<<"state">> := State}=R,Color,Duplicate) ->
     Short=binary:part(Id,0,min(12,byte_size(Id))),Name=device_name(R),
     Title=case Duplicate of true -> [Name," (",Short,")"];false -> Name end,
-    Lines=case maps:find(<<"capabilities">>,R) of
-        error -> tint(State,["  ",safe(State),"\n"],Color);
+    Channels=case maps:find(<<"capabilities">>,R) of
+        error -> tint(State,safe(State),Color);
         {ok,C} ->
             Audio=maps:get(<<"audio">>,C,#{}),
             case map_size(Audio) of
-                0 -> tint(<<"disabled">>,"  No audio capabilities\n",Color);
-                _ -> [begin E=maps:get(K,Audio,#{}),Status=maps:get(<<"state">>,E,State),
-                    Line=case Status of
-                        <<"disabled">> -> io_lib:format("  ~-10ts  ~ts~n",[K,Status]);
-                        _ -> io_lib:format("  ~-10ts  ~-21ts  ~9ts  ~8ts  ~-11ts  ~ts~n",[K,
-                            safe(Status),level(maps:get(<<"peak_db">>,E,null)),level(maps:get(<<"rms_db">>,E,null)),
-                            safe(maps:get(<<"meter_stage">>,E,<<"N/A">>)),number(maps:get(<<"meter_age_ms">>,E,null))])
-                    end,tint(Status,Line,Color)
-                end || K <- [<<"speaker">>,<<"microphone">>,<<"broadcast">>]]
+                0 -> tint(<<"disabled">>,"no audio",Color);
+                _ -> lists:join("  ",[channel(K,maps:get(K,Audio,#{}),State,Color) || K <- [<<"speaker">>,<<"microphone">>,<<"broadcast">>]])
             end
     end,
-    [paint("1",[Title,"\n"],Color),Lines,diagnostic_lines(R,Color),paint("90",[lists:duplicate(83,$-),"\n"],Color)].
+    [paint("1",Title,Color),"   ",Channels,"\n",diagnostic_lines(R,Color),paint("90",[lists:duplicate(83,$-),"\n"],Color)].
+channel(K,E,Default,Color) ->
+    Status=maps:get(<<"state">>,E,Default),
+    Levels=case maps:find(<<"peak_db">>,E) of
+        {ok,Peak} when is_number(Peak) -> [" ",level(Peak),"/",level(maps:get(<<"rms_db">>,E,null))," dB"];
+        _ -> []
+    end,
+    tint(Status,[K," ",case Status of <<"disabled">> -> "off";_ -> safe(Status) end,Levels],Color).
 diagnostic_lines(R,Color) ->
     Caps=maps:get(<<"capabilities">>,R,#{}),
     Errors=[tint(<<"error">>,["  ! ",K,": ",safe(Error),"\n"],Color) ||
         {K,Entry} <- maps:to_list(maps:get(<<"audio">>,Caps,#{})),
-        Error <- [maps:get(<<"error">>,Entry,<<>>)],Error=/=<<>>],
+        Error <- [maps:get(<<"error">>,Entry,<<>>)],Error=/=<<>>,maps:get(<<"state">>,Entry,undefined)=/=<<"unsupported">>],
     case maps:find(<<"audio_diagnostics">>,Caps) of
         error -> [Errors,case maps:is_key(<<"audio">>,Caps) of
-            true -> paint("90","  Playback diagnostics: unavailable (Device update required)\n",Color);
+            true -> paint("90","  diagnostics unavailable (Device update required)\n",Color);
             false -> [] end];
         {ok,D} ->
-            Clock=io_lib:format("  Clock: ~ts  correction: ~ts ns~n",[
-                safe(maps:get(<<"clock.state">>,D,<<"unavailable">>)),number(maps:get(<<"clock.remaining_correction_ns">>,D,null))]),
-            Playback=case maps:is_key(<<"mixer.rendered">>,D) of
-                false -> [];
-                true -> io_lib:format("  Mixer: ~ts rendered  ~ts dropped  ~ts queued  ~ts clipped frames~n",[
-                    number(maps:get(K,D,null)) || K <- [<<"mixer.rendered">>,<<"mixer.dropped">>,<<"mixer.queued_blocks">>,<<"mixer.clipped_frames">>]])
+            Analysis=case maps:get(<<"diagnostics.analysis">>,D,true) of
+                false -> "  audio analysis off\n";
+                true -> [io_lib:format("  clock ~ts (~ts ns)  sample ~ts ms~n",[safe(maps:get(<<"clock.state">>,D,<<"unavailable">>)),
+                            number(maps:get(<<"clock.remaining_correction_ns">>,D,null)),number(maps:get(<<"diagnostics.age_ms">>,D,null))]),
+                         mixer_line(D),engine_lines(D)]
             end,
-            Failures=[tint(<<"error">>,io_lib:format("  ! ~ts: ~B (total)~n",[safe(K),V]),Color) ||
-                {K,V} <- lists:sort(maps:to_list(D)),is_integer(V),V>0,binary:match(K,<<".failure.">>)=/=nomatch],
-            MeterLines=[io_lib:format("  ~ts: ~ts peak / ~ts RMS dBFS  age ~ts ms~n",[
-                safe(K),level(maps:get(<<"peak_db">>,E)),level(maps:get(<<"rms_db">>,E)),number(maps:get(<<"meter_age_ms">>,E))]) ||
-                {K,E} <- lists:sort(maps:to_list(maps:get(<<"audio_meters">>,Caps,#{})))],
-            [Errors,MeterLines,case maps:get(<<"diagnostics.analysis">>,D,true) of
-                false -> "  Audio analysis: OFF\n";
-                true -> ["  Diagnostic sample age: ",number(maps:get(<<"diagnostics.age_ms">>,D,null))," ms\n",Clock,Playback,transport_lines(D),engine_lines(D),output_line(D)]
-            end,case maps:get(<<"diagnostics.meters">>,D,true) of false -> "  Audio meters: OFF\n";true -> [] end,Failures,
-            [["  Recent: ",safe(maps:get(<<"stage">>,E))," / ",safe(maps:get(<<"reason">>,E)),
-              " (",number(maps:get(<<"age_ms">>,E))," ms ago)\n"] || E <- lists:sublist(lists:sort(fun(A,B) -> maps:get(<<"age_ms">>,A)<maps:get(<<"age_ms">>,B) end,maps:values(maps:get(<<"audio_trace">>,Caps,#{}))),3)]]
+            [Analysis,Errors,failure_line(D,maps:get(<<"audio_trace">>,Caps,#{}),Color)]
     end.
-%% Connection setup of current transports, e.g. "2 ice_checking" with the
-%% candidate types each side has seen and the STUN/TURN URLs configured.
-transport_lines(D) ->
-    Group=fun(Prefix) ->
-        Size=byte_size(Prefix),
-        lists:join(" ",[[number(V)," ",safe(binary:part(K,Size,byte_size(K)-Size))] ||
-            {K,V} <- lists:sort(maps:to_list(D)),is_integer(V),V>0,byte_size(K)>Size,binary:part(K,0,Size)=:=Prefix])
+mixer_line(D) ->
+    case maps:is_key(<<"mixer.rendered">>,D) of
+        false -> [];
+        true -> io_lib:format("  mixer ~ts rendered  ~ts dropped  ~ts queued  ~ts clipped~n",[
+            number(maps:get(K,D,null)) || K <- [<<"mixer.rendered">>,<<"mixer.dropped">>,<<"mixer.queued_blocks">>,<<"mixer.clipped_frames">>]])
+    end.
+%% Every failure count on one line, with the most recent traced reason.
+failure_line(D,Trace,Color) ->
+    Failures=[io_lib:format("~ts: ~B",[safe(K),V]) ||
+        {K,V} <- lists:sort(maps:to_list(D)),is_integer(V),V>0,binary:match(K,<<".failure.">>)=/=nomatch],
+    Recent=case lists:sort(fun(A,B) -> maps:get(<<"age_ms">>,A)<maps:get(<<"age_ms">>,B) end,maps:values(Trace)) of
+        [E|_] -> [" (last ",safe(maps:get(<<"stage">>,E)),"/",safe(maps:get(<<"reason">>,E))," ",
+                  number(maps:get(<<"age_ms">>,E) div 1000)," s ago)"];
+        [] -> []
     end,
-    case Group(<<"transport.stage.">>) of
+    case Failures of
         [] -> [];
-        Stages ->
-            None=fun([]) -> "none";(L) -> L end,
-            ["  Transport setup: ",Stages,"  (",number(maps:get(<<"transport.open">>,D,0)),"/",
-             number(maps:get(<<"transport.media">>,D,0))," open)\n",
-             "    candidates local: ",None(Group(<<"transport.local_candidates.">>)),
-             "  remote: ",None(Group(<<"transport.remote_candidates.">>)),
-             "  ICE servers: ",number(maps:get(<<"transport.ice.stun_urls">>,D,0))," STUN / ",
-             number(maps:get(<<"transport.ice.turn_urls">>,D,0))," TURN\n"]
+        _ -> tint(<<"error">>,["  ! ",lists:join("  ",Failures),Recent,"\n"],Color)
     end.
 %% The audio engine's own counters: receiving and/or sending streams.
 engine_lines(D) ->
     N=fun(K) -> number(maps:get(<<"transport.",K/binary>>,D,null)) end,
     Receive=case maps:is_key(<<"transport.packets">>,D) of
         false -> [];
-        true -> io_lib:format("  Engine in: ~ts packets  ~ts late  ~ts missing frames  ~ts re-positions  ~ts duplicates  ~ts rejected~n"
-                              "    recovery ~ts requests / ~ts recovered  schedule error ~ts us mean / ~ts us max~n",
+        true -> io_lib:format("  in  ~ts pkts  ~ts late  ~ts missing  ~ts jumps  ~ts dup  ~ts rej  ~ts/~ts recovered  err ~ts/~ts us~n",
             [N(K) || K <- [<<"packets">>,<<"late">>,<<"missing_frames">>,<<"jumps">>,<<"duplicates">>,<<"rejected">>,
-                          <<"nacks">>,<<"recovered">>,<<"schedule_error_mean_us">>,<<"schedule_error_max_us">>]])
+                          <<"recovered">>,<<"nacks">>,<<"schedule_error_mean_us">>,<<"schedule_error_max_us">>]])
     end,
     Send=case maps:is_key(<<"transport.sent">>,D) of
         false -> [];
-        true -> io_lib:format("  Engine out: ~ts sends  ~ts resent  ~ts send errors  ~ts capture overruns  ~ts re-positions  error ~ts us max~n",
+        true -> io_lib:format("  out ~ts sends  ~ts resent  ~ts errors  ~ts overruns  ~ts jumps  err ~ts us~n",
             [N(K) || K <- [<<"sent">>,<<"retransmits">>,<<"send_errors">>,<<"capture_overruns">>,<<"capture_jumps">>,<<"capture_error_max_us">>]])
     end,
     [Receive,Send].
-output_line(#{<<"output.supported">> := true}=D) ->
-    io_lib:format("  Output (~ts): engine ~ts  player ~ts  route ~ts  volume ~ts/1000~n    ~ts scheduled / ~ts completed frames  ~ts queued / ~ts rejected buffers  stats age ~ts ms~n",[
-        safe(maps:get(<<"output.backend">>,D,<<"unknown">>)),
-        number(maps:get(<<"output.engine_running">>,D,null)),number(maps:get(<<"output.player_running">>,D,null)),
-        safe(maps:get(<<"output.route">>,D,<<"unavailable">>)),number(maps:get(<<"output.volume_milli">>,D,null)),
-        number(maps:get(<<"output.scheduled_frames">>,D,null)),number(maps:get(<<"output.completed_frames">>,D,null)),
-        number(maps:get(<<"output.queued_buffers">>,D,null)),number(maps:get(<<"output.rejected_buffers">>,D,null)),
-        number(maps:get(<<"output.stats_age_ms">>,D,null))]);
-output_line(_) -> "  Native output diagnostics: unavailable\n".
 device_name(#{<<"id">> := Id}=R) ->
     case maps:get(<<"name">>,R,<<>>) of
         <<>> -> binary:part(Id,0,min(12,byte_size(Id)));

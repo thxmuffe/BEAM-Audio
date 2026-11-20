@@ -1,5 +1,31 @@
 # Current implementation and validation
 
+## Microphone, peer-reflexive routing, freeze fix, compact monitor — 2026-11-20
+
+- Microphone ON AIR: `ba_audio_capture` (platform independent, replaces
+  `ba_mac_native_audio`) serves `broadcast` and `microphone`; platforms list
+  their sources (Mac both, iPhone microphone only). Mac shell captures the
+  default input (permission via AVFoundation, input latency subtracted); iPhone
+  shell uses an input-only RemoteIO with play-and-record session. Captures
+  run concurrently (owner: concurrency is the design; an interim
+  one-at-a-time limit was removed): the engine has up to 4 capture slots, each
+  its own ring, sender and stream. Live: one Device sending system audio and
+  microphone at once, received as two active streams and mixed; two sending
+  Devices to one receiver likewise; 0 rejected. iPhone microphone builds, not
+  yet run.
+- Owner on mobile data: audio stopped, returned at once on Wi-Fi: punching did
+  not open a path through the carrier NAT. Added peer-reflexive routing: the
+  receiver's punch probes carry a token both sides derive from the attempt; the
+  provider streams to the address they really come from. Not yet re-tested.
+- iPhone freeze on Wi-Fi off: `ba_session_desks` blocked on a dead Reception
+  lookup; Session control's send call timed out and crashed, taking audio
+  down. Desk send/lookup timeouts now return `{error,unavailable}`.
+- Monitor is about a third of its former length: one header line per Device
+  with channels, clock line, engine in/out lines, one failures line.
+- Open: the iPhone showed about as many rejected packets as accepted with two
+  streams (Mac app and Web Device) on air. Not reproducible with current code
+  on the Mac (two senders, one receiver: 0 rejected); re-check on the phone.
+
 ## Milestone 2: routing, recovery, hole punching — 2026-11-20
 
 - Connectivity checks: the provider routes a stream only to a receiver address

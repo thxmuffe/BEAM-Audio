@@ -14,7 +14,8 @@
 // Never allocate, lock or throw in these.
 extern "C" {
 void ba_engine_render(float *out, uint32_t frames, uint64_t host_time_ns);
-void ba_engine_capture(const float *in, uint32_t frames, uint64_t host_time_ns);
+// slot: the capture the engine named in Shell::start_capture (several at once).
+void ba_engine_capture(int slot, const float *in, uint32_t frames, uint64_t host_time_ns);
 }
 
 namespace ba {
@@ -27,10 +28,11 @@ struct Shell {
     // Starts the default output device; returns its sample rate.
     virtual uint32_t start_output() = 0;
     virtual void stop_output() = 0;
-    // source: "system" (OS output tap), "tone" (test signal). Returns the
-    // capture sample rate; frames arrive through ba_engine_capture.
-    virtual uint32_t start_capture(const std::string &source) = 0;
-    virtual void stop_capture() = 0;
+    // source: "system" (OS output tap), "mic", "tone" (test signal). Several
+    // captures run at once, each in its own slot. Returns the capture sample
+    // rate; frames arrive through ba_engine_capture(slot, ...).
+    virtual uint32_t start_capture(int slot, const std::string &source) = 0;
+    virtual void stop_capture(int slot) = 0;
 };
 
 // Port program (macOS, Windows, Linux): serves Erlang on stdin/stdout as OTP

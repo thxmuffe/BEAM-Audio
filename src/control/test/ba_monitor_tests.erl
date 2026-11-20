@@ -8,9 +8,9 @@ render_master_clock_value_age_and_staleness_test() ->
     Reading=#{<<"device">> => Id,<<"utc_time_ns">> => <<"1794941608123456789">>,<<"age_ms">> => 250,<<"state">> => <<"fresh">>},
     Render=fun(R) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => #{<<"master_clock">> => R}})) end,
     ?assertNotEqual(nomatch,binary:match(Render(Reading),
-        <<"Master clock: 2026-11-17T18:53:28.123Z | Broadcast Mac | sample age: 250 ms\n">>)),
+        <<"Master clock: 2026-11-17T18:53:28.123Z | Broadcast Mac | sample age: 250 ms">>)),
     ?assertNotEqual(nomatch,binary:match(Render(Reading#{<<"state">> := <<"stale">>}),<<"250 ms (stale)">>)),
-    ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Master clock: N/A\n">>)).
+    ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Master clock: N/A">>)).
 
 render_shared_response_time_and_readiness_test() ->
     View=#{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => []},
@@ -24,7 +24,7 @@ render_missing_levels_is_not_silence_test() ->
     View=#{<<"session">> => #{<<"name">> => <<"Test">>,<<"session">> => binary:copy(<<"B">>,32)},<<"state">> => <<"authorized">>,
         <<"devices">> => [#{<<"id">> => Id,<<"state">> => <<"ok">>,<<"capabilities">> => #{<<"audio">> => #{<<"broadcast">> => Entry}}}]},
     Text=iolist_to_binary(ba_cli_monitor:render(View)),
-    ?assertNotEqual(nomatch,binary:match(Text,<<"N/A">>)),
+    %% Missing levels are left out, never shown as silence.
     ?assertEqual(nomatch,binary:match(Text,<<"-96.0">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"running">>)).
 
@@ -90,14 +90,14 @@ render_channel_error_and_missed_targets_test() ->
     ?assertNotEqual(nomatch,binary:match(Text,<<"mixer.failure.missed_packet_target: 2">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"10 rendered  2 dropped  5 queued">>)).
 
-render_output_progress_and_analysis_off_test() ->
+render_engine_counters_and_analysis_off_test() ->
     View=fun(D) -> #{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
         #{<<"id">> => binary:copy(<<"A">>,64),<<"state">> => <<"ok">>,<<"capabilities">> => #{<<"audio_diagnostics">> => D}}]} end,
-    Text=iolist_to_binary(ba_cli_monitor:render(View(#{<<"output.supported">> => true,<<"output.backend">> => <<"ios">>,
-        <<"output.engine_running">> => true,<<"output.player_running">> => true,<<"output.route">> => <<"speaker">>,
-        <<"output.scheduled_frames">> => 960,<<"output.completed_frames">> => 704}))),
-    ?assertNotEqual(nomatch,binary:match(Text,<<"engine running  player running  route speaker">>)),
-    ?assertNotEqual(nomatch,binary:match(Text,<<"960 scheduled / 704 completed frames">>)),
+    Text=iolist_to_binary(ba_cli_monitor:render(View(#{<<"transport.packets">> => 960,<<"transport.late">> => 2,
+        <<"transport.recovered">> => 5,<<"transport.nacks">> => 6,<<"transport.sent">> => 704,<<"transport.retransmits">> => 1}))),
+    ?assertNotEqual(nomatch,binary:match(Text,<<"in  960 pkts  2 late">>)),
+    ?assertNotEqual(nomatch,binary:match(Text,<<"5/6 recovered">>)),
+    ?assertNotEqual(nomatch,binary:match(Text,<<"out 704 sends  1 resent">>)),
     Off=iolist_to_binary(ba_cli_monitor:render(View(#{<<"diagnostics.analysis">> => false,<<"diagnostics.meters">> => false}))),
-    ?assertNotEqual(nomatch,binary:match(Off,<<"Audio analysis: OFF">>)),
-    ?assertEqual(nomatch,binary:match(Off,<<"Clock: unavailable">>)).
+    ?assertNotEqual(nomatch,binary:match(Off,<<"audio analysis off">>)),
+    ?assertEqual(nomatch,binary:match(Off,<<"clock unavailable">>)).

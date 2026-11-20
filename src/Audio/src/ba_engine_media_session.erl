@@ -13,7 +13,10 @@
 %% connectivity probe (a token the receiving engine echoes). Both sides list
 %% their local and public (STUN) addresses; the receiver also probes the
 %% provider, which opens its own NAT towards it (hole punching), and keeps
-%% doing so to hold the path open. The receiver announces its addresses again
+%% doing so to hold the path open. Those punch probes carry a token derived
+%% from the attempt, so the provider also learns the address they really come
+%% from (a peer-reflexive candidate) and streams there: behind carrier NAT that
+%% is often the only address that works. The receiver announces its addresses again
 %% when they change; the provider probes again and re-routes, and playback
 %% continues from the same buffer. No relay yet (owner 2026-11-20).
 -module(ba_engine_media_session).
@@ -32,7 +35,11 @@ start_link(Args) -> gen_server:start_link(?MODULE,Args,[]).
 
 init(#{owner := Owner,role := Role,descriptor := D,attempt := Attempt,context := #{deadline := Deadline}}=Args) ->
     process_flag(trap_exit,true),
-    Permission=case Role of provider -> broadcast;receiver -> playback end,
+    %% A provider sends what its source captures: system audio or microphone.
+    Permission=case Role of
+        provider -> {ok,Kind}=gen_server:call(maps:get(source_pid,Args),{stream,kind},1000),Kind;
+        receiver -> playback
+    end,
     case ba_device_permission:enter(Permission) of
         {ok,Token} ->
             Watch=[Owner|[P || P <- [maps:get(source_pid,Args,undefined)],is_pid(P)]],
@@ -48,7 +55,7 @@ init(#{owner := Owner,role := Role,descriptor := D,attempt := Attempt,context :=
             erlang:send_after(?SETUP_TIMEOUT,self(),setup_timeout),
             case Role of
                 receiver -> erlang:send_after(?ADDRESS_CHECK,self(),address_check),{ok,announce(S)};
-                provider -> {ok,S}
+                provider -> ok=ba_audio_engine:listen(Engine,punch_token(Attempt)),{ok,S}
             end;
         {error,R} -> {stop,R}
     end.
@@ -93,10 +100,17 @@ handle_info(address_check,#{role := receiver}=S) ->
     erlang:send_after(?ADDRESS_CHECK,self(),address_check),
     {noreply,case addresses(S)=:=maps:get(addresses,S) of true -> S;false -> announce(S) end};
 %% Outbound probes open this side's NAT towards the provider and keep it open.
-handle_info(punch,#{role := receiver,engine := Engine,provider := Peers}=S) ->
+handle_info(punch,#{role := receiver,engine := Engine,provider := Peers,attempt := Attempt}=S) ->
     erlang:send_after(?PUNCH_INTERVAL,self(),punch),
-    {ok,_}=ba_audio_engine:command(Engine,#{op => probe,token => crypto:strong_rand_bytes(16),peers => Peers}),
+    {ok,_}=ba_audio_engine:command(Engine,#{op => probe,token => punch_token(Attempt),peers => Peers}),
     {noreply,S};
+%% The receiver's punch arrived: stream to where it came from, and follow it.
+handle_info({ba_audio_engine,_,#{event := <<"probe_seen">>,host := Host,port := Port}},#{role := provider,source := Source}=S) ->
+    case maps:get(route,S,undefined) of
+        [Host,Port] -> {noreply,S};
+        _ -> ok=gen_server:call(Source,{stream,{add_peers,self(),[[Host,Port]]}},1000),
+             {noreply,maps:remove(probe,S#{route => [Host,Port]})}
+    end;
 handle_info({reprobe,Token},#{probe := Token}=S) ->
     probe_send(S),erlang:send_after(?PROBE_INTERVAL,self(),{reprobe,Token}),{noreply,S};
 handle_info({ba_audio_engine,_,#{event := <<"probe_reply">>,token := Token,host := Host,port := Port}},#{probe := Token,source := Source}=S) ->
@@ -128,7 +142,7 @@ provide(#{<<"public">> := Peer}=P,#{source := Source,attempt := Attempt}=S) ->
                 <<"public">> => binary:encode_hex(maps:get(public,S)),<<"wrapped">> => binary:encode_hex(Wrapped),
                 <<"ssrc">> => Ssrc,<<"rate">> => Rate,<<"anchor_ns">> => integer_to_binary(Anchor),
                 <<"addresses">> => addresses(S)}},
-            S#{open := true};
+            S#{open := true,ssrc => Ssrc};
         {error,capture_starting} ->
             erlang:send_after(100,self(),retry_provide),S#{endpoint => P}
     end.
@@ -174,6 +188,8 @@ follow_delay(#{role := receiver,open := true,delay := Old,engine := Engine,ssrc 
 follow_delay(S) -> S.
 
 %% ---- Keys and addresses -------------------------------------------------------------
+%% Both sides know the attempt, so the receiver's punch probes need no exchange.
+punch_token(Attempt) -> binary:part(crypto:hash(sha256,[<<"ba punch v1">>,Attempt]),0,16).
 secret(PeerPublic,#{private := Private}) when byte_size(PeerPublic)=:=32 ->
     crypto:compute_key(ecdh,PeerPublic,Private,x25519).
 %% HKDF-SHA256 (RFC 5869) from the X25519 secret, bound to this attempt.
@@ -227,8 +243,12 @@ stream_stats(receiver,#{speakers := Speakers},#{ssrc := Ssrc}) ->
             schedule_error_max_us => round(maps:get(max_us,E)),schedule_error_mean_us => round(maps:get(mean_us,E))};
         [] -> #{}
     end;
-stream_stats(provider,#{capture := #{error := E}=C},_) ->
-    #{sent => maps:get(sent,C),send_errors => maps:get(send_errors,C),capture_overruns => maps:get(overruns,C),
-      capture_jumps => maps:get(jumps,C),capture_error_max_us => round(maps:get(max_us,E)),
-      retransmits => maps:get(retransmits,C)};
+stream_stats(provider,#{captures := Captures},#{ssrc := Ssrc}) ->
+    case [C || #{ssrc := I}=C <- Captures,I=:=Ssrc] of
+        [#{error := E}=C] ->
+            #{capture => Ssrc,sent => maps:get(sent,C),send_errors => maps:get(send_errors,C),capture_overruns => maps:get(overruns,C),
+              capture_jumps => maps:get(jumps,C),capture_error_max_us => round(maps:get(max_us,E)),
+              retransmits => maps:get(retransmits,C)};
+        [] -> #{}
+    end;
 stream_stats(_,_,_) -> #{}.

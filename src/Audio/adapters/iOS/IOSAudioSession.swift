@@ -34,9 +34,19 @@ private final class EngineSessionToken {
     let value: UUID
     init(_ value: UUID) { self.value = value }
 }
+/// Called on the engine's control thread, never the main thread: the first
+/// microphone use waits here for the user's answer to the permission prompt.
 @_cdecl("ba_engine_audio_acquire")
-func baEngineAudioAcquire() -> UnsafeMutableRawPointer? {
-    guard let token = try? IOSAudioSession.shared.acquire(microphone: false) else { return nil }
+func baEngineAudioAcquire(_ microphone: Bool) -> UnsafeMutableRawPointer? {
+    if microphone {
+        if AVAudioApplication.shared.recordPermission == .undetermined {
+            let answered = DispatchSemaphore(value: 0)
+            AVAudioApplication.requestRecordPermission { _ in answered.signal() }
+            answered.wait()
+        }
+        guard AVAudioApplication.shared.recordPermission == .granted else { return nil }
+    }
+    guard let token = try? IOSAudioSession.shared.acquire(microphone: microphone) else { return nil }
     return Unmanaged.passRetained(EngineSessionToken(token)).toOpaque()
 }
 @_cdecl("ba_engine_audio_release")

@@ -13,9 +13,15 @@ configure() ->
         _ -> ok
     end.
 configure(#{platform := Platform}) ->
-    %% The native audio engine is the only audio path; capture exists on macOS.
-    Capture=case Platform of mac -> ba_mac_native_audio;_ -> ba_no_capture end,
+    %% The native audio engine is the only audio path. What each platform's
+    %% engine shell can capture: iOS lets no app record other apps' audio.
+    {Capture,Sources}=case Platform of
+        mac -> {ba_audio_capture,[broadcast,microphone]};
+        ios -> {ba_audio_capture,[microphone]};
+        _ -> {ba_no_capture,[]}
+    end,
     application:set_env(ba_core,audio_automation,true),
+    application:set_env(ba_core,audio_capture_sources,Sources),
     application:set_env(ba_core,audio_capture_adapter,Capture).
 
 consent() ->

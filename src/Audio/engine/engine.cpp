@@ -66,14 +66,15 @@ bool read_exact(int fd, uint8_t *p, size_t n) {
     return true;
 }
 
-CaptureRing capture_ring;
+constexpr int MaxCaptures = 4;  // concurrent local sources (system audio, microphone, ...)
+std::array<CaptureRing, MaxCaptures> capture_rings;
 
 struct Engine {
     Shell &shell;
     Clock clock;
     int socket = -1;
     std::array<std::atomic<Speaker *>, MaxSpeakers> speakers{};
-    std::atomic<Sender *> sender{nullptr};
+    std::array<std::atomic<Sender *>, MaxCaptures> senders{};  // slot i drains capture_rings[i]
     std::atomic<uint32_t> out_rate{0};
     std::atomic<uint64_t> callbacks{0}, oversized{0};
     std::mutex task_mutex;
@@ -128,12 +129,17 @@ struct Engine {
             } else {
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
-            if (Sender *s = sender.load()) s->drain(capture_ring, clock);
+            for (int i = 0; i < MaxCaptures; ++i)
+                if (Sender *s = senders[i].load()) s->drain(capture_rings[i], clock);
         }
     }
 
     void receive(uint8_t *packet, int size, const sockaddr_in6 &from) {
         if (size == ProbeSize && tagged(packet, size, "BAPR")) {
+            // Erlang learns where the probe really came from: behind a NAT
+            // that maps each destination separately, only this address works.
+            emit({{"event", "probe_seen"}, {"token", std::string(reinterpret_cast<char *>(packet + 4), 16)},
+                  {"host", host_of(from)}, {"port", ntohs(from.sin6_port)}});
             memcpy(packet, "BAPA", 4);  // echo the token: the path works both ways
             sendto(socket, packet, size_t(size), 0, reinterpret_cast<const sockaddr *>(&from), sizeof(from));
             return;
@@ -151,8 +157,7 @@ struct Engine {
         }
         if (size >= 10 && tagged(packet, size, "BANK")) {
             const int count = read16(packet + 8);
-            Sender *s = sender.load();
-            if (s && s->ssrc() == read32(packet + 4) && size >= 10 + 2 * count) s->retransmit(packet + 10, count, from);
+            if (Sender *s = find_sender(read32(packet + 4)); s && size >= 10 + 2 * count) s->retransmit(packet + 10, count, from);
             return;
         }
         uint32_t ssrc = 0;
@@ -179,7 +184,7 @@ struct Engine {
         if (op == "start_speaker") return start_speaker(c);
         if (op == "stop_speaker") return stop_speaker(c.at("ssrc"));
         if (op == "start_capture") return start_capture(c);
-        if (op == "stop_capture") return stop_capture();
+        if (op == "stop_capture") return stop_capture(c.at("ssrc"));
         if (op == "route") return route(c.at("ssrc"), parse_peers(c.at("peers")));
         if (op == "volume") return volume(c.at("ssrc"), c.at("gain"));
         if (op == "delay") return delay(c.at("ssrc"), c.at("delay_ms"));
@@ -187,7 +192,8 @@ struct Engine {
         if (op == "stun") return stun(c.at("token"), parse_peers(c.at("servers")));
         if (op == "test_loss") {
             on_packet_thread([&] {
-                if (Sender *s = sender.load()) s->set_test_loss(c.at("percent"));
+                for (auto &slot : senders)
+                    if (Sender *s = slot.load()) s->set_test_loss(c.at("percent"));
             });
             return json::object();
         }
@@ -241,37 +247,60 @@ struct Engine {
         return json::object();
     }
 
+    // Packet thread or control thread: senders only change on the packet thread.
+    Sender *find_sender(uint32_t ssrc) {
+        for (auto &slot : senders)
+            if (Sender *s = slot.load(); s && s->ssrc() == ssrc) return s;
+        return nullptr;
+    }
+
+    // One more local source on air; several run at once, each in its own slot.
     json start_capture(const json &c) {
         if (!clock.ready()) fail("clock mapping required before start_capture");
-        if (sender.load()) fail("capture already running");
         if (socket < 0) fail("open a socket before start_capture");
+        if (find_sender(c.at("ssrc"))) fail("capture already running for this ssrc");
+        int slot = -1;
+        for (int i = 0; i < MaxCaptures && slot < 0; ++i)
+            if (!senders[i].load()) slot = i;
+        if (slot < 0) fail("too many captures");
         auto s = std::make_unique<Sender>(c, socket);
         Sender *raw = s.get();
         on_packet_thread([&] {
-            capture_ring.discard();
-            sender.store(s.release());
+            capture_rings[slot].discard();
+            senders[slot].store(s.release());
         });
-        capture_ring.active.store(true);
-        raw->set_input_rate(shell.start_capture(c.value("source", "system")));
+        capture_rings[slot].active.store(true);
+        try {
+            raw->set_input_rate(shell.start_capture(slot, c.value("source", "system")));
+        } catch (...) {
+            capture_rings[slot].active.store(false);
+            on_packet_thread([this, slot, raw] {
+                senders[slot].store(nullptr);
+                delete raw;
+            });
+            throw;
+        }
         return {{"input_rate", raw->input_rate()}};
     }
 
-    json stop_capture() {
-        Sender *s = sender.load();
-        if (!s) fail("no capture running");
-        capture_ring.active.store(false);
-        shell.stop_capture();
-        on_packet_thread([this, s] {
-            sender.store(nullptr);
-            delete s;
-        });
-        return json::object();
+    json stop_capture(uint32_t ssrc) {
+        for (int i = 0; i < MaxCaptures; ++i)
+            if (Sender *s = senders[i].load(); s && s->ssrc() == ssrc) {
+                capture_rings[i].active.store(false);
+                shell.stop_capture(i);
+                on_packet_thread([this, i, s] {
+                    senders[i].store(nullptr);
+                    delete s;
+                });
+                return json::object();
+            }
+        fail("no such capture stream");
     }
 
     json route(uint32_t ssrc, std::vector<sockaddr_in6> peers) {
         on_packet_thread([&] {
-            Sender *s = sender.load();
-            if (!s || s->ssrc() != ssrc) fail("no such capture stream");
+            Sender *s = find_sender(ssrc);
+            if (!s) fail("no such capture stream");
             s->set_peers(std::move(peers));
         });
         return json::object();
@@ -321,13 +350,16 @@ struct Engine {
                     {"oversized_callbacks", oversized.load()}, {"speakers", json::array()}};
         for (auto &slot : speakers)
             if (Speaker *s = slot.load()) out["speakers"].push_back(s->status());
-        if (Sender *s = sender.load()) out["capture"] = s->status(capture_ring);
+        out["captures"] = json::array();
+        for (int i = 0; i < MaxCaptures; ++i)
+            if (Sender *s = senders[i].load()) out["captures"].push_back(s->status(capture_rings[i]));
         return out;
     }
 
     // The owner is gone: release devices and streams; the next owner starts clean.
     void reset() {
-        if (sender.load()) stop_capture();
+        for (auto &slot : senders)
+            if (Sender *s = slot.load()) stop_capture(s->ssrc());
         for (auto &slot : speakers)
             if (Speaker *p = slot.load()) stop_speaker(p->ssrc());
         if (out_rate.load()) shell.stop_output(), out_rate.store(0);
@@ -458,6 +490,8 @@ extern "C" void ba_engine_render(float *out, uint32_t frames, uint64_t host_time
         if (ba::Speaker *s = slot.load(std::memory_order_acquire)) s->render(out, frames, present, rate);
 }
 
-extern "C" void ba_engine_capture(const float *in, uint32_t frames, uint64_t host_time_ns) {
-    if (ba::capture_ring.active.load(std::memory_order_acquire)) ba::capture_ring.push(in, frames, host_time_ns);
+extern "C" void ba_engine_capture(int slot, const float *in, uint32_t frames, uint64_t host_time_ns) {
+    if (slot < 0 || slot >= ba::MaxCaptures) return;
+    auto &ring = ba::capture_rings[size_t(slot)];
+    if (ring.active.load(std::memory_order_acquire)) ring.push(in, frames, host_time_ns);
 }

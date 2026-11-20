@@ -1,18 +1,20 @@
-// iPhone shell for the audio engine: RemoteIO output through the app's shared
-// audio session (IOSAudioSession.swift). Capture is not available on iPhone
-// yet. Owns OS audio only; the engine owns the samples.
+// iPhone shell for the audio engine: RemoteIO output and microphone input
+// through the app's shared audio session (IOSAudioSession.swift). iOS lets no
+// app record other apps' audio, so the microphone is the only capture source.
+// Owns OS audio only; the engine owns the samples.
 #import <AVFAudio/AVFAudio.h>
 #import <AudioToolbox/AudioToolbox.h>
 #include <mach/mach_time.h>
 
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "../../engine/engine.h"
 #include "ba_audio_engine_ios.h"
 
 // The app's audio session owner shares one OS session between bindings.
-extern "C" void *ba_engine_audio_acquire(void);
+extern "C" void *ba_engine_audio_acquire(bool microphone);
 extern "C" void ba_engine_audio_release(void *);
 
 namespace {
@@ -32,6 +34,27 @@ class IOSShell final : public ba::Shell {
     AudioComponentInstance output_ = nullptr;
     void *session_ = nullptr;
     uint64_t output_latency_ns_ = 0;
+    // Microphone: its own RemoteIO unit, input only.
+    AudioComponentInstance input_ = nullptr;
+    void *input_session_ = nullptr;
+    uint64_t input_latency_ns_ = 0;
+    int input_slot_ = -1;
+    std::vector<float> mono_ = std::vector<float>(4096), stereo_ = std::vector<float>(8192);
+
+    static OSStatus input_ready(void *self, AudioUnitRenderActionFlags *flags, const AudioTimeStamp *time, UInt32, UInt32 frames,
+                                AudioBufferList *) {
+        auto *shell = static_cast<IOSShell *>(self);
+        if (frames > shell->mono_.size()) return noErr;
+        AudioBufferList list;
+        list.mNumberBuffers = 1;
+        list.mBuffers[0] = {1, UInt32(frames * sizeof(float)), shell->mono_.data()};
+        if (AudioUnitRender(shell->input_, flags, time, 1, frames, &list) != noErr) return noErr;
+        for (UInt32 i = 0; i < frames; ++i) shell->stereo_[i * 2] = shell->stereo_[i * 2 + 1] = shell->mono_[i];
+        // The time stamp is when the buffer reached the unit; the session's
+        // input latency puts it back at the microphone.
+        ba_engine_capture(shell->input_slot_, shell->stereo_.data(), frames, host_ns(time->mHostTime) - shell->input_latency_ns_);
+        return noErr;
+    }
 
     static OSStatus render(void *self, AudioUnitRenderActionFlags *, const AudioTimeStamp *time, UInt32, UInt32 frames,
                            AudioBufferList *data) {
@@ -45,7 +68,7 @@ class IOSShell final : public ba::Shell {
 
    public:
     uint32_t start_output() override {
-        session_ = ba_engine_audio_acquire();
+        session_ = ba_engine_audio_acquire(false);
         if (!session_) throw std::runtime_error("audio session could not be activated");
         AVAudioSession *session = AVAudioSession.sharedInstance;
         const double rate = session.sampleRate;
@@ -78,8 +101,44 @@ class IOSShell final : public ba::Shell {
         if (session_) ba_engine_audio_release(session_), session_ = nullptr;
     }
 
-    uint32_t start_capture(const std::string &) override { throw std::runtime_error("capture is not available on iPhone yet"); }
-    void stop_capture() override {}
+    uint32_t start_capture(int slot, const std::string &source) override {
+        if (source != "mic") throw std::runtime_error("only the microphone can be captured on iPhone");
+        if (input_) throw std::runtime_error("the microphone is already captured");
+        input_slot_ = slot;
+        input_session_ = ba_engine_audio_acquire(true);
+        if (!input_session_) throw std::runtime_error("microphone unavailable; allow OpenSound in Settings > Privacy & Security > Microphone");
+        AVAudioSession *session = AVAudioSession.sharedInstance;
+        const double rate = session.sampleRate;
+        input_latency_ns_ = uint64_t(session.inputLatency * 1e9);
+        AudioComponentDescription d{kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple, 0, 0};
+        AudioComponent component = AudioComponentFindNext(nullptr, &d);
+        if (!component) throw std::runtime_error("RemoteIO unavailable");
+        check(AudioComponentInstanceNew(component, &input_), "create input unit");
+        const UInt32 on = 1, off = 0;
+        check(AudioUnitSetProperty(input_, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &on, sizeof(on)), "enable input");
+        check(AudioUnitSetProperty(input_, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &off, sizeof(off)), "disable output");
+        AudioStreamBasicDescription f{};
+        f.mSampleRate = rate, f.mFormatID = kAudioFormatLinearPCM;
+        f.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+        f.mChannelsPerFrame = 1, f.mBitsPerChannel = 32, f.mFramesPerPacket = 1, f.mBytesPerFrame = 4, f.mBytesPerPacket = 4;
+        check(AudioUnitSetProperty(input_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &f, sizeof(f)), "set input format");
+        AURenderCallbackStruct callback{input_ready, this};
+        check(AudioUnitSetProperty(input_, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &callback, sizeof(callback)),
+              "set input callback");
+        check(AudioUnitInitialize(input_), "initialize input unit");
+        check(AudioOutputUnitStart(input_), "start microphone");
+        return uint32_t(rate);
+    }
+
+    void stop_capture(int) override {
+        if (input_) {
+            AudioOutputUnitStop(input_);
+            AudioUnitUninitialize(input_);
+            AudioComponentInstanceDispose(input_);
+            input_ = nullptr;
+        }
+        if (input_session_) ba_engine_audio_release(input_session_), input_session_ = nullptr;
+    }
 };
 }  // namespace
 

@@ -1,7 +1,8 @@
 // macOS shell for the audio engine: the default output device, the system
-// audio tap and a test tone. Owns OS audio only; the engine owns the samples.
+// audio tap, the default microphone and a test tone. Owns OS audio only; the engine owns the samples.
 // Real-time callbacks hand interleaved stereo float32 and the host time of the
 // first frame at the speaker (output) or at capture (input) to the engine.
+#import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreAudio/AudioHardwareTapping.h>
 #import <CoreAudio/CATapDescription.h>
@@ -13,6 +14,8 @@
 
 #include <atomic>
 #include <cmath>
+#include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -46,16 +49,99 @@ T property(AudioObjectID object, AudioObjectPropertySelector s, AudioObjectPrope
     return value;
 }
 
+// One running capture: a system tap, the microphone or the test tone. Several
+// run at once, each feeding its own engine slot.
+struct Capture {
+    int slot = -1;
+    AudioObjectID tap = kAudioObjectUnknown, aggregate = kAudioObjectUnknown, device = kAudioObjectUnknown;
+    AudioDeviceIOProcID io = nullptr;
+    uint64_t latency_ns = 0;  // input path before the callback sees a frame
+    std::vector<float> interleaved = std::vector<float>(8192 * 2);
+    std::atomic<bool> tone_running{false};
+    std::thread tone;
+};
+
+// Frames between the hardware and the callback in one scope of a device.
+UInt32 device_latency(AudioObjectID device, AudioObjectPropertyScope scope) {
+    UInt32 stream_latency = 0;
+    auto streams = address(kAudioDevicePropertyStreams, scope);
+    UInt32 size = 0;
+    if (AudioObjectGetPropertyDataSize(device, &streams, 0, nullptr, &size) == noErr && size >= sizeof(AudioStreamID)) {
+        std::vector<AudioStreamID> ids(size / sizeof(AudioStreamID));
+        if (AudioObjectGetPropertyData(device, &streams, 0, nullptr, &size, ids.data()) == noErr)
+            stream_latency = property<UInt32>(ids[0], kAudioStreamPropertyLatency);
+    }
+    return property<UInt32>(device, kAudioDevicePropertyLatency, scope) + property<UInt32>(device, kAudioDevicePropertySafetyOffset, scope) +
+           stream_latency;
+}
+
+// Capture never includes our own playback: exclude every running audio engine
+// on this Mac (the app's, the CLI's, the Web Device's), whatever its path. A
+// feedback loop through the speakers is the failure this prevents.
+NSArray<NSNumber *> *engine_processes() {
+    auto a = address(kAudioHardwarePropertyProcessObjectList);
+    UInt32 size = 0;
+    check(AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, nullptr, &size), "list audio processes");
+    std::vector<AudioObjectID> processes(size / sizeof(AudioObjectID));
+    check(AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, nullptr, &size, processes.data()), "read audio processes");
+    NSMutableArray<NSNumber *> *excluded = [NSMutableArray array];
+    for (AudioObjectID process : processes) {
+        pid_t pid = 0;
+        UInt32 n = sizeof(pid);
+        auto p = address(kAudioProcessPropertyPID);
+        if (AudioObjectGetPropertyData(process, &p, 0, nullptr, &n, &pid) != noErr) continue;
+        char name[2 * MAXCOMLEN + 1] = {};
+        if (proc_name(pid, name, sizeof(name)) > 0 && !strcmp(name, "ba_audio_engine")) [excluded addObject:@(process)];
+    }
+    return excluded;
+}
+
+OSStatus captured(AudioObjectID, const AudioTimeStamp *, const AudioBufferList *in, const AudioTimeStamp *time, AudioBufferList *,
+                  const AudioTimeStamp *, void *context) {
+    auto *c = static_cast<Capture *>(context);
+    if (!in->mNumberBuffers) return noErr;
+    const auto &first = in->mBuffers[0];
+    const uint64_t host = host_ns(time->mHostTime) - c->latency_ns;
+    if (in->mNumberBuffers == 1 && first.mNumberChannels == 2) {
+        ba_engine_capture(c->slot, static_cast<const float *>(first.mData), first.mDataByteSize / 8, host);
+        return noErr;
+    }
+    // Non-interleaved or mono: interleave into preallocated stereo frames.
+    const UInt32 frames = std::min<UInt32>(first.mDataByteSize / sizeof(float) / std::max<UInt32>(first.mNumberChannels, 1), 8192);
+    const float *left = static_cast<const float *>(first.mData);
+    const float *right = in->mNumberBuffers > 1 ? static_cast<const float *>(in->mBuffers[1].mData) : left;
+    const UInt32 stride = first.mNumberChannels ? first.mNumberChannels : 1;
+    for (UInt32 i = 0; i < frames; ++i) {
+        c->interleaved[i * 2] = left[i * stride];
+        c->interleaved[i * 2 + 1] = in->mNumberBuffers > 1 ? right[i] : left[i * stride];
+    }
+    ba_engine_capture(c->slot, c->interleaved.data(), frames, host);
+    return noErr;
+}
+
+// Engines start and stop while capturing (another Device on this Mac may begin
+// playing): keep the tap's exclusions current. Rewrite the tap only when the
+// set changes; a rewrite can restart its capture clock.
+OSStatus processes_changed(AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *context) {
+    auto *c = static_cast<Capture *>(context);
+    if (c->tap == kAudioObjectUnknown) return noErr;
+    @autoreleasepool {
+        CATapDescription *description = CFBridgingRelease(property<CFTypeRef>(c->tap, kAudioTapPropertyDescription));
+        NSArray<NSNumber *> *excluded = engine_processes();
+        if (![[NSSet setWithArray:description.processes ?: @[]] isEqualToSet:[NSSet setWithArray:excluded]]) {
+            description.processes = excluded;
+            CFTypeRef raw = (__bridge CFTypeRef)description;
+            auto a = address(kAudioTapPropertyDescription);
+            AudioObjectSetPropertyData(c->tap, &a, 0, nullptr, sizeof(raw), &raw);
+        }
+    }
+    return noErr;
+}
+
 class MacShell final : public ba::Shell {
     AudioComponentInstance output_ = nullptr;
     uint64_t output_latency_ns_ = 0;
-    // System capture.
-    AudioObjectID tap_ = kAudioObjectUnknown, aggregate_ = kAudioObjectUnknown;
-    AudioDeviceIOProcID io_ = nullptr;
-    std::vector<float> interleaved_ = std::vector<float>(8192 * 2);
-    // Test tone.
-    std::atomic<bool> tone_running_{false};
-    std::thread tone_;
+    std::map<int, std::unique_ptr<Capture>> captures_;
 
     static OSStatus render(void *self, AudioUnitRenderActionFlags *, const AudioTimeStamp *time, UInt32, UInt32 frames,
                            AudioBufferList *data) {
@@ -67,67 +153,84 @@ class MacShell final : public ba::Shell {
         return noErr;
     }
 
-    static OSStatus captured(AudioObjectID, const AudioTimeStamp *, const AudioBufferList *in, const AudioTimeStamp *time,
-                             AudioBufferList *, const AudioTimeStamp *, void *self) {
-        auto *shell = static_cast<MacShell *>(self);
-        if (!in->mNumberBuffers) return noErr;
-        const auto &first = in->mBuffers[0];
-        const uint64_t host = host_ns(time->mHostTime);
-        if (in->mNumberBuffers == 1 && first.mNumberChannels == 2) {
-            ba_engine_capture(static_cast<const float *>(first.mData), first.mDataByteSize / 8, host);
-            return noErr;
+    // The default input device. macOS asks the user once; a refusal is an error.
+    static uint32_t start_microphone(Capture &c) {
+        if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] == AVAuthorizationStatusNotDetermined) {
+            dispatch_semaphore_t answered = dispatch_semaphore_create(0);
+            [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio
+                                     completionHandler:^(BOOL) { dispatch_semaphore_signal(answered); }];
+            dispatch_semaphore_wait(answered, DISPATCH_TIME_FOREVER);
         }
-        // Non-interleaved or mono: interleave into preallocated stereo frames.
-        const UInt32 frames = std::min<UInt32>(first.mDataByteSize / sizeof(float) / std::max<UInt32>(first.mNumberChannels, 1), 8192);
-        const float *left = static_cast<const float *>(first.mData);
-        const float *right = in->mNumberBuffers > 1 ? static_cast<const float *>(in->mBuffers[1].mData) : left;
-        const UInt32 stride = first.mNumberChannels ? first.mNumberChannels : 1;
-        for (UInt32 i = 0; i < frames; ++i) {
-            shell->interleaved_[i * 2] = left[i * stride];
-            shell->interleaved_[i * 2 + 1] = in->mNumberBuffers > 1 ? right[i] : left[i * stride];
-        }
-        ba_engine_capture(shell->interleaved_.data(), frames, host);
-        return noErr;
+        if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] != AVAuthorizationStatusAuthorized)
+            throw std::runtime_error("microphone access denied; allow it in System Settings > Privacy & Security > Microphone");
+        const AudioObjectID device = property<AudioObjectID>(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultInputDevice);
+        if (device == kAudioObjectUnknown) throw std::runtime_error("no default microphone");
+        const auto format = property<AudioStreamBasicDescription>(device, kAudioDevicePropertyStreamFormat, kAudioObjectPropertyScopeInput);
+        if (format.mFormatID != kAudioFormatLinearPCM || !(format.mFormatFlags & kAudioFormatFlagIsFloat) || format.mBitsPerChannel != 32)
+            throw std::runtime_error("microphone is not float32");
+        c.latency_ns = uint64_t(device_latency(device, kAudioObjectPropertyScopeInput) * 1e9 / format.mSampleRate);
+        check(AudioDeviceCreateIOProcID(device, captured, &c, &c.io), "create microphone callback");
+        c.device = device;
+        check(AudioDeviceStart(device, c.io), "start microphone");
+        return uint32_t(format.mSampleRate);
     }
 
-    // Capture never includes our own playback: exclude every running audio
-    // engine on this Mac (the app's, the CLI's, the Web Device's), whatever its
-    // path. A feedback loop through the speakers is the failure this prevents.
-    static NSArray<NSNumber *> *engine_processes() {
-        auto a = address(kAudioHardwarePropertyProcessObjectList);
-        UInt32 size = 0;
-        check(AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, nullptr, &size), "list audio processes");
-        std::vector<AudioObjectID> processes(size / sizeof(AudioObjectID));
-        check(AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, nullptr, &size, processes.data()), "read audio processes");
-        NSMutableArray<NSNumber *> *excluded = [NSMutableArray array];
-        for (AudioObjectID process : processes) {
-            pid_t pid = 0;
-            UInt32 n = sizeof(pid);
-            auto p = address(kAudioProcessPropertyPID);
-            if (AudioObjectGetPropertyData(process, &p, 0, nullptr, &n, &pid) != noErr) continue;
-            char name[2 * MAXCOMLEN + 1] = {};
-            if (proc_name(pid, name, sizeof(name)) > 0 && !strcmp(name, "ba_audio_engine")) [excluded addObject:@(process)];
-        }
-        return excluded;
+    // Every process's output except our engines, through a private tap.
+    static uint32_t start_system(Capture &c) {
+        const AudioObjectID out = property<AudioObjectID>(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultOutputDevice);
+        NSString *uid = CFBridgingRelease(property<CFStringRef>(out, kAudioDevicePropertyDeviceUID));
+        CATapDescription *description = [[CATapDescription alloc] initExcludingProcesses:engine_processes() andDeviceUID:uid withStream:0];
+        description.name = @"BEAM Audio engine capture";
+        description.privateTap = YES;
+        description.muteBehavior = CATapUnmuted;
+        check(AudioHardwareCreateProcessTap(description, &c.tap), "create system audio tap (needs System Audio Recording permission)");
+        NSDictionary *composition = @{
+            @kAudioAggregateDeviceNameKey : @"BEAM Audio engine capture",
+            @kAudioAggregateDeviceUIDKey : NSUUID.UUID.UUIDString,
+            @kAudioAggregateDeviceIsPrivateKey : @YES,
+            @kAudioAggregateDeviceTapListKey : @[ @{@kAudioSubTapUIDKey : description.UUID.UUIDString} ],
+            @kAudioAggregateDeviceTapAutoStartKey : @NO
+        };
+        check(AudioHardwareCreateAggregateDevice((__bridge CFDictionaryRef)composition, &c.aggregate), "create tap device");
+        const auto format = property<AudioStreamBasicDescription>(c.tap, kAudioTapPropertyFormat);
+        if (format.mFormatID != kAudioFormatLinearPCM || !(format.mFormatFlags & kAudioFormatFlagIsFloat) || format.mBitsPerChannel != 32)
+            throw std::runtime_error("system tap is not float32");
+        check(AudioDeviceCreateIOProcID(c.aggregate, captured, &c, &c.io), "create capture callback");
+        c.device = c.aggregate;
+        check(AudioDeviceStart(c.aggregate, c.io), "start system audio capture (check System Audio Recording permission)");
+        auto processes = address(kAudioHardwarePropertyProcessObjectList);
+        check(AudioObjectAddPropertyListener(kAudioObjectSystemObject, &processes, processes_changed, &c), "watch audio processes");
+        return uint32_t(format.mSampleRate);
     }
 
-    // Engines start and stop while capturing (another Device on this Mac may
-    // begin playing): keep the tap's exclusions current. Rewrite the tap only
-    // when the set changes; a rewrite can restart its capture clock.
-    static OSStatus processes_changed(AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *self) {
-        auto *shell = static_cast<MacShell *>(self);
-        if (shell->tap_ == kAudioObjectUnknown) return noErr;
-        @autoreleasepool {
-            CATapDescription *description = CFBridgingRelease(property<CFTypeRef>(shell->tap_, kAudioTapPropertyDescription));
-            NSArray<NSNumber *> *excluded = engine_processes();
-            if (![[NSSet setWithArray:description.processes ?: @[]] isEqualToSet:[NSSet setWithArray:excluded]]) {
-                description.processes = excluded;
-                CFTypeRef raw = (__bridge CFTypeRef)description;
-                auto a = address(kAudioTapPropertyDescription);
-                AudioObjectSetPropertyData(shell->tap_, &a, 0, nullptr, sizeof(raw), &raw);
+    // 440 Hz at -12 dBFS in 10 ms blocks stamped on an ideal host clock: a
+    // capture source with no device drift, for measurements.
+    static uint32_t start_tone(Capture &c) {
+        constexpr uint32_t rate = 48000, frames = 480;
+        c.tone_running = true;
+        c.tone = std::thread([&c] {
+            const uint64_t start = ba::host_now_ns();
+            std::vector<float> block(frames * 2);
+            for (uint64_t n = 0; c.tone_running; n += frames) {
+                for (uint32_t i = 0; i < frames; ++i)
+                    block[i * 2] = block[i * 2 + 1] = 0.25f * float(std::sin(2 * M_PI * 440.0 * double(n + i) / rate));
+                ba_engine_capture(c.slot, block.data(), frames, start + n * 1000000000ull / rate);
+                const uint64_t next = start + (n + frames) * 1000000000ull / rate, now = ba::host_now_ns();
+                if (next > now) std::this_thread::sleep_for(std::chrono::nanoseconds(next - now));
             }
+        });
+        return rate;
+    }
+
+    static void release(Capture &c) {
+        if (c.tone_running.exchange(false)) c.tone.join();
+        if (c.tap != kAudioObjectUnknown) {
+            auto processes = address(kAudioHardwarePropertyProcessObjectList);
+            AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &processes, processes_changed, &c);
         }
-        return noErr;
+        if (c.io) AudioDeviceStop(c.device, c.io), AudioDeviceDestroyIOProcID(c.device, c.io), c.io = nullptr;
+        if (c.aggregate != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(c.aggregate), c.aggregate = kAudioObjectUnknown;
+        if (c.tap != kAudioObjectUnknown) AudioHardwareDestroyProcessTap(c.tap), c.tap = kAudioObjectUnknown;
     }
 
    public:
@@ -135,19 +238,7 @@ class MacShell final : public ba::Shell {
         const AudioObjectID device = property<AudioObjectID>(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultOutputDevice);
         if (device == kAudioObjectUnknown) throw std::runtime_error("no default output device");
         const double rate = property<Float64>(device, kAudioDevicePropertyNominalSampleRate);
-        UInt32 stream_latency = 0;
-        auto streams = address(kAudioDevicePropertyStreams, kAudioObjectPropertyScopeOutput);
-        UInt32 size = 0;
-        if (AudioObjectGetPropertyDataSize(device, &streams, 0, nullptr, &size) == noErr && size >= sizeof(AudioStreamID)) {
-            std::vector<AudioStreamID> ids(size / sizeof(AudioStreamID));
-            if (AudioObjectGetPropertyData(device, &streams, 0, nullptr, &size, ids.data()) == noErr)
-                stream_latency = property<UInt32>(ids[0], kAudioStreamPropertyLatency);
-        }
-        const UInt32 frames = property<UInt32>(device, kAudioDevicePropertyLatency, kAudioObjectPropertyScopeOutput) +
-                              property<UInt32>(device, kAudioDevicePropertySafetyOffset, kAudioObjectPropertyScopeOutput) +
-                              stream_latency;
-        output_latency_ns_ = uint64_t(frames * 1e9 / rate);
-
+        output_latency_ns_ = uint64_t(device_latency(device, kAudioObjectPropertyScopeOutput) * 1e9 / rate);
         AudioComponentDescription d{kAudioUnitType_Output, kAudioUnitSubType_DefaultOutput, kAudioUnitManufacturer_Apple, 0, 0};
         AudioComponent component = AudioComponentFindNext(nullptr, &d);
         if (!component) throw std::runtime_error("default output unit unavailable");
@@ -174,63 +265,28 @@ class MacShell final : public ba::Shell {
         output_ = nullptr;
     }
 
-    uint32_t start_capture(const std::string &source) override {
-        if (source == "tone") return start_tone();
-        if (source != "system") throw std::runtime_error("unsupported capture source " + source);
-        const AudioObjectID out = property<AudioObjectID>(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultOutputDevice);
-        NSString *uid = CFBridgingRelease(property<CFStringRef>(out, kAudioDevicePropertyDeviceUID));
-        CATapDescription *description = [[CATapDescription alloc] initExcludingProcesses:engine_processes() andDeviceUID:uid withStream:0];
-        description.name = @"BEAM Audio engine capture";
-        description.privateTap = YES;
-        description.muteBehavior = CATapUnmuted;
-        check(AudioHardwareCreateProcessTap(description, &tap_), "create system audio tap (needs System Audio Recording permission)");
-        NSDictionary *composition = @{
-            @kAudioAggregateDeviceNameKey : @"BEAM Audio engine capture",
-            @kAudioAggregateDeviceUIDKey : NSUUID.UUID.UUIDString,
-            @kAudioAggregateDeviceIsPrivateKey : @YES,
-            @kAudioAggregateDeviceTapListKey : @[ @{@kAudioSubTapUIDKey : description.UUID.UUIDString} ],
-            @kAudioAggregateDeviceTapAutoStartKey : @NO
-        };
-        check(AudioHardwareCreateAggregateDevice((__bridge CFDictionaryRef)composition, &aggregate_), "create tap device");
-        const auto format = property<AudioStreamBasicDescription>(tap_, kAudioTapPropertyFormat);
-        if (format.mFormatID != kAudioFormatLinearPCM || !(format.mFormatFlags & kAudioFormatFlagIsFloat) || format.mBitsPerChannel != 32)
-            throw std::runtime_error("system tap is not float32");
-        check(AudioDeviceCreateIOProcID(aggregate_, captured, this, &io_), "create capture callback");
-        check(AudioDeviceStart(aggregate_, io_), "start system audio capture (check System Audio Recording permission)");
-        auto processes = address(kAudioHardwarePropertyProcessObjectList);
-        check(AudioObjectAddPropertyListener(kAudioObjectSystemObject, &processes, processes_changed, this), "watch audio processes");
-        return uint32_t(format.mSampleRate);
-    }
-
-    void stop_capture() override {
-        if (tone_running_.exchange(false)) tone_.join();
-        if (tap_ != kAudioObjectUnknown) {
-            auto processes = address(kAudioHardwarePropertyProcessObjectList);
-            AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &processes, processes_changed, this);
+    uint32_t start_capture(int slot, const std::string &source) override {
+        auto c = std::make_unique<Capture>();
+        c->slot = slot;
+        uint32_t rate = 0;
+        try {
+            if (source == "system") rate = start_system(*c);
+            else if (source == "mic") rate = start_microphone(*c);
+            else if (source == "tone") rate = start_tone(*c);
+            else throw std::runtime_error("unsupported capture source " + source);
+        } catch (...) {
+            release(*c);
+            throw;
         }
-        if (io_) AudioDeviceStop(aggregate_, io_), AudioDeviceDestroyIOProcID(aggregate_, io_), io_ = nullptr;
-        if (aggregate_ != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(aggregate_), aggregate_ = kAudioObjectUnknown;
-        if (tap_ != kAudioObjectUnknown) AudioHardwareDestroyProcessTap(tap_), tap_ = kAudioObjectUnknown;
+        captures_[slot] = std::move(c);
+        return rate;
     }
 
-    // 440 Hz at -12 dBFS in 10 ms blocks stamped on an ideal host clock: a
-    // capture source with no device drift, for measurements.
-    uint32_t start_tone() {
-        constexpr uint32_t rate = 48000, frames = 480;
-        tone_running_ = true;
-        tone_ = std::thread([this] {
-            const uint64_t start = ba::host_now_ns();
-            std::vector<float> block(frames * 2);
-            for (uint64_t n = 0; tone_running_; n += frames) {
-                for (uint32_t i = 0; i < frames; ++i)
-                    block[i * 2] = block[i * 2 + 1] = 0.25f * float(std::sin(2 * M_PI * 440.0 * double(n + i) / rate));
-                const uint64_t at = start + n * 1000000000ull / rate;
-                ba_engine_capture(block.data(), frames, at);
-                const uint64_t next = start + (n + frames) * 1000000000ull / rate, now = ba::host_now_ns();
-                if (next > now) std::this_thread::sleep_for(std::chrono::nanoseconds(next - now));
-            }
-        });
-        return rate;
+    void stop_capture(int slot) override {
+        auto it = captures_.find(slot);
+        if (it == captures_.end()) return;
+        release(*it->second);
+        captures_.erase(it);
     }
 };
 }  // namespace

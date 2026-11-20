@@ -43,7 +43,9 @@ apple_configuration_preserves_session_memory(PlatformName) ->
         [ok=file:write_file(filename:join(Dir,F),<<"saved session policy">>) || F <- ["saved_sessions.term","contacts.term","identity.term","session_connection.term"]],
         os:putenv("BA_PLATFORM",PlatformName),os:putenv("BA_STATE_DIR",Dir),
         ok=ba_app_session:configure(),
-        ?assertEqual({ok,case PlatformName of "mac" -> ba_mac_native_audio;"ios" -> ba_no_capture end},application:get_env(ba_core,audio_capture_adapter)),
+        ?assertEqual({ok,ba_audio_capture},application:get_env(ba_core,audio_capture_adapter)),
+        ?assertEqual({ok,case PlatformName of "mac" -> [broadcast,microphone];"ios" -> [microphone] end},
+                     application:get_env(ba_core,audio_capture_sources)),
         ?assertEqual({ok,true},application:get_env(ba_core,audio_automation)),
         ?assertEqual({ok,true},application:get_env(ba_core,restore_session_on_start)),
         ?assert(filelib:is_file(filename:join(Dir,"session_connection.term"))),
@@ -60,8 +62,12 @@ apple_configuration_preserves_session_memory(PlatformName) ->
 unavailable_capabilities_from_capture_adapter_test() ->
     Old=application:get_env(ba_core,audio_capture_adapter),
     try
-        application:set_env(ba_core,audio_capture_adapter,ba_mac_native_audio),
-        ?assertEqual([<<"microphone">>],maps:keys(ba_app_session:unavailable_capabilities())),
+        application:set_env(ba_core,audio_capture_adapter,ba_audio_capture),
+        application:set_env(ba_core,audio_capture_sources,[broadcast,microphone]),
+        ?assertEqual(#{},ba_app_session:unavailable_capabilities()),
+        application:set_env(ba_core,audio_capture_sources,[microphone]),
+        ?assertEqual([<<"broadcast">>],maps:keys(ba_app_session:unavailable_capabilities())),
+        application:unset_env(ba_core,audio_capture_sources),
         application:unset_env(ba_core,audio_capture_adapter),
         ?assertEqual(#{},ba_app_session:unavailable_capabilities())
     after case Old of undefined -> application:unset_env(ba_core,audio_capture_adapter);{ok,V} -> application:set_env(ba_core,audio_capture_adapter,V) end end.
