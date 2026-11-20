@@ -10,6 +10,7 @@ allowed(microphone) -> allowed(record);
 allowed(calibrate_microphone) -> ba_device_config:allowed(calibrate_microphone);
 allowed(calibrate_speaker) -> ba_device_config:allowed(calibrate_speaker);
 allowed(dsp) -> ba_device_config:allowed(dsp);
+allowed(inspect) -> ba_device_config:allowed(inspect);
 allowed(_) -> false.
 
 key(playback) -> speaker;

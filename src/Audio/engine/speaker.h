@@ -22,7 +22,7 @@ constexpr uint32_t Chunk = 32;                   // frames handed to the resampl
 
 class Speaker {
    public:
-    // Command map: ssrc, rate, anchor_ns, delay_ms, key, gain (optional).
+    // Command map: ssrc, rate, anchor_ns, delay_ms, key, packet_index, gain (optional).
     Speaker(const json &command, const Clock &clock);
     ~Speaker();
     Speaker(const Speaker &) = delete;
@@ -57,6 +57,8 @@ class Speaker {
     std::atomic<int64_t> delay_{0};
     std::atomic<float> gain_{1};
     srtp_t srtp_ = nullptr;
+    uint64_t initial_index_ = 0;
+    bool authenticated_ = false;  // packet thread; never reset an established replay window
     FLAC__StreamDecoder *decoder_ = nullptr;
     // Packet being decoded (packet thread only).
     const uint8_t *packet_ = nullptr;

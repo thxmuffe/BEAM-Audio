@@ -66,8 +66,9 @@ handle_call(start,{Caller,_},#{kind := Kind,state := stopped}=S) ->
 handle_call(start,_,S) -> {reply,ok,S};
 handle_call(status,_,S) -> {reply,maps:with([state,error],S),S};
 handle_call({stream,kind},_,#{kind := Kind}=S) -> {reply,{ok,Kind},S};
-handle_call({stream,describe},_,#{anchor := Anchor}=S) ->
-    {reply,{ok,#{ssrc => maps:get(ssrc,S),key => maps:get(key,S),anchor_ns => Anchor,rate => ?RATE}},S};
+handle_call({stream,describe},_,#{anchor := Anchor,engine := Engine,ssrc := Ssrc}=S) ->
+    {ok,#{packet_index := Index}}=ba_audio_engine:command(Engine,#{op => capture_index,ssrc => Ssrc}),
+    {reply,{ok,#{ssrc => Ssrc,key => maps:get(key,S),anchor_ns => Anchor,rate => ?RATE,packet_index => Index}},S};
 handle_call({stream,describe},_,S) -> {reply,{error,capture_starting},S};
 handle_call({stream,{add_peers,Media,Peers}},_,#{peers := Known}=S) ->
     case maps:is_key(Media,Known) of true -> ok;false -> monitor(process,Media) end,

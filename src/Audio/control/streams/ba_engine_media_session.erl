@@ -81,9 +81,9 @@ handle_cast({signal,#{<<"kind">> := <<"signal.stream">>,<<"ice">> := Remote}=P},
     case maps:get(open,S) orelse maps:is_key(ssrc,S) of
         true -> {noreply,S};  % a new provider connection for a stream already playing
         false ->
-            #{<<"public">> := Peer,<<"wrapped">> := Wrapped,<<"ssrc">> := Ssrc,<<"rate">> := Rate,<<"anchor_ns">> := Anchor}=P,
+            #{<<"public">> := Peer,<<"wrapped">> := Wrapped,<<"ssrc">> := Ssrc,<<"rate">> := Rate,<<"anchor_ns">> := Anchor,<<"packet_index">> := Index}=P,
             Key=unwrap(binary:decode_hex(Wrapped),secret(binary:decode_hex(Peer),S),maps:get(attempt,S)),
-            {noreply,start_speaker(S#{ssrc => Ssrc,key => Key,rate => Rate,anchor => binary_to_integer(Anchor)})}
+            {noreply,start_speaker(S#{ssrc => Ssrc,key => Key,rate => Rate,anchor => binary_to_integer(Anchor),packet_index => Index})}
     end;
 handle_cast(_,S) -> {noreply,S}.
 
@@ -97,6 +97,12 @@ handle_info(heartbeat,S) ->
 %% Our side of the connection is ready: send its description to the peer.
 handle_info({ba_audio_engine,_,#{event := <<"ice_description">>,conn := Conn,description := Description}},#{conn := Conn}=S) ->
     {noreply,describe(Description,S)};
+%% A failed ICE agent cannot carry this attempt. End it so the receiver's
+%% retained subscription can retry; keeping a dead provider here would reject
+%% that retry because it carries a fresh attempt ID.
+handle_info({ba_audio_engine,_,#{event := <<"ice_state">>,conn := Conn,state := <<"failed">>}},#{conn := Conn}=S) ->
+    logger:notice("Audio route: ICE failed; closing media attempt"),
+    {stop,{shutdown,ice_failed},count(ice_failures,S#{path := failed})};
 handle_info({ba_audio_engine,_,#{event := <<"ice_state">>,conn := Conn,state := State}=E},#{conn := Conn}=S) ->
     {noreply,ice_state(State,E,S)};
 handle_info(network_check,#{role := receiver}=S) ->
@@ -146,11 +152,11 @@ describe(Description,#{role := receiver,owner := Owner,public := Public}=S) ->
 describe(Description,#{role := provider,source := Source,attempt := Attempt,endpoint := #{<<"public">> := Peer}}=S) ->
     %% The capture's anchor is known once its first frames arrive: retry briefly.
     case gen_server:call(Source,{stream,describe},1000) of
-        {ok,#{ssrc := Ssrc,key := StreamKey,anchor_ns := Anchor,rate := Rate}} ->
+        {ok,#{ssrc := Ssrc,key := StreamKey,anchor_ns := Anchor,rate := Rate,packet_index := Index}} ->
             Wrapped=wrap(StreamKey,secret(binary:decode_hex(Peer),S),Attempt),
             maps:get(owner,S) ! {audio_signal,self(),#{<<"kind">> => <<"signal.stream">>,
                 <<"public">> => binary:encode_hex(maps:get(public,S)),<<"wrapped">> => binary:encode_hex(Wrapped),
-                <<"ssrc">> => Ssrc,<<"rate">> => Rate,<<"anchor_ns">> => integer_to_binary(Anchor),<<"ice">> => Description}},
+                <<"ssrc">> => Ssrc,<<"rate">> => Rate,<<"anchor_ns">> => integer_to_binary(Anchor),<<"packet_index">> => Index,<<"ice">> => Description}},
             S#{open := true,ssrc => Ssrc,ice_local => Description};
         {error,capture_starting} ->
             erlang:send_after(100,self(),retry_provide),S#{ice_local => Description}
@@ -171,8 +177,6 @@ ice_state(State,E,#{conn := Conn}=S) when State=:= <<"connected">>;State=:= <<"c
             end,
             count(route_changes,S#{path := Path})
     end;
-ice_state(<<"failed">>,_,S) ->
-    logger:notice("Audio route: ICE failed"),count(ice_failures,S#{path := failed});
 ice_state(_,_,S) -> S.
 path(<<"relay">>,_) -> relay;
 path(_,<<"relay">>) -> relay;
@@ -185,7 +189,7 @@ start_speaker(#{engine := Engine}=S) ->
     case ba_session_clock:presentation([]) of
         {ok,#{offset_ms := Delay}} ->
             C=#{op => start_speaker,ssrc => maps:get(ssrc,S),rate => maps:get(rate,S),anchor_ns => maps:get(anchor,S),
-                delay_ms => Delay,key => maps:get(key,S),gain => maps:get(gain,S)},
+                delay_ms => Delay,key => maps:get(key,S),gain => maps:get(gain,S),packet_index => maps:get(packet_index,S)},
             %% Starting the first speaker activates the OS audio session, which
             %% can take seconds on iPhone.
             case ba_audio_engine:command(Engine,C,15000) of

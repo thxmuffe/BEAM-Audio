@@ -66,6 +66,8 @@ Speaker::Speaker(const json &c, const Clock &clock) : clock_(clock) {
     if (rate_ != 44100 && rate_ != 48000) fail("unsupported stream rate");
     for (uint32_t i = 0; i < Blocks; ++i) marks_[i].store(-1);
     srtp_ = make_srtp(ssrc_, c.at("key").get<std::string>());
+    initial_index_ = c.at("packet_index").get<uint64_t>();
+    if (initial_index_ >= (uint64_t(1) << 48)) fail("invalid SRTP packet index");
     int error = 0;
     src_ = src_new(SRC_SINC_MEDIUM_QUALITY, Channels, &error);
     if (!src_) fail("resampler: " + std::string(src_strerror(error)));
@@ -88,9 +90,11 @@ Speaker::~Speaker() {
 }
 
 void Speaker::receive(uint8_t *packet, int size, ConnId from) {
+    if (!authenticated_ && !prime_srtp(srtp_, ssrc_, initial_index_, read16(packet + 2))) return void(++rejected_);
     const srtp_err_status_t status = srtp_unprotect(srtp_, packet, &size);
     if (status == srtp_err_status_replay_fail || status == srtp_err_status_replay_old) return void(++duplicates_);
     if (status != srtp_err_status_ok) return void(++rejected_);
+    authenticated_ = true;
     Rtp rtp;
     if (!parse_rtp(packet, size, rtp)) return void(++rejected_);
     // Authenticated by SRTP: this is where the stream comes from now (it may

@@ -71,10 +71,10 @@ does not establish a working integration baseline.
   inspected Device in its user's persistent memory, following the requester-held
   rights design below. Minimal public Session information must be distinguished
   from private diagnostics/capabilities; the exact public fields are still to
-  define. Current code ties analysis/meters to calibration and exposes ordinary
-  capabilities via Session rights, so this consent design is not implemented.
-  Finish the active playback investigation, then implement the three controls
-  and inspection grants without a separate Inspector authorization path.
+  define. Calibration, Processing and Inspect controls are implemented;
+  Inspect now gates private metrics and bounded log reads through the shared
+  approval pipeline. Requester-held persistent signed grants remain unfinished;
+  do not describe the current local consent decision as that grant system.
 
 - **No Manager; boards and gossip (owner decision 2026-11-19).** Devices meet
   through Reception (a sticky random sample of at most 32 neighbours). The
@@ -169,9 +169,10 @@ does not establish a working integration baseline.
   keeps membership and privileges.
 - **Device consent is the user's own:** Always / Ask / No per use (Playback,
   Recording, Calibrate speaker, Calibrate microphone, DSP, location). **Ask asks**:
-  a request appears in this Device's Requests panel and waits; Allow turns the
+  a request appears in this Device's Requests panel and waits; Approve turns the
   use on, Decline is remembered until the choice changes; No refuses.
-- **Audio inspection = calibration consent.** No separate meter/analysis switches.
+- **Inspect consent gates private diagnostics and log downloads.** Calibration
+  consent covers calibration itself; no separate meter/analysis switches.
 - **Every Device behaves the same** regardless of platform or headlessness:
   one public Device API, one settings file, one CLI (`beamaudio`, `.cmd` launcher
   on Windows), one log per Device.
@@ -501,27 +502,30 @@ Status 2026-11-20 (details in PROGRESS.md):
 - CLI: `new device --createsession --enable broadcast` does not turn broadcast
   on (use `call device ... {"method":"capability","capability":"broadcast","enabled":true}`).
 
-Step 2 current (owner correction 2026-11-20): diagnose the mobile-data
-regression in the libjuice integration before considering a relay. Earlier
-receiver punches reached the Mac from a carrier endpoint; ICE now fails for
-the mobile iPhone while the Wi-Fi iPhone plays. This does not establish that
-TURN is necessary. Erlang's first-address-only STUN/TURN pre-resolution has
-been removed; libjuice resolves the configured hostnames on its own thread.
-The configuration regression test passes, but the running apps still need
-the change. Next: detailed ICE logs (`BA_ICE_DEBUG`) at both ends, USB unplugged,
-checking STUN gathering, IPv4/IPv6 reachability and peer-reflexive checks.
-IPv6 translation is a hypothesis, not a confirmed cause. Keep clock sway as a
-separate investigation. TURN is deferred; no account is needed for this step.
+Step 2 current (2026-11-20, end of session): the rebuilt apps reconnect through
+the carrier NAT after failed ICE workers are terminated. An ongoing stream
+then rejected SRTP authentication; restarting Mac ON AIR restored audible mobile
+playback. The native regression confirms missing SRTP rollover state on a fresh
+receiver. Signed stream setup now carries the sender's packet index to seed
+libsrtp; native regression and focused compilation pass. **Next: the owner
+rebuilds/deploys Mac and iPhones, then tests a Wi-Fi/mobile handover after the
+source has run over 262 seconds, without restarting ON AIR.** The latest packet
+index fix has not been tested in deployed apps. No TURN service was needed in
+the successful manual test; IPv6 translation was not established as a cause.
+Keep clock sway separate; the owner now reports perfect sync by ear at 800 ms.
 
 Approval Settings implemented: Approve for me; Calibration (both resources),
-Speaker, Microphone, Location, Processing; Approve replaces Allow in approval
-actions. Targeted checks pass; app rebuild and user inspection remain.
+Speaker, Microphone, Inspect, Location, Processing; Approve replaces Allow in
+approval actions. Friendly approves Inspect and Processing; Strict refuses
+them and Location, and asks for Calibration. Inspect gates private metrics and
+bounded log reads; a real iPhone log download via signed Session control passed.
+Requester-held signed grants remain future work. Targeted checks pass.
 
-Step 2 status (2026-11-20): connectivity checks, NACK/RTX (own small
-implementation, about 80 lines) and STUN hole punching are implemented. Next:
-test Mac ↔ iPhone on mobile data; if punching fails there, decide the relay
-(owner: hole punching first, relay later). Diagnose the iPhone freeze when
-Wi-Fi turns off.
+Deferred until the owner finishes testing: opening Chat disturbs playback even
+on Wi-Fi; the HTML UI also froze for several seconds. Cause unknown. Consider
+bounded native output callback-gap and packet-queue-delay counters for the next
+manual test; these counters are not implemented. Do not change clock/buffering
+policy on that evidence alone.
 Packaged apps must link `ei` from the OTP runtime they ship (dev builds link
 Homebrew's, built for macOS 27).
 

@@ -44,8 +44,15 @@ ICE server hostnames from `direct_stun_urls` and `audio_turn_servers` are passed
 to libjuice, which resolves them on its resolver thread. Do not pre-resolve and
 keep only one address family. `BA_ICE_DEBUG=1` enables libjuice connectivity
 checks on stderr; the Session chat log contains notices, not these detailed
-checks. Mobile-data playback is under investigation; TURN has not been shown
-necessary for the owner's current connection.
+checks. Failed ICE workers terminate so subscriptions can retry. Mobile playback
+was heard after an ON AIR restart; no TURN was needed for that test.
+
+Signed stream setup includes the native sender's 48-bit `packet_index`. A new
+receiver uses it to seed libsrtp's rollover counter before authentication, allowing
+late joins after the 16-bit RTP sequence wraps. Existing receivers keep replay
+protection. Run `python3 tests/transport/srtp-rejoin.py` from the core root on
+macOS with the pinned libsrtp build present. This latest fix still needs app
+rebuilds and a real Wi-Fi/mobile handover test after more than 262 seconds.
 
 ## Links
 
@@ -61,5 +68,7 @@ See [current limits](../../docs/PROGRESS.md).
 
 The Device's supervised `ba_audio_observer` samples existing audio/clock state
 without starting capture/playback. Its cache feeds both local UI and signed
-remote monitoring. Meter/analysis options follow the Device's calibration consent.
+remote monitoring. Private metrics and meter/analysis options follow the Device's
+Inspect consent, independently of calibration. Inspect also gates bounded runtime
+log reads through signed Session control; USB is unnecessary when control is reachable.
 See the CLI README for controls, field meanings and privacy/validation limits.

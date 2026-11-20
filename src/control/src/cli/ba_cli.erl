@@ -48,6 +48,10 @@ spec(Root) ->
            #{name => web_assets,long => "-web-assets",type => string},
            #{name => web_port,long => "-web-port",type => {integer,[{min,0},{max,65535}]},default => 8766}])}},
       "inspect" => #{commands => #{
+          "logs" => Device(fun download_log/1,
+              [#{name => deviceid,long => "-deviceid",type => string,required => true},
+               #{name => output,long => "-output",type => string,required => true},
+               #{name => log,long => "-log",type => string,default => "runtime.log"}]),
           "device" => Device(fun(A) ->
               Command=case maps:find(deviceid,A) of
                   error -> #{<<"method">> => <<"snapshot">>};
@@ -177,6 +181,42 @@ inspect_session(A) ->
     Candidates=case maps:find(devicename,A) of {ok,_} -> names(A);error -> ba_cli_store:names() end,
     Views=[R || N <- Candidates,R <- [request(N,#{<<"method">> => <<"snapshot">>})],maps:get(<<"session">>,maps:get(<<"session">>,R,#{}),null)=:=Id],
     case Views of [] -> fail(1,<<"No running authorized local view of that Session. Supply --devicename when needed.">>);_ -> emit(#{session => Id,views => Views}) end.
+download_log(A) ->
+    Name=one_name(A),Peer=list_to_binary(maps:get(deviceid,A)),
+    Query=#{<<"method">> => <<"inspect">>,<<"device">> => Peer,<<"log">> => list_to_binary(maps:get(log,A)),
+            <<"offset">> => 0,<<"length">> => 8192},
+    First=log_chunk(Name,Query),Path=maps:get(output,A),
+    case file:open(Path,[write,binary,exclusive]) of
+        {ok,F} ->
+            ok=file:change_mode(Path,8#600),
+            try
+                Size=maps:get(<<"size">>,First),Version=maps:get(<<"version">>,First),
+                copy_log(Name,Query,First,F,Size,Version),
+                emit(#{file => list_to_binary(Path),bytes => Size})
+            catch Class:Reason:Stack -> file:close(F),file:delete(Path),erlang:raise(Class,Reason,Stack)
+            after file:close(F) end;
+        {error,R} -> fail(1,#{error => R,file => list_to_binary(Path)})
+    end.
+log_chunk(Name,Query) ->
+    case request(Name,Query) of
+        #{<<"error">> := null,<<"result">> := Data} -> ok=ba_inspection:validate_reply(Data),Data;
+        #{<<"error">> := Error} -> fail(1,Error)
+    end.
+copy_log(Name,Query,Chunk,F,Size,Version) ->
+    case maps:get(<<"version">>,Chunk)=:=Version andalso maps:get(<<"size">>,Chunk)>=Size of
+        false -> fail(1,<<"Log rotated or was truncated during download; retry.">>);
+        true -> ok
+    end,
+    Offset=maps:get(<<"offset">>,Query),Data=base64:decode(maps:get(<<"data">>,Chunk)),
+    Count=min(byte_size(Data),Size-Offset),
+    ok=file:write(F,binary:part(Data,0,Count)),Next=Offset+Count,
+    case Next>=Size of
+        true -> ok;
+        false when Count>0 ->
+            Q=Query#{<<"offset">> := Next,<<"length">> := min(8192,Size-Next),<<"version">> => Version},
+            copy_log(Name,Q,log_chunk(Name,Q),F,Size,Version);
+        false -> fail(1,<<"Log ended before its reported size; retry.">>)
+    end.
 get_session(A) ->
     R=request(one_name(A),#{<<"method">> => <<"snapshot">>}),
     case maps:get(<<"session">>,maps:get(<<"session">>,R),null) of null -> fail(1,<<"Device has no active Session.">>);Id -> Id end.

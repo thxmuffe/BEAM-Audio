@@ -86,13 +86,16 @@ def catalog(product):
                     [node, str(p)], root, required=(Path(chrome),)))
             python = p.suffix == '.py' and (p.name.startswith('test_') or
                 (relative.startswith('tests/') and (p.name.endswith(('-smoke.py', '-e2e.py'))
-                 or p.name in {'smoke.py', 'naming-check.py'})))
+                 or p.name in {'smoke.py', 'naming-check.py', 'srtp-rejoin.py'})))
             if not python and not (relative.startswith('tests/') and p.suffix == '.escript'):
                 continue
             command = [sys.executable, str(p)] if python else ['escript', str(p)]
             platform, required, modules = '', [], ()
             if relative.startswith('tests/apple/'):
                 platform = 'darwin'
+            if p.name == 'srtp-rejoin.py':
+                platform = 'darwin'
+                required.append(CORE/'builds/intermediates/engine-deps/macOS/lib/libsrtp2.a')
             if relative.startswith('tests/Windows/') or relative == 'tests/ReceptionDesk/release-smoke.py':
                 platform = 'win32'
                 required.append(CORE/'builds/Services/ReceptionDesk/bin/reception_desk.bat'

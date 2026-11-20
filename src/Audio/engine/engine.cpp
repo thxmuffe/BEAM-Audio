@@ -163,6 +163,11 @@ struct Engine {
         if (op == "stop_speaker") return stop_speaker(c.at("ssrc"));
         if (op == "start_capture") return start_capture(c);
         if (op == "stop_capture") return stop_capture(c.at("ssrc"));
+        if (op == "capture_index") {
+            Sender *s = find_sender(c.at("ssrc"));
+            if (!s) fail("no such capture stream");
+            return {{"packet_index", s->packet_index()}};
+        }
         if (op == "route") return route(c.at("ssrc"), c.at("conns").get<std::vector<ConnId>>());
         if (op == "volume") return volume(c.at("ssrc"), c.at("gain"));
         if (op == "delay") return delay(c.at("ssrc"), c.at("delay_ms"));

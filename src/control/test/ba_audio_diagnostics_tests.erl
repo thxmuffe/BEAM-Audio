@@ -1,7 +1,7 @@
 -module(ba_audio_diagnostics_tests).
 -include_lib("eunit/include/eunit.hrl").
 projection_exposes_existing_failures_without_payloads_test() ->
-    ba_test_consent:with(#{calibrate_speaker => true},fun() ->
+    ba_test_consent:with(#{inspect => true},fun() ->
     Transport=#{role => receiver,open => true,received => 20,rejected => 2,private => <<"SECRET">>,
         diagnostics => #{counts => #{invalid_timing => 2}}},
     Audio=#{rejected => 1,publications => 0,
@@ -25,7 +25,7 @@ projection_exposes_existing_failures_without_payloads_test() ->
     end).
 
 subscription_intent_does_not_imply_open_media_test() ->
-    ba_test_consent:with(#{calibrate_speaker => true},fun() ->
+    ba_test_consent:with(#{inspect => true},fun() ->
     Subs=#{waiting => #{state => waiting_for_source,transport => #{}},
         opening => #{state => opening,transport => #{role => receiver,open => false}},
         unresponsive => #{state => active,transport => #{error => unavailable}},
@@ -46,9 +46,9 @@ wire_rejects_unbounded_or_nested_diagnostics_test() ->
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"secret">> => <<"private">>})),
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"clock.state">> => <<27,"[2J">>})).
 
-%% Inspection follows calibration consent; without it no work is done and no
+%% Inspection follows its own consent; without it no work is done and no
 %% stale levels are reported.
-calibration_consent_gates_inspection_test() ->
+inspect_consent_gates_inspection_test() ->
         ?assertEqual(#{<<"diagnostics.meters">> => false,<<"diagnostics.analysis">> => false},
             ba_audio_diagnostics:snapshot(#{mixer => #{rendered => 10}},#{state => synchronized})),
         ?assertEqual(#{<<"meters">> => false,<<"analysis">> => false,<<"microphone">> => false},ba_audio_diagnostics:options()),
@@ -57,7 +57,7 @@ calibration_consent_gates_inspection_test() ->
         ?assertException(error,_,ba_audio_diagnostics:validate_options(#{<<"pcm">> => true})).
 
 native_summary_is_allowlisted_not_arbitrary_state_test() ->
-    ba_test_consent:with(#{calibrate_speaker => true},fun() ->
+    ba_test_consent:with(#{inspect => true},fun() ->
     D=ba_audio_diagnostics:snapshot(#{mixer => #{submitted_frames => 48000,output => #{
         supported => true,backend => ios,completed_frames => 47900,route => speaker,
         engine_running => true,player_running => true,private => <<"SECRET">>}}},#{}),
@@ -68,7 +68,7 @@ native_summary_is_allowlisted_not_arbitrary_state_test() ->
     end).
 
 recent_failures_are_bounded_and_payload_free_test() ->
-    ba_test_consent:with(#{calibrate_speaker => true},fun() ->
+    ba_test_consent:with(#{inspect => true},fun() ->
     S=lists:foldl(fun(_,Acc) -> ba_diagnostics:count(missed_packet_target,Acc) end,#{},lists:seq(1,100)),
     %% The shared local snapshots also serialize this view, not just the signed projection.
     ?assert(is_list(json:encode(ba_diagnostics:view(S)))),

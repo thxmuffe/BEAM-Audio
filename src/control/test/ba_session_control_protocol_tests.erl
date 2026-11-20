@@ -77,6 +77,23 @@ capability_permissions_and_reply_test() ->
     ?assertMatch({ok,[],[{reply,<<"capabilities.error">>,#{<<"reason">> := <<"unavailable">>}}],_},
         p(receive_packet,[B,Unavailable,8,A1])).
 
+inspection_chunks_are_signed_scoped_and_replay_checked_test() ->
+    {A,B,_,_,SA,SB}=connected(),
+    Query=#{<<"log">> => <<"runtime.log">>,<<"offset">> => 0,<<"length">> => 8192},
+    {ok,Denied,A0}=p(request_inspection,[B,Query,5,SA]),
+    {ok,[Error],[],_}=p(receive_packet,[A,Denied,6,SB]),
+    ?assertMatch({ok,[],[{reply,<<"inspect.error">>,#{<<"reason">> := <<"forbidden">>}}],_},p(receive_packet,[B,Error,7,A0])),
+    Policy=maps:get(policy,SB),Granted=SB#{policy := Policy#{members := #{A => [capabilities_read,status_read]}}},
+    {ok,Request,A1}=p(request_inspection,[B,Query,5,SA]),
+    {ok,[],[{inspect_read,Id,Query}],B1}=p(receive_packet,[A,Request,6,Granted]),
+    Value=#{<<"data">> => base64:encode(<<"diagnostic\n">>),<<"next">> => 11,<<"size">> => 11,<<"version">> => <<"1">>,<<"eof">> => true},
+    {ok,Reply,B2}=p(reply_inspection,[A,Id,{ok,Value},7,B1]),
+    {ok,[],[{reply,<<"inspect.reply">>,Value}],A2}=p(receive_packet,[B,Reply,8,A1]),
+    ?assertMatch({error,_,A2},p(receive_packet,[B,Reply,9,A2])),
+    ?assertMatch({error,_,B2},p(receive_packet,[A,Request,9,B2])),
+    {ok,Refused,_}=p(reply_inspection,[A,Id,{error,refused},7,B1]),
+    ?assertMatch({ok,[],[{reply,<<"inspect.error">>,#{<<"reason">> := <<"refused">>}}],_},p(receive_packet,[B,Refused,8,A1])).
+
 sender_signature_and_join_certificate_are_bound_test() ->
     {A,B,KA,_,SA,SB} = connected(),
     {ok,FromA,_} = p(request_capabilities,[B,5,SA]),

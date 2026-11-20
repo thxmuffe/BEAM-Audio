@@ -60,6 +60,16 @@ restart_keeps_settings_not_history_test() -> fixture(fun(_) ->
     ?assert(maps:get(microphone,ba_app_session:consent()))
 end).
 
+inspect_ask_and_no_survive_a_restart_test() -> fixture(fun(_) ->
+    [begin
+        ok=ba_device_config:policy(inspect,Choice,#{}),
+        ok=ba_settings:flush(),gen_server:stop(ba_device_config),gen_server:stop(ba_settings),
+        {ok,_}=ba_settings:start_link(),{ok,_}=ba_device_config:start_link(),
+        ?assertEqual(Choice,ba_device_config:policy(inspect)),
+        ?assertNot(maps:get(inspect,ba_device_config:consent()))
+    end || Choice <- [ask,no]]
+end).
+
 no_ops_and_errors_do_not_add_edits_test() -> fixture(fun(_) ->
     Before=ba_device_config:snapshot(),
     ok=ba_device_config:change(#{microphone => false},#{}),

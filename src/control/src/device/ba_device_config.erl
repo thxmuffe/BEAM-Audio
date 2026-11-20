@@ -6,7 +6,7 @@
 %% Device resources the Session may ask to use, and requests from other Devices
 %% that this Device answers. Each has a policy: always, ask (default) or no.
 %% PROTECTED uses still carry a consent flag; the others are recorded choices only.
--define(PROTECTED,[speaker,microphone,calibrate_microphone,calibrate_speaker,dsp]).
+-define(PROTECTED,[speaker,microphone,calibrate_microphone,calibrate_speaker,dsp,inspect]).
 -define(USES,[location]).
 %% Requests for rights: on_air, and moderator rights (grant, end_session).
 -define(GRANTS,[on_air_requests,moderator_requests]).
@@ -38,9 +38,9 @@ preset(Name,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{preset,Na
 preset_values(no_control) -> #{auto_accept => true,auto_grant => true,choices => keep};
 preset_values(friendly) -> #{auto_accept => false,auto_grant => true,
     choices => #{moderator_requests => always,speaker => always,calibrate_microphone => always,calibrate_speaker => always,
-                 dsp => always,location => always}};
+                 dsp => always,inspect => always,location => always}};
 preset_values(tight) -> #{auto_accept => false,auto_grant => false,
-    choices => #{moderator_requests => no,microphone => no,location => no,dsp => no}}.
+    choices => #{moderator_requests => no,microphone => no,inspect => no,location => no,dsp => no}}.
 %% The consent flags a preset's values grant (always, or everything while auto accept is on).
 preset_patch(#{auto_accept := Auto,choices := Choices}) ->
     maps:from_list([{K,Auto orelse maps:get(K,Choices,ask)=:=always} || K <- ?PROTECTED]).
@@ -74,11 +74,22 @@ init([]) ->
     end,
     Default=maps:merge(maps:from_keys([broadcast|?PROTECTED],false),Fresh),
     Saved=ba_settings:get(consent,undefined),
-    Consent=case valid_config(Saved) of true -> Saved;false -> Default end,
+    Consent0=case valid_config(Saved) of true -> Saved;false -> Default end,
+    %% Inspect is normally on; Strict refuses it. Preserve an explicit saved
+    %% choice/consent, including Ask, when introducing the new setting.
+    KnownInspect=is_map(Saved) andalso maps:is_key(inspect,Saved),
+    Inspect=maps:get(inspect,maps:get(choices,Gates,#{}),case KnownInspect of
+        true -> ask;false -> case Preset of tight -> no;_ -> always end end),
+    Choices=(maps:get(choices,Gates,#{}))#{inspect => Inspect},
+    Consent=case KnownInspect of
+        true -> Consent0;
+        false -> Consent0#{inspect => maps:get(auto_accept,Gates,false) orelse Inspect=:=always}
+    end,
+    ok=ba_settings:put(consent,Consent),
     S=#{format => 1,revision => 0,cursor => 0,seen => [],
         states => [#{label => <<"Initial audio settings">>,config => Consent,time_ms => erlang:system_time(millisecond)}]},
     ok=validate(S),
-    Restored=S#{choices => maps:get(choices,Gates,#{}),auto_accept => maps:get(auto_accept,Gates,false),auto_grant => maps:get(auto_grant,Gates,false),preset => maps:get(preset,Gates,advanced)},
+    Restored=S#{choices => Choices,auto_accept => maps:get(auto_accept,Gates,false),auto_grant => maps:get(auto_grant,Gates,false),preset => maps:get(preset,Gates,advanced)},
     _=save_gates(Restored),
     publish(Restored),changed(),{ok,Restored#{permission_registry => whereis(ba_permission_pg)}}.
 %% Only well-formed choices are read back; anything else is dropped.

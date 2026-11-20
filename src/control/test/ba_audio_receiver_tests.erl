@@ -1,6 +1,19 @@
 -module(ba_audio_receiver_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+%% A dead provider must release its attempt instead of rejecting every fresh
+%% receiver subscription after a lost close/endpoint during a network change.
+%% Late failure events from an older ICE connection must leave its replacement.
+failed_ice_ends_only_the_current_attempt_test() ->
+    S=#{conn => 42,role => provider,open => true,path => direct},
+    Event=fun(C) -> {ba_audio_engine,self(),#{event => <<"ice_state">>,conn => C,state => <<"failed">>}} end,
+    ?assertEqual({noreply,S},ba_engine_media_session:handle_info(Event(41),S)),
+    {stop,Reason,Closed}=ba_engine_media_session:handle_info(Event(42),S),
+    ?assertEqual({shutdown,ice_failed},Reason),
+    ?assertEqual(ice_failed,ba_diagnostics:reason(Reason)),
+    ?assertEqual(failed,maps:get(path,Closed)),
+    ?assertEqual(1,maps:get(ice_failures,Closed)).
+
 same_contract_is_a_noop_and_stale_revision_is_rejected_test() ->
     Peer = binary:copy(<<"A">>,64),Id = binary:copy(<<"B">>,32),Key = {receive_audio,Peer,<<"music">>},
     S = #{contracts => #{Key => #{id => Id,revision => 2}},subscriptions => retained_media_and_buffers},
@@ -41,7 +54,9 @@ engine_signals_are_validated_test() ->
     ?assertError(_,ba_audio_stream_protocol:validate(Endpoint#{<<"ice">> => <<"no credentials">>})),
     Stream=Base#{<<"kind">> => <<"signal.stream">>,<<"public">> => Public,<<"wrapped">> => binary:encode_hex(crypto:strong_rand_bytes(46)),
         <<"ssrc">> => 1234,<<"rate">> => 48000,<<"anchor_ns">> => <<"1795190853785180625">>,
-        <<"ice">> => Ice},
+        <<"ice">> => Ice,<<"packet_index">> => 65540},
     ?assertEqual(ok,ba_audio_stream_protocol:validate(Stream)),
     ?assertError(_,ba_audio_stream_protocol:validate(Stream#{<<"key">> => <<"plain">>})),
-    ?assertError(_,ba_audio_stream_protocol:validate(Stream#{<<"anchor_ns">> => <<"soon">>})).
+    ?assertError(_,ba_audio_stream_protocol:validate(Stream#{<<"anchor_ns">> => <<"soon">>})),
+    ?assertError(_,ba_audio_stream_protocol:validate(maps:remove(<<"packet_index">>,Stream))),
+    [?assertError(_,ba_audio_stream_protocol:validate(Stream#{<<"packet_index">> := Bad})) || Bad <- [-1,16#1000000000000]].

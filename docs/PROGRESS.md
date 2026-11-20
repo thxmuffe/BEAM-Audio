@@ -1,5 +1,45 @@
 # Current implementation and validation
 
+## Mobile playback recovery and Inspect — 2026-11-20, end of session
+
+This section supersedes the earlier mobile-data and inspection status below.
+
+- **ICE recovery:** a failed native media attempt now ends its OTP worker, so
+  a new attempt can replace it instead of being rejected as an old attempt.
+  After the owner's rebuild, logs show a connection through the carrier NAT.
+- **SRTP rejoin:** that connection received packets but rejected authentication.
+  Switching Mac ON AIR off/on restored audible playback on mobile data. A native
+  regression reproduces the cause: a fresh receiver lacks the sender's SRTP
+  rollover counter after the 16-bit RTP sequence wraps (about 262 seconds at
+  250 packets/s). Signed stream setup now carries the native sender's 48-bit
+  packet index; the receiver seeds libsrtp before its first authenticated packet.
+  Established replay protection remains intact. This latest fix is implemented
+  and compiled, **not yet rebuilt/deployed into the apps or verified on phones**.
+- **Listening report:** after the ON AIR restart the owner heard both iPhones
+  playing in perfect sync at 800 ms Response time. This is listening acceptance,
+  not a physical timing measurement. No TURN service was needed for this test.
+- **Inspect:** Settings now includes a separate Inspect choice. Friendly
+  approves Calibration, Speaker, Inspect, Location and Processing, and asks for
+  Microphone. Strict asks for Calibration and Speaker, and refuses Microphone,
+  Inspect, Location and Processing. Inspect defaults on outside Strict when
+  migrating settings without that choice; saved Ask/No survive restart.
+  Private metrics and bounded runtime-log reads use the existing signed Session
+  request/approval path. No/Ask refusal and approval were exercised. After the
+  owner chose Approve for me, the CLI downloaded a 315,148-byte iPhone runtime
+  log through Session control, without USB file-copy tooling.
+- **Checks:** 44 targeted core tests passed for inspection/consent/protocol/audio
+  recovery, followed by 32 receiver/protocol tests after the stream schema change
+  and 14 receiver/config tests after boundary and persistence assertions. The
+  frontend's 28 state tests pass. The native SRTP regression covers late joins
+  across multiple wraps, wrap boundaries, a corrupted first packet and replay
+  rejection. Changed capture/speaker/engine C++ files compile for macOS. These
+  are focused checks, not full app builds, iOS compilation or deployment.
+- **Deferred:** opening Chat disturbs playback on Wi-Fi too; the owner also
+  reported a 5–10-second HTML-layer freeze. The cause is not established.
+  Output callback-gap and packet-queue-delay counters were proposed but **not
+  implemented**, following the owner's request to wrap up and test first.
+  Leave UI, clock and buffering changes for the next investigation.
+
 ## Approval Settings and internet playback investigation — 2026-11-20
 
 - Settings now has **Approve for me**, followed by Calibration (microphone and

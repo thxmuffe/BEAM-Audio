@@ -1,7 +1,7 @@
 %% Desk adapter. Owns the authenticated links to peers, never OTP distribution or audio.
 -module(ba_session_control).
 -behaviour(gen_server).
--export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1,read_capabilities/2]).
+-export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1,read_capabilities/2,read_inspection/2]).
 -export([session_request/2,introduce/1,audio_message/3,chat_message/3,audio_context/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 -define(BEHIND_MS,2000).
@@ -24,6 +24,7 @@ connect(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{connect,Peer}).
 read_status(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{read_status,Peer},7000).
 read_capabilities(Peer) -> gen_server:call(ba_session_scope:ref(?MODULE),{read_capabilities,Peer},7000).
 read_capabilities(Peer,Metrics) -> gen_server:call(ba_session_scope:ref(?MODULE),{read_capabilities,Peer,Metrics},7000).
+read_inspection(Peer,Query) -> gen_server:call(ba_session_scope:ref(?MODULE),{read_inspection,Peer,Query},7000).
 
 init([]) ->
     %% This profile must be run without -name/-sname or a prestarted net_kernel.
@@ -87,6 +88,14 @@ handle_call({connect,Peer},_,S) ->
 
 handle_call({read_capabilities,Peer,Metrics},From,S) when is_boolean(Metrics);is_map(Metrics) ->
     read_capabilities_call(Peer,Metrics,From,S);
+handle_call({read_inspection,Peer,Query},From,#{callers := Callers}=S) ->
+    case ba_session_control_protocol:request_inspection(Peer,Query,now_ms(),maps:get(protocol,S)) of
+        {ok,Packet,Protocol} -> case send(Peer,Packet,S) of
+            ok -> {noreply,S#{protocol := Protocol,callers := Callers#{Peer => From}}};
+            Error -> {reply,Error,S}
+        end;
+        {error,R,_} -> {reply,{error,R},S}
+    end;
 handle_call({Operation,Peer},From,#{callers := Callers} = S)
         when Operation =:= read_status; Operation =:= read_capabilities ->
     Result = case Operation of
@@ -197,17 +206,31 @@ event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->
     Errors=maps:get(peer_errors,Next,#{}),
     reply(Peer,{ok,Value},Next#{peer_errors => Errors#{Peer => HasError}});
 event(Peer,{reply,<<"capabilities.error">>,#{<<"reason">> := Reason}},S) ->
-    Error = case Reason of <<"forbidden">> -> forbidden; <<"unavailable">> -> unavailable end,
-    reply(Peer,{error,Error},S);
-event(Peer,{capabilities_read,Request,true,Options},S) ->
-    {ok,_}=ba_audio_diagnostics:configure(Options,Peer),
+    reply(Peer,{error,binary_to_existing_atom(Reason)},S);
+event(Peer,{reply,<<"inspect.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
+event(Peer,{reply,<<"inspect.error">>,#{<<"reason">> := Reason}},S) ->
+    reply(Peer,{error,binary_to_existing_atom(Reason)},S);
+event(Peer,{inspect_read,Request,Query},S) ->
+    Value=try ba_inspection:read(Query,Peer) catch _:_ -> {error,unavailable} end,
+    case ba_session_control_protocol:reply_inspection(Peer,Request,Value,now_ms(),maps:get(protocol,S)) of
+        {ok,Packet,Protocol} -> case send(Peer,Packet,S) of
+            ok -> S#{protocol := Protocol};_ -> rejected(transport_failed,S)
+        end;
+        {error,_,_} -> rejected(inspection_reply_failed,S)
+    end;
+event(Peer,{capabilities_read,Request,true,_Options},S) ->
     event(Peer,{capabilities_read,Request,true},S);
 event(Peer,{capabilities_read,Request},S) -> event(Peer,{capabilities_read,Request,false},S);
 event(Peer,{capabilities_read,Request,Metrics},S) ->
-    %% Inspecting levels/analysis needs this Device's calibration consent; an Ask
-    %% policy raises a request naming the reading Device. The reply never waits.
-    case Metrics of true -> _=ba_audio_diagnostics:configure(#{<<"meters">> => true},Peer);false -> ok end,
-    Value = try ba_device_handler:capabilities(Metrics) catch exit:_ -> unavailable end,
+    %% Public name/audio state remains available. Private observations require
+    %% Inspect, through the same approval owner as log downloads and resources.
+    Value = try
+        case Metrics of
+            true -> case ba_device_request:approve(inspect,Peer) of
+                ok -> ba_device_handler:capabilities(true);Error -> Error end;
+            false -> ba_device_handler:capabilities(false)
+        end
+    catch exit:_ -> unavailable end,
     case ba_session_control_protocol:reply_capabilities(Peer,Request,Value,now_ms(),maps:get(protocol,S)) of
         {ok,Packet,Protocol} ->
             case send(Peer,Packet,S) of

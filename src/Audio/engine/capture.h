@@ -43,6 +43,7 @@ class Sender {
     Sender &operator=(const Sender &) = delete;
 
     uint32_t ssrc() const { return ssrc_; }
+    uint64_t packet_index() const { return next_index_.load(std::memory_order_relaxed); }
     void set_input_rate(uint32_t rate) { in_rate_.store(rate); }
     uint32_t input_rate() const { return in_rate_.load(); }
     void set_routes(std::vector<ConnId> routes) { routes_ = std::move(routes); }  // packet thread
@@ -78,7 +79,7 @@ class Sender {
     float block_[Block * Channels] = {};
     uint32_t filled_ = 0;
     int64_t block_pos_ = 0;
-    uint16_t seq_ = 0;
+    std::atomic<uint64_t> next_index_{0};
     History history_;
     std::atomic<int> test_loss_{0};
     std::atomic<uint64_t> sent_{0}, send_errors_{0}, frames_{0}, jumps_{0}, retransmits_{0}, test_dropped_{0};

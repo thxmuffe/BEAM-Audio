@@ -2,31 +2,29 @@
 %% Cached by the Device Handler; remote reads never poll the audio processes.
 -module(ba_audio_diagnostics).
 -export([snapshot/2,validate/1,trace/1,validate_trace/1,meters/1,validate_meters/1,options/0,configure/1,configure/2,validate_options/1,enabled/1]).
-%% Inspection follows the user's calibration consent; there are no separate
-%% switches. Calibrate speaker covers received/output levels and playback
-%% analysis; Calibrate microphone covers capture levels. Never changes audio
+%% Inspection has its own consent; observing existing state does not use
+%% microphone or speaker calibration. Never changes audio
 %% consent, packet targets or mandatory failure accounting.
 options() ->
-    Speaker=allowed(calibrate_speaker),
-    #{<<"meters">> => Speaker,<<"analysis">> => Speaker,<<"microphone">> => allowed(calibrate_microphone)}.
-enabled(microphone) -> allowed(calibrate_microphone);
-enabled(meters) -> allowed(calibrate_speaker);
-enabled(analysis) -> allowed(calibrate_speaker).
+    Inspect=allowed(inspect),
+    #{<<"meters">> => Inspect,<<"analysis">> => Inspect,<<"microphone">> => Inspect}.
+enabled(microphone) -> allowed(inspect);
+enabled(meters) -> allowed(inspect);
+enabled(analysis) -> allowed(inspect).
 allowed(Key) -> try ba_device_permission:allowed(Key) catch _:_ -> false end.
 validate_options(P) ->
     true=is_map(P) andalso map_size(P)>0 andalso map_size(P)=<2,
     maps:foreach(fun(K,V) -> true=lists:member(K,[<<"meters">>,<<"analysis">>]),true=is_boolean(V) end,P),ok.
-%% A request to inspect (any true option) asks for calibration consent on this
+%% A request to inspect (any true option) asks for Inspect consent on this
 %% Device; Ask policies raise a request its user answers. Turning inspection
 %% off is the user's own Settings choice, not a remote command.
 configure(P) -> configure(P,<<"local">>).
 configure(P,From) ->
     ok=validate_options(P),
     case lists:member(true,maps:values(P)) of
-        true -> [ba_device_request:approve(K,From) || K <- [calibrate_speaker,calibrate_microphone]];
-        false -> ok
-    end,
-    {ok,options()}.
+        true -> case ba_device_request:approve(inspect,From) of ok -> {ok,options()};Error -> Error end;
+        false -> {ok,options()}
+    end.
 -define(MAX_INT,9007199254740991).
 snapshot(Audio,Clock) ->
     Flags=#{<<"diagnostics.meters">> => enabled(meters),<<"diagnostics.analysis">> => enabled(analysis)},

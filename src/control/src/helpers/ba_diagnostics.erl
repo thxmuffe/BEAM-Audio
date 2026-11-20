@@ -12,6 +12,7 @@ count(Reason,S) ->
     end,
     S#{diagnostics => Observed}.
 reason(R) when is_atom(R) -> R;
+reason({shutdown,R}) -> reason(R);
 reason({R,Stack}) when is_atom(R),is_list(Stack) -> R;
 reason(<<"decoded_packet_target_missing">>) -> decoded_packet_target_missing;
 reason(<<"unsupported_decoded_block">>) -> unsupported_decoded_block;

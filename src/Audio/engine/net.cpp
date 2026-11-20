@@ -3,6 +3,11 @@
 #include <cstring>
 
 namespace ba {
+bool prime_srtp(srtp_t session, uint32_t ssrc, uint64_t reference, uint16_t sequence) {
+    const int64_t index = int64_t(reference) + int16_t(sequence - uint16_t(reference));
+    return index >= 0 && srtp_set_stream_roc(session, ssrc, uint32_t(uint64_t(index) >> 16)) == srtp_err_status_ok;
+}
+
 srtp_t make_srtp(uint32_t ssrc, const std::string &key) {
     if (key.size() != SRTP_AES_ICM_128_KEY_LEN_WSALT) fail("SRTP key must be 30 bytes");
     srtp_policy_t policy;

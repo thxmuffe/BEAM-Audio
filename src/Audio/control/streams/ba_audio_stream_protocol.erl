@@ -31,11 +31,12 @@ validate(#{<<"kind">> := K} = P) ->
         %% travel in the clear: the Reception can read these payloads.
         %% With the provider's own ICE description.
         <<"signal.stream">> ->
-            ba_session_passport:exact(P,base()++[<<"public">>,<<"wrapped">>,<<"ssrc">>,<<"rate">>,<<"anchor_ns">>,<<"ice">>]),media(P),
+            ba_session_passport:exact(P,base()++[<<"public">>,<<"wrapped">>,<<"ssrc">>,<<"rate">>,<<"anchor_ns">>,<<"packet_index">>,<<"ice">>]),media(P),
             ice(maps:get(<<"ice">>,P)),
             true = ba_hex:valid(maps:get(<<"public">>,P),64),
             true = ba_hex:valid(maps:get(<<"wrapped">>,P),92),
             Ssrc = maps:get(<<"ssrc">>,P),true = is_integer(Ssrc) andalso Ssrc>=0 andalso Ssrc<16#100000000,
+            Index=maps:get(<<"packet_index">>,P),true=is_integer(Index) andalso Index>=0 andalso Index<16#1000000000000,
             true = lists:member(maps:get(<<"rate">>,P),[44100,48000]),
             Anchor = maps:get(<<"anchor_ns">>,P),text(Anchor,20),_ = binary_to_integer(Anchor)
     end,ok.

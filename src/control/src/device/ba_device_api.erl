@@ -47,6 +47,20 @@ command(#{<<"method">> := <<"audio_diagnostics">>,<<"options">> := Options}=R) -
         error -> ba_audio_diagnostics:configure(Options)
     end;
 command(#{<<"method">> := <<"audio_diagnostics">>}) -> {ok,ba_audio_diagnostics:options()};
+command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}=R) ->
+    {Pub,_}=ba_device_store:identity(),Local=Device=:=binary:encode_hex(Pub),
+    case maps:find(<<"log">>,R) of
+        {ok,Log} ->
+            Query=#{<<"log">> => Log,<<"offset">> => maps:get(<<"offset">>,R,0),<<"length">> => maps:get(<<"length">>,R,8192)},
+            Request=maps:merge(Query,maps:with([<<"version">>],R)),
+            ok=ba_inspection:validate_request(Request),
+            case Local of true -> ba_inspection:read(Request,<<"local">>);false -> ba_session_control:read_inspection(Device,Request) end;
+        error -> case Local of
+            true -> case ba_device_request:approve(inspect,<<"local">>) of
+                ok -> {ok,ba_device_handler:capabilities(true)};Error -> Error end;
+            false -> ba_session_control:read_capabilities(Device,true)
+        end
+    end;
 command(#{<<"method">> := <<"monitor">>}=R) -> {ok,ba_session_monitor:snapshot(#{metrics => maps:get(<<"metrics">>,R,false),plain => maps:get(<<"plain">>,R,[])})};
 command(#{<<"method">> := <<"readiness">>}=R) ->
     {ok,readiness(ba_app_session:snapshot(),maps:get(<<"previous">>,R,#{}))};
@@ -93,6 +107,7 @@ command(#{<<"method">> := <<"policy">>,<<"key">> := K,<<"value">> := V}=R) ->
         <<"location">> -> location;
         <<"calibration">> -> calibration;
         <<"dsp">> -> dsp;
+        <<"inspect">> -> inspect;
         _ -> capability_key(K)
     end,
     Value=case V of <<"always">> -> always;<<"ask">> -> ask;<<"no">> -> no end,
@@ -107,9 +122,6 @@ command(#{<<"method">> := <<"take_privilege">>,<<"device">> := Device,<<"privile
     ba_session_membership:take_privilege(Device,ba_session_privileges:parse(Name));
 command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_session_chat:send(Text);
 command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_response_time:set(Offset);
-command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
-    {Pub,_}=ba_device_store:identity(),
-    case Device=:=binary:encode_hex(Pub) of true -> {ok,ba_device_handler:capabilities()};false -> ba_session_control:read_capabilities(Device) end;
 command(#{<<"method">> := <<"invitation">>}) -> remember_link(ba_session_membership:invite(null));
 command(#{<<"method">> := <<"snapshot">>}) -> null;
 command(#{<<"method">> := <<"list_contacts">>}) ->
@@ -179,6 +191,7 @@ remember_link(Result) -> Result.
 
 capability_key(<<"calibrate_microphone">>) -> calibrate_microphone;
 capability_key(<<"calibrate_speaker">>) -> calibrate_speaker;
+capability_key(<<"inspect">>) -> inspect;
 capability_key(<<"speaker">>) -> speaker;
 capability_key(<<"microphone">>) -> microphone;
 capability_key(<<"broadcast">>) -> broadcast.

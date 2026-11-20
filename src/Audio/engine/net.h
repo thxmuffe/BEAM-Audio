@@ -11,6 +11,9 @@
 namespace ba {
 // AES-CM-128 / HMAC-SHA1-80 for one SSRC; key is the 30-byte master key+salt.
 srtp_t make_srtp(uint32_t ssrc, const std::string &key);
+// Before the first authenticated packet only: seed libsrtp from the sender's
+// signed packet-index reference, including a wrap during connection setup.
+bool prime_srtp(srtp_t session, uint32_t ssrc, uint64_t reference, uint16_t sequence);
 
 constexpr int RtpHeader = 12;
 struct Rtp {

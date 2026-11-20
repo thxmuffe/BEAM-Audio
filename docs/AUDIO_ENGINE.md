@@ -54,6 +54,12 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
 - **Stream anchors.** Distributes, per stream, the Session time of RTP sample
   position 0 and the playback delay. With that, every sample has a known play
   time; no RTCP sender reports are needed for timing.
+- **Late joins.** Signed `signal.stream` includes the native sender's 48-bit
+  `packet_index`. A fresh receiver chooses the nearest extended index for its
+  first packet and seeds libsrtp's rollover counter before authentication.
+  This preserves ongoing streams after 16-bit sequence wrap without resetting
+  an established receiver's replay state. The focused native regression passes;
+  deployment and real-phone handover validation remain pending.
 - **Lifecycle.** One OTP process owns each engine; the engine is linked to it.
   Commands: `start_speaker`, `stop_speaker`, `start_capture` / `stop_capture`
   (system audio, microphone; several at once), `connect`, `remote`,

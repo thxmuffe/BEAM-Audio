@@ -11,7 +11,7 @@
 -module(ba_session_control_protocol).
 -export([new/3, connect/3, request_status/3, request_capabilities/3,request_capabilities/4, reply_capabilities/5,chat_message/5,
          receive_packet/4, expire/2, reset/2, close/3, set_policy/2, peer_revision/2,
-         snapshot/1, seal/2,context/3,audio_message/5,session_message/5]).
+         snapshot/1, seal/2,context/3,audio_message/5,session_message/5,request_inspection/4,reply_inspection/5]).
 -define(DOMAIN, <<"beamaudio-session-control/v1:">>).
 -define(VERSION, 3).
 %% Sealing (ba_session_passport:seal_envelope) adds a third; Reception allows 32768.
@@ -82,6 +82,9 @@ request_capabilities(Peer,false,Now,S) -> request_capabilities(Peer,Now,S);
 request_capabilities(Peer,Options,Now,S) when is_map(Options) ->
     ok=ba_audio_diagnostics:validate_options(Options),
     request(Peer,capabilities,<<"capabilities.read">>,#{<<"metrics">> => true,<<"diagnostics">> => Options},Now,S).
+request_inspection(Peer,Payload,Now,S) ->
+    ok=ba_inspection:validate_request(Payload),
+    request(Peer,inspection,<<"inspect.read">>,Payload,Now,S).
 request(Peer,Kind,Operation,Now,S) -> request(Peer,Kind,Operation,#{},Now,S).
 request(Peer,Kind,Operation,Payload,Now,S) ->
     attempt(fun() ->
@@ -99,9 +102,22 @@ reply_capabilities(Peer,Request,Value,Now,S) ->
         #{Peer := Request} = Answering = maps:get(answering,S),
         {Op,Payload} = case Value of
             unavailable -> {<<"capabilities.error">>,#{<<"reason">> => <<"unavailable">>}};
+            {error,R} -> {<<"capabilities.error">>,#{<<"reason">> => atom_to_binary(R)}};
             _ -> capability_payload(Value), {<<"capabilities.reply">>,Value}
         end,
         {Packet,Next} = outgoing(Peer,Op,Request,Payload,Now,S),
+        {ok,Packet,Next#{answering := maps:remove(Peer,Answering)}}
+    end,S).
+
+reply_inspection(Peer,Request,Value,Now,S) ->
+    attempt(fun() ->
+        #{Peer := Request}=Answering=maps:get(answering,S),
+        {Op,Payload}=case Value of
+            {ok,P} -> {<<"inspect.reply">>,P};
+            {error,R} -> {<<"inspect.error">>,#{<<"reason">> => atom_to_binary(R)}}
+        end,
+        payload(Op,Payload),
+        {Packet,Next}=outgoing(Peer,Op,Request,Payload,Now,S),
         {ok,Packet,Next#{answering := maps:remove(Peer,Answering)}}
     end,S).
 
@@ -212,6 +228,7 @@ forbidden(Peer,Op,Request,_Payload,Now,S) ->
     {Reply,Value} = case Op of
         <<"status.read">> -> {<<"status.error">>,#{<<"reason">> => <<"forbidden">>}};
         <<"capabilities.read">> -> {<<"capabilities.error">>,#{<<"reason">> => <<"forbidden">>}};
+        <<"inspect.read">> -> {<<"inspect.error">>,#{<<"reason">> => <<"forbidden">>}};
         _ -> error(forbidden)
     end,
     {Packet,Next} = outgoing(Peer,Reply,Request,Value,Now,S),
@@ -237,12 +254,17 @@ authorized(Peer,Op,Request,Payload,Now,S) ->
                 error -> case maps:get(<<"metrics">>,Payload,false) of true -> {capabilities_read,Request,true};false -> {capabilities_read,Request} end
             end,
             {ok,[],[Event],S#{answering := Answering#{Peer => Request}}};
+        <<"inspect.read">> ->
+            Answering=maps:get(answering,S),false=maps:is_key(Peer,Answering),
+            {ok,[],[{inspect_read,Request,Payload}],S#{answering := Answering#{Peer => Request}}};
         _ when Op =:= <<"status.reply">>; Op =:= <<"status.error">>;
-               Op =:= <<"capabilities.reply">>; Op =:= <<"capabilities.error">> ->
+               Op =:= <<"capabilities.reply">>; Op =:= <<"capabilities.error">>;
+               Op =:= <<"inspect.reply">>; Op =:= <<"inspect.error">> ->
             Pending = maps:get(pending,S),
             #{request := Request,kind := Kind,deadline := Deadline} = maps:get(Peer,Pending),
             Kind = case Op of
                 <<"status.",_/binary>> -> status;
+                <<"inspect.",_/binary>> -> inspection;
                 _ -> capabilities
             end,
             true = Now < Deadline,
@@ -373,7 +395,11 @@ payload(<<"capabilities.reply">>,P) -> capability_payload(P);
 payload(<<"capabilities.error">>,P) ->
     ba_session_passport:exact(P,[<<"reason">>]),
     Reason = maps:get(<<"reason">>,P),
-    true = Reason =:= <<"forbidden">> orelse Reason =:= <<"unavailable">>;
+    true = ba_inspection:error(Reason);
+payload(<<"inspect.read">>,P) -> ba_inspection:validate_request(P);
+payload(<<"inspect.reply">>,P) -> ba_inspection:validate_reply(P);
+payload(<<"inspect.error">>,P) ->
+    ba_session_passport:exact(P,[<<"reason">>]),true=ba_inspection:error(maps:get(<<"reason">>,P));
 payload(<<"stream.message">>,P) -> ba_audio_stream_protocol:validate(P);
 payload(_,_) -> throw(forbidden_operation).
 

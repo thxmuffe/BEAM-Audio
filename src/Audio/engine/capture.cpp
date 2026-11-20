@@ -36,7 +36,7 @@ FLAC__StreamEncoderWriteStatus sender_write(const FLAC__StreamEncoder *, const F
     s.pending_.pop_front();
     uint8_t packet[1500];
     if (bytes + RtpHeader + SRTP_MAX_TRAILER_LEN > sizeof(packet)) return ++s.send_errors_, FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
-    const uint16_t seq = s.seq_++;
+    const uint16_t seq = uint16_t(s.next_index_.fetch_add(1, std::memory_order_relaxed));
     write_rtp(packet, seq, timestamp, s.ssrc_);
     memcpy(packet + RtpHeader, buffer, bytes);
     int size = int(RtpHeader + bytes);

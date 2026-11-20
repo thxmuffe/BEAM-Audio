@@ -29,6 +29,7 @@ authorize(Op,Payload,Permissions) ->
 %% Any one listed right suffices; [] means every Session member may ask.
 required(<<"status.read">>,_) -> [status_read];
 required(<<"capabilities.read">>,_) -> [capabilities_read];
+required(<<"inspect.read">>,_) -> [capabilities_read];
 required(<<"stream.message">>,#{<<"kind">> := <<"catalog.read">>}) -> [stream_read];
 required(<<"stream.message">>,#{<<"kind">> := <<"subscribe">>}) -> [stream_subscribe];
 %% Session requests, answered by the Device able to execute them (a grant holder,

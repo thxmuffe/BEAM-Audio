@@ -44,8 +44,9 @@ main(Args) ->
     {ok,_}=ba_audio_engine:command(Sender,#{op => test_loss,percent => Loss}),
     Anchor=receive {ba_audio_engine,Sender,#{event := <<"capture_started">>,anchor_ns := A}} -> A
            after 3000 -> io:format("FAIL: capture never started~n"),halt(1) end,
+    {ok,#{packet_index := Index}}=ba_audio_engine:command(Sender,#{op => capture_index,ssrc => Ssrc}),
     OutRates=[begin {ok,#{output_rate := O}}=ba_audio_engine:command(R,#{op => start_speaker,ssrc => Ssrc,rate => Rate,
-        anchor_ns => Anchor,delay_ms => Delay,key => Key,gain => Gain}),O end || R <- [R1,R2]],
+        anchor_ns => Anchor,delay_ms => Delay,key => Key,gain => Gain,packet_index => Index}),O end || R <- [R1,R2]],
     io:format("~ts ~p Hz capture -> ~p Hz stream -> outputs ~p Hz; delay ~p ms; ~p s; ~s~n",
         [Source,InRate,Rate,OutRates,Delay,Seconds,case Gain>0 of true -> "audible";false -> "silent"end]),
     io:format("~6s  ~-24s ~-36s ~-36s~n",["t s","sender error us (mean/max)","receiver 1 error us / missing late","receiver 2 error us / missing late"]),
