@@ -46,7 +46,7 @@ def main():
             desk=relay.start_desk(port);url=f'ws://127.0.0.1:{port}/relay/v1'
             a=runtime('creator');assert a.request('create',desks=[url])['ok']
             link=a.request('invite')['value'];session=member(a)['session']
-            assert '/v5?' in link
+            assert link.startswith('beamaudio://s/'),'expected a v6 link'
             b,c=runtime('b'),runtime('c')
             for r in (b,c):joined(r,link)
             meet(a,b,c)
@@ -79,7 +79,7 @@ def main():
             assert 'on_air' in member(c)['privileges']
             same_policy(c,e,f)
             for r in (e,f):assert c.identity['id'] in member(r)['members']
-            print('PASS: v5 link; pairwise admission without a hub; vanished Device pruned; creator offline; delegated grant accepted by a newcomer; '
+            print('PASS: v6 link; pairwise admission without a hub; vanished Device pruned; creator offline; delegated grant accepted by a newcomer; '
                   'empty Session keeps its ID and grants nothing; returning Device keeps on_air')
         finally:
             for r in runtimes:r.close()

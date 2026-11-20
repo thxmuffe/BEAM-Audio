@@ -1,10 +1,12 @@
 """App-style OTP startup restores a participant, not a dead Owner's gathering."""
 import importlib.util
+import os
 from pathlib import Path
 import shutil
 import socket
 import subprocess
 import tempfile
+import time
 
 HERE = Path(__file__).resolve().parent
 
@@ -43,10 +45,19 @@ try:
         invitation = owner.request('invite')['value']
         member = runtime('member')
         assert member.request('join', invitation=invitation, desk=url)['ok']
-        old = control.wait(member, lambda s: s['membership']['state'] == 'authorized')['membership']
+        # v6 links carry no name; it arrives in the creator's signed policy.
+        old = control.wait(member, lambda s: s['membership']['state'] == 'authorized'
+                           and s['membership']['name'] == 'Test gathering')['membership']
         # A saved Passport replaces the admission link: no invitation required at restart.
         saved_path = Path(state) / 'member' / 'session_connection.term'
-        assert saved_path.exists() and saved_path.stat().st_mode & 0o777 == 0o600
+        # Saved asynchronously after authorization.
+        deadline = time.monotonic() + 5
+        while not saved_path.exists() and time.monotonic() < deadline:
+            time.sleep(.1)
+        assert saved_path.exists()
+        # Windows has no POSIX permission bits; Python reports 0o666 there.
+        if os.name != 'nt':
+            assert saved_path.stat().st_mode & 0o777 == 0o600
         seed = member.seed
         assert member.request('disconnect_app')['ok']
         assert member.request('session_status') == {'state': 'idle'}
@@ -54,7 +65,7 @@ try:
         member = runtime('member', seed)
         first = member.request('start_app')
         assert 'connection' in first, first
-        assert first['connection']['name'] == 'Test gathering'
+        assert first['connection']['name'] == 'Test gathering', first['connection']
         assert first['connection']['state'] in ('rejoining', 'joined')
         restored = control.wait(member, lambda s: s['membership']['state'] == 'authorized')['membership']
         assert restored['session'] == old['session']

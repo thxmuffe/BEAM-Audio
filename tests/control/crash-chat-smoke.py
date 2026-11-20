@@ -41,7 +41,7 @@ def main():
         control.wait(b,lambda s:s['membership']['state']=='authorized')
         assert a.request('connect',peer=b.identity['id'])['ok']
         for node,peer in ((a,b),(b,a)):
-            control.wait(node,lambda s:s['sessions'].get(peer.identity['id'],{}).get('stage')=='authorized')
+            control.wait(node,lambda s:s['links'].get(peer.identity['id'],{}).get('stage')=='authorized')
         assert a.request('crash_test_worker')['ok']
         deadline=time.monotonic()+10
         while True:

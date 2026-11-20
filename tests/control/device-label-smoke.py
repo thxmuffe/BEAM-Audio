@@ -34,13 +34,15 @@ def main():
         assert b.request('join', invitation=a.request('invite')['value'], desk=url)['ok']
         control.wait(b, lambda s: s['membership']['state'] == 'authorized')
         assert a.request('grant', peer=b.identity['id'], permissions=['capabilities_read', 'status_read'])['ok']
-        control.wait(b, lambda s: s['membership']['revision'] >= 3)
+        revision = a.request('snapshot')['membership']['revision']
+        control.wait(b, lambda s: s['membership']['revision'] >= revision)
         assert a.request('connect', peer=b.identity['id'])['ok']
         names = []
         for local, peer in ((a, b), (b, a)):
             state = control.wait(local, lambda s: peer.identity['id'] in s.get('peer_names', {}))
             remote_name = state['peer_names'][peer.identity['id']]
-            assert remote_name.startswith('MacBook Air | '), state
+            # "<Device type> | <hardware name> | <instance>"; the type depends on the host.
+            assert ' | MacBook Air | ' in remote_name, state
             app = local.request('start_runtime')
             row = next(d for d in app['devices'] if d['id'] == peer.identity['id'])
             assert row['name'] == remote_name

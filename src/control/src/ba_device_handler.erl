@@ -3,7 +3,7 @@
 -module(ba_device_handler).
 -behaviour(gen_server).
 -export([start_link/0,capabilities/0,capabilities/1,status/0,audio_changed/0]).
--export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
+-export([init/1,handle_continue/2,handle_call/3,handle_cast/2,handle_info/2]).
 -ifdef(TEST).
 -export([no_worker_speaker/1]).
 -endif.
@@ -16,7 +16,13 @@ capabilities(true) -> gen_server:call(ba_session_scope:ref(?MODULE),capability_m
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 init([]) ->
     case ba_settings:app(audio_automation,false) of true -> self() ! audio_worker;false -> ok end,
-    {ok,#{instance => fresh(),revision => 0}}.
+    {ok,#{instance => fresh(),revision => 0},{continue,resolve_label}}.
+
+%% Resolving the label's OS metadata (a registry query on Windows, plus first
+%% module loads) can exceed the 100 ms capability call. Do it once at start,
+%% so a peer's first capability read after authorization gets its answer.
+handle_continue(resolve_label,#{instance := Instance}=S) ->
+    _=ba_device_label:local(Instance),{noreply,S}.
 
 handle_call(capability_metrics,_,S) -> {reply,capability_metrics(S),S};
 handle_call(capabilities,_,S) -> {reply,capability_snapshot(S),S};

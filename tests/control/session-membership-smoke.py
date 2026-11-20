@@ -64,7 +64,8 @@ def main():
             control.wait(a,lambda s:y.identity['id'] not in s['membership']['participants'])
             assert y.request('join_session',invitation=invitation)['ok']
             authorized(y);sync(a,x,y);connect(x,y)
-            assert x.request('read',peer=y.identity['id'])=={'error':'forbidden'}
+            # Joined Devices hold the default rights (ba_session_membership:defaults/0).
+            assert x.request('read',peer=y.identity['id'])['ok']
             for r in members:
                 assert a.request('grant',peer=r.identity['id'],permissions=['capabilities_read','status_read'])['ok']
             sync(a,x,y);connect(x,y)

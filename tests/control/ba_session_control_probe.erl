@@ -150,12 +150,13 @@ command(#{<<"op">> := <<"capabilities">>,<<"peer">> := Peer},_,_) ->
     result(ba_session_control:read_capabilities(Peer));
 command(#{<<"op">> := <<"attack">>,<<"peer">> := Peer},Id,_) ->
     %% Local harness access only: sign forbidden/replayed packets as the real sender.
-    #{protocol := P,config := #{policy := #{session := Session,authority := Authority,manager := Manager,epoch := Epoch,revision := Revision},routes := _Routes}} =
+    %% Same body fields as ba_session_control_protocol:outgoing/6.
+    #{protocol := P,config := #{policy := #{session := Session,join := Join,revision := Revision}}} =
         sys:get_state(ba_session_control),
-    #{instance := Session,seq := Seq} = P,
-    Body = #{<<"v">> => 2,<<"from">> => Id,<<"to">> => Peer,<<"session">> => Session,
-        <<"authority">> => Authority,<<"manager">> => Manager,<<"epoch">> => Epoch,<<"revision">> => Revision,
-        <<"link">> => Session,<<"seq">> => Seq+1,<<"sent">> => os:system_time(millisecond),
+    #{instance := Link,seq := Seq} = P,
+    Body = #{<<"v">> => 3,<<"from">> => Id,<<"to">> => Peer,<<"session">> => Session,
+        <<"join">> => Join,<<"revision">> => Revision,
+        <<"link">> => Link,<<"seq">> => Seq+1,<<"sent">> => os:system_time(millisecond),
         <<"request">> => binary:copy(<<"0">>,32),<<"op">> => <<"status.read">>,<<"payload">> => #{}},
     Private = maps:get(private,P),
     Forbidden = ba_session_control_protocol:seal(Body#{<<"op">> => <<"unsupported.op">>},Private),
