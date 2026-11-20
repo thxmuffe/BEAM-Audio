@@ -1,5 +1,25 @@
 # Current implementation and validation
 
+## Session audio switched to the engine on Mac/CLI — 2026-11-20
+
+- Transport `engine_flac_srtp_v1` replaces GStreamer AAC in Sessions
+  (`ba_stream_handler_engine`, `ba_engine_media_session`); the GStreamer media
+  session and its tests were deleted. The receiver sends `signal.endpoint`
+  (X25519 public key, engine port, addresses as one space-separated field:
+  signed control forbids JSON arrays); the provider answers `signal.stream`
+  with the stream key wrapped by ChaCha20-Poly1305 under HKDF(ECDH, attempt).
+  Unit tests cover wrapping and validation; 178 core tests pass.
+- One engine per Device (`ba_audio_engine:ensure/0`), started by
+  `ba_audio_sup:start_media` before the worker (starting it from the worker's
+  init deadlocked the supervisor; found live). Clock probes and the Mac
+  capture start are asynchronous, so macOS's System Audio Recording prompt no
+  longer blocks Erlang (it did, live, and cascaded into chat crash notices).
+- Live: two CLI Devices on one Mac in a real Session (public Reception): the
+  receiver's subscription went active and playing; over ~25 s ~7k packets,
+  0 late/rejected/re-positioned, missing frames only at start-up. Duplicates
+  (one per extra address) are expected until connectivity checks. Not yet
+  heard by the owner through the Mac app; iPhone/Windows have no engine yet.
+
 ## Own audio engine: debug loop and macOS engine — 2026-11-20
 
 Implemented steps 0 and 1 (engine part) of the plan in [AUDIO_ENGINE.md](AUDIO_ENGINE.md).

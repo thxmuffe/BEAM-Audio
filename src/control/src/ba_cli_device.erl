@@ -21,12 +21,9 @@ boot() ->
         os:putenv("BA_DEVICE_NAME",case maps:get(<<"observer">>,C,false) of
             true -> ba_device_label:os_name();false -> case maps:is_key(<<"web">>,C) of
                 true -> ba_device_label:os_name();false -> binary_to_list(maps:get(<<"name">>,C)) end end),
-        %% Native AAC is the only audio path: the CLI uses the core build's helper.
-        case os:getenv("BA_MAC_NATIVE_STREAM_HELPER") of
-            false -> os:putenv("BA_MAC_NATIVE_STREAM_HELPER",filename:join([Root,"builds/CLI","ba_native_stream"]));_ -> ok
-        end,
-        case os:getenv("BA_GSTREAMER_RUNTIME") of
-            false -> os:putenv("BA_GSTREAMER_RUNTIME",filename:join([Root,"builds/intermediates/gstreamer/runtime"]));_ -> ok
+        %% The native audio engine is the only audio path: the core build's binary.
+        case os:getenv("BA_AUDIO_ENGINE") of
+            false -> os:putenv("BA_AUDIO_ENGINE",filename:join([Root,"builds/CLI","ba_audio_engine"]));_ -> ok
         end,
         ok=application:load(ba_core),
         ok=ba_app_session:configure(#{platform => mac}),

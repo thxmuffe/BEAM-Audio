@@ -33,8 +33,7 @@ main(Args) ->
     Start=fun() -> {ok,P}=ba_audio_engine:start_link(#{executable => Engine,clock => Clock}),P end,
     [Sender,R1,R2]=[Start() || _ <- [1,2,3]],
     Key=crypto:strong_rand_bytes(30),Ssrc=rand:uniform(16#7fffffff),Rate=48000,Delay=200,
-    Ports=[begin {ok,#{port := P}}=ba_audio_engine:command(R,#{op => open,port => 0}),P end || R <- [R1,R2]],
-    {ok,_}=ba_audio_engine:command(Sender,#{op => open,port => 0}),
+    Ports=[ba_audio_engine:udp_port(R) || R <- [R1,R2]],
     {ok,#{input_rate := InRate}}=ba_audio_engine:command(Sender,#{op => start_capture,source => Source,ssrc => Ssrc,
         rate => Rate,key => Key,peers => [[<<"127.0.0.1">>,P] || P <- Ports]}),
     Anchor=receive {ba_audio_engine,Sender,#{event := <<"capture_started">>,anchor_ns := A}} -> A

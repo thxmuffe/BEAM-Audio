@@ -12,9 +12,9 @@ mkdir -p "$(dirname "$OUTPUT")" "$WORK"
 # Objects stay on disk so dsymutil can collect their DWARF for crash traces.
 FLAGS=(-std=c++17 -O2 -g -Wall -Wextra -mmacosx-version-min=14.2 -I "$DEPS/include" -I "$EI/include")
 OBJECTS=()
-for SOURCE in src/Audio/engine/*.cpp src/Audio/adapters/macOS/engine_shell.mm; do
+for SOURCE in "$ROOT"/src/Audio/engine/*.cpp "$ROOT/src/Audio/adapters/macOS/engine_shell.mm"; do
   OBJECT="$WORK/$(basename "$SOURCE").o"
-  xcrun clang++ "${FLAGS[@]}" -fobjc-arc -c "$ROOT/$SOURCE" -o "$OBJECT"
+  xcrun clang++ "${FLAGS[@]}" -fobjc-arc -c "$SOURCE" -o "$OBJECT"
   OBJECTS+=("$OBJECT")
 done
 # Homebrew's libei targets the host macOS; packaged apps link their own OTP's ei.

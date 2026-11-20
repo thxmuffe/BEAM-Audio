@@ -139,6 +139,7 @@ struct Engine {
         if (op == "start_capture") return start_capture(c);
         if (op == "stop_capture") return stop_capture();
         if (op == "route") return route(c.at("ssrc"), parse_peers(c.at("peers")));
+        if (op == "volume") return volume(c.at("ssrc"), c.at("gain"));
         if (op == "status") return status();
         if (op == "crash") crash(c.at("kind"));
         fail("unknown op " + op);
@@ -223,6 +224,12 @@ struct Engine {
             s->set_peers(std::move(peers));
         });
         return json::object();
+    }
+
+    json volume(uint32_t ssrc, float gain) {
+        for (auto &slot : speakers)
+            if (Speaker *s = slot.load(); s && s->ssrc() == ssrc) return s->set_gain(gain), json::object();
+        fail("no such speaker");
     }
 
     json status() {

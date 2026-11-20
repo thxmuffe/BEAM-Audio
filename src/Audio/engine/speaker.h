@@ -31,6 +31,7 @@ class Speaker {
     // Audio thread: add this stream's frames for Session time `present` to mix.
     void render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate);
     json status();
+    void set_gain(float gain) { gain_.store(gain, std::memory_order_relaxed); }
 
    private:
     friend FLAC__StreamDecoderReadStatus speaker_read(const FLAC__StreamDecoder *, FLAC__byte[], size_t *, void *);
@@ -41,7 +42,7 @@ class Speaker {
 
     uint32_t ssrc_ = 0, rate_ = 0;
     int64_t anchor_ = 0, delay_ = 0;
-    float gain_ = 1;
+    std::atomic<float> gain_{1};
     srtp_t srtp_ = nullptr;
     FLAC__StreamDecoder *decoder_ = nullptr;
     // Packet being decoded (packet thread only).
@@ -64,7 +65,8 @@ class Speaker {
     long chunk_size_ = 0, chunk_used_ = 0;
     std::unique_ptr<float[]> out_{new float[MaxCallback * Channels]()};
     // Counters.
-    std::atomic<uint64_t> packets_{0}, late_{0}, early_{0}, rejected_{0}, missing_{0}, jumps_{0};
+    // duplicates: the same packet again (sent to several of our addresses, or resent).
+    std::atomic<uint64_t> packets_{0}, duplicates_{0}, late_{0}, early_{0}, rejected_{0}, missing_{0}, jumps_{0};
     ErrorWindow error_;
 };
 }  // namespace ba

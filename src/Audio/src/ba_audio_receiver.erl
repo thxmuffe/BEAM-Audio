@@ -1,6 +1,6 @@
 %% Owns independent durable subscriptions and local publication permissions.
-%% Media is native AAC only: this process routes catalogue, subscription and
-%% SDP/ICE control; audio never passes through it.
+%% Media is the native engine only: this process routes catalogue, subscription
+%% and stream-setup control; audio never passes through it.
 -module(ba_audio_receiver).
 -behaviour(gen_server).
 -export([start_link/0,snapshot/0,subscribe/2,subscribe/3,stop/0,stop/1,
@@ -317,7 +317,7 @@ incoming(Context,Id,#{<<"kind">> := Kind} = P,S) ->
             B = maps:get(<<"paused">>,P),
             _ = disable_output(Key,R),
             put_sub(Key,start_playback(Key,R#{source_paused => B,mix_ready => false}),S);
-        _ when Kind=:= <<"signal.offer">>;Kind=:= <<"signal.answer">>;Kind=:= <<"signal.candidate">> ->
+        _ when Kind=:= <<"signal.endpoint">>;Kind=:= <<"signal.stream">> ->
             gen_server:cast(maps:get(media,R),{signal,P}),S
     end.
 
@@ -579,8 +579,8 @@ publication_allowed(Peer,Key) ->
         _ -> false
     end.
 
-%% Native output is the only output: this Device needs its native stream host.
-backend_missing(_) -> not ba_native_media_session:available().
+%% The native engine is the only output: this Device needs its executable.
+backend_missing(_) -> not ba_audio_engine:available().
 disable_output(_,#{media := P}) when is_pid(P) -> native_output(P,{output,pause});
 disable_output(_,_) -> ok.
 

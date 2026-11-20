@@ -21,7 +21,12 @@ ensure_started() ->
 start_source(Offer) -> start_child(source, ba_audio_source, [Offer]).
 start_media(#{descriptor := D}=Args) ->
     Handler=ba_stream_handler:for_descriptor(D),
-    start_child(subscription,Handler:session_module(),[Args]).
+    %% Media workers use the Device's engine. Start it here, in the caller: a
+    %% child's init must never ask this supervisor to start another child.
+    case ba_audio_engine:ensure() of
+        {ok,_} -> start_child(subscription,Handler:session_module(),[Args]);
+        Error -> Error
+    end.
 
 start_child(Kind, Module, Args) ->
     supervisor:start_child(ba_session_scope:ref(?MODULE), #{id => {Kind, make_ref()},

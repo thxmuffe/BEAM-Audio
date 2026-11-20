@@ -487,10 +487,15 @@ Status 2026-11-20 (details in PROGRESS.md):
 - Step 1 engine done and measured standalone: `ba_audio_engine` port + C++
   engine + macOS shell; tone sender and two receivers on one Mac pass
   `tests/macOS/audio-engine-sync.escript` (scheduling error ~1–20 µs mean).
-- Step 1 remaining: Session integration (signed stream-setup messages with
-  X25519 keys replacing SDP, the engine owner replacing
-  `ba_native_media_session`, packaging the engine in the apps), the GStreamer
-  comparison, and the owner's listening test (`--audible`, `--source system`).
+- Step 1 Session integration done on Mac/CLI (owner chose to switch now):
+  `engine_flac_srtp_v1` is the only transport; `signal.endpoint` /
+  `signal.stream` (X25519 + HKDF, wrapped stream key) replace SDP; one engine
+  per Device; the Mac app bundles `ba_audio_engine`. Two CLI Devices on one
+  Mac play system audio end to end. iPhone and Windows are silent until their
+  shells (steps 3, 4). Remaining: the owner's listening test in the Mac app,
+  the GStreamer comparison is moot once its path is gone.
+- CLI: `new device --createsession --enable broadcast` does not turn broadcast
+  on (use `call device ... {"method":"capability","capability":"broadcast","enabled":true}`).
 
 Open: whether an existing NACK/RTX implementation is usable outside its
 framework (check libdatachannel's media handlers) before writing a small one.

@@ -28,8 +28,8 @@ fi
 export PATH="/opt/homebrew/bin:$PATH" REBAR_CACHE_DIR="$ROOT/builds/intermediates/rebar-cache"
 (cd "$ROOT/src/control" && rebar3 compile)
 if [ "$TARGET" = all ] || [ "$TARGET" = mac ]; then
-  # Audio is native AAC only: the Mac helper captures into GStreamer.
-  bash "$ROOT/scripts/platforms/macOS/build-native-stream.sh"
+  # Audio runs in the native engine under Erlang control.
+  bash "$ROOT/scripts/platforms/macOS/build-engine.sh"
 fi
 if [ "$TARGET" = all ] || [ "$TARGET" = ios ]; then
   python3 "$ROOT/scripts/platforms/iOS/prepare-runtime.py" --target device

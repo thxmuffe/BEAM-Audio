@@ -92,8 +92,10 @@ new_device(A,Root) ->
         true -> fail(2,<<"CLI audio capabilities (speaker, mic, broadcast) currently need the macOS native helpers. Audio-off Devices and the monitor work on every platform.">>);
         false -> ok
     end,
-    Helpers=[{<<"speaker">>,"ba_device_audio"},{<<"microphone">>,"ba_audio_input"},{<<"broadcast">>,"ba_audio_input"}],
-    [case filelib:is_regular(filename:join([Root,"builds/CLI",H])) of true -> ok;false -> fail(2,<<"Missing native binding; run bash src/Tools/CLI/build.sh.">>) end || {K,H} <- Helpers,lists:member(K,Enabled)],
+    case Enabled=/=[] andalso not filelib:is_regular(filename:join([Root,"builds/CLI","ba_audio_engine"])) of
+        true -> fail(2,<<"Missing audio engine; run bash src/Tools/CLI/build.sh.">>);
+        false -> ok
+    end,
     Instance=binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(16))),
     %% Unix uses an owner-only socket. Windows OTP has no AF_UNIX in gen_tcp, so
     %% the Device publishes a loopback port instead; every request still needs

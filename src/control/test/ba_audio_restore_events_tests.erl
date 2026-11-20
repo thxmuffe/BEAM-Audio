@@ -58,14 +58,15 @@ fixture(Fun) ->
     end end),true = register(ba_session_control,Control),
     Old = application:get_env(ba_core,audio_clock_adapter),application:set_env(ba_core,audio_clock_adapter,?MODULE),
     R = #{intent => I,state => waiting_for_source,media => undefined,retry_at => erlang:monotonic_time(millisecond)-1,packets => 0},
-    D = #{encoding => pcm,sample_rate => 48000,sample_format => float32_le,channel_count => 2,clock => <<"test">>,stream_handler => native_gst_aac},
-    OldPort = os:getenv("BA_NATIVE_STREAM_PORT"),os:putenv("BA_NATIVE_STREAM_PORT","1"),
+    D = #{encoding => pcm,sample_rate => 48000,sample_format => float32_le,channel_count => 2,clock => <<"test">>,stream_handler => engine_flac},
+    %% Any existing file stands in for the engine executable.
+    OldPort = os:getenv("BA_AUDIO_ENGINE"),os:putenv("BA_AUDIO_ENGINE",code:which(?MODULE)),
     S = #{subscriptions => #{Id => R},offers => #{{Peer,<<"music">>} => #{incarnation => binary:copy(<<"E">>,32),profiles => #{channel => D}}},
         contracts => #{{receive_audio,Peer,<<"music">>} => #{id => binary:copy(<<"C">>,32),revision => 1}},
         suspended => false,resume_after => 100,catalogs => #{},poll_at => erlang:monotonic_time(millisecond)+10000},
     try Fun(S,Id) after
         exit(Control,kill),unregister_if_present(ba_session_control),
-        case OldPort of false -> os:unsetenv("BA_NATIVE_STREAM_PORT");_ -> os:putenv("BA_NATIVE_STREAM_PORT",OldPort) end,
+        case OldPort of false -> os:unsetenv("BA_AUDIO_ENGINE");_ -> os:putenv("BA_AUDIO_ENGINE",OldPort) end,
         case Old of undefined -> application:unset_env(ba_core,audio_clock_adapter);{ok,V} -> application:set_env(ba_core,audio_clock_adapter,V) end
     end.
 unregister_if_present(Name) -> case whereis(Name) of undefined -> ok;_ -> unregister(Name) end.

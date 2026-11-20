@@ -37,7 +37,8 @@ preset(Name,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{preset,Na
 %% `keep` leaves the choices as they are (they are hidden, not changed).
 preset_values(no_control) -> #{auto_accept => true,auto_grant => true,choices => keep};
 preset_values(friendly) -> #{auto_accept => false,auto_grant => true,
-    choices => #{speaker => always,calibrate_microphone => always,calibrate_speaker => always,dsp => always,location => always}};
+    choices => #{moderator_requests => always,speaker => always,calibrate_microphone => always,calibrate_speaker => always,
+                 dsp => always,location => always}};
 preset_values(tight) -> #{auto_accept => false,auto_grant => false,
     choices => #{moderator_requests => no,microphone => no,location => no,dsp => no}}.
 %% The consent flags a preset's values grant (always, or everything while auto accept is on).

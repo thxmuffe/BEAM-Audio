@@ -15,6 +15,6 @@
 
 -optional_callbacks([send/3, push_output/3]).
 
-%% One transport: native AAC (owner decision 2026-11-19). Remote descriptors
+%% One transport: the native engine (owner decision 2026-11-20). Remote descriptors
 %% cannot name modules.
-for_descriptor(#{stream_handler := native_gst_aac}) -> ba_stream_handler_native.
+for_descriptor(#{stream_handler := engine_flac}) -> ba_stream_handler_engine.

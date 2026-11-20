@@ -40,7 +40,7 @@ publication_lifecycle_announces_changes_test() ->
     fixture(fun(S,_,_) ->
         Offer=#{source_key => <<"music">>,incarnation => id(),name => <<"Music">>,paused => false,
             profiles => #{channel => #{encoding => pcm,sample_rate => 48000,channel_count => 2,sample_format => float32_le,
-                clock => <<"test">>,stream_handler => native_gst_aac}}},
+                clock => <<"test">>,stream_handler => engine_flac}}},
         Source=spawn(fun Loop() -> receive {'$gen_call',From,describe} -> gen_server:reply(From,Offer),Loop() end end),
         try
             {reply,ok,Registered}=ba_audio_receiver:handle_call({register,Source},undefined,S),

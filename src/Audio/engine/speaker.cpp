@@ -58,7 +58,7 @@ Speaker::Speaker(const json &c, const Clock &clock) {
     ssrc_ = c.at("ssrc"), rate_ = c.at("rate");
     anchor_ = c.at("anchor_ns").get<int64_t>();
     delay_ = c.at("delay_ms").get<int64_t>() * 1000000;
-    gain_ = c.value("gain", 1.0f);
+    gain_.store(c.value("gain", 1.0f));
     if (rate_ != 44100 && rate_ != 48000) fail("unsupported stream rate");
     for (uint32_t i = 0; i < Blocks; ++i) marks_[i].store(-1);
     srtp_ = make_srtp(ssrc_, c.at("key").get<std::string>());
@@ -84,7 +84,9 @@ Speaker::~Speaker() {
 }
 
 void Speaker::receive(uint8_t *packet, int size) {
-    if (srtp_unprotect(srtp_, packet, &size) != srtp_err_status_ok) return void(++rejected_);
+    const srtp_err_status_t status = srtp_unprotect(srtp_, packet, &size);
+    if (status == srtp_err_status_replay_fail || status == srtp_err_status_replay_old) return void(++duplicates_);
+    if (status != srtp_err_status_ok) return void(++rejected_);
     Rtp rtp;
     if (!parse_rtp(packet, size, rtp)) return void(++rejected_);
     // Extend the 32-bit timestamp to the stream position nearest the reader.
@@ -159,12 +161,13 @@ void Speaker::render(float *mix, uint32_t frames, int64_t present, uint32_t out_
         produced += d.output_frames_gen;
     }
     play_pos_ += double(produced) / applied;
-    for (long i = 0; i < produced * long(Channels); ++i) mix[i] += out[i] * gain_;
+    const float gain = gain_.load(std::memory_order_relaxed);
+    for (long i = 0; i < produced * long(Channels); ++i) mix[i] += out[i] * gain;
     read_pos_.store(chunk_start_ + chunk_used_, std::memory_order_release);
 }
 
 json Speaker::status() {
-    return {{"ssrc", ssrc_},       {"packets", packets_.load()},        {"late", late_.load()},
+    return {{"ssrc", ssrc_},       {"packets", packets_.load()}, {"duplicates", duplicates_.load()},        {"late", late_.load()},
             {"early", early_.load()}, {"rejected", rejected_.load()},      {"missing_frames", missing_.load()},
             {"jumps", jumps_.load()}, {"error", error_.take()}};
 }
