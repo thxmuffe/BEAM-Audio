@@ -91,6 +91,8 @@ command(#{<<"method">> := <<"policy">>,<<"key">> := K,<<"value">> := V}=R) ->
         <<"on_air_requests">> -> on_air_requests;
         <<"moderator_requests">> -> moderator_requests;
         <<"location">> -> location;
+        <<"calibration">> -> calibration;
+        <<"dsp">> -> dsp;
         _ -> capability_key(K)
     end,
     Value=case V of <<"always">> -> always;<<"ask">> -> ask;<<"no">> -> no end,

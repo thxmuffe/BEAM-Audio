@@ -35,7 +35,8 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
 
 - **Network setup.** Decides who connects to whom: one ICE connection per
   sender–receiver pair, which it names and opens in the engine, configures
-  (STUN, and TURN relays; host names resolved in Erlang, `ba_audio_route`)
+  (STUN and TURN hostnames supplied by `ba_audio_route`, resolved on libjuice's
+  resolver thread)
   and whose descriptions it carries in the signed setup messages
   (`signal.endpoint`, `signal.stream`). ICE itself (candidates, checks, path
   choice, NAT traversal, relay) runs in libjuice in the engine.
@@ -170,7 +171,7 @@ including the iPhone, because they arrive through the shared chat.
 | Requirement | How |
 | --- | --- |
 | All platforms | one C++ engine; small native shell per platform |
-| Wi-Fi ↔ mobile data | ICE restart on address change; TURN relay for symmetric carrier NAT (measured 2026-11-20; hosted TURN, account pending) |
+| Wi-Fi ↔ mobile data | ICE restart on address change; mobile-data failure under investigation, detailed ICE checks needed before deciding whether TURN is necessary |
 | Fast networks | one packet thread, batched receive, lock-free handoff to the callback; no Erlang in the packet path |
 | Our choice of parts | codec, encryption, recovery, resampler and DSP sit behind internal function boundaries; no plugin system until needed |
 | Visible failures | let it crash, full trace in chat and in `builds/live/chat.log` |

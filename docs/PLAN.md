@@ -501,17 +501,21 @@ Status 2026-11-20 (details in PROGRESS.md):
 - CLI: `new device --createsession --enable broadcast` does not turn broadcast
   on (use `call device ... {"method":"capability","capability":"broadcast","enabled":true}`).
 
-Step 2 next (owner 2026-11-20: hosted TURN relay). Proposal: replace our own
-probes/punching/STUN with libjuice (C, MPL-2.0, ICE + STUN + TURN, used by
-libdatachannel): standard ICE candidate checks and nomination, path choice by
-round trip (also cable vs Wi-Fi), TURN relay for symmetric carrier NAT.
-Erlang still decides: it fetches short-lived TURN credentials from the
-provider (Cloudflare suggested; owner creates the account and API token,
-kept out of the repository) and carries ICE credentials and candidates in
-the signed setup messages. The engine's SRTP, FLAC, recovery and timing are
-unchanged. libjuice adopted and working (2026-11-20, see PROGRESS.md).
-Waiting for: the TURN account; then configure audio_turn_servers (or fetch
-short-lived Cloudflare credentials in ba_audio_route) and test mobile data.
+Step 2 current (owner correction 2026-11-20): diagnose the mobile-data
+regression in the libjuice integration before considering a relay. Earlier
+receiver punches reached the Mac from a carrier endpoint; ICE now fails for
+the mobile iPhone while the Wi-Fi iPhone plays. This does not establish that
+TURN is necessary. Erlang's first-address-only STUN/TURN pre-resolution has
+been removed; libjuice resolves the configured hostnames on its own thread.
+The configuration regression test passes, but the running apps still need
+the change. Next: detailed ICE logs (`BA_ICE_DEBUG`) at both ends, USB unplugged,
+checking STUN gathering, IPv4/IPv6 reachability and peer-reflexive checks.
+IPv6 translation is a hypothesis, not a confirmed cause. Keep clock sway as a
+separate investigation. TURN is deferred; no account is needed for this step.
+
+Approval Settings implemented: Approve for me; Calibration (both resources),
+Speaker, Microphone, Location, Processing; Approve replaces Allow in approval
+actions. Targeted checks pass; app rebuild and user inspection remain.
 
 Step 2 status (2026-11-20): connectivity checks, NACK/RTX (own small
 implementation, about 80 lines) and STUN hole punching are implemented. Next:

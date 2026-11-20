@@ -94,6 +94,16 @@ device_wide_consent_test() ->
         ?assertNot(maps:get(microphone,ba_device_config:consent())),?assertEqual(ask,maps:get(microphone,Policies())),
         ok=ba_device_config:policy(calibrate_microphone,always,#{}),
         ?assert(ba_device_permission:allowed(calibrate_microphone)),?assertNot(ba_device_permission:allowed(calibrate_speaker)),
+        %% The one Calibration control changes both resources in one edit.
+        CalibrationRevision=maps:get(revision,ba_device_config:snapshot()),
+        ok=ba_device_config:policy(calibration,always,#{expected_revision => CalibrationRevision}),
+        ?assertEqual(CalibrationRevision+1,maps:get(revision,ba_device_config:snapshot())),
+        ?assert(ba_device_permission:allowed(calibrate_microphone)),?assert(ba_device_permission:allowed(calibrate_speaker)),
+        ok=ba_device_config:policy(calibration,no,#{}),
+        ?assertEqual(no,maps:get(calibrate_microphone,Policies())),?assertEqual(no,maps:get(calibrate_speaker,Policies())),
+        ?assertNot(ba_device_permission:allowed(calibrate_microphone)),?assertNot(ba_device_permission:allowed(calibrate_speaker)),
+        ok=ba_device_config:policy(calibration,ask,#{}),
+        ?assertEqual(ask,maps:get(calibrate_microphone,Policies())),?assertEqual(ask,maps:get(calibrate_speaker,Policies())),
         %% Answering other Devices' on-air requests grants this Device nothing.
         ok=ba_device_config:policy(on_air_requests,always,#{}),?assertEqual(always,ba_device_config:policy(on_air_requests)),
         ?assertNot(maps:is_key(on_air_requests,ba_device_config:consent())),

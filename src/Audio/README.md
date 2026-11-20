@@ -40,6 +40,13 @@ Mac ON AIR uses a Core Audio process tap that excludes every running engine
 process, so received audio is not captured again. The first capture asks for
 macOS's System Audio Recording permission.
 
+ICE server hostnames from `direct_stun_urls` and `audio_turn_servers` are passed
+to libjuice, which resolves them on its resolver thread. Do not pre-resolve and
+keep only one address family. `BA_ICE_DEBUG=1` enables libjuice connectivity
+checks on stderr; the Session chat log contains notices, not these detailed
+checks. Mobile-data playback is under investigation; TURN has not been shown
+necessary for the owner's current connection.
+
 ## Links
 
 Build commands belong in [BUILDING](../../docs/BUILDING.md). Product permission

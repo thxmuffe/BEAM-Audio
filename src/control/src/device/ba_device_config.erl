@@ -173,12 +173,14 @@ handle_call({preset,Name,Options},From,S) ->
 %% always is the standing grant; ask and no both keep the grant OFF. Nothing
 %% here approves a request: ask only records that the user wants to be asked.
 handle_call({policy,Key,Value,Options},From,S) ->
-    case {lists:member(Value,[always,ask,no]),lists:member(Key,?PROTECTED),lists:member(Key,?ANSWERS)} of
+    Keys=case Key of calibration -> [calibrate_microphone,calibrate_speaker];_ -> [Key] end,
+    case {lists:member(Value,[always,ask,no]),lists:all(fun(K) -> lists:member(K,?PROTECTED) end,Keys),lists:member(Key,?ANSWERS)} of
         {true,true,_} ->
-            case handle_call({edit,#{Key => auto(S) orelse Value=:=always},Options},From,S) of
+            Patch=maps:from_keys(Keys,auto(S) orelse Value=:=always),
+            case handle_call({edit,Patch,Options},From,S) of
                 {reply,ok,Next0} ->
-                    Next=Next0#{requests => maps:remove(Key,maps:get(requests,Next0,#{})),declined => maps:remove(Key,maps:get(declined,Next0,#{}))},
-                    {reply,ok,choose(Key,Value,Next)};
+                    Next=Next0#{requests => maps:without(Keys,maps:get(requests,Next0,#{})),declined => maps:without(Keys,maps:get(declined,Next0,#{}))},
+                    {reply,ok,lists:foldl(fun(K,Acc) -> choose(K,Value,Acc) end,Next,Keys)};
                 Other -> Other
             end;
         {true,_,true} -> {reply,ok,choose(Key,Value,S)};

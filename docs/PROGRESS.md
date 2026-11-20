@@ -1,5 +1,36 @@
 # Current implementation and validation
 
+## Approval Settings and internet playback investigation — 2026-11-20
+
+- Settings now has **Approve for me**, followed by Calibration (microphone and
+  speaker together), Speaker, Microphone, Location and Processing, each with
+  Always / Ask / No. Approval actions say Approve. Calibration writes both
+  existing calibration permissions in one configuration edit; different saved
+  choices remain untouched until the user selects a combined choice. Processing
+  uses the existing `dsp` permission. No new processing engine was added.
+- Validation: 27 frontend state tests and 3 targeted core tests (Device consent
+  and ICE configuration) pass; frontend syntax checks pass using Node 22.
+  The default Homebrew Node cannot start because its simdjson library is missing.
+  Native apps were not rebuilt, restarted or installed; no visual review.
+- Internet playback is still unresolved. A temporary, audio-disabled CLI
+  Inspector read the owner's current Session: one iPhone had a direct path;
+  the other had Playback consent and an active subscription but failed ICE.
+  The Inspector was stopped afterward; the owner's Devices were not changed.
+  Existing Mac logs confirm that the earlier route code learned a carrier
+  endpoint from receiver punches. These records alone do not prove received
+  audio or establish the NAT's mapping/filtering behavior.
+- Removed Erlang's STUN/TURN hostname pre-resolution, which discarded all but
+  the first address. libjuice 1.7.4 already resolves names on its own resolver
+  thread and checks multiple STUN addresses. The regression test verifies that
+  configured names survive even without a DNS answer in the calling process.
+  This fixes address truncation; it is not a confirmed fix for mobile playback.
+- The earlier conclusion below that a relay is necessary is superseded by the
+  owner's correction. Next: load the change into the apps, capture detailed
+  ICE checks on both ends with `BA_ICE_DEBUG`, and compare Wi-Fi/mobile data
+  with USB unplugged. IPv4/IPv6 translation remains a hypothesis. The shared
+  chat log and CLI currently expose ICE failure, not detailed candidate checks.
+  TURN remains deferred; no relay account or deployment was created.
+
 ## Session time is UTC; measured Response time — 2026-11-20
 
 - **Clock (simplification pass 4).** Every Device reads UTC itself: system clock
@@ -19,7 +50,17 @@
   (speaker ↔ Bluetooth), so playback stays on Session time.
 - **Layout.** `src/Audio/src` is now `src/Audio/control/` with `engine/`,
   `streams/`, `sources/`, `diagnostics/`.
-- Validation: 145 EUnit tests and 35 WebApp tests pass; macOS engine builds and
+- **iPhone silent after launch (fixed, not yet re-tested).** The first
+  `start_speaker` after app launch activates the iOS audio session and took over
+  5 s; Erlang gave up, the speaker was created anyway, and every retry was
+  refused ("speaker already started"). Now a new start for the same SSRC
+  replaces the old speaker, the start waits up to 15 s, and route-change
+  notifications are handled on their own queue.
+- **Mobile data** still fails (ICE failed): symmetric carrier NAT, no TURN relay
+  configured yet. Next: owner creates a Cloudflare TURN key; Devices fetch
+  short-lived credentials.
+- Stale exports removed (dead arities and functions only the old clock used).
+- Validation: 144 EUnit tests and 35 WebApp tests pass; macOS engine builds and
   the changed engine files compile for iOS. Not yet run on real Devices; the
   Reception-based smoke tests were not run (Reception not compiled). Old builds
   cannot join Sessions with new ones (statement and permission changes).

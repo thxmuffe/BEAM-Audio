@@ -8,27 +8,18 @@
 
 %% STUN for public addresses, TURN relays for networks hole punching cannot
 %% cross (symmetric carrier NAT). TURN servers come from configuration:
-%% audio_turn_servers = [#{host,port,username,password}]. Names are resolved
-%% here, in the calling process, so the engine never waits on DNS (libjuice
-%% would resolve synchronously); on an IPv6-only network the system resolver
-%% returns the translated (NAT64) addresses iOS needs.
+%% audio_turn_servers = [#{host,port,username,password}]. Pass hostnames through:
+%% libjuice resolves them on its resolver thread and probes the STUN addresses
+%% returned by the system. Resolving here and taking only the first address
+%% discards other address families before ICE can check them.
 ice_config() ->
-    Stun=case [Address || Url <- ba_settings:app(direct_stun_urls,[]),Address <- [resolve(stun(Url))],Address=/=none] of
-        [First|_] -> First;
+    Stun=case ba_settings:app(direct_stun_urls,[]) of
+        [First|_] -> {Host,Port}=stun(First),[list_to_binary(Host),Port];
         [] -> undefined
     end,
-    Turn=[[H,P,U,W] || #{host := Host,port := Port,username := U,password := W} <- ba_settings:app(audio_turn_servers,[]),
-        [H,P] <- [resolve({Host,Port})]],
+    Turn=[[unicode:characters_to_binary(H),P,U,W] || #{host := H,port := P,username := U,password := W}
+        <- ba_settings:app(audio_turn_servers,[])],
     #{stun => Stun,turn => Turn}.
-resolve({Host,Port}) ->
-    case net:getaddrinfo(unicode:characters_to_list(Host)) of
-        {ok,Found} ->
-            case [Ip || #{socktype := dgram,addr := #{addr := Ip}} <- Found] of
-                [Ip|_] -> [list_to_binary(inet:ntoa(Ip)),Port];
-                [] -> none
-            end;
-        _ -> none
-    end.
 stun(Url) ->
     ["stun",Host|Rest]=string:split(binary_to_list(Url),":",all),
     {Host,case Rest of [P] -> list_to_integer(P);[] -> 3478 end}.
