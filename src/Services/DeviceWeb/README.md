@@ -132,10 +132,11 @@ platform launcher for identity storage, or `--device-record` to attach to an
 existing managed Device. Do not put a seed in command arguments or share it.
 
 The standalone Windows Web launcher starts through
-`ba_device_web_cli:windows_main/0`, configuring the shared Windows audio binding
-before starting the control runtime. Supply `BA_WINDOWS_AUDIO_HELPER_DIR` with
-the built WASAPI helpers (the product Web launcher selects its Windows build).
-Capture and playback still follow Device consent. Web startup stays in this
+`ba_device_web_cli:windows_main/0` (`BA_PLATFORM=windows`). With
+`--local-device`, `run.ps1` sets `BA_WINDOWS_NATIVE_STREAM_HELPER` to the core's
+`builds/CLI/native-stream/ba_native_stream.exe` when it has been built
+(`scripts/platforms/Windows/build-native-stream.py`); without it the Device has
+no audio. Capture and playback still follow Device consent. Web startup stays in this
 optional service so native Mac/iPhone runtimes need no DeviceWeb dependency.
 
 The web shell uses `list_sessions`, `new_session` and `close_session`. Existing
