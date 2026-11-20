@@ -108,7 +108,7 @@ The ordinary core/CLI also needs its usual build after Erlang source changes.
 For a Mac source, start the public CLI:
 
 ```sh
-scripts/cli/beamaudio new device --devicename Native-Mac --createbuffee
+scripts/cli/beamaudio new device --devicename Native-Mac --createsession
 scripts/cli/beamaudio call device --devicename Native-Mac --request '{"method":"capability","capability":"broadcast","enabled":true}'
 ```
 
@@ -172,9 +172,9 @@ and launch instructions are in [macOS](../../../OpenSound/docs/MACOS_APP.md),
 [iOS](../../../OpenSound/docs/iOS/README.md) and
 [Windows](../../../OpenSound/docs/Windows/README.md).
 
-Current contracts: [streams](../../docs/BUFFEE_STREAMS.md),
+Current contracts: [streams](../../docs/SESSION_STREAMS.md),
 [engine interface](../../docs/AUDIO_ENGINE_INTERFACE.md),
-[clock](../../docs/BUFFEE_TIME.md), [architecture](../../docs/ARCHITECTURE.md).
+[clock](../../docs/SESSION_TIME.md), [architecture](../../docs/ARCHITECTURE.md).
 User listening confirms audible microphone output; quality and physical speaker
 timing remain unqualified. See [current limits](../../docs/PROGRESS.md).
 

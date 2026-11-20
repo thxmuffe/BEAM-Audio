@@ -388,9 +388,9 @@ clock_ready(S) ->
 start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
     case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
 start_playback(_,R) -> R.
-enable_output(_,#{media := P,intent := I}=R) ->
-    case native_output(P,{gain,maps:get(gain,I)}) of
-        ok -> case native_output(P,{output,play}) of ok -> {ok,maps:remove(error,R#{mix_ready => true})};E -> E end;
+enable_output(_,#{media := P}=R) ->
+    case native_output(P,{output,play}) of
+        ok -> {ok,maps:remove(error,R#{mix_ready => true})};
         E -> E
     end.
 catalog(Peer,#{catalogs := Cs} = S) ->

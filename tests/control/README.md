@@ -8,7 +8,7 @@
 ## Device/Session end-to-end test
 
 ```sh
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --ephemeral --renewal --single-source --seconds 5 --lease-ms 4000 --offset-ms 150
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --session-time --ephemeral --renewal --single-source --seconds 5 --lease-ms 4000 --offset-ms 150
 ```
 
 Two disposable Devices create/join a Session through a local Reception. The
@@ -77,7 +77,7 @@ rebar3 compile
 rebar3 eunit
 ```
 
-123 checks pass including the Ephemeral Buffee review fixes. Native engine protocol checks use bounded loopback
+123 checks pass including the Ephemeral Session review fixes. Native engine protocol checks use bounded loopback
 test endpoints; they do not qualify native playback. The 30-second queue proof
 uses virtual time and two sources; the ordinary clock-renewal unit check requires
 fresh authorization even when observations are retained.
@@ -85,16 +85,16 @@ fresh authorization even when observations are retained.
 From the core root:
 
 ```sh
-python3 tests/control/buffee-control-smoke.py
-python3 tests/control/buffee-membership-smoke.py
+python3 tests/control/session-control-smoke.py
+python3 tests/control/session-membership-smoke.py
 python3 tests/control/session-peer-admission-smoke.py
 python3 tests/control/session-privileges-smoke.py
 python3 tests/control/session-restart-smoke.py
 python3 tests/control/parallel-sessions-smoke.py
-python3 tests/control/buffee-reconnect-smoke.py
-python3 tests/control/buffee-time-smoke.py
-python3 tests/control/buffee-time-smoke.py --production-cadence
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --sustained
+python3 tests/control/session-reconnect-smoke.py
+python3 tests/control/session-time-smoke.py
+python3 tests/control/session-time-smoke.py --production-cadence
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --session-time --sustained
 ```
 
 The first uses the existing public WSS Reception for signed status/capabilities,
@@ -110,10 +110,10 @@ Its test sink checks software target/handoff times, with no output hardware.
 The Homebrew OpenSSL variable is needed only for the existing macOS libsrtp NIF;
 omit or adapt it on other systems.
 
-## Ephemeral Buffees — step 9
+## Ephemeral Sessions — step 9
 
 ```sh
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --ephemeral --buffee-time
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --ephemeral --session-time
 ```
 
 This passes the lifecycle exit: saved contacts/group generate recipient-bound
@@ -124,10 +124,10 @@ surviving a cold restart, new gathering IDs and rejection of old-gathering ticke
 It also kills the Owner membership actor and waits through the actual 60-second
 authorization bound for member teardown. No election or snapshot restoration.
 Storage contains only the Owner's `contacts.term`; other test Devices write no
-Buffee checkpoint files. The corrected two-Reception membership proof also explicitly
+Session checkpoint files. The corrected two-Reception membership proof also explicitly
 ends the Owner gathering before checking remote cleanup and retained contacts.
 
-Local APIs and limits: [Ephemeral Buffees](../../docs/BUFFEE_MEMBERSHIP.md).
+Local APIs and limits: [Ephemeral Sessions](../../docs/SESSION_MEMBERSHIP.md).
 These are headless loopback proofs, not app, hardware or physical timing tests.
 The earlier 8d maximum-Offset continuity issue remains separate and open.
 
@@ -142,8 +142,8 @@ continues the existing rejoin/revocation checks.
 Exact continuous PCM proofs, using actual 60 s control and membership leases:
 
 ```sh
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --renewal --seconds 125 --offset-ms 1000
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --renewal --seconds 85 --offset-ms 30000
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --session-time --renewal --seconds 125 --offset-ms 1000
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --session-time --renewal --seconds 85 --offset-ms 30000
 ```
 
 The test sink timestamps handoff before forwarding PCM to a bounded observer;
@@ -182,7 +182,7 @@ For the real native codec/handoff proof on the existing Mac GStreamer runtime:
 export BA_GSTREAMER_RUNTIME="$PWD/builds/intermediates/gstreamer/runtime"
 export BA_GSTREAMER_PCM_HELPER="$PWD/src/Audio/adapters/gstreamer/pcm_bridge.py"
 export BA_GSTREAMER_PYTHON=/usr/bin/python3
-BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --buffee-time --opus
+BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --session-time --opus
 ```
 
 Use a Python/GI installation matching that runtime (the bundled Mac GI is Python
@@ -209,7 +209,7 @@ clock freshness still stop affected execution; this is not an uninterrupted
 playback guarantee under arbitrary network failures. Already submitted native
 output cannot be selectively retracted. Step 9 must qualify sustained app behavior
 and automatic eligible peer reconnection while preserving authorization.
-App integration/listening is step 9; ordinary-member-first abandoned-Buffee
+App integration/listening is step 9; ordinary-member-first abandoned-Session
 recovery is step 10. Historical trusted app profiles remain unmigrated, but none
 of these backend checks starts their remote-OTP control stack.
 
@@ -219,7 +219,7 @@ Build `bash src/Tools/CLI/build.sh`, then:
 
 ```sh
 python3 tests/control/cli-smoke.py
-python3 tests/control/cli-buffee-smoke.py
+python3 tests/control/cli-session-smoke.py
 python3 tests/control/cli-config-smoke.py
 python3 tests/control/cli-session-memory-smoke.py
 python3 tests/control/cli-api-smoke.py

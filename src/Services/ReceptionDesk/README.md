@@ -13,9 +13,9 @@ See [naming/migration](../../../docs/NAMING.md) and
 
 Keep Reception as small and stable as possible. It authenticates a Device's
 Ed25519 connection, maintains live capability-addressed mailboxes, introduces
-live endpoints and forwards bounded opaque envelopes. A mailbox's `buffee` field
-is an opaque scope ID. Reception does not interpret Buffee membership, Owner,
-Chef/Guest roles, invitation credentials, clock policy, audio formats or the
+live endpoints and forwards bounded opaque envelopes. A mailbox's `session` field
+is an opaque scope ID. Reception does not interpret Session privileges,
+invitation credentials, clock policy, audio formats or the
 signed contents of client messages. These remain in the clients' BEAM runtimes.
 
 The `/relay/v1` authentication domain `beamaudio-desk/v1:` and its wire field
@@ -30,17 +30,18 @@ frontend assets supplied by an app; the Reception remains public authentication 
 routing infrastructure. Neither service needs a Python bridge. There is no
 change to the public service URL. The v3 reusable-invitation extension adds
 capability-scoped live mailbox lookup; it does not elect Owners, claim names,
-restore authority, store Buffees or prevent simultaneous starters. See
-[membership semantics](../../../docs/BUFFEE_MEMBERSHIP.md).
+restore authority, store Sessions or prevent simultaneous starters. See
+[membership semantics](../../../docs/SESSION_MEMBERSHIP.md).
 
-The remaining profile notes describe historical app integrations; step 9 has not
-updated those apps. A Phoenix/Cowboy host has supervised Erlang relay Workers. Each Device opens
-an outbound WebSocket connection and keeps it open. In the native profile the
-Reception carries peer introductions/signaling; authenticated OTP membership and chat
-use the direct encrypted WebRTC DataChannel. It is not a TURN/data relay for
-that profile. The legacy profile carries membership and chat through the Reception.
-It does not join buffees or own their memberships or histories. The full browser
-frontend lives in the sibling OpenSound checkout; `/` here is only a small Reception landing page.
+The Phoenix/Cowboy host supervises Erlang relay workers. Each Device keeps an
+outbound WebSocket connection for introductions and encrypted control messages.
+Native hosts carry audio separately. Reception does not join Sessions or own
+their histories. The full browser frontend lives in the sibling OpenSound
+checkout; `/` here is only a small Reception landing page.
+
+The 2026-11-20 rename deliberately changes the mailbox scope field to `session`.
+Clients and Reception must both run that protocol; an older deployed Reception
+cannot route new clients. The authentication domain remains unchanged.
 
 ## Run locally on Windows
 
@@ -123,8 +124,8 @@ cross the relay. WSS encrypts each client-to-Reception connection; messages are 
 end-to-end encrypted from other Reception operators.
 
 Connections authenticate ephemeral Ed25519 identities with fresh challenges.
-A recipient owns per-buffee capability-addressed mailboxes. The Reception stamps the
-sender identity and checks the destination mailbox scope. Native buffee workers
+A recipient owns per-session capability-addressed mailboxes. The Reception stamps the
+sender identity and checks the destination mailbox scope. Native session workers
 validate invitations and incoming member messages. No chat is stored server-side.
 
 On socket loss clients reconnect with bounded exponential backoff, reopen their

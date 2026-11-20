@@ -433,7 +433,6 @@ static void remoteApplied(GstPromise *promise,gpointer data) {
 
         if(_volume)g_object_set(_volume,"mute",[op isEqual:@"pause"],NULL);
         [self send:@{@"event":[op isEqual:@"play"] ? @"playing" : @"paused"}];
-    } else if([op isEqual:@"gain"]){double gain=[c[@"gain"] doubleValue];if(gain>=0 && gain<=1 && _volume)g_object_set(_volume,"volume",gain,NULL);
     } else if([op isEqual:@"stats"]){
         guint64 rendered=0,dropped=0;
         if(_output){GstStructure *stats=gst_base_sink_get_stats(GST_BASE_SINK(_output));

@@ -1,5 +1,36 @@
 # Current implementation and validation
 
+## Cleanup pass 3 follow-up — 2026-11-20
+
+- Removed unused per-subscription gain from intent, receiver startup, the OTP
+  native-media command and both Apple/Windows native command handlers. No caller
+  changed its fixed 1.0 value. Subscription intent is transient Session state;
+  no persisted subscription migration is needed. Native volume elements remain
+  for playback mute/pause.
+- Protocols call the existing `ba_session_passport:exact/2` directly: one exact
+  map validator, with the duplicate implementation and forwarding helpers gone.
+- Fixed the control smoke's expected root supervisor children after passes 1–3.
+  Updated component README terminology/renamed links, removed obsolete runtime
+  profile/Inspector claims, and replaced the stale pass-3 handover in PLAN.md.
+
+Validation on Windows: core EUnit **182/182**, DeviceWeb **6/6**, Web UI **35/35**,
+Python runner tests **2/2**. Public `cli-api-smoke.py` passed. A separate public
+CLI cold-restart check created a disposable audio-disabled Device and a Session,
+stopped/restarted it, and confirmed the same Device identity, Session and saved
+invitation with Reception offline. Only disposable test Devices were stopped.
+MSVC `/W4 /WX /Zs` syntax checking of the Windows native host passed; no native
+helper was repackaged and no app was deployed. Apple native compilation and
+physical playback were not checked here.
+
+The local `session-reconnect-smoke.py` could not start: compiled Phoenix/Elixir
+Reception dependencies are absent in this checkout. Its peer/revocation cases
+remain unverified. No production Reception request or deployment was performed.
+The committed rename intentionally uses new saved-state filenames/version and
+incompatible invitations/wire fields; losing pre-rename return state is consistent
+with that migration. New-format return works in the CLI check, which does not
+prove the owner's Windows app or cross-device reconnection. Next substantial
+cleanup remains the periodic UTC clock, then the shared request behaviour.
+
 ## Cleanup pass 3: buffee → session rename (wire, modules, API, UI) — 2026-11-20
 
 - **Disambiguated terms (Step A):**

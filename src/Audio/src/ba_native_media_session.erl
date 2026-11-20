@@ -68,7 +68,6 @@ handle_call({output,Action},_,S) when Action=:=play;Action=:=pause ->
         true -> {reply,command(#{op => atom_to_binary(Action)},S),S#{playing := Action=:=play}};
         false -> {stop,authorization_expired,{error,consent_revoked},S}
     end;
-handle_call({gain,G},_,S) when is_number(G),G>=0,G=<1 -> {reply,command(#{op => <<"gain">>,gain => G},S),S};
 handle_call({revoke_permissions,_},_,S) -> Result=stop_native(S),{stop,normal,Result,S#{stopped => true}};
 handle_call(_,_,S) -> {reply,{error,unsupported_native_command},S}.
 handle_cast({renew,Owner,Until},#{owner := Owner,deadline := Old}=S) when Until>Old ->

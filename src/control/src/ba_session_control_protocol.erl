@@ -325,14 +325,14 @@ seal(Body, Private) ->
                                           <<"signature">> => binary:encode_hex(Signature)})),
     true = byte_size(Packet) =< ?MAX, Packet.
 verify(Packet, From) when is_binary(Packet), byte_size(Packet) =< ?MAX ->
-    Envelope = decode(Packet), exact(Envelope,[<<"body">>,<<"signature">>]),
+    Envelope = decode(Packet), ba_session_passport:exact(Envelope,[<<"body">>,<<"signature">>]),
     Encoded = maps:get(<<"body">>,Envelope), true = is_binary(Encoded),
     Sig = maps:get(<<"signature">>,Envelope), true = ba_hex:valid(Sig,128),
     Data = base64:decode(Encoded),
     true = crypto:verify(eddsa,none,[?DOMAIN,Data],binary:decode_hex(Sig),
                          [binary:decode_hex(From),ed25519]),
     Body = decode(Data),
-    exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"session">>,<<"join">>,<<"revision">>,
+    ba_session_passport:exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"session">>,<<"join">>,<<"revision">>,
                 <<"link">>,<<"seq">>,<<"sent">>,<<"op">>,<<"request">>,<<"payload">>]),
     [true = ba_hex:valid(maps:get(K,Body),N) || {K,N} <-
         [{<<"from">>,64},{<<"to">>,64},{<<"session">>,32},{<<"join">>,128},
@@ -340,48 +340,48 @@ verify(Packet, From) when is_binary(Packet), byte_size(Packet) =< ?MAX ->
     [true = uint(maps:get(K,Body)) || K <- [<<"seq">>,<<"revision">>,<<"sent">>]],
     payload(maps:get(<<"op">>,Body),maps:get(<<"payload">>,Body)), Body.
 
-payload(Op,P) when Op =:= <<"hello">>; Op =:= <<"ready">> -> exact(P,[]);
+payload(Op,P) when Op =:= <<"hello">>; Op =:= <<"ready">> -> ba_session_passport:exact(P,[]);
 payload(<<"chat.message">>,P) ->
-    exact(P,[<<"text">>]),Text=maps:get(<<"text">>,P),
+    ba_session_passport:exact(P,[<<"text">>]),Text=maps:get(<<"text">>,P),
     true=is_binary(Text) andalso byte_size(Text)>0 andalso byte_size(Text)=<4096,
     true=is_list(unicode:characters_to_list(Text));
 payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
     case Kind of
         %% A gossiped note (ba_session_gossip checks its signature).
         <<"note">> ->
-            exact(P,[<<"kind">>,<<"id">>,<<"packet">>]),true = ba_hex:valid(maps:get(<<"id">>,P),32),
+            ba_session_passport:exact(P,[<<"kind">>,<<"id">>,<<"packet">>]),true = ba_hex:valid(maps:get(<<"id">>,P),32),
             Note = maps:get(<<"packet">>,P),true = is_binary(Note) andalso byte_size(Note) =< 2048;
         %% Request board entries (ba_session_board checks each signature).
         <<"board">> ->
-            exact(P,[<<"kind">>,<<"entries">>]),Entries = maps:get(<<"entries">>,P),
+            ba_session_passport:exact(P,[<<"kind">>,<<"entries">>]),Entries = maps:get(<<"entries">>,P),
             true = is_map(Entries) andalso map_size(Entries) =< 6,
             maps:foreach(fun(Id,E) -> true = ba_hex:valid(Id,32) andalso is_binary(E) andalso byte_size(E) =< 2048 end,Entries);
         <<"privilege_release">> ->
-            exact(P,[<<"kind">>,<<"privilege">>]),ok = ba_session_passport:permissions([maps:get(<<"privilege">>,P)]);
+            ba_session_passport:exact(P,[<<"kind">>,<<"privilege">>]),ok = ba_session_passport:permissions([maps:get(<<"privilege">>,P)]);
         <<"rename_request">> ->
-            exact(P,[<<"kind">>,<<"name">>]),Name = maps:get(<<"name">>,P),
+            ba_session_passport:exact(P,[<<"kind">>,<<"name">>]),Name = maps:get(<<"name">>,P),
             true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
             true = is_list(unicode:characters_to_list(Name));
-        <<"remove_request">> -> exact(P,[<<"kind">>,<<"device">>]),true = ba_hex:valid(maps:get(<<"device">>,P),64);
-        <<"ended">> -> exact(P,[<<"kind">>]);
+        <<"remove_request">> -> ba_session_passport:exact(P,[<<"kind">>,<<"device">>]),true = ba_hex:valid(maps:get(<<"device">>,P),64);
+        <<"ended">> -> ba_session_passport:exact(P,[<<"kind">>]);
         %% A signed rights statement; membership verifies its signer chain.
         <<"policy">> ->
-            exact(P,[<<"kind">>,<<"signer">>,<<"state">>]),true = ba_hex:valid(maps:get(<<"signer">>,P),64),
+            ba_session_passport:exact(P,[<<"kind">>,<<"signer">>,<<"state">>]),true = ba_hex:valid(maps:get(<<"signer">>,P),64),
             State = maps:get(<<"state">>,P),true = is_binary(State) andalso byte_size(State) =< 16384
     end;
-payload(<<"status.read">>,P) -> exact(P,[]);
+payload(<<"status.read">>,P) -> ba_session_passport:exact(P,[]);
 payload(<<"status.reply">>,P) ->
-    exact(P,[<<"protocol">>,<<"link">>]),
+    ba_session_passport:exact(P,[<<"protocol">>,<<"link">>]),
     #{<<"protocol">> := 1,<<"link">> := <<"authorized">>} = P;
 payload(<<"status.error">>,P) ->
-    exact(P,[<<"reason">>]), #{<<"reason">> := <<"forbidden">>} = P;
+    ba_session_passport:exact(P,[<<"reason">>]), #{<<"reason">> := <<"forbidden">>} = P;
 payload(<<"capabilities.read">>,#{<<"metrics">> := true,<<"diagnostics">> := Options}=P) ->
-    exact(P,[<<"metrics">>,<<"diagnostics">>]),ba_audio_diagnostics:validate_options(Options);
-payload(<<"capabilities.read">>,#{<<"metrics">> := true}=P) -> exact(P,[<<"metrics">>]);
-payload(<<"capabilities.read">>,P) -> exact(P,[]);
+    ba_session_passport:exact(P,[<<"metrics">>,<<"diagnostics">>]),ba_audio_diagnostics:validate_options(Options);
+payload(<<"capabilities.read">>,#{<<"metrics">> := true}=P) -> ba_session_passport:exact(P,[<<"metrics">>]);
+payload(<<"capabilities.read">>,P) -> ba_session_passport:exact(P,[]);
 payload(<<"capabilities.reply">>,P) -> capability_payload(P);
 payload(<<"capabilities.error">>,P) ->
-    exact(P,[<<"reason">>]),
+    ba_session_passport:exact(P,[<<"reason">>]),
     Reason = maps:get(<<"reason">>,P),
     true = Reason =:= <<"forbidden">> orelse Reason =:= <<"unavailable">>;
 payload(<<"time.message">>,P) -> ba_session_time_protocol:validate(P);
@@ -389,7 +389,7 @@ payload(<<"stream.message">>,P) -> ba_audio_stream_protocol:validate(P);
 payload(_,_) -> throw(forbidden_operation).
 
 capability_payload(P) ->
-    exact(P,[<<"instance">>,<<"revision">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>,<<"audio_trace">>,<<"audio_meters">>],maps:is_key(K,P)]),
+    ba_session_passport:exact(P,[<<"instance">>,<<"revision">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>,<<"audio_trace">>,<<"audio_meters">>],maps:is_key(K,P)]),
     case maps:find(<<"audio_meters">>,P) of error -> ok;{ok,Meters} -> ba_audio_diagnostics:validate_meters(Meters) end,
     case maps:find(<<"audio_trace">>,P) of error -> ok;{ok,Trace} -> ba_audio_diagnostics:validate_trace(Trace) end,
     case maps:find(<<"audio_diagnostics">>,P) of error -> ok;{ok,D} -> ba_audio_diagnostics:validate(D) end,
@@ -400,10 +400,10 @@ capability_payload(P) ->
     end,
     case maps:find(<<"audio">>,P) of
         {ok,Audio} ->
-            exact(Audio,[<<"speaker">>,<<"microphone">>,<<"broadcast">>]),
+            ba_session_passport:exact(Audio,[<<"speaker">>,<<"microphone">>,<<"broadcast">>]),
             maps:foreach(fun(_,Entry) ->
                 Extra=[<<"error">>,<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>,<<"blocks">>,<<"frames">>,<<"dropped">>],
-                exact(Entry,[<<"consent">>,<<"state">>,<<"available">>]++[K || K <- Extra,maps:is_key(K,Entry)]),
+                ba_session_passport:exact(Entry,[<<"consent">>,<<"state">>,<<"available">>]++[K || K <- Extra,maps:is_key(K,Entry)]),
                 [begin V=maps:get(K,Entry),true=is_number(V) andalso V>= -96 andalso V=<48 end || K <- [<<"peak_db">>,<<"rms_db">>],maps:is_key(K,Entry)],
                 [true=uint(maps:get(K,Entry)) || K <- [<<"meter_age_ms">>,<<"blocks">>,<<"frames">>,<<"dropped">>],maps:is_key(K,Entry)],
                 case maps:find(<<"meter_stage">>,Entry) of error -> ok;{ok,Stage} -> true=lists:member(Stage,[<<"capture">>,<<"receive_max">>,<<"output_submitted">>]) end,
@@ -427,7 +427,6 @@ decode(Data) ->
         object_finish => fun({_,M},Old) -> {M,Old} end,
         array_start => fun(_) -> error(arrays_not_allowed) end,
         integer => fun(B) -> true = byte_size(B) =< 16, binary_to_integer(B) end}), Value.
-exact(M,Keys) -> true = is_map(M), true = lists:sort(maps:keys(M)) =:= lists:sort(Keys).
 uint(N) -> is_integer(N) andalso N >= 0 andalso N =< ?INT.
 fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).
 put(Peer,Link,#{links := Links} = S) -> S#{links := Links#{Peer => Link}}.

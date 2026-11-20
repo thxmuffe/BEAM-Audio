@@ -38,14 +38,14 @@ explicitly report Windows tests unavailable. List without execution using
 No new hardware/listening checks are invented by discovery: iPhone speaker
 acceptance remains manual because no automated physical-iPhone test exists.
 
-`python3 tests/control/buffee-control-smoke.py` checks the step-2–4 secure Buffee
+`python3 tests/control/session-control-smoke.py` checks the step-2–4 secure Session
 profile using two disposable non-distributed command-line runtimes and the
 existing public Reception. It never launches a product app or loads saved
-Buffee/subscription state. It verifies authenticated capability reads and local
+Session/subscription state. It verifies authenticated capability reads and local
 consent visibility and the bounded test-job Contract/acceptance/result lifecycle,
 while arbitrary remote Worker start stays forbidden. It also checks expiry,
 Worker failure and lease-bounded cleanup after Manager loss. See
-[the protocol guide](../docs/BUFFEE_CONTROL_PROTOCOL.md)
+[the protocol guide](../docs/SESSION_CONTROL_PROTOCOL.md)
 for compilation and checks. Network access is required.
 
 Existing checks spanning runtime processes, apps or services live here. These

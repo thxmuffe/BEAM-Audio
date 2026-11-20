@@ -296,59 +296,31 @@ default permission list, one default Reception (`ba_core.app.src`), one Receptio
 CA setting; no random-identity fallback; dead API and unused exports removed;
 one hex validator (`ba_hex`). Core Erlang 365k → 336k characters.
 
-**Pass 3 in progress (2026-11-20) — handover.** Rename buffee → session, in two steps.
-- *Step A, done and green (core eunit 182/182, uncommitted):* the authenticated
-  relationship between two Devices is a **link** (`links` in
-  `ba_buffee_control_protocol`, `link` in message contexts and the packet header,
-  `link_renewed/replaced/expired`, `audio_link_up/down/renewed`, `time_link_down`,
-  `drop_link`, `control_link_lease_ms`, status reply `"link": "authorized"`). The
-  native media worker pid in the audio receiver/source/supervisor is **media**
-  (`media := Pid`, `ba_audio_sup:start_media/1`, diagnostic `transport.media`).
-  `session.request` messages and `{session,...}` events keep "session": they are
-  about the Session itself.
-- *Step B, not started:* replace buffee → session everywhere (about 1,900
-  occurrences in both repos; skip PROGRESS.md and dated reports). Module renames:
-  `ba_buffee` → `ba_session`, `ba_buffee_X` → `ba_session_X` (no existing file
-  collides); tests and `tests/control/buffee-*-smoke.py` likewise (check target
-  names first). API methods `create/join/leave/end_buffee` → `*_session`. Swift:
-  `BuffeeRuntime` → `DeviceRuntime`, `BuffeeValue` → `RuntimeValue` (needs an Xcode
-  build to verify). A collision scan found no function where a `Buffee` and a
-  `Session` variable or key would merge, except
-  `tests/control/ba_buffee_control_probe.erl` (a forged-packet builder using the
-  old `<<"session">>` header; it must use `<<"link">>` now).
-- *Keep* the Reception wire fields named `buffee` (`open`/`lookup` frames in
-  `ba_relay`, and the `buffee` key of each delivered packet that Reception checks)
-  unless the owner chooses to update and redeploy Reception (AGENTS.md: terminology
-  changes must not require a Reception update). Ask the owner.
-- *Pass-2 debris to remove in this pass:* the integration probe
-  `tests/control/ba_buffee_control_probe.erl` still has test-job commands
-  (`enable_test`, `allow_jobs`, `offer_job`, `retry_job`, `cancel_job`, `job_status`,
-  `crash_worker`, `workers`/`worker_outcomes`), and `buffee-control-smoke.py`
-  (second half) and `buffee-membership-smoke.py` (job parts) use them. The first half
-  of `buffee-control-smoke.py` (status/capabilities over a real Reception, forged
-  packets, no distribution) is worth keeping; its `sessions` snapshot key is now
-  `links` and the status reply says `"link"`. These smokes have not been run.
-- Validation commands (Windows, Git Bash): core `cd src/control` then
-  `builds/intermediates/Windows/otp/bin/escript.exe builds/intermediates/tools/rebar3 eunit`
-  (paths relative to the core root, with OTP bin on PATH and
-  `REBAR_CACHE_DIR=builds/intermediates/rebar-cache`); DeviceWeb the same with
-  `ERL_LIBS=builds/intermediates/control/default/lib`; web UI
-  `node --test src/Apps/WebApp/tests/*.test.mjs` in OpenSound; `python scripts/test_run_tests.py`.
+**Pass 3 done (2026-11-20; see PROGRESS).** The rename is committed in both
+repositories, including wire fields, signed domains, stored-state version and
+filenames. Existing pre-rename invitations/state are intentionally incompatible.
+Reception must run the matching protocol before cross-device checks can pass.
+Core EUnit 182/182, DeviceWeb 6/6 and Web UI 35/35 passed in that pass.
 
-**Pass 3 candidates** (found during pass 2; the order above puts the rename next):
-- Rename buffee → session (order step 3), following the model above.
-- Four modules each define the same `exact/2` map-key validator
-  (`ba_buffee_control_protocol`, `ba_buffee_passport`, `ba_buffee_time_protocol`,
-  `ba_audio_stream_protocol`); one shared validator, like `ba_hex`.
-- Per-subscription playback gain: nothing sets it any more (always 1.0), yet it is
-  stored, restored and sent to the native host (`{gain,...}`, the C++ `gain` op).
-- The `dsp` consent now gates nothing (only test jobs used it); it returns with the
-  rights model's Processing consent, so decide then whether it stays meanwhile.
-- `audio_automation=false` (the CLI observer) and its no-Worker speaker states.
-- Test-only exports (`ba_buffee_passport:invitation/1`, `ba_session_board:granted/6`)
-  and the remaining dynamically used exports, to confirm one by one.
-- Docs describing removed behaviour (older dated sections of the BUFFEE_* docs).
-- Rebuild a TLS/public-Reception check on the CLI.
+**Pass 3 follow-up (2026-11-20).** Remove unused subscription gain through the
+native hosts; use the existing exact-map validator directly in every protocol;
+repair current README names/links and the stale control-smoke supervisor check.
+Validation and limits are recorded in PROGRESS.md.
+
+**Next substantial pass:** simplify the clock to the accepted periodic UTC model
+(order step 4 above), preserving native sample-to-Session-time mapping and assigned
+playback times. Then one request behaviour and formatting/tooling. Do not expand
+the rights model while cleaning these paths.
+
+**Remaining cleanup candidates:**
+- The `dsp` consent now gates nothing (only test jobs used it); revisit with
+  the rights model's Processing consent.
+- `audio_automation=false` (CLI observer) and its no-Worker speaker states.
+- Test-only exports (`ba_session_passport:invitation/1`,
+  `ba_session_board:granted/6`) and dynamically used exports, checked individually.
+- Historical component docs still describing removed behaviour.
+- Rebuild a TLS/public-Reception check on the CLI. Local integration tests need
+  the Phoenix Reception dependencies built first; they are absent here.
 
 Audio work, after the cleanup and the rights model (owner 2026-11-20): Mac app
 native receive; packet recovery on the native RTP path (retransmission first,

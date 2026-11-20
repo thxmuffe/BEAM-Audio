@@ -129,7 +129,7 @@ def main():
             s = runtime.request("snapshot")
             assert s["node"] == "nonode@nohost" and s["nodes"] == []
             assert not s["legacy_started"]
-            assert s["children"] == sorted(["ba_contacts", "ba_device_config", "ba_desk_connections_sup", "ba_session", "ba_session_desks", "ba_session_runtime_sup"])
+            assert s["children"] == sorted(["ba_contacts", "ba_device_config", "ba_desk_connections_sup", "ba_session", "ba_session_desks", "ba_sessions", "ba_settings", "ba_permission_pg"])
         print("PASS: status/capabilities over real Reception, signed and verified requests, link authorization and attack rejection")
     finally:
         for runtime in runtimes:

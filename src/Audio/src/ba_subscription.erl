@@ -10,21 +10,20 @@ load() ->
 save(Items) -> validate(Items),ba_device_store:save(audio_subscriptions,#{format => 1,subscriptions => Items}).
 new(Session,Device,#{name := Name,source_key := Key},channel) ->
     #{id => binary:encode_hex(crypto:strong_rand_bytes(16)),session => Session,device => Device,
-      source_key => Key,name => Name,profile => channel,playing => false,gain => 1.0}.
+      source_key => Key,name => Name,profile => channel,playing => false}.
 matches(#{device := Device,source_key := Key,profile := channel},Device,
         #{source_key := Key,profiles := #{channel := _}}) -> true;
 matches(_,_,_) -> false.
 validate(Items) ->
     true = is_map(Items) andalso map_size(Items) =< 16,
     maps:foreach(fun(Id,I) ->
-        [device,gain,id,name,playing,profile,session,source_key] = lists:sort(maps:keys(I)),
+        [device,id,name,playing,profile,session,source_key] = lists:sort(maps:keys(I)),
         Id = maps:get(id,I),true = ba_hex:valid(Id,32),
         true = ba_hex:valid(maps:get(session,I),32),
         true = ba_hex:valid(maps:get(device,I),64),
         [begin B = maps:get(K,I),true = is_binary(B) andalso byte_size(B)>0 andalso byte_size(B)=<128 end
             || K <- [name,source_key]],
-        channel = maps:get(profile,I),true = is_boolean(maps:get(playing,I)),
-        G = maps:get(gain,I),true = is_number(G) andalso G>=0 andalso G=<1
+        channel = maps:get(profile,I),true = is_boolean(maps:get(playing,I))
     end,Items),ok.
 clock_ready(#{initial_sync_complete := false},_) -> false;
 clock_ready(#{state := synchronized,role := master,filtered_utc_time := UTC,last_sync := Sync},After)

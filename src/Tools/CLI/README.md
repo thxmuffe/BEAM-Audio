@@ -1,7 +1,7 @@
 # BEAM Audio CLI — macOS
 
 `beamaudio` (also available as `beam-audio`) manages real, headless Devices: independent unnamed Erlang VMs using
-production Buffee control, clocks, OS audio and Device Handler automation. No
+production Session control, clocks, OS audio and Device Handler automation. No
 OpenSound UI is required. This first version runs/manages processes locally on
 macOS; it does not deploy or launch processes on remote machines.
 
@@ -39,7 +39,7 @@ app itself plays through WASAPI.
 Windows OTP has no Unix-domain sockets in `gen_tcp`, so each Device listens on a
 127.0.0.1 port that it writes into its `running.json`; every request must still
 carry the random instance secret from that per-user record. Files rely on the
-user profile's ACL rather than POSIX modes. The legacy Inspector is macOS-only.
+user profile's ACL rather than POSIX modes.
 
 ## Generic Device API calls
 
@@ -93,13 +93,13 @@ Update participating clients before enabling this new policy mode.
 ## Two Devices, no UI
 
 ```sh
-beamaudio new device --devicename test1 --createbuffee --enable speaker
-buffee=$(beamaudio get buffee --devicename test1)
+beamaudio new device --devicename test1 --createsession --enable speaker
+session=$(beamaudio get session --devicename test1)
 invitation=$(beamaudio get invitation --devicename test1)
-beamaudio new device --devicename test2 --joinbuffee "$invitation" --enable broadcast
+beamaudio new device --devicename test2 --joinsession "$invitation" --enable broadcast
 beamaudio wait device --devicename test1,test2 --until audio-flowing --timeout 120s
 beamaudio inspect device --devicename test1
-beamaudio inspect buffee --buffeeid "$buffee"
+beamaudio inspect session --sessionid "$session"
 beamaudio stop device --all
 ```
 
@@ -109,10 +109,10 @@ and plays eligible remote Sources; `mic` captures/publishes the microphone;
 capabilities are enabled on a new identity. For an existing identity, omitting
 `--enable` restores its saved capability settings; explicit `--enable` replaces
 those settings as one history edit. An idle Device opens no hardware until work
-in a Buffee is eligible. You can
-start an idle Device by omitting both Buffee flags. Use `--desk ws://127.0.0.1:PORT/relay/v1`
+in a Session is eligible. You can
+start an idle Device by omitting both Session flags. Use `--desk ws://127.0.0.1:PORT/relay/v1`
 when deliberately using a local Reception; otherwise the existing shared Reception is used.
-A Buffee ID identifies a gathering; its invitation is the admission credential.
+A Session ID identifies a gathering; its invitation is the admission credential.
 
 Mic permission is requested by the native binding when capture actually starts,
 with a usage description embedded in the CLI helper. System capture also needs
@@ -173,20 +173,11 @@ remote participant's scoped capabilities through a local Device:
 beamaudio inspect device --devicename test1 --deviceid PUBLIC_DEVICE_ID
 ```
 
-Buffee inspection returns available authorized local views, not a global lookup;
-use `--devicename` to select one. A Buffee ID alone grants no access. There is no
+Session inspection returns available authorized local views, not a global lookup;
+use `--devicename` to select one. A Session ID alone grants no access. There is no
 remote shell/eval, arbitrary OTP RPC or Distributed Erlang control channel.
 
-The old Inspector is unchanged and explicitly available under:
-
-```sh
-beamaudio inspect legacy --help
-```
-
-It still needs its own Inspector build and uses the historical trusted profile.
-Modern `inspect device/buffee` never delegates to it.
-
-## Live Buffee monitor
+## Live Session monitor
 
 Unexpected exceptions caught by the foreground CLI now go to OTP Logger on
 stderr, with an exception tag and source locations. They are separate from the
@@ -201,7 +192,7 @@ beamaudio monitor --all --devicename OpenSound
 ```
 
 With an explicit Device name the monitor attaches to that Device's existing API,
-creates no observer or Buffee, and follows its current Create/Join/Leave state.
+creates no observer or Session, and follows its current Create/Join/Leave state.
 Idle Devices appear as idle; absence of an audio Handler is not shown as playback.
 The monitor does not change that Device's audio consent. Without `--devicename`,
 the invitation/independent-observer workflow below remains available.
@@ -227,10 +218,10 @@ consent or configuration. Set a separate `BA_CLI_HOME` for fully isolated Device
 When no Session has been remembered, the legacy default invitation file is
 `builds/CLI/private/monitor-invitation.txt`, private
 mode 0600 under an ignored mode-0700 directory. Invitations are forwardable: the same valid link can admit multiple Devices
-and the monitor into the live Buffee. Time expiry is currently disabled, including
+and the monitor into the live Session. Time expiry is currently disabled, including
 for old signed links. Using a link does not consume it. You can instead supply `--invitation-file PATH`. Do not commit invitation
 files. The monitor verifies the ticket and uses an independent named
-`ba-monitor-BUFFEE_ID` identity. It never creates a Buffee as a fallback.
+`ba-monitor-SESSION_ID` identity. It never creates a Session as a fallback.
 
 This is an ordinary admitted, audio-disabled Device using the existing Reception,
 signed control sessions and `capabilities_read` permission. It subscribes to no
@@ -240,9 +231,9 @@ Adding the observer is a real membership change and may reset existing control
 sessions under the currently documented membership-churn behavior.
 
 Startup prints a connecting message immediately, then admission progress or an
-explicit failure. If the saved Owner is offline, keep it online; if that Buffee
+explicit failure. If the saved Owner is offline, keep it online; if that Session
 ended or was replaced, supply a valid invitation for the current gathering.
-A saved invitation cannot discover or resurrect a different Buffee.
+A saved invitation cannot discover or resurrect a different Session.
 
 The table groups channels under one Device name with a separator after each
 Device. Running channels are green, disabled ones grey, and failures red; disabled
@@ -271,7 +262,7 @@ Device names collide. Names are retained across temporary read failures.
 
 Name reporting requires rebuilt apps and a restarted observer runtime, not just
 restarting the foreground display. Stop only the observer with
-`beamaudio stop device --devicename ba-monitor-BUFFEE_ID`, then rerun
+`beamaudio stop device --devicename ba-monitor-SESSION_ID`, then rerun
 `beamaudio monitor --all`; keep audio Devices running. Older builds still work
 with ID fallback. The first plain diagnostic frame may precede name reporting;
 continuous mode requests extended diagnostics on following frames. On iOS 16+
@@ -293,7 +284,7 @@ marked "not ready" while the policy is not ready, or N/A when unavailable.
 JSON carries the same value under `clock.offset_policy.offset_ms` and readiness
 under `clock.offset_policy.ready`. New Sessions default to 150 ms; existing
 Session values are retained. This display does not require `--metrics`.
-`stop device --devicename ba-monitor-BUFFEE_ID`
+`stop device --devicename ba-monitor-SESSION_ID`
 leaves the gathering; `stop device --all` includes managed observers.
 
 Updated diagnostic replies also include `audio_diagnostics`: a bounded flat map
@@ -410,8 +401,8 @@ also verify the recorded instance. Do not copy an identity into simultaneous VMs
 
 `stop device --devicename test1,test2` leaves/ends gatherings and waits for local
 teardown; `kill device ...` explicitly terminates the verified runtime process.
-`--all` affects only this CLI's managed names. Stopping Owner ends its Buffee.
-Names/identity and Device audio settings/history remain. Live Buffee state is
+`--all` affects only this CLI's managed names. Stopping a Device preserves its Session return intent and privileges.
+Names/identity and Device audio settings/history remain. Live Session state is
 not saved. Run `new device` again under that name without `--enable` to resume
 settings in a new idle runtime; provide fresh creation/join flags when needed.
 `start device` and saved group-startup recipes are not implemented.
@@ -446,8 +437,8 @@ override environment variables (`{environment,#{"BA_..." => "..."}}`) and ba_cor
 application settings (`{runtime,#{key => value}}`). Secrets never go in it: the
 identity seed stays in its own private file. Hardware failure is separate
 observed state. Shared Offset, contacts, ephemeral
-exclusions and Buffee membership are not in Device audio history. Saved intent
-cannot revive a Buffee, bypass OS permissions or restore packet/clock state.
+exclusions and Session membership are not in Device audio history. Saved intent
+cannot revive a Session, bypass OS permissions or restore packet/clock state.
 
 An externally killed VM may leave `running.json`/`launch.json` and its socket.
 Duplicate/stale records are rejected rather than risking two VMs sharing an
@@ -467,7 +458,7 @@ physical alignment remain open.
 
 ```sh
 python3 tests/control/cli-smoke.py
-python3 tests/control/cli-buffee-smoke.py
+python3 tests/control/cli-session-smoke.py
 python3 tests/control/cli-config-smoke.py
 python3 tests/control/cli-session-memory-smoke.py
 python3 tests/control/cli-api-smoke.py
@@ -484,7 +475,7 @@ CLI/native helpers compile. Real mic/speaker/broadcast, OS permissions, sustaine
 media, interruptions and scheduling/listening remain user acceptance checks.
 
 The configuration smoke starts only an idle Device: toggling saved mic intent in
-that fixture never starts capture or creates a Buffee. It checks persistence and
+that fixture never starts capture or creates a Session. It checks persistence and
 undo/redo across real VM restarts. Seven configuration unit tests cover history
 bounds, no-ops, branching, stale revision/retry, internal setter ownership and save
 failure; no hardware use is implied.

@@ -1,29 +1,27 @@
 # Shared BEAM control runtime
 
-`buffee_control` uses local OTP supervision and authenticated scoped messages.
-Ordinary Devices never obtain Distributed Erlang connectivity. Owner is trusted
-administration independent of Chef/Guest participation and process placement.
+The runtime uses local OTP supervision and authenticated scoped messages.
+Ordinary Devices never obtain Distributed Erlang connectivity. Devices hold
+`grant`, `on_air` and `end_session` privileges, independent of process placement.
 
 Compile with `rebar3 compile` here. Run repository EUnit checks with `rebar3 eunit`
-from the core root; see [builds](../../docs/BUILDING.md). Use private persistent `BA_STATE_DIR` and
+from this directory; see [builds](../../docs/BUILDING.md). Use private persistent `BA_STATE_DIR` and
 `BA_IDENTITY_SEED` for a stable Device. Never print or share identity seeds.
 
-`ba_runtime:start()` starts an idle runtime. `ba_buffee:create/2`,
-`join/1`, `leave/0` and `end_buffee/0` control participation. Membership provides
+`ba_runtime:start()` starts an idle runtime. `ba_session:create/2`,
+`join/1`, `leave/0` and `end_session/0` control participation. Membership provides
 `request_privilege/1`, `grant_privilege/2`, `take_privilege/2` and invitations. Applications use `ba_device_api`;
 frontends submit commands and display snapshots, without owning policy.
 
 Contracts and local consent gate Workers independently of admission. Shared
-clock targets and audio interpretation remain in Erlang. Reception provides
+clock targets remain in Erlang; native hosts process and transport audio. Reception provides
 connection authentication, live mailbox lookup and bounded opaque routing.
 
 Read [architecture](../../docs/ARCHITECTURE.md),
-[membership](../../docs/BUFFEE_MEMBERSHIP.md),
-[protocol](../../docs/BUFFEE_CONTROL_PROTOCOL.md),
-[streams](../../docs/BUFFEE_STREAMS.md),
-[timing](../../docs/BUFFEE_TIME.md) and [current limits](../../docs/PROGRESS.md).
-The explicitly trusted native-cluster profile remains for the older Windows
-native UI; it is not an alternative permission source for Buffee Devices.
+[membership](../../docs/SESSION_MEMBERSHIP.md),
+[protocol](../../docs/SESSION_CONTROL_PROTOCOL.md),
+[streams](../../docs/SESSION_STREAMS.md),
+[timing](../../docs/SESSION_TIME.md) and [current limits](../../docs/PROGRESS.md).
 
 ## Parallel web Sessions
 

@@ -495,7 +495,6 @@ void Peer::command(JsonObject *c) {
     } else if(!strcmp(op,"play") || !strcmp(op,"pause")){
         if(volume)g_object_set(volume,"mute",(gboolean)!strcmp(op,"pause"),NULL);
         Event e(!strcmp(op,"play") ? "playing" : "paused");send(e);
-    } else if(!strcmp(op,"gain")){double gain=numberOr(c,"gain",-1);if(gain>=0 && gain<=1 && volume)g_object_set(volume,"volume",gain,NULL);
     } else if(!strcmp(op,"stats")){
         guint64 renderedBuffers=0,droppedBuffers=0;
         if(output){GstStructure *stats=gst_base_sink_get_stats(GST_BASE_SINK(output));
