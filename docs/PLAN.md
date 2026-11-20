@@ -308,7 +308,7 @@ chosen, because removals reveal more.
 
 Order: (1) delete the legacy stack and its Elixir/Rust/iOS transport builds;
 (2) delete test jobs and unused tests; (3) rename buffee → session including wire
-constants; (4) UTC-once-a-minute clock; (5) one request behaviour; (6) erlfmt +
+constants; (4) UTC-once-a-minute clock (done 2026-11-20, see PROGRESS); (5) one request behaviour; (6) erlfmt +
 elvis, one module per concept.
 
 Owner answers (2026-11-20): remove the test-job capability and unused tests (new
@@ -501,6 +501,18 @@ Status 2026-11-20 (details in PROGRESS.md):
 - CLI: `new device --createsession --enable broadcast` does not turn broadcast
   on (use `call device ... {"method":"capability","capability":"broadcast","enabled":true}`).
 
+Step 2 next (owner 2026-11-20: hosted TURN relay). Proposal: replace our own
+probes/punching/STUN with libjuice (C, MPL-2.0, ICE + STUN + TURN, used by
+libdatachannel): standard ICE candidate checks and nomination, path choice by
+round trip (also cable vs Wi-Fi), TURN relay for symmetric carrier NAT.
+Erlang still decides: it fetches short-lived TURN credentials from the
+provider (Cloudflare suggested; owner creates the account and API token,
+kept out of the repository) and carries ICE credentials and candidates in
+the signed setup messages. The engine's SRTP, FLAC, recovery and timing are
+unchanged. libjuice adopted and working (2026-11-20, see PROGRESS.md).
+Waiting for: the TURN account; then configure audio_turn_servers (or fetch
+short-lived Cloudflare credentials in ba_audio_route) and test mobile data.
+
 Step 2 status (2026-11-20): connectivity checks, NACK/RTX (own small
 implementation, about 80 lines) and STUN hole punching are implemented. Next:
 test Mac ↔ iPhone on mobile data; if punching fails there, decide the relay
@@ -514,6 +526,10 @@ Homebrew's, built for macOS 27).
 - TURN relay: only if actual cross-network connectivity checks show it is needed.
 
 ## Backlog (after the next steps)
+
+**Response time:** a slider over the gossiped measured values (e.g. the 85th
+percentile of Devices), chosen by hand or applied automatically; measurements on
+real Devices first (see SESSION_TIME.md).
 
 **Audio**
 - Mac ON AIR from chosen apps only (owner 2026-11-20): a process tap of

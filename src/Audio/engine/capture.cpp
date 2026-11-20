@@ -1,6 +1,5 @@
 #include "capture.h"
 
-#include <sys/socket.h>
 
 #include <cstdlib>
 #include <cstring>
@@ -42,35 +41,28 @@ FLAC__StreamEncoderWriteStatus sender_write(const FLAC__StreamEncoder *, const F
     memcpy(packet + RtpHeader, buffer, bytes);
     int size = int(RtpHeader + bytes);
     if (srtp_protect(s.srtp_, packet, &size) != srtp_err_status_ok) return ++s.send_errors_, FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
-    auto &kept = (*s.history_)[seq % s.history_->size()];
-    kept.seq = seq, kept.size = size;
-    memcpy(kept.data, packet, size_t(size));
+    s.history_.keep(seq, packet, size);
     if (s.test_loss_.load() > 0 && std::rand() % 100 < s.test_loss_.load()) return ++s.test_dropped_, FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
-    for (const auto &peer : s.peers_)
-        if (sendto(s.socket_, packet, size_t(size), 0, reinterpret_cast<const sockaddr *>(&peer), sizeof(peer)) == size)
+    for (ConnId route : s.routes_)
+        if (s.ice_.send(route, packet, size_t(size)))
             ++s.sent_;
         else
             ++s.send_errors_;
     return FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
 }
 
-void Sender::retransmit(const uint8_t *seqs, int count, const sockaddr_in6 &from) {
-    bool known = false;
-    for (const auto &peer : peers_) known = known || same_peer(peer, from);
-    if (!known) return;  // never send on behalf of someone who is not a receiver
+void Sender::retransmit(const uint8_t *seqs, int count, ConnId from) {
+    if (std::find(routes_.begin(), routes_.end(), from) == routes_.end()) return;  // only to this stream's receivers
     for (int i = 0; i < count; ++i) {
-        const uint16_t seq = read16(seqs + 2 * i);
-        const auto &kept = (*history_)[seq % history_->size()];
-        if (kept.size && kept.seq == seq &&
-            sendto(socket_, kept.data, size_t(kept.size), 0, reinterpret_cast<const sockaddr *>(&from), sizeof(from)) == kept.size)
-            ++retransmits_;
+        const uint8_t *data = nullptr;
+        int size = 0;
+        if (history_.find(read16(seqs + 2 * i), data, size) && ice_.send(from, data, size_t(size))) ++retransmits_;
     }
 }
 
-Sender::Sender(const json &c, int socket) : socket_(socket) {
+Sender::Sender(const json &c, Ice &ice) : ice_(ice) {
     ssrc_ = c.at("ssrc"), rate_ = c.at("rate");
     if (rate_ != 44100 && rate_ != 48000) fail("unsupported stream rate");
-    peers_ = parse_peers(c.at("peers"));
     srtp_ = make_srtp(ssrc_, c.at("key").get<std::string>());
     int error = 0;
     src_ = src_new(SRC_SINC_MEDIUM_QUALITY, Channels, &error);

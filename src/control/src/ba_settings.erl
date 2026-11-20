@@ -10,7 +10,7 @@
 %% Secrets never pass through here.
 -module(ba_settings).
 -behaviour(gen_server).
--export([start_link/0,get/1,get/2,put/2,update/3,flush/0]).
+-export([start_link/0,get/2,put/2,update/3,flush/0]).
 -export([env/1,env/2,app/1,app/2]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
 -define(TABLE,?MODULE).
@@ -20,7 +20,6 @@
 
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 
-get(Key) -> get(Key,undefined).
 get(Key,Default) ->
     try ets:lookup(?TABLE,Key) of [{_,V}] -> V;[] -> Default
     catch error:badarg -> Default end.

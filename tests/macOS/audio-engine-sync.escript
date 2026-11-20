@@ -1,8 +1,9 @@
 #!/usr/bin/env escript
 %%! -noshell
-%% Audio engine milestone 1 measurement (macOS): one sender capturing a test
-%% tone and two receivers playing it through the default output, over loopback
-%% UDP with SRTP and FLAC, all on one Session clock (this host's Erlang clock).
+%% Audio engine measurement (macOS): one sender capturing a test tone and two
+%% receivers playing it through the default output, over ICE connections
+%% (libjuice, local candidates) with SRTP and FLAC, all on one Session clock
+%% (this host's Erlang clock).
 %%
 %% Reports each engine's own scheduling error: how far the device position is
 %% from where the Session timeline says it should be, using the OS callback
@@ -36,9 +37,10 @@ main(Args) ->
     Start=fun() -> {ok,P}=ba_audio_engine:start_link(#{executable => Engine,clock => Clock}),P end,
     [Sender,R1,R2]=[Start() || _ <- [1,2,3]],
     Key=crypto:strong_rand_bytes(30),Ssrc=rand:uniform(16#7fffffff),Rate=48000,Delay=200,
-    Ports=[ba_audio_engine:udp_port(R) || R <- [R1,R2]],
     {ok,#{input_rate := InRate}}=ba_audio_engine:command(Sender,#{op => start_capture,source => Source,ssrc => Ssrc,
-        rate => Rate,key => Key,peers => [[<<"127.0.0.1">>,P] || P <- Ports]}),
+        rate => Rate,key => Key}),
+    Conns=[link(Sender,R,N) || {R,N} <- [{R1,1},{R2,2}]],
+    {ok,_}=ba_audio_engine:command(Sender,#{op => route,ssrc => Ssrc,conns => Conns}),
     {ok,_}=ba_audio_engine:command(Sender,#{op => test_loss,percent => Loss}),
     Anchor=receive {ba_audio_engine,Sender,#{event := <<"capture_started">>,anchor_ns := A}} -> A
            after 3000 -> io:format("FAIL: capture never started~n"),halt(1) end,
@@ -74,6 +76,25 @@ sample(T,Sender,R1,R2) ->
     Err=fun(#{error := #{mean_us := M,max_us := X}}) -> io_lib:format("~8.1f / ~8.1f",[float(M),float(X)]) end,
     io:format("~6B  ~-24s ~-36s ~-36s~n",[T+2,Err(C)|[[Err(S),io_lib:format("  ~B ~B",[maps:get(missing_frames,S),maps:get(late,S)])] || S <- Rs]]),
     {T,[maps:get(mean_us,maps:get(error,X)) || X <- [C|Rs]]}.
+
+%% An ICE connection sender -> receiver: descriptions exchanged as Erlang
+%% does through the Session; returns the sender's connection once connected.
+link(Sender,Receiver,N) ->
+    Tx=100+N,Rx=200+N,
+    {ok,_}=ba_audio_engine:command(Receiver,#{op => connect,conn => Rx}),
+    RxDescription=description(Receiver,Rx),
+    {ok,_}=ba_audio_engine:command(Sender,#{op => connect,conn => Tx}),
+    {ok,_}=ba_audio_engine:command(Sender,#{op => remote,conn => Tx,description => RxDescription}),
+    {ok,_}=ba_audio_engine:command(Receiver,#{op => remote,conn => Rx,description => description(Sender,Tx)}),
+    connected(Sender,Tx),Tx.
+description(Engine,Conn) ->
+    receive {ba_audio_engine,Engine,#{event := <<"ice_description">>,conn := Conn,description := D}} -> D
+    after 5000 -> io:format("FAIL: no ICE description~n"),halt(1) end.
+connected(Engine,Conn) ->
+    receive
+        {ba_audio_engine,Engine,#{event := <<"ice_state">>,conn := Conn,state := State}} when State=:= <<"connected">>;State=:= <<"completed">> -> ok;
+        {ba_audio_engine,Engine,#{event := <<"ice_state">>,conn := Conn,state := <<"failed">>}} -> io:format("FAIL: ICE failed~n"),halt(1)
+    after 10000 -> io:format("FAIL: ICE did not connect~n"),halt(1) end.
 
 option(Name,[Name,Value|_],Default) when is_integer(Default) -> list_to_integer(Value);
 option(Name,[Name,Value|_],_) -> Value;

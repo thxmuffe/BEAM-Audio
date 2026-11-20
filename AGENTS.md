@@ -162,7 +162,7 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
   limitation to replace incrementally, not a pattern to extend.
 - Do not give mutually untrusted Session devices Distributed Erlang connectivity or the ability to invoke arbitrary remote functions. Keep supervision local and cross-device operations authenticated, allowlisted and scoped to explicit permissions.
 - Implementation sources belong under `src/`: platform apps in `src/Apps/`, app-specific shared code in `src/Apps/Shared/`, audio processing and native audio adapters in `src/Audio/`, shared networking/session runtime in `src/control/`, and independently deployed services in `src/Services/`. Cross-component integration checks belong in top-level `tests/`; component unit tests can stay beside their component. Documentation belongs in `docs/` and repository-wide tooling in `scripts/`.
-- Keep `src/Audio/src/` platform independent. Platform audio bindings, including
+- Keep `src/Audio/control/` platform independent. Platform audio bindings, including
   Erlang port/format/OS-clock adapters and native helpers, belong together under
   `src/Audio/adapters/<platform>/`. Adapters supply source-format descriptions,
   timing metadata and bounded summaries, never audio sample blocks or encoded

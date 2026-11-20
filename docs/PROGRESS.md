@@ -1,5 +1,84 @@
 # Current implementation and validation
 
+## Session time is UTC; measured Response time — 2026-11-20
+
+- **Clock (simplification pass 4).** Every Device reads UTC itself: system clock
+  at once, then a burst of four SNTP queries once a minute (shortest round trip
+  wins). Master/follower sampling, handover, the filter, `time.message`,
+  `time_read`/`offset_write` and the test-only clock API are removed. Clock
+  folder went from ~800 to ~235 lines. Measured from this Mac: readings agree
+  within ±0.5 ms; slow replies were off by up to 8 ms.
+- **Response time setting** is in the signed Session statement (`response_ms`),
+  changed like the Session name. Automatic and the mixer-era lateness advice are
+  removed.
+- **Measured Response time.** The engine measures per packet the Response time it
+  needed (op `response`: mean, p85, p99, max); Devices gossip their p99 (2 s after
+  a stream starts, doubling to once a minute). Monitor and Settings show the
+  average in place of the Automatic button.
+- **iPhone shell** refreshes output and input latency on audio route changes
+  (speaker ↔ Bluetooth), so playback stays on Session time.
+- **Layout.** `src/Audio/src` is now `src/Audio/control/` with `engine/`,
+  `streams/`, `sources/`, `diagnostics/`.
+- Validation: 145 EUnit tests and 35 WebApp tests pass; macOS engine builds and
+  the changed engine files compile for iOS. Not yet run on real Devices; the
+  Reception-based smoke tests were not run (Reception not compiled). Old builds
+  cannot join Sessions with new ones (statement and permission changes).
+
+## Connectivity on libjuice (ICE) — 2026-11-20
+
+- Our probes, punching and STUN code were replaced by libjuice 1.7.4 (pinned,
+  checksummed; built for macOS and iOS): ICE candidates, checks, path choice,
+  STUN and TURN. Engine: `ice.*` (connections named by Erlang, events, an
+  inbound queue so the packet thread stays the only owner of stream state),
+  `recovery.*` (NACK and resend, moved out of speaker/capture), `net.*` now only
+  packet formats. Erlang: `ba_audio_route` (STUN/TURN config with names
+  resolved in Erlang, interface checks); setup messages carry ICE
+  descriptions; the iPhone's path notification triggers an immediate check.
+- Found on the way: libjuice logs to standard output by default, which is the
+  engine's protocol channel (one warning corrupted it); its log now goes to
+  stderr (`BA_ICE_DEBUG=1` for debug level). The term decoder now accepts
+  small-integer lists (the external format packs them as strings).
+- Checked: measurement over ICE with 3% loss passes (all 73/73 recovered);
+  two CLI Devices in a real Session, system audio and microphone at once,
+  "ICE connected via direct", 0 errors. 178 core tests pass. TURN untested
+  (no account yet); mobile data untested with ICE.
+
+## Mobile data: hole punching measured, relay needed — 2026-11-20
+
+- After the STUN fix the iPhone learns its public addresses (carrier
+  87.95.44.77, home 91.145.90.96). With the cable plugged in, the stream
+  routed over Apple's USB device link (fd70:…, IPv6) and sounded excellent;
+  that was not an internet path.
+- On mobile data, cable unplugged: no route at all. The Mac's probes to the
+  iPhone's carrier address went unanswered and the iPhone's punches never
+  reached the Mac. The iPhone's public port changed (18515 → 18516) between
+  STUN rounds to the same server: a symmetric carrier NAT. With the home
+  router's filtering, hole punching cannot work. Owner chose a hosted TURN
+  relay; see PLAN.md.
+
+## Mobile data diagnosis — 2026-11-20
+
+- Owner's iPhone on mobile data announced only a carrier-internal IPv4
+  (10.x), the iOS 464XLAT address (192.0.0.6) and global IPv6 addresses; no
+  public IPv4: STUN never worked on the iPhone (`inet:getaddr` does not
+  resolve there). The Mac's IPv6 is private (fda4::/16), so IPv6 cannot
+  connect them either. No probe was answered and no punch arrived.
+- Fixed: STUN servers resolve with `net:getaddrinfo` (as the iOS bridge
+  does; NAT64-translated addresses on IPv6-only networks); each round resets
+  the public addresses. Checked on the Mac.
+- Fixed: route flapping. The provider re-routed on every punch (22 changes in
+  15 s locally, one per address); it now keeps a route while punches arrive
+  on it and switches after 5 s of silence (1 change).
+- Path counters in the monitor (punches sent/answered; probes answered,
+  punches seen, routed, re-routes) and route decisions in each Device's log.
+- Found and fixed (from the phone's runtime.log and ba_erl_crash.dump): the
+  freeze on Wi-Fi off was the Erlang VM stopping. Turning Wi-Fi off ended the
+  wireless Xcode debug session; the default logger handler's console write
+  failed with eio, crashed until logger_sup gave up, and the kernel shut down
+  ("application_terminated,kernel,shutdown"). Apps now log only to
+  runtime.log, as the CLI does. Not network related; also affected any run
+  where the console disappears.
+
 ## Microphone, peer-reflexive routing, freeze fix, compact monitor — 2026-11-20
 
 - Microphone ON AIR: `ba_audio_capture` (platform independent, replaces

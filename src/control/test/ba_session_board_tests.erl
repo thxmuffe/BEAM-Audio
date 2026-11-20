@@ -58,10 +58,10 @@ envelope_round_trip_and_session_binding_test() ->
 gossip_note_test() ->
     {Session,InvKey,Ctx,_,_,{Asker,AK}}=setup(),
     Join=ba_session_passport:join(Session,Asker,InvKey),
-    {Id,Packet}=ba_session_gossip:note(Session,Asker,Join,<<"on_air">>,AK),
+    {Id,Packet}=ba_session_gossip:note(Session,Asker,Join,<<"on_air">>,#{},AK),
     ?assertMatch({ok,#{<<"author">> := Asker,<<"kind">> := <<"on_air">>}},ba_session_gossip:check(Id,Packet,Ctx)),
     ?assertEqual(error,ba_session_gossip:check(Id,Packet,Ctx#{session := binary:copy(<<"B">>,32)})),
-    {Bad,BadPacket}=ba_session_gossip:note(Session,Asker,binary:copy(<<"0">>,128),<<"on_air">>,AK),
+    {Bad,BadPacket}=ba_session_gossip:note(Session,Asker,binary:copy(<<"0">>,128),<<"on_air">>,#{},AK),
     ?assertEqual(error,ba_session_gossip:check(Bad,BadPacket,Ctx)).
 
 %% A granted request stays answered even after the privilege is taken back.

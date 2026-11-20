@@ -43,12 +43,10 @@ user profile's ACL rather than POSIX modes.
 
 ## Generic Device API calls
 
-The terminal/embedded monitor shows `Master clock` in UTC, its Device and sample
-age, with a stale marker or N/A. A follower displays the master's last
-authenticated reading, not an extrapolated local estimate, even before its own
-clock acquisition completes. JSON carries this under `clock.master_clock`, with
-`utc_time_ns` as a decimal string. Update the monitor's hosting Device to supply
-the new reading.
+The terminal/embedded monitor shows `Clock`: this Device's UTC, where it read
+it (time server or system clock) and how long ago, with the time server's error
+if it did not answer. Every Device reads UTC itself; see
+[Session time](../../../docs/SESSION_TIME.md).
 Run Both updates the native apps, not an already-running managed Web Device.
 To reload that Device's core code with its existing identity, stop its exact
 name (`scripts/cli/beamaudio stop device --devicename OpenSound`) and reopen the Web
@@ -62,7 +60,6 @@ beamaudio get methods
 beamaudio call device --devicename OpenSound --request '{"method":"snapshot"}'
 beamaudio call device --devicename OpenSound --request '{"method":"speaker_mute","muted":true}'
 beamaudio call device --devicename OpenSound --request '{"method":"offset","offset_ms":150,"session":"SESSION_SCOPE_ID"}'
-beamaudio call device --devicename OpenSound --request '{"method":"offset","automatic":true,"session":"SESSION_SCOPE_ID"}'
 beamaudio call device --devicename OpenSound < request.json
 ```
 
@@ -78,17 +75,14 @@ scope, or pass a scope ID from `list_sessions` to select it explicitly.
 The existing owner-local socket, instance check, Session router and Device
 argument/privilege/consent validation are reused. A new command declared by
 `ba_device_api:methods/0` is automatically callable without another CLI parser
-or wrapper. The API dispatcher in `src/control/src/ba_device_api.erl` defines
+or wrapper. The API dispatcher in `src/control/src/device/ba_device_api.erl` defines
 its arguments. This is a JSON adapter to that API, not reflection over Erlang
 exports, `apply`, eval or Distributed Erlang. Process creation/stop/kill keep
 their existing lifecycle commands. Convenience commands remain available.
 
-Automatic Response time is a Session setting: an editor enables it, then Devices
-can request measured increases from the clock authority. Increases taper below
-3 seconds; a numeric `offset_ms` disables Automatic. Chat warnings show the
-number of discarded late blocks, average measured overshoot and estimated full
-Response time. The estimate can exceed the smaller automatic adjustment.
-Update participating clients before enabling this new policy mode.
+The Response time is a signed Session setting (0–3000 ms). Receiving Devices
+measure the Response time they actually needed and gossip it; the monitor shows
+the average after the setting (`measured: 92 ms average of 2 Devices`).
 
 ## Two Devices, no UI
 
@@ -281,8 +275,9 @@ restoration of cached permissions. A Device can start a fresh gathering from the
 same reusable link; the observer itself waits for a Device to do so.
 The console header shows the Session's shared Response time in milliseconds,
 marked "not ready" while the policy is not ready, or N/A when unavailable.
-JSON carries the same value under `clock.offset_policy.offset_ms` and readiness
-under `clock.offset_policy.ready`. New Sessions default to 150 ms; existing
+JSON carries the same value under `clock.offset_policy.offset_ms`, readiness
+under `clock.offset_policy.ready` and the measured average under
+`clock.offset_policy.measured_ms` (the values in `measured`). New Sessions default to 150 ms; existing
 Session values are retained. This display does not require `--metrics`.
 `stop device --devicename ba-monitor-SESSION_ID`
 leaves the gathering; `stop device --all` includes managed observers.

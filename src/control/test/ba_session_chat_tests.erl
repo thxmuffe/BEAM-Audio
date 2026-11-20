@@ -20,22 +20,3 @@ visible_notices_test() ->
     S10=step({session_privileges,#{<<"A">> => [<<"owner">>]}},S9),
     ?assertEqual([{<<"I">>,<<"joined the Session">>},{<<"I">>,<<"can now go on air">>},{<<"I">>,<<"is going on air">>}],texts(S10)),
     ?assert(lists:all(fun(E) -> maps:get(level,E)=:=info end,maps:get(messages,S10))).
-
-audio_deadline_warning_is_shared_and_rate_limited_test() ->
-    Member=spawn(fun Loop() -> receive {'$gen_call',From,current} ->
-        gen_server:reply(From,{ok,#{policy => #{peers => #{}}}}),Loop() end end),
-    register(ba_session_membership,Member),
-    OldSeed=os:getenv("BA_IDENTITY_SEED"),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$A)),
-    try
-        Report=#{discarded => 12,mean_late_ms => 80,required_ms => 380,response_ms => 300},
-        S1=step({audio_lateness,Report},#{messages => []}),
-        ?assertEqual(1,length(maps:get(messages,S1))),
-        [Entry]=maps:get(messages,S1),
-        ?assertNotEqual(nomatch,binary:match(maps:get(text,Entry),<<"380 ms">>)),
-        S2=step({audio_lateness,Report},S1),?assertEqual(S1,S2),
-        S3=step({audio_lateness,Report},S2#{last_audio_warning := maps:get(last_audio_warning,S2)-30000}),
-        ?assertEqual(2,length(maps:get(messages,S3)))
-    after
-        unregister(ba_session_membership),exit(Member,kill),
-        case OldSeed of false -> os:unsetenv("BA_IDENTITY_SEED");_ -> os:putenv("BA_IDENTITY_SEED",OldSeed) end
-    end.

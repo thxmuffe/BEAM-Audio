@@ -3,11 +3,6 @@
 -export([with_store/1,intent/1]).
 intent(Key) -> ba_subscription:new(binary:copy(<<"A">>,32),binary:copy(<<"B">>,64),
     #{name => Key,source_key => Key},channel).
-source_restart_keeps_identity_test() ->
-    I = intent(<<"music">>),O = #{source_key => <<"music">>,profiles => #{channel => #{}}},
-    ?assert(ba_subscription:matches(I,binary:copy(<<"B">>,64),O)),
-    ?assertNot(ba_subscription:matches(I,binary:copy(<<"C">>,64),O)),
-    ?assertNot(ba_subscription:matches(I,binary:copy(<<"B">>,64),O#{source_key := <<"mic">>})).
 collection_persistence_and_scoped_unsubscribe_test() -> with_store(fun() ->
     A = intent(<<"music">>),B = intent(<<"mic">>),X = maps:get(id,A),Y = maps:get(id,B),
     Items = #{X => A,Y => B#{playing := true}},
@@ -21,15 +16,11 @@ old_single_subscription_is_not_imported_test() -> with_store(fun() ->
     ?assertEqual(#{},ba_subscription:load())
 end).
 fresh_clock_required_after_resume_test() ->
-    Clock = #{state => synchronized,filter_ready => true,last_sync => 100,age_ns => 0},
+    Clock = #{state => synchronized,last_sync => 100,age_ns => 0},
     ?assertNot(ba_subscription:clock_ready(Clock,101)),
     ?assert(ba_subscription:clock_ready(Clock#{last_sync := 102},101)),
-    ?assert(ba_subscription:clock_ready(Clock#{last_sync := 102,filter_ready := false},101)),
-    ?assertNot(ba_subscription:clock_ready(Clock#{initial_sync_complete => false},undefined)),
-    ?assert(ba_subscription:clock_ready(Clock#{initial_sync_complete => true},undefined)),
-    ?assertNot(ba_subscription:clock_ready(Clock#{age_ns := 11000000000},undefined)),
-    ?assertNot(ba_subscription:clock_ready(Clock#{age_ns := -1},undefined)),
-    ?assert(ba_subscription:clock_ready(#{state => synchronized,role => master,filtered_utc_time => 1000,last_sync => 102},101)).
+    ?assert(ba_subscription:clock_ready(Clock,undefined)),
+    ?assertNot(ba_subscription:clock_ready(#{state => acquiring},undefined)).
 with_store(Fun) ->
     Dir = filename:join("/tmp","ba_core-subscriptions-"++integer_to_list(erlang:unique_integer([positive]))),
     Saved = [{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],

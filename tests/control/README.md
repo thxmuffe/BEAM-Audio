@@ -92,8 +92,6 @@ python3 tests/control/session-privileges-smoke.py
 python3 tests/control/session-restart-smoke.py
 python3 tests/control/parallel-sessions-smoke.py
 python3 tests/control/session-reconnect-smoke.py
-python3 tests/control/session-time-smoke.py
-python3 tests/control/session-time-smoke.py --production-cadence
 BA_TEST_NATIVE_LIBRARY_DIR=/opt/homebrew/opt/openssl@3/lib python3 tests/control/device-session-e2e.py --session-time --sustained
 ```
 

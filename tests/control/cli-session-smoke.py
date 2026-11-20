@@ -25,7 +25,7 @@ with socket.socket() as sock:
 with tempfile.TemporaryDirectory(prefix='ba-cli-session-') as directory:
     # Normal production algorithm with an explicit system reference and short
     # sampling window for this no-audio fixture. CLI defaults remain unchanged.
-    flags = '-ba_core clock_reference system clock_filter_samples 3 clock_sample_interval_ms 100'
+    flags = '-ba_core clock_reference system'
     env = dict(os.environ, BA_CLI_HOME=directory, ERL_AFLAGS=flags)
     desk = relay.start_desk(port)
     try:

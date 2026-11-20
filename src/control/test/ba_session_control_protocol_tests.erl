@@ -38,12 +38,11 @@ engine_endpoint_roundtrip_test() ->
     Id=binary:copy(<<"C">>,32),
     P=#{<<"kind">> => <<"signal.endpoint">>,<<"source">> => <<"music">>,
         <<"incarnation">> => binary:copy(<<"D">>,32),<<"attempt">> => binary:copy(<<"E">>,32),
-        <<"public">> => binary:copy(<<"F">>,64),<<"addresses">> => <<"192.168.1.5/40000 fd00::5/40000 91.145.90.96/61234">>},
+        <<"public">> => binary:copy(<<"F">>,64),<<"ice">> => <<"a=ice-ufrag:abcd\r\na=ice-pwd:0123456789abcdefghijkl\r\na=candidate:1 1 UDP 2122317823 192.168.1.5 40000 typ host\r\n">>},
     {ok,Packet,_}=p(audio_message,[B,Id,P,5,SA]),
     ?assertMatch({ok,[],[{audio,Id,P,#{peer := A}}],_},p(receive_packet,[A,Packet,6,SB])),
-    [?assertException(error,_,ba_audio_stream_protocol:validate(P#{<<"addresses">> := Bad}))
-        || Bad <- [null,<<>>,<<"example.com/1">>,<<"1.2.3.4">>,<<"1.2.3.4/0">>,<<"1.2.3.4/1  5.6.7.8/1">>,
-                   iolist_to_binary(lists:join(<<" ">>,lists:duplicate(9,<<"10.0.0.1/1">>)))]].
+    [?assertException(error,_,ba_audio_stream_protocol:validate(P#{<<"ice">> := Bad}))
+        || Bad <- [null,<<>>,<<"a=candidate:only">>,binary:copy(<<"a=ice-ufrag:x a=ice-pwd:y ">>,200)]].
 
 status_roundtrip_and_replay_test() ->
     {A,B,_,_,SA,SB} = connected(),
@@ -206,34 +205,6 @@ stream_control_requires_grants_and_exact_schema_test() ->
     Base = #{<<"source">> => <<"music">>,<<"incarnation">> => Id,<<"attempt">> => Id},
     ?assertMatch({error,_,_},p(audio_message,[B,Id,Base#{<<"kind">> => <<"signal.offer">>,<<"sdp">> => <<"unsigned generic SDP">>},5,SA])),
     ?assertMatch({error,_,_},p(audio_message,[B,Id,P#{<<"pcm">> => <<"audio is not control">>},5,SA])).
-
-
-time_permission_is_not_implied_by_status_or_membership_test() ->
-    {A,B,_,_,SA,SB} = connected(),Id = binary:copy(<<"A">>,32),
-    P = #{<<"kind">> => <<"offset.set">>,<<"revision">> => 1,<<"offset_ms">> => 250},
-    {ok,Packet,_} = p(time_message,[B,Id,P,5,SA]),
-    ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Packet,6,SB])),
-    Policy = maps:get(policy,SB),
-    GuestWithOldFlag = SB#{policy := Policy#{members := #{A => [offset_write]}}},
-    ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Packet,6,GuestWithOldFlag])),
-    Owner = SB#{policy := Policy#{members := #{A => [owner]}}},
-    ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Owner])),
-    Granted = SB#{policy := Policy#{members := #{A => [stream_publish]}}},
-    ?assertMatch({ok,[],[{time,Id,P,_}],_},p(receive_packet,[A,Packet,6,Granted])).
-
-ordinary_time_reader_can_request_more_time_but_cannot_enable_automatic_test() ->
-    {A,B,_,_,SA,SB} = connected(),Id=binary:copy(<<"E">>,32),
-    Policy=maps:get(policy,SB),Reader=SB#{policy := Policy#{members := #{A => [time_read]}}},
-    Required=#{<<"kind">> => <<"offset.required">>,<<"revision">> => 2,<<"offset_ms">> => 450},
-    {ok,Packet,_}=p(time_message,[B,Id,Required,5,SA]),
-    ?assertMatch({ok,[],[{time,Id,Required,_}],_},p(receive_packet,[A,Packet,6,Reader])),
-    Auto=#{<<"kind">> => <<"offset.set">>,<<"revision">> => 2,<<"offset_ms">> => 300,<<"automatic">> => true},
-    {ok,Change,_}=p(time_message,[B,Id,Auto,5,SA]),
-    ?assertMatch({ok,[_],[],_},p(receive_packet,[A,Change,6,Reader])).
-
-
-
-
 
 chat_is_authenticated_bounded_and_replay_protected_test() ->
     {A,B,_,_,SA,SB} = connected(),Id=binary:copy(<<"D">>,32),

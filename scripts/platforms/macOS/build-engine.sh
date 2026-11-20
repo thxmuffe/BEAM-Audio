@@ -19,7 +19,7 @@ for SOURCE in "$ROOT"/src/Audio/engine/*.cpp "$ROOT/src/Audio/adapters/macOS/eng
 done
 # Homebrew's libei targets the host macOS; packaged apps link their own OTP's ei.
 xcrun clang++ -mmacosx-version-min=14.2 "${OBJECTS[@]}" \
-  -L "$DEPS/lib" -L "$EI/lib" -lFLAC -lsrtp2 -lsamplerate -lcpptrace -ldwarf -lzstd -lz -lei \
+  -L "$DEPS/lib" -L "$EI/lib" -lFLAC -lsrtp2 -lsamplerate -ljuice -lcpptrace -ldwarf -lzstd -lz -lei \
   -framework Foundation -framework CoreAudio -framework AudioToolbox -framework AVFoundation \
   -Wl,-sectcreate,__TEXT,__info_plist,"$ROOT/src/Tools/CLI/AudioInput-Info.plist" \
   -o "$OUTPUT" 2> >(grep -v 'was built for newer' >&2)

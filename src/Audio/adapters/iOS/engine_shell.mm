@@ -6,6 +6,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #include <mach/mach_time.h>
 
+#include <atomic>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -33,11 +34,13 @@ void check(OSStatus status, const char *what) {
 class IOSShell final : public ba::Shell {
     AudioComponentInstance output_ = nullptr;
     void *session_ = nullptr;
-    uint64_t output_latency_ns_ = 0;
+    // Latencies follow the current route (speaker, Bluetooth, AirPlay, wired),
+    // so a route change keeps playback on Session time; read on audio threads.
+    std::atomic<uint64_t> output_latency_ns_{0}, input_latency_ns_{0};
+    id route_observer_ = nil;
     // Microphone: its own RemoteIO unit, input only.
     AudioComponentInstance input_ = nullptr;
     void *input_session_ = nullptr;
-    uint64_t input_latency_ns_ = 0;
     int input_slot_ = -1;
     std::vector<float> mono_ = std::vector<float>(4096), stereo_ = std::vector<float>(8192);
 
@@ -66,6 +69,18 @@ class IOSShell final : public ba::Shell {
         return noErr;
     }
 
+    void follow_route() {
+        if (route_observer_) return;
+        route_observer_ = [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionRouteChangeNotification
+                                                                          object:nil
+                                                                           queue:nil
+                                                                      usingBlock:^(NSNotification *) {
+                                                                          AVAudioSession *s = AVAudioSession.sharedInstance;
+                                                                          output_latency_ns_ = uint64_t(s.outputLatency * 1e9);
+                                                                          input_latency_ns_ = uint64_t(s.inputLatency * 1e9);
+                                                                      }];
+    }
+
    public:
     uint32_t start_output() override {
         session_ = ba_engine_audio_acquire(false);
@@ -73,6 +88,7 @@ class IOSShell final : public ba::Shell {
         AVAudioSession *session = AVAudioSession.sharedInstance;
         const double rate = session.sampleRate;
         output_latency_ns_ = uint64_t(session.outputLatency * 1e9);
+        follow_route();
         AudioComponentDescription d{kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple, 0, 0};
         AudioComponent component = AudioComponentFindNext(nullptr, &d);
         if (!component) throw std::runtime_error("RemoteIO unavailable");
@@ -110,6 +126,7 @@ class IOSShell final : public ba::Shell {
         AVAudioSession *session = AVAudioSession.sharedInstance;
         const double rate = session.sampleRate;
         input_latency_ns_ = uint64_t(session.inputLatency * 1e9);
+        follow_route();
         AudioComponentDescription d{kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple, 0, 0};
         AudioComponent component = AudioComponentFindNext(nullptr, &d);
         if (!component) throw std::runtime_error("RemoteIO unavailable");

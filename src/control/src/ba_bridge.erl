@@ -19,13 +19,18 @@ loop() ->
             loop()
     end.
 
-%% Every Device also logs to runtime.log in its own state folder, as the CLI
-%% does, so problems can be read after the fact (bounded, rotated).
+%% Every Device logs to runtime.log in its own state folder, as the CLI does,
+%% so problems can be read after the fact (bounded, rotated). Only there: the
+%% default console handler goes. On the Mac standard output carries this
+%% bridge's JSON; on the iPhone it vanishes with the debugger (turning Wi-Fi
+%% off ended a wireless Xcode session, the console write failed with eio, the
+%% handler crashed until logger_sup gave up and the whole VM stopped).
 file_log() ->
     case ba_settings:env("BA_STATE_DIR") of
         false -> ok;
         Dir -> _ = logger:add_handler(state_file,logger_std_h,#{config => #{type => file,
-                    file => filename:join(Dir,"runtime.log"),max_no_bytes => 1000000,max_no_files => 3}}),ok
+                    file => filename:join(Dir,"runtime.log"),max_no_bytes => 1000000,max_no_files => 3}}),
+               _ = logger:remove_handler(default),ok
     end.
 
 %% An embedded host can call request/1 without emulating terminal I/O.

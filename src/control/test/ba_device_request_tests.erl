@@ -8,12 +8,10 @@ authorize_test() ->
     ?assertEqual({error,forbidden},A(<<"stream.message">>,#{<<"kind">> => <<"subscribe">>},[stream_read])),
     %% Stream kinds other than catalogue and subscribe need no Session right.
     ?assertEqual(ok,A(<<"stream.message">>,#{<<"kind">> => <<"other">>},[])),
-    %% The shared offset is a Session setting: grant or on_air suffices.
-    Set = #{<<"kind">> => <<"offset.set">>},
-    ?assertEqual(ok,A(<<"time.message">>,Set,[stream_publish])),
-    ?assertEqual(ok,A(<<"time.message">>,Set,[owner])),
-    ?assertEqual({error,forbidden},A(<<"time.message">>,Set,[offset_write,time_read])),
-    ?assertEqual({error,forbidden},A(<<"time.message">>,#{<<"kind">> => <<"offset.get">>},[])),
+    %% The Response time is a Session setting: an on_air holder may ask for a change.
+    Response = #{<<"kind">> => <<"response_request">>},
+    ?assertEqual(ok,A(<<"session.request">>,Response,[stream_publish])),
+    ?assertEqual({error,forbidden},A(<<"session.request">>,Response,[status_read])),
     %% Chat and replies need no right.
     ?assertEqual(ok,A(<<"chat.message">>,#{},[])),
     ?assertEqual(ok,A(<<"status.reply">>,#{},[])).

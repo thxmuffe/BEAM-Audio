@@ -6,12 +6,11 @@
 #include <samplerate.h>
 #include <srtp2/srtp.h>
 
-#include <netinet/in.h>
-
 #include <atomic>
-#include <chrono>
-#include <deque>
 #include <memory>
+
+#include "ice.h"
+#include "recovery.h"
 
 #include "timing.h"
 
@@ -30,13 +29,17 @@ class Speaker {
     Speaker &operator=(const Speaker &) = delete;
 
     uint32_t ssrc() const { return ssrc_; }
-    // Packet thread: an SRTP packet for this SSRC (decrypted in place).
-    void receive(uint8_t *packet, int size, const sockaddr_in6 &from);
+    // Packet thread: an SRTP packet for this SSRC (decrypted in place),
+    // arriving on ICE connection `from`.
+    void receive(uint8_t *packet, int size, ConnId from);
     // Packet thread: ask the sender again for packets still missing.
-    void send_nacks(int socket);
+    void send_nacks(Ice &ice);
     // Audio thread: add this stream's frames for Session time `present` to mix.
     void render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate);
     json status();
+    // Control thread: the Response time this stream needed since the last call
+    // (count, mean_ms, p85_ms, p99_ms, max_ms), then a fresh window.
+    json take_response();
     void set_gain(float gain) { gain_.store(gain, std::memory_order_relaxed); }
     // A new Response time: the next render re-positions once; devices stay open.
     void set_delay(int64_t delay_ms) { delay_.store(delay_ms * 1000000, std::memory_order_relaxed); }
@@ -47,8 +50,8 @@ class Speaker {
                                                         void *);
     friend void speaker_error(const FLAC__StreamDecoder *, FLAC__StreamDecoderErrorStatus, void *);
     void read_ring(int64_t pos, long frames, float *dest);
-    void track(uint16_t seq);
 
+    const Clock &clock_;
     uint32_t ssrc_ = 0, rate_ = 0;
     int64_t anchor_ = 0;
     std::atomic<int64_t> delay_{0};
@@ -75,21 +78,19 @@ class Speaker {
     double play_pos_ = 0, last_ratio_ = 0;
     long chunk_size_ = 0, chunk_used_ = 0;
     std::unique_ptr<float[]> out_{new float[MaxCallback * Channels]()};
-    // Recovery (packet thread only): the stream's sender and the sequence
-    // numbers still missing, each asked for at most three times, 30 ms apart.
-    struct Missing {
-        int64_t seq;
-        std::chrono::steady_clock::time_point asked;
-        int tries;
-    };
-    sockaddr_in6 source_{};
+    // Recovery (packet thread only): where the stream arrives from, and what is lost.
+    ConnId source_ = 0;
     bool has_source_ = false;
-    int64_t highest_seq_ = -1;
-    std::deque<Missing> lost_;
-    std::atomic<uint64_t> nacks_{0}, recovered_{0};
+    LossTracker loss_;
     // Counters.
-    // duplicates: the same packet again (sent to several of our addresses, or resent).
+    // duplicates: the same packet again (resent while the first copy was still on its way).
     std::atomic<uint64_t> packets_{0}, duplicates_{0}, late_{0}, early_{0}, rejected_{0}, missing_{0}, jumps_{0};
     ErrorWindow error_;
+    // Needed Response time per packet: arrival after capture, plus how far
+    // ahead of the speaker the output reads (render_lead_ns_). 1 ms bins.
+    static constexpr int ResponseBins = 4000;
+    std::atomic<int64_t> render_lead_ns_{0};
+    std::unique_ptr<std::atomic<uint32_t>[]> response_{new std::atomic<uint32_t>[ResponseBins]()};
+    std::atomic<int64_t> response_sum_ns_{0};
 };
 }  // namespace ba

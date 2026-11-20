@@ -104,8 +104,6 @@ def catalog(product):
             if p.name == 'desktop-web-instances-smoke.py':
                 required.append(product/'builds/WebApp')
             variants = [('default', [])]
-            if p.name == 'session-time-smoke.py':
-                variants.append(('production cadence', ['--production-cadence']))
             for name, args in variants:
                 result.append(Test(f'{root.name}/{relative} [{name}]', command+args,
                     p.parent if p.name.startswith('test_') else root, platform, tuple(required), modules, ()))

@@ -1,0 +1,35 @@
+%% Local publication API. Remote discovery/subscription belongs to Session control.
+-module(ba_audio).
+-export([publish/2,unpublish/1,rebind/2,sources/0,describe/1,validate_offer/1]).
+publish(Offer0,undefined) -> publish(Offer0,self());
+publish(Offer0,Owner) when is_pid(Owner),node(Owner)=:=node() ->
+    Offer = case maps:is_key(source_key,Offer0) of
+        true -> Offer0;false -> Offer0#{source_key => maps:get(name,Offer0,<<>>)}
+    end,
+    case validate_offer(Offer) of
+        ok -> with_runtime(fun() ->
+            case ba_audio_sup:start_source({Offer,Owner}) of
+                {ok,Pid} ->
+                    case ba_audio_receiver:register_source(Pid) of
+                        ok -> {ok,Pid};Error -> gen_server:stop(Pid),Error
+                    end;
+                Error -> Error
+            end
+        end);
+        Error -> Error
+    end.
+unpublish(Source) when node(Source)=:=node() -> gen_server:stop(Source).
+rebind(Source,Clock) when node(Source)=:=node() -> gen_server:call(Source,{rebind,Clock}).
+sources() ->
+    case ba_session_scope:whereis(ba_audio_sup) of undefined -> [];_ ->
+        [P || {{source,_},P,_,_} <- supervisor:which_children(ba_session_scope:ref(ba_audio_sup)),is_pid(P)] end.
+describe(Source) when is_pid(Source),node(Source)=:=node() -> gen_server:call(Source,describe).
+with_runtime(Fun) -> case ba_audio_sup:ensure_started() of ok -> Fun();Error -> Error end.
+validate_offer(#{name := Name,source_key := Key,profiles := #{channel := D} = Profiles})
+        when is_binary(Name),byte_size(Name)>0,byte_size(Name)=<128,
+             is_binary(Key),byte_size(Key)>0,byte_size(Key)=<128,map_size(Profiles)=:=1 ->
+    try ba_stream_handler:for_descriptor(D) of
+        Handler -> case Handler:validate_descriptor(channel,D) of ok -> ok;_ -> {error,unsupported_collection_format} end
+    catch error:function_clause -> {error,unsupported_collection_format} end;
+validate_offer(_) -> {error,invalid_offer}.
+

@@ -60,14 +60,12 @@ def main():
                     time.sleep(.05)
             url = f'ws://127.0.0.1:{port}/relay/v1'
             a = device('creator')
-            a.request('clock_prepare',interval_ms=1000,samples=2)
             assert a.request('create', desks=[url])['ok']
             control.wait(a, lambda s: s['relay']['desks'][url]['connected'])
             holds(a, 'grant', 'on_air', 'end_session')
             invitation = a.request('invite')['value']
             b, c = device('second'), device('third')
             for d in (b, c):
-                d.request('clock_prepare',interval_ms=1000,samples=2)
                 assert d.request('join', invitation=invitation, desk=url)['ok']
                 holds(d)
                 # Requests go to grant holders this Device is paired with now.
@@ -102,8 +100,7 @@ def main():
             holds(c)
             assert a.request('answer_on_air_requests',value='ask')['ok']
             assert b.request('request_privilege',privilege='on_air')['ok']
-            assert a.request('grant',peer=b.identity['id'],permissions=['stream_publish','time_read'])['ok']
-            assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
+            assert a.request('grant',peer=b.identity['id'],permissions=['stream_publish'])['ok']
             holds(b, 'on_air')
             assert b.request('end_session')=={'error':'end_privilege_required'}
             assert b.request('grant_privilege', peer=c.identity['id'], privilege='on_air') == {'error': 'grant_required'}

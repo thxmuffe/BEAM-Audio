@@ -5,15 +5,21 @@
 supervises; the C++ engine carries and processes the audio. No audio passes
 through Erlang. The design is in [AUDIO_ENGINE.md](../../docs/AUDIO_ENGINE.md).
 
+Three layers: `control/` decides, `engine/` executes, `adapters/` connect to the OS.
+
 | Where | What |
 | --- | --- |
-| `engine/` | the C++ engine: speaker, capture, net, timing, control terms, crash reports |
-| `adapters/macOS/` | `engine_shell.mm` (Core Audio output, system tap, test tone); `ba_mac_native_audio` (ON AIR) |
-| `adapters/iOS/` | `engine_shell.mm` (RemoteIO output, in-process engine); `IOSAudioSession.swift` (shared audio session) |
-| `src/` | Erlang: `ba_audio_engine` (one engine per Device), `ba_engine_media_session` (stream setup), subscriptions and publications |
+| `control/` | Erlang: `ba_audio_sup` (the audio supervisor of a Session) |
+| `control/engine/` | `ba_audio_engine` (owns the Device's one engine process), ICE configuration (`ba_audio_route`), child environment |
+| `control/streams/` | subscriptions and receiving, stream setup on the engine (`ba_engine_media_session`), the stream protocol |
+| `control/sources/` | publications (ON AIR) and capture: system audio and microphone |
+| `control/diagnostics/` | bounded, payload-free observations for the monitor and chat |
+| `engine/` | the C++ engine: speaker, capture, ICE, recovery, timing, control terms, crash reports |
+| `adapters/macOS/` | `engine_shell.mm` (Core Audio output, system tap, microphone, test tone) |
+| `adapters/iOS/` | `engine_shell.mm` (RemoteIO output and microphone, in-process engine); `IOSAudioSession.swift` (shared audio session) |
 
-Platforms today: Mac sends system audio (ON AIR) and plays; iPhone plays;
-Windows has no audio until its shell exists; no platform sends its microphone yet.
+Platforms today: Mac sends system audio and microphone and plays; iPhone sends
+its microphone and plays; Windows has no audio until its shell exists.
 
 ## Running and testing
 

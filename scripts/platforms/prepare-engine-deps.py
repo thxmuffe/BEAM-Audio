@@ -25,7 +25,8 @@ PLATFORMS = {
 PLATFORM_OPTIONS = {"cpptrace": {"iOS": ["-DCPPTRACE_GET_SYMBOLS_WITH_LIBDL=ON"],
                                  "iOS-sim": ["-DCPPTRACE_GET_SYMBOLS_WITH_LIBDL=ON"]}}
 
-# name: (url, sha256, cmake options). Checksums match the Homebrew formulae.
+# name: (url, sha256, cmake options). Checksums match the Homebrew formulae
+# (libjuice: the GitHub release archive as first downloaded, 2026-11-20).
 SOURCES = {
     "flac": ("https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.5.0.tar.xz",
              "f2c1c76592a82ffff8413ba3c4a1299b6c7ab06c734dee03fd88630485c2b920",
@@ -40,6 +41,10 @@ SOURCES = {
     "cpptrace": ("https://github.com/jeremy-rifkin/cpptrace/archive/refs/tags/v1.0.4.tar.gz",
                  "5c9f5b301e903714a4d01f1057b9543fa540f7bfcc5e3f8bd1748e652e24f9ea",
                  ["-DCPPTRACE_BUILD_TESTING=OFF"]),
+    # ICE, STUN and TURN (connectivity through NATs, relay fallback).
+    "libjuice": ("https://github.com/paullouisageneau/libjuice/archive/refs/tags/v1.7.4.tar.gz",
+                 "95c088862aa1b88b73d62aa99577135010eb768fcafb252d13aa85a8515ef798",
+                 ["-DNO_TESTS=ON", "-DNO_SERVER=ON"]),
     "nlohmann-json": ("https://github.com/nlohmann/json/archive/refs/tags/v3.12.0.tar.gz",
                       "4b92eb0c06d10683f7447ce9406cb97cd4b453be18d7279320f7b2f025c10187",
                       ["-DJSON_BuildTests=OFF", "-DJSON_Install=ON"]),

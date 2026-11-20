@@ -60,7 +60,7 @@ with `beamaudio-buffee-control/v1:`. The body has these exact fields:
 | `capabilities.read` | Empty object. A `capabilities_read` grant. |
 | `capabilities.reply` | Exact Handler instance/revision, plus optional name, audio states and consented diagnostics ([DEVICE_HANDLER.md](DEVICE_HANDLER.md)). Must match a pending capability query. |
 | `capabilities.error` | `reason`: `forbidden` or `unavailable`. Matching pending capability query. |
-| `time.message` | Exact timestamp/Offset schemas in the [Time guide](BUFFEE_TIME.md); separate time_read/offset_write grants and correlated authority replies. |
+| ~~`time.message`~~ | Removed 2026-11-20: every Device reads UTC itself and the Response time is in the signed statement ([Session time](SESSION_TIME.md)) |
 | `stream.message` | Exact flat catalogue/subscription/SDP/ICE schemas in the [stream guide](BUFFEE_STREAMS.md); requests require separate stream grants, responses must match a local attempt. |
 | `session.request` | `kind` plus exact fields: `privilege_release` (`privilege`), `rename_request` (`name`, needs on_air), `remove_request` (`device`, needs end_session), `ended` (needs end_session), `policy` (`signer`, signed `state`), `board` (`entries`: up to 6 signed board entries by ID), `note` (`id`, signed gossip `packet`). |
 

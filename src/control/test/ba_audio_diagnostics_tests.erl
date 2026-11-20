@@ -8,21 +8,20 @@ projection_exposes_existing_failures_without_payloads_test() ->
         subscriptions => #{a => #{transport => Transport,pcm => <<"SECRET">>}},
         mixer => #{rendered => 15,dropped => 3,queued_blocks => 4,clipped_frames => 0,output_stop_pending => true,
             diagnostics => #{counts => #{missed_packet_target => 3},last_error => missed_packet_target}}},
-    Clock=#{state => synchronized,remaining_correction_ns => -1000,
-        filter_reset_reason => network_changed,filter_reset_count => 3,
-        filtered_utc_time => 1794257201412688917,offset_policy => #{offset_ms => 1000,ready => true}},
+    Clock=#{state => synchronized,remaining_correction_ns => -1000,source => ntp,steps => 1,
+        utc_time_ns => 1794257201412688917,offset_policy => #{offset_ms => 1000,ready => true,measured_ms => 180}},
     D=ba_audio_diagnostics:snapshot(Audio,Clock),
     ?assertEqual(ok,ba_audio_diagnostics:validate(D)),
     ?assertEqual(3,maps:get(<<"mixer.failure.missed_packet_target">>,D)),
     ?assertEqual(true,maps:get(<<"mixer.output_stop_pending">>,D)),
     ?assertEqual(2,maps:get(<<"transport.failure.invalid_timing">>,D)),
     ?assertEqual(20,maps:get(<<"transport.received">>,D)),
-    ?assertEqual(<<"network_changed">>,maps:get(<<"clock.filter_reset_reason">>,D)),
-    ?assertEqual(3,maps:get(<<"clock.filter_reset_count">>,D)),
+    ?assertEqual(<<"ntp">>,maps:get(<<"clock.source">>,D)),
+    ?assertEqual(180,maps:get(<<"clock.measured_ms">>,D)),
     ?assertEqual(-1000,maps:get(<<"clock.remaining_correction_ns">>,D)),
     ?assertEqual(<<"synchronized">>,maps:get(<<"clock.state">>,D)),
     ?assertEqual(nomatch,binary:match(iolist_to_binary(json:encode(D)),<<"SECRET">>)),
-    ?assertNot(maps:is_key(<<"clock.filtered_utc_time">>,D))
+    ?assertNot(maps:is_key(<<"clock.utc_time_ns">>,D))
     end).
 
 subscription_intent_does_not_imply_open_media_test() ->
@@ -46,15 +45,6 @@ wire_rejects_unbounded_or_nested_diagnostics_test() ->
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"mixer.dropped">> => 9007199254740992})),
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"secret">> => <<"private">>})),
     ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"clock.state">> => <<27,"[2J">>})).
-
-raw_clock_offset_retains_nanoseconds_as_a_canonical_string_test() ->
-    ba_test_consent:with(#{calibrate_speaker => true},fun() ->
-    D=ba_audio_diagnostics:snapshot(#{},#{raw_offset_ns => <<"2371425727177476982">>,estimate_quality => provisional}),
-    ?assertEqual(<<"2371425727177476982">>,maps:get(<<"clock.raw_offset_ns">>,D)),
-    ?assertEqual(<<"provisional">>,maps:get(<<"clock.estimate_quality">>,D)),
-    ?assertEqual(ok,ba_audio_diagnostics:validate(D)),
-    ?assertException(error,_,ba_audio_diagnostics:validate(#{<<"clock.raw_offset_ns">> => <<"01">>}))
-    end).
 
 %% Inspection follows calibration consent; without it no work is done and no
 %% stale levels are reported.

@@ -2,7 +2,8 @@
 // own ei library (erl_interface), as the OTP interoperability guide recommends
 // for port programs. Erlang sends term_to_binary(Map); replies decode with
 // binary_to_term. Maps with atom keys become objects, binaries strings, lists
-// and tuples arrays; true/false are booleans and undefined is null.
+// (including small-integer lists the format packs as strings) and tuples
+// arrays; true/false are booleans and undefined is null.
 #include <ei.h>
 
 #include <stdexcept>
@@ -53,10 +54,15 @@ json decode_term(const char *buf, int *index) {
             if (ei_decode_binary(buf, index, s.data(), &length)) bad("binary");
             return s;
         }
+        case ERL_STRING_EXT: {  // how the external format packs a list of small integers, e.g. [101,102]
+            std::string bytes(size_t(size) + 1, '\0');
+            if (ei_decode_string(buf, index, bytes.data())) bad("string");
+            json list = json::array();
+            for (int i = 0; i < size; ++i) list.push_back(int(uint8_t(bytes[size_t(i)])));
+            return list;
+        }
         case ERL_NIL_EXT:
-        case ERL_LIST_EXT:
-        case ERL_STRING_EXT: {
-            if (type == ERL_STRING_EXT) bad("charlist; send binaries");
+        case ERL_LIST_EXT: {
             int arity = 0;
             if (ei_decode_list_header(buf, index, &arity)) bad("list");
             json list = json::array();

@@ -46,7 +46,7 @@ owner_name_in_connection() ->
     after sys:replace_state(ba_session,fun(_) -> Original end) end.
 
 crash_notice_does_not_block_supervision() ->
-    ok=ba_session:create(<<"Crash notice test">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),
+    ok=ba_session:create(<<"Crash notice test">>,[<<"ws://127.0.0.1:4000/relay/v1">>],undefined),
     Chat=whereis(ba_session_chat),
     {ok,Child}=supervisor:start_child(ba_device_sup,
         #{id => ba_crash_test_child,start => {?MODULE,crash_child,[]},restart => temporary}),
@@ -73,12 +73,12 @@ idle_and_lifecycle() ->
     ?assertEqual({error, no_active_session}, ba_session:end_session()),
     ?assertEqual(ok, ba_session:leave()),
     URL = <<"ws://127.0.0.1:4000/relay/v1">>,
-    ?assertEqual(ok, ba_session:create(<<"Living Room Jam">>, [URL])),
+    ?assertEqual(ok, ba_session:create(<<"Living Room Jam">>,[URL],undefined)),
     Status = ba_session:status(),
     ?assertEqual([],[<<"end_session">>,<<"grant">>,<<"on_air">>]--maps:get(privileges,Status)),
     ?assertEqual(<<"Living Room Jam">>, maps:get(name, Status)),
     ?assertEqual(authorized, maps:get(state, Status)),
-    ?assertEqual({error, already_in_session}, ba_session:create(<<"Another">>, [URL])),
+    ?assertEqual({error, already_in_session}, ba_session:create(<<"Another">>,[URL],undefined)),
     FriendId = binary:copy(<<"1">>, 64),
     ok = ba_contacts:put(FriendId, <<"Alice">>),
     {ok, Links} = ba_session:invite([FriendId], 3600),
@@ -108,7 +108,7 @@ bridge_json_protocol() ->
     ?assertEqual(#{<<"state">> => <<"idle">>}, maps:get(<<"session">>, SnapRes)).
 
 ending_needs_its_own_privilege() ->
-    ok=ba_session:create(<<"End privilege">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),
+    ok=ba_session:create(<<"End privilege">>,[<<"ws://127.0.0.1:4000/relay/v1">>],undefined),
     Self=maps:get(id,ba_session:status()),End=ba_session_privileges:wire(end_session),
     ok=ba_session_membership:take_privilege(Self,End),
     ?assertNot(lists:member(<<"end_session">>,maps:get(privileges,ba_session:status()))),
@@ -118,7 +118,7 @@ ending_needs_its_own_privilege() ->
     ok=ba_session_membership:request_privilege(End),
     ok=ba_session:end_session(),?assertEqual(#{state => idle},ba_session:status()).
 leave_and_resume_owner() ->
-    ok=ba_session:create(<<"Remember ownership">>,[<<"ws://127.0.0.1:4000/relay/v1">>]),
+    ok=ba_session:create(<<"Remember ownership">>,[<<"ws://127.0.0.1:4000/relay/v1">>],undefined),
     Before=ba_session:status(),{ok,Link}=ba_session_membership:invite(null),
     ok=ba_session:leave(),ok=ba_session:leave(),?assertEqual(#{state => idle},ba_session:status()),
     #{config := #{mode := join,invitation := Link}}=ba_device_store:load(session_connection,undefined),

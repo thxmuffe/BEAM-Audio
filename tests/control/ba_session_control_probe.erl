@@ -73,7 +73,7 @@ command(#{<<"op">> := <<"create">>,<<"desks">> := URLs},_,_) ->
 command(#{<<"op">> := <<"join">>,<<"invitation">> := Link,<<"desk">> := Desk},_,_) ->
     start(#{mode => join,invitation => Link,desk => Desk});
 command(#{<<"op">> := <<"create_session">>,<<"name">> := Name,<<"desks">> := URLs},_,_) ->
-    ensure_started(),result(ba_session:create(Name,URLs));
+    ensure_started(),result(ba_session:create(Name,URLs,undefined));
 command(#{<<"op">> := <<"join_session">>,<<"invitation">> := Link},_,_) ->
     ensure_started(),result(ba_session:join(Link));
 command(#{<<"op">> := <<"invite_session">>,<<"selection">> := Sel},_,_) ->
@@ -169,18 +169,7 @@ command(#{<<"op">> := <<"clock_snapshot">>},_,_) -> ba_session_clock:status();
 command(#{<<"op">> := <<"clock_audio_ready">>},_,_) ->
     #{subscription => ba_subscription:clock_ready(ba_session_clock:status(),undefined),
       presentation => case ba_session_clock:presentation([]) of {ok,_} -> true;_ -> false end};
-command(#{<<"op">> := <<"clock_prepare">>,<<"interval_ms">> := I,<<"samples">> := Count},_,_) ->
-    application:load(ba_core),application:set_env(ba_core,clock_reference,system),
-    application:set_env(ba_core,clock_sample_interval_ms,I),application:set_env(ba_core,clock_filter_samples,Count),
-    #{ok => true};
-command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value,<<"revision">> := Rev},_,_) ->
-    result(ba_session_clock:set_offset(Value,Rev));
-command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value},_,_) -> result(ba_session_clock:set_offset(Value));
-command(#{<<"op">> := <<"offset_automatic">>,<<"enabled">> := Enabled},_,_) -> result(ba_session_clock:set_automatic(Enabled));
-command(#{<<"op">> := <<"offset_required">>,<<"offset_ms">> := Value,<<"revision">> := Rev},_,_) ->
-    ba_session_clock:require_offset(Value,Rev),#{ok => true};
-command(#{<<"op">> := <<"clock_resync">>},_,_) -> result(ba_session_clock:resync());
-command(#{<<"op">> := <<"clock_reference">>},_,_) -> result(ba_session_clock:set_reference(system));
+command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value},_,_) -> result(ba_response_time:set(Value));
 command(#{<<"op">> := <<"clock_restart">>},_,_) ->
     restart(ba_session_clock),#{ok => true,initial => ba_session_clock:status()};
 command(#{<<"op">> := <<"control_reset">>},_,_) -> restart(ba_session_control),#{ok => true};

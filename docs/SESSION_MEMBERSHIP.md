@@ -39,7 +39,7 @@ On the wire each admitted Device has one sorted permission list. `grant` is
 spelled `owner` and `on_air` is spelled `stream_publish` there; these are signed
 constants. `end_session` was added on 2026-11-15, so every Device in a Session
 must run a build that knows it. Scoped operation permissions (`status_read`,
-`time_read` and so on) share that list, and local Contracts/consent remain
+`stream_read` and so on; `time_read` and `offset_write` were removed 2026-11-20) share that list, and local Contracts/consent remain
 independent. Sources other than the microphone need `on_air`, checked both when
 registering a local Source and when accepting a peer catalogue. Microphone
 contribution needs local consent only. No privilege can remotely turn on a

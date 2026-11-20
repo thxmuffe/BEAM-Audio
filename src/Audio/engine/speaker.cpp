@@ -1,5 +1,6 @@
 #include "speaker.h"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -57,7 +58,7 @@ std::vector<uint8_t> flac_header(uint32_t rate) {
 }
 }  // namespace
 
-Speaker::Speaker(const json &c, const Clock &clock) {
+Speaker::Speaker(const json &c, const Clock &clock) : clock_(clock) {
     ssrc_ = c.at("ssrc"), rate_ = c.at("rate");
     anchor_ = c.at("anchor_ns").get<int64_t>();
     delay_.store(c.at("delay_ms").get<int64_t>() * 1000000);
@@ -86,7 +87,7 @@ Speaker::~Speaker() {
     if (srtp_) srtp_dealloc(srtp_);
 }
 
-void Speaker::receive(uint8_t *packet, int size, const sockaddr_in6 &from) {
+void Speaker::receive(uint8_t *packet, int size, ConnId from) {
     const srtp_err_status_t status = srtp_unprotect(srtp_, packet, &size);
     if (status == srtp_err_status_replay_fail || status == srtp_err_status_replay_old) return void(++duplicates_);
     if (status != srtp_err_status_ok) return void(++rejected_);
@@ -95,11 +96,18 @@ void Speaker::receive(uint8_t *packet, int size, const sockaddr_in6 &from) {
     // Authenticated by SRTP: this is where the stream comes from now (it may
     // change with the sender's network), and its sequence shows what is lost.
     source_ = from, has_source_ = true;
-    track(rtp.seq);
+    loss_.received(rtp.seq);
     // Extend the 32-bit timestamp to the stream position nearest the reader.
     const int64_t read = read_pos_.load(std::memory_order_acquire);
     const int64_t pos = read + int32_t(rtp.timestamp - uint32_t(read));
     if (pos < 0 || pos % Block) return void(++rejected_);
+    // The Response time this packet needed, late or not: its last sample was
+    // captured at anchor + (pos + Block) / rate.
+    if (int64_t now = 0; clock_.map(host_now_ns(), now)) {
+        const int64_t need = now - anchor_ - (pos + Block) * int64_t(1000000000) / rate_ + render_lead_ns_.load(std::memory_order_relaxed);
+        response_[std::clamp<int64_t>(need / 1000000, 0, ResponseBins - 1)].fetch_add(1, std::memory_order_relaxed);
+        response_sum_ns_.fetch_add(std::max<int64_t>(need, 0), std::memory_order_relaxed);
+    }
     if (pos + Block <= read) return void(++late_);
     if (pos >= read + int64_t(RingFrames) - 2 * Block) return void(++early_);
     ++packets_;
@@ -115,45 +123,9 @@ void Speaker::receive(uint8_t *packet, int size, const sockaddr_in6 &from) {
     if (FLAC__stream_decoder_get_state(decoder_) != FLAC__STREAM_DECODER_SEARCH_FOR_FRAME_SYNC) FLAC__stream_decoder_flush(decoder_);
 }
 
-void Speaker::track(uint16_t seq) {
-    if (highest_seq_ < 0) return void(highest_seq_ = seq);
-    const int64_t ext = highest_seq_ + int16_t(uint16_t(seq - uint16_t(highest_seq_)));
-    if (ext > highest_seq_) {
-        for (int64_t s = std::max(highest_seq_ + 1, ext - 64); s < ext; ++s) lost_.push_back({s, {}, 0});
-        highest_seq_ = ext;
-        while (lost_.size() > 256) lost_.pop_front();
-    } else {
-        for (auto it = lost_.begin(); it != lost_.end(); ++it)
-            if (it->seq == ext) {
-                lost_.erase(it);
-                ++recovered_;
-                break;
-            }
-    }
-}
-
-void Speaker::send_nacks(int socket) {
-    if (!has_source_ || lost_.empty()) return;
-    const auto now = std::chrono::steady_clock::now();
-    uint8_t packet[10 + 2 * 64];
-    memcpy(packet, "BANK", 4);
-    for (int i = 0; i < 4; ++i) packet[4 + i] = uint8_t(ssrc_ >> (24 - 8 * i));
-    uint16_t count = 0;
-    for (auto it = lost_.begin(); it != lost_.end() && count < 64;) {
-        if (it->tries >= 3) {
-            it = lost_.erase(it);
-            continue;
-        }
-        if (it->tries == 0 || now - it->asked >= std::chrono::milliseconds(30)) {
-            packet[10 + 2 * count] = uint8_t(it->seq >> 8), packet[11 + 2 * count] = uint8_t(it->seq);
-            ++count, ++it->tries, it->asked = now;
-        }
-        ++it;
-    }
-    if (!count) return;
-    packet[8] = uint8_t(count >> 8), packet[9] = uint8_t(count);
-    sendto(socket, packet, 10 + 2 * size_t(count), 0, reinterpret_cast<const sockaddr *>(&source_), sizeof(source_));
-    ++nacks_;
+void Speaker::send_nacks(Ice &ice) {
+    uint8_t packet[NackHeader + 2 * MaxNack];
+    if (const size_t size = has_source_ ? loss_.due(ssrc_, packet) : 0) ice.send(source_, packet, size);
 }
 
 // Copies frames [pos, pos + n) from the ring; absent blocks play as silence.
@@ -175,6 +147,7 @@ void Speaker::read_ring(int64_t pos, long n, float *dest) {
 }
 
 void Speaker::render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate) {
+    if (int64_t now = 0; clock_.map(host_now_ns(), now)) render_lead_ns_.store(present - now, std::memory_order_relaxed);
     // Stream sample n plays at anchor + delay + n / rate.
     const double desired = double(present - anchor_ - delay_.load(std::memory_order_relaxed)) * rate_ / 1e9;
     const double base = double(out_rate) / double(rate_);
@@ -219,10 +192,31 @@ void Speaker::render(float *mix, uint32_t frames, int64_t present, uint32_t out_
     read_pos_.store(chunk_start_ + chunk_used_, std::memory_order_release);
 }
 
+json Speaker::take_response() {
+    uint64_t count = 0;
+    int max = -1;
+    std::vector<uint32_t> bins(ResponseBins);
+    for (int i = 0; i < ResponseBins; ++i)
+        if ((bins[size_t(i)] = response_[i].exchange(0, std::memory_order_relaxed))) count += bins[size_t(i)], max = i;
+    const int64_t sum = response_sum_ns_.exchange(0, std::memory_order_relaxed);
+    json out = {{"ssrc", ssrc_}, {"count", count}};
+    if (!count) return out;
+    // The smallest Response time that would have played this share of packets in time.
+    const auto percentile = [&](uint64_t share) {
+        uint64_t seen = 0;
+        for (int i = 0; i < ResponseBins; ++i)
+            if ((seen += bins[size_t(i)]) * 100 >= count * share) return i + 1;
+        return ResponseBins;
+    };
+    out["mean_ms"] = int64_t(sum / int64_t(count) / 1000000 + 1), out["p85_ms"] = percentile(85), out["p99_ms"] = percentile(99),
+    out["max_ms"] = max + 1;
+    return out;
+}
+
 json Speaker::status() {
     return {{"ssrc", ssrc_},       {"packets", packets_.load()}, {"duplicates", duplicates_.load()},        {"late", late_.load()},
             {"early", early_.load()}, {"rejected", rejected_.load()},      {"missing_frames", missing_.load()},
-            {"jumps", jumps_.load()}, {"nacks", nacks_.load()}, {"recovered", recovered_.load()},
+            {"jumps", jumps_.load()}, {"nacks", loss_.nacks()}, {"recovered", loss_.recovered()},
             {"error", error_.take()}};
 }
 }  // namespace ba

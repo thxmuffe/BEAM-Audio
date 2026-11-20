@@ -35,12 +35,13 @@ stream_key_wraps_for_one_receiver_and_attempt_test() ->
 engine_signals_are_validated_test() ->
     Base=#{<<"source">> => <<"music">>,<<"incarnation">> => binary:copy(<<"A">>,32),<<"attempt">> => binary:copy(<<"B">>,32)},
     Public=binary:encode_hex(crypto:strong_rand_bytes(32)),
-    Endpoint=Base#{<<"kind">> => <<"signal.endpoint">>,<<"public">> => Public,<<"addresses">> => <<"192.168.1.5/40000">>},
+    Ice = <<"a=ice-ufrag:abcd\r\na=ice-pwd:0123456789abcdefghijkl\r\na=candidate:1 1 UDP 2122317823 192.168.1.5 40000 typ host\r\n">>,
+    Endpoint=Base#{<<"kind">> => <<"signal.endpoint">>,<<"public">> => Public,<<"ice">> => Ice},
     ?assertEqual(ok,ba_audio_stream_protocol:validate(Endpoint)),
-    ?assertError(_,ba_audio_stream_protocol:validate(Endpoint#{<<"addresses">> => <<"192.168.1.5/70000">>})),
+    ?assertError(_,ba_audio_stream_protocol:validate(Endpoint#{<<"ice">> => <<"no credentials">>})),
     Stream=Base#{<<"kind">> => <<"signal.stream">>,<<"public">> => Public,<<"wrapped">> => binary:encode_hex(crypto:strong_rand_bytes(46)),
         <<"ssrc">> => 1234,<<"rate">> => 48000,<<"anchor_ns">> => <<"1795190853785180625">>,
-        <<"addresses">> => <<"91.145.90.96/61234">>},
+        <<"ice">> => Ice},
     ?assertEqual(ok,ba_audio_stream_protocol:validate(Stream)),
     ?assertError(_,ba_audio_stream_protocol:validate(Stream#{<<"key">> => <<"plain">>})),
     ?assertError(_,ba_audio_stream_protocol:validate(Stream#{<<"anchor_ns">> => <<"soon">>})).

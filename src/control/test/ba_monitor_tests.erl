@@ -1,23 +1,23 @@
 -module(ba_monitor_tests).
 -include_lib("eunit/include/eunit.hrl").
 
-render_master_clock_value_age_and_staleness_test() ->
-    Id=binary:copy(<<"A">>,64),
-    View=#{<<"session">> => #{},<<"state">> => <<"authorized">>,
-        <<"devices">> => [#{<<"id">> => Id,<<"name">> => <<"Broadcast Mac">>,<<"state">> => <<"ok">>}]},
-    Reading=#{<<"device">> => Id,<<"utc_time_ns">> => <<"1794941608123456789">>,<<"age_ms">> => 250,<<"state">> => <<"fresh">>},
-    Render=fun(R) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => #{<<"master_clock">> => R}})) end,
-    ?assertNotEqual(nomatch,binary:match(Render(Reading),
-        <<"Master clock: 2026-11-17T18:53:28.123Z | Broadcast Mac | sample age: 250 ms">>)),
-    ?assertNotEqual(nomatch,binary:match(Render(Reading#{<<"state">> := <<"stale">>}),<<"250 ms (stale)">>)),
-    ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Master clock: N/A">>)).
+render_utc_clock_source_and_age_test() ->
+    View=#{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => []},
+    Clock=#{<<"state">> => <<"synchronized">>,<<"utc_time_ns">> => 1794941608123456789,<<"age_ns">> => 12000000000,
+        <<"source">> => <<"ntp">>,<<"reference">> => <<"ntp.metas.ch">>,<<"last_error">> => null},
+    Render=fun(C) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => C})) end,
+    ?assertNotEqual(nomatch,binary:match(Render(Clock),<<"Clock: 2026-11-17T18:53:28.123Z UTC | ntp.metas.ch | read 12 s ago">>)),
+    ?assertNotEqual(nomatch,binary:match(Render(Clock#{<<"source">> := <<"system">>}),<<"| system clock |">>)),
+    ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Clock: N/A">>)).
 
 render_shared_response_time_and_readiness_test() ->
     View=#{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => []},
     Render=fun(P) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => #{<<"offset_policy">> => P}})) end,
     ?assertNotEqual(nomatch,binary:match(Render(#{<<"offset_ms">> => 150,<<"ready">> => true}),<<"Response time: 150 ms\n">>)),
     ?assertNotEqual(nomatch,binary:match(Render(#{<<"offset_ms">> => 800,<<"ready">> => false}),<<"Response time: 800 ms (not ready)">>)),
-    ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Response time: N/A">>)).
+    ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Response time: N/A">>)),
+    ?assertNotEqual(nomatch,binary:match(Render(#{<<"offset_ms">> => 150,<<"ready">> => true,<<"measured_ms">> => 92,<<"measured">> => [80,104]}),
+        <<"Response time: 150 ms  measured: 92 ms average of 2 Devices">>)).
 
 render_missing_levels_is_not_silence_test() ->
     Id=binary:copy(<<"A">>,64),Entry=#{<<"state">> => <<"running">>,<<"consent">> => true,<<"available">> => true},

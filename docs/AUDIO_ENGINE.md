@@ -13,7 +13,7 @@ sample or encoded packet passes through Erlang; no decision is made in C++.
 ```
 UI (Swift / web)            commands and state only
         │
-Erlang/OTP (src/Audio/src, src/control)
+Erlang/OTP (src/Audio/control, src/control)
   trust, keys, peers, routes, network changes, Session clock,
   stream anchors, supervision, crash reporting to chat
         │  control protocol (length-prefixed messages)
@@ -33,13 +33,16 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
 
 ### Erlang: decides
 
-- **Network setup.** Chooses local ports, peers and routes; runs ICE-style
-  connectivity: asks the engine to send a STUN probe from its media socket and
-  receives the result. Erlang owns the state machine; the engine owns the socket.
-- **Network change.** Watches interfaces (Wi-Fi → mobile data, address changes)
-  and tells the engine to re-probe or re-route. Streams are identified by SSRC
-  and SRTP key, not by address, so authenticated packets from a peer's new
-  address keep playing; the engine reports the change as an event.
+- **Network setup.** Decides who connects to whom: one ICE connection per
+  sender–receiver pair, which it names and opens in the engine, configures
+  (STUN, and TURN relays; host names resolved in Erlang, `ba_audio_route`)
+  and whose descriptions it carries in the signed setup messages
+  (`signal.endpoint`, `signal.stream`). ICE itself (candidates, checks, path
+  choice, NAT traversal, relay) runs in libjuice in the engine.
+- **Network change.** Notices new addresses (a 2 s check, and at once on the
+  iPhone's path notifications) and starts a new connection (ICE restart); the
+  sender follows. Streams are identified by SSRC and SRTP key, so playback
+  continues from the same buffer.
 - **Keys.** Session control payloads are visible to the Reception, so no key
   ever travels in them. Each side puts an ephemeral X25519 public key in its
   signed stream setup; Erlang derives the 30-byte SRTP master key and salt with
@@ -51,9 +54,9 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
   position 0 and the playback delay. With that, every sample has a known play
   time; no RTCP sender reports are needed for timing.
 - **Lifecycle.** One OTP process owns each engine; the engine is linked to it.
-  Commands: `start_speaker`, `stop_speaker`, `start_mic`, `stop_mic`,
-  `start_capture`, `stop_capture`, plus `route`, `probe`, `keys`, `clock_map`,
-  `volume`, `status`.
+  Commands: `start_speaker`, `stop_speaker`, `start_capture` / `stop_capture`
+  (system audio, microphone; several at once), `connect`, `remote`,
+  `disconnect`, `route`, `clock_map`, `volume`, `delay`, `status`.
 - **Crashes.** Let it crash. The supervisor restarts the engine; the crash
   report, with stack trace, is posted to Session chat.
 
@@ -64,10 +67,11 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
 | UDP sockets, batched receive | OS sockets (`recvmmsg` where available) | socket loop |
 | Encryption | **libsrtp** | — |
 | Codec | **libFLAC** (lossless, owner choice for development) | — |
-| Packet recovery | NACK/RTX (RFC 4588): reuse an existing implementation if one fits outside its framework, else small own | possibly |
+| Connectivity | **libjuice** (MPL-2.0): ICE, STUN, TURN | thin wrapper (`ice.*`) |
+| Packet recovery | — | NACK and resend from history (`recovery.*`, ~80 lines) |
 | Buffer | — | ring buffer indexed by RTP timestamp; a late or missing slot fades to silence and resumes in sync |
 | Timing | — | compare each sample's Session play time with the callback's hardware host time; small error → resampler ratio, large error → one skip/insert |
-| Resampling | **libsoxr** or speexdsp (variable ratio) | — |
+| Resampling | **libsamplerate** (variable ratio) | — |
 | Mixing | — | sum with gains |
 | Crash traces | **cpptrace** (MIT) | crash handler |
 
@@ -111,12 +115,14 @@ than behind a portable audio library.
 | `speaker.*` | receive: SRTP, FLAC decode, timestamp ring, render with drift correction |
 | `capture.*` | send: capture ring, resample onto Session time, FLAC encode, SRTP send |
 | `timing.h` | clock mapping, servo, error summary |
-| `net.*` | UDP socket, peers, SRTP sessions, RTP header |
+| `net.*` | packet formats: SRTP sessions, RTP header |
+| `ice.*` | connectivity: ICE connections (libjuice), events to Erlang, inbound queue |
+| `recovery.*` | lost-packet recovery: loss tracking, NACK, resend history |
 | `term.*` | Erlang external term format via OTP's `ei` |
 | `crash.cpp` | crash reports (cpptrace) |
 
 The macOS shell is `src/Audio/adapters/macOS/engine_shell.mm`; the Erlang owner
-is `src/Audio/src/ba_audio_engine.erl`. Build with
+is `src/Audio/control/engine/ba_audio_engine.erl`. Build with
 `scripts/platforms/macOS/build-engine.sh` (pinned libraries via
 `prepare-engine-deps.py`).
 
@@ -164,7 +170,7 @@ including the iPhone, because they arrive through the shared chat.
 | Requirement | How |
 | --- | --- |
 | All platforms | one C++ engine; small native shell per platform |
-| Wi-Fi ↔ mobile data | address-independent streams, Erlang re-probes on interface change; TURN relay only if measurements need it |
+| Wi-Fi ↔ mobile data | ICE restart on address change; TURN relay for symmetric carrier NAT (measured 2026-11-20; hosted TURN, account pending) |
 | Fast networks | one packet thread, batched receive, lock-free handoff to the callback; no Erlang in the packet path |
 | Our choice of parts | codec, encryption, recovery, resampler and DSP sit behind internal function boundaries; no plugin system until needed |
 | Visible failures | let it crash, full trace in chat and in `builds/live/chat.log` |

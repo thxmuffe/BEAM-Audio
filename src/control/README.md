@@ -4,6 +4,21 @@ The runtime uses local OTP supervision and authenticated scoped messages.
 Ordinary Devices never obtain Distributed Erlang connectivity. Devices hold
 `grant`, `on_air` and `end_session` privileges, independent of process placement.
 
+Sources are grouped by area under `src/` (rebar3 compiles them recursively;
+module names do not depend on folders):
+
+| Folder | Holds |
+| --- | --- |
+| `src/` | the application, top supervisor, runtime facade, settings, app bridges (Mac stdio, iOS loopback) |
+| `device/` | the Device: API, configuration and consent, handler, requests, identity store, contacts |
+| `session/` | Sessions: lifecycle, control links and protocol, membership and privileges, passport, chat, gossip |
+| `reception/` | Reception (desk) connections and routing |
+| `clock/` | the Session clock, its filter and mapping, time protocol, SNTP |
+| `helpers/` | small shared helpers (hex, diagnostics counters) |
+| `cli/` | the command-line tool |
+
+Audio control (the Erlang side of audio) lives in `../Audio/control`.
+
 Compile with `rebar3 compile` here. Run repository EUnit checks with `rebar3 eunit`
 from this directory; see [builds](../../docs/BUILDING.md). Use private persistent `BA_STATE_DIR` and
 `BA_IDENTITY_SEED` for a stable Device. Never print or share identity seeds.

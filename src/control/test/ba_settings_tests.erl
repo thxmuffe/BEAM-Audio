@@ -8,21 +8,21 @@ saved_as_text_and_restored_test() -> fixture(fun(Dir) ->
     {ok,Terms}=file:consult(filename:join(Dir,"settings.config")),
     ?assertEqual(#{auto_accept => true},proplists:get_value(automation,Terms)),
     restart(),
-    ?assertEqual(<<"Living room">>,ba_settings:get(name)),
+    ?assertEqual(<<"Living room">>,ba_settings:get(name,undefined)),
     ?assertEqual(43,ba_settings:update(count,fun(N) -> N+1 end,42))
 end).
 
 %% A crash loses at most the last ?DELAY ms; an orderly stop loses nothing.
 stop_writes_pending_changes_test() -> fixture(fun(_) ->
     ok=ba_settings:put(on_air,true),gen_server:stop(ba_settings),{ok,_}=ba_settings:start_link(),
-    ?assertEqual(true,ba_settings:get(on_air))
+    ?assertEqual(true,ba_settings:get(on_air,undefined))
 end).
 
 %% A file the person broke is kept aside; the Device starts from defaults.
 unreadable_file_is_kept_aside_test() -> fixture(fun(Dir) ->
     Path=filename:join(Dir,"settings.config"),
     gen_server:stop(ba_settings),ok=file:write_file(Path,<<"{broken">>),{ok,_}=ba_settings:start_link(),
-    ?assertEqual(undefined,ba_settings:get(on_air)),
+    ?assertEqual(undefined,ba_settings:get(on_air,undefined)),
     ?assert(filelib:is_regular(Path++".broken"))
 end).
 

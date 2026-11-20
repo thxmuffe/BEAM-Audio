@@ -27,6 +27,6 @@ for SOURCE in "$ROOT"/src/Audio/engine/*.cpp "$ROOT/src/Audio/adapters/iOS/engin
   OBJECTS+=("$OBJECT")
 done
 xcrun --sdk "$SDK" libtool -static -o "$WORK/libba_audio_engine.a" "${OBJECTS[@]}" \
-  "$DEPS/lib/libFLAC.a" "$DEPS/lib/libsrtp2.a" "$DEPS/lib/libsamplerate.a" "$DEPS/lib/libcpptrace.a" "$EI/lib/libei.a" \
+  "$DEPS/lib/libFLAC.a" "$DEPS/lib/libsrtp2.a" "$DEPS/lib/libsamplerate.a" "$DEPS/lib/libjuice.a" "$DEPS/lib/libcpptrace.a" "$EI/lib/libei.a" \
   2> >(grep -v 'has no symbols' >&2)
 printf 'Built iOS audio engine: %s\n' "$WORK/libba_audio_engine.a"
