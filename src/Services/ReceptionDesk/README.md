@@ -91,11 +91,11 @@ use an equivalent HTTPS reverse proxy with WebSocket upgrades enabled.
 The shared Reception runs in Frankfurt on Render's free plan:
 https://beamaudio.onrender.com. Enter
 `wss://beamaudio.onrender.com/reception` in each native app.
-The service ID is `srv-dbq59cmgekts73anho5g`; automatic deploys are disabled.
+The service ID is `srv-dbu7fih42hec73bpsjv0`; automatic deploys are disabled.
 Deploy a committed/pushed revision with the authorized Render CLI:
 
 ```sh
-render deploys create srv-dbq59cmgekts73anho5g --wait
+render deploys create srv-dbu7fih42hec73bpsjv0 --wait
 ```
 
 Free instances can sleep after 15 minutes without inbound HTTP/WebSocket traffic;

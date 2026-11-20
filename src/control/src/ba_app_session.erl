@@ -6,8 +6,8 @@
 -endif.
 configure() ->
     case ba_settings:env("BA_PLATFORM") of
-        "mac" -> application:set_env(ba_core,restore_session_on_start,true),configure(#{platform => mac}),forget_snapshots();
-        "ios" -> application:set_env(ba_core,restore_session_on_start,true),configure(#{platform => ios}),forget_snapshots();
+        "mac" -> application:set_env(ba_core,restore_session_on_start,true),configure(#{platform => mac});
+        "ios" -> application:set_env(ba_core,restore_session_on_start,true),configure(#{platform => ios});
         %% Native AAC through ba_native_stream.exe when the host app ships it.
         "windows" -> configure(#{platform => windows}),ok=ba_windows_native_host:start();
         _ -> ok
@@ -83,16 +83,6 @@ unavailable_capabilities() ->
         true -> Adapter:unavailable();
         false -> #{}
     end.
-forget_snapshots() ->
-    %% Explicit migration: never touch Keychain identity or contacts.term.
-    case ba_settings:env("BA_STATE_DIR") of
-        false -> ok;
-        Dir -> lists:foreach(fun(Name) ->
-            case file:delete(filename:join(Dir,Name)) of ok -> ok;{error,enoent} -> ok;{error,R} -> error({snapshot_cleanup_failed,R}) end
-        end,["authority.term","policy.term","desk.term","audio_subscription.term","session_authority.term","session_member.term","saved_sessions.term","session_desks.term","session_time_policy.term",
-            "session_time_cache.term","audio_subscriptions.term","audio_subscription.term","clock_status.json"])
-    end.
-
 device_privileges() ->
     case ba_session_membership:current() of
         {ok,#{device_privileges := Held}} -> maps:map(fun(_,Wires) -> ba_session_privileges:names(Wires) end,Held);

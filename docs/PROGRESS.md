@@ -1,5 +1,53 @@
 # Current implementation and validation
 
+## Compact Session name investigation and Apple policy preservation — 2026-11-20
+
+Retried the owner's existing compact invitation with a separate, audio-disabled
+CLI Inspector. The running Windows Web Device and Inspector discovered and
+authenticated each other through public Reception. Both remained at revision 0
+with the generic name Session; the creating Device was not reachable and neither
+online Device supplied a signed copy of Gossip 1. This is no longer the deployed
+Reception protocol mismatch. The Inspector was stopped; the user's Device was
+not stopped, reconfigured or renamed.
+
+The compact v6 invitation encodes creator key, nonce and secret, not a name.
+The owner explicitly chose to keep it compact and learn the name from signed
+policy; do not add the name back to the link. Earlier v5 invitations included it.
+A fresh two-Device public CLI check confirmed signed-name propagation at revision
+1, zero rejected policies, and name retention after cold restart with the creator
+offline. No user invitation or identity was used in that separate test Session.
+
+Found a separate data-loss bug in Apple app startup: an obsolete migration deleted
+saved_sessions.term on every macOS/iOS launch, erasing current signed names and
+privileges. Removed that startup deletion routine entirely. Legacy transient
+snapshot files are not used by the current runtime; current policy memory must
+survive. Replaced the old deletion test with preservation checks for both Apple
+platforms: both failed before the fix and pass afterward. Core EUnit 183/183.
+An additional real public CLI test using iOS startup configuration exchanged a
+signed name and retained it after a cold restart with the creator offline.
+Apple native app builds/deployment were not performed on this Windows machine.
+Already erased policy cannot be recovered from the nameless link alone; it must
+arrive from a Device retaining the signed policy. No existing Session name was
+invented or overwritten during this investigation.
+
+## Matching Reception deployed to Render — 2026-11-20
+
+At the owner's request, deployed pushed commit
+`5f8d0cc4034e45ada7806a9d14e22d77a8b3e45a` with the Render CLI. Deployment
+`dep-dc02iubm8hqs739c1et0` is live on `beamaudio`, completed at 13:06:57 Helsinki
+time. The service ID in the README was stale (404); CLI service inventory verified
+the current `srv-dbu7fih42hec73bpsjv0` against its name, repository, root directory
+and public URL. Updated the README to that ID.
+
+Post-deployment public checks pass: /health, signed Ed25519 authentication for two
+disposable clients, opening/discovering both mailboxes using the renamed session
+field, and authenticated sender-to-recipient message delivery. The test used a
+random unused scope, carried no audio or user invitation, and closed both clients.
+The previous invalid_message mismatch is resolved on the public service. The two
+previous local app URLs were no longer listening, so those windows' peer/name
+state could not be verified at those addresses. Existing unit results do not
+substitute for that live app/name check.
+
 ## Public Session discovery blocked by deployed protocol mismatch — 2026-11-20
 
 Both owner's local apps reported the same Session ID and local admission, but

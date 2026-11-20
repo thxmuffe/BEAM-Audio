@@ -17,11 +17,17 @@ Gossip 1 is current after restart, including from the user-settings invitation
 alone. Current compiled core passes; the owner's running packaged app still
 needs rebuild/restart. See PROGRESS.md for exact checks and remaining limits.
 
-Public discovery blocker confirmed (2026-11-20): deployed Reception rejects the
-renamed scope field; both apps and an independent CLI Inspector discover no peers.
-Publish/deploy the matching Reception source before testing name/peer propagation.
-GitHub main remains at add951e, before the cleanup. Compact-link CLI parsing now
-loads application defaults first. See PROGRESS.md for live evidence.
+Public discovery blocker resolved (2026-11-20): deployed pushed 5f8d0cc to
+Render. Public signed authentication, two-client discovery and delivery now pass
+with the renamed session field. Verify the owner's app peer/name propagation on
+reconnection; compact links learn their names from a Device holding signed policy.
+See PROGRESS.md for the deployment and exact validation limits.
+
+Compact invitations stay nameless (owner 2026-11-20): learn the name from signed
+policy. Live CLI checks confirm discovery and name exchange after the Render fix.
+Removed Apple startup's obsolete deletion of saved signed policy; 183 core tests
+and a public iOS-configured cold-return check pass. Apple apps need rebuilding;
+already erased names require a surviving signed copy. See PROGRESS.md.
 
 ## Decisions in force
 

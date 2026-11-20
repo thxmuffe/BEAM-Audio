@@ -31,21 +31,23 @@ exclusions_are_memory_only_test() ->
     end.
 restore(Entries) -> [case V of undefined -> application:unset_env(ba_core,K);{ok,X} -> application:set_env(ba_core,K,X) end || {K,V} <- Entries],ok.
 
-ios_configuration_discards_only_old_session_snapshots_test() ->
+apple_configuration_preserves_session_memory_test_() ->
+    [?_test(apple_configuration_preserves_session_memory(Platform)) || Platform <- ["mac","ios"]].
+apple_configuration_preserves_session_memory(PlatformName) ->
     Keys=[audio_automation,audio_capture_adapter,audio_output_adapter,restore_session_on_start],
     Old=[{K,application:get_env(ba_core,K)} || K <- Keys],
     Platform=os:getenv("BA_PLATFORM"),State=os:getenv("BA_STATE_DIR"),
-    Dir=filename:join("/tmp","ba-ios-migration-"++integer_to_list(erlang:unique_integer([positive]))),
+    Dir=filename:join("/tmp","ba-apple-memory-"++integer_to_list(erlang:unique_integer([positive]))),
     ok=file:make_dir(Dir),
     try
-        [ok=file:write_file(filename:join(Dir,F),<<"keep or discard">>) || F <- ["session_member.term","contacts.term","identity.term","session_connection.term"]],
-        os:putenv("BA_PLATFORM","ios"),os:putenv("BA_STATE_DIR",Dir),
+        [ok=file:write_file(filename:join(Dir,F),<<"saved session policy">>) || F <- ["saved_sessions.term","contacts.term","identity.term","session_connection.term"]],
+        os:putenv("BA_PLATFORM",PlatformName),os:putenv("BA_STATE_DIR",Dir),
         ok=ba_app_session:configure(),
-        ?assertEqual({ok,ba_no_capture},application:get_env(ba_core,audio_capture_adapter)),
+        ?assertEqual({ok,case PlatformName of "mac" -> ba_mac_native_audio;"ios" -> ba_no_capture end},application:get_env(ba_core,audio_capture_adapter)),
         ?assertEqual({ok,true},application:get_env(ba_core,audio_automation)),
         ?assertEqual({ok,true},application:get_env(ba_core,restore_session_on_start)),
         ?assert(filelib:is_file(filename:join(Dir,"session_connection.term"))),
-        ?assertNot(filelib:is_file(filename:join(Dir,"session_member.term"))),
+        ?assertEqual({ok,<<"saved session policy">>},file:read_file(filename:join(Dir,"saved_sessions.term"))),
         ?assert(filelib:is_file(filename:join(Dir,"contacts.term"))),
         ?assert(filelib:is_file(filename:join(Dir,"identity.term")))
     after
