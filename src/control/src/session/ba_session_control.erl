@@ -87,29 +87,16 @@ handle_call({connect,Peer},_,S) ->
     case ba_app_session:excluded(Peer) of true -> {reply,{error,peer_excluded},S};false -> connect_peer(Peer,S) end;
 
 handle_call({read_capabilities,Peer,Metrics},From,S) when is_boolean(Metrics);is_map(Metrics) ->
-    read_capabilities_call(Peer,Metrics,From,S);
-handle_call({read_inspection,Peer,Query},From,#{callers := Callers}=S) ->
-    case ba_session_control_protocol:request_inspection(Peer,Query,now_ms(),maps:get(protocol,S)) of
-        {ok,Packet,Protocol} -> case send(Peer,Packet,S) of
-            ok -> {noreply,S#{protocol := Protocol,callers := Callers#{Peer => From}}};
-            Error -> {reply,Error,S}
-        end;
-        {error,R,_} -> {reply,{error,R},S}
-    end;
-handle_call({Operation,Peer},From,#{callers := Callers} = S)
+    request_reply(Peer,ba_session_control_protocol:request_capabilities(Peer,Metrics,now_ms(),maps:get(protocol,S)),From,S);
+handle_call({read_inspection,Peer,Query},From,S) ->
+    request_reply(Peer,ba_session_control_protocol:request_inspection(Peer,Query,now_ms(),maps:get(protocol,S)),From,S);
+handle_call({Operation,Peer},From,S)
         when Operation =:= read_status; Operation =:= read_capabilities ->
     Result = case Operation of
         read_status -> ba_session_control_protocol:request_status(Peer,now_ms(),maps:get(protocol,S));
         read_capabilities -> ba_session_control_protocol:request_capabilities(Peer,now_ms(),maps:get(protocol,S))
     end,
-    case Result of
-        {ok,Packet,Protocol} ->
-            case send(Peer,Packet,S) of
-                ok -> {noreply,S#{protocol := Protocol,callers := Callers#{Peer => From}}};
-                Error -> {reply,Error,S}
-            end;
-        {error,Reason,_} -> {reply,{error,Reason},S}
-    end;
+    request_reply(Peer,Result,From,S);
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast({introduce,Peer},S) ->
     {_,_,Next} = connect_peer(Peer,S),{noreply,Next};
@@ -180,8 +167,9 @@ handle_info(expire,S) ->
     erlang:send_after(250,self(),expire), {noreply,Next};
 handle_info(_,S) -> {noreply,S}.
 
-read_capabilities_call(Peer,Metrics,From,#{callers := Callers}=S) ->
-    case ba_session_control_protocol:request_capabilities(Peer,Metrics,now_ms(),maps:get(protocol,S)) of
+%% All synchronous peer reads use the same send/error/caller bookkeeping.
+request_reply(Peer,Result,From,#{callers := Callers}=S) ->
+    case Result of
         {ok,Packet,Protocol} -> case send(Peer,Packet,S) of
             ok -> {noreply,S#{protocol := Protocol,callers := Callers#{Peer => From}}};
             Error -> {reply,Error,S}
@@ -225,10 +213,9 @@ event(Peer,{capabilities_read,Request,Metrics},S) ->
     %% Public name/audio state remains available. Private observations require
     %% Inspect, through the same approval owner as log downloads and resources.
     Value = try
-        case Metrics of
-            true -> case ba_device_request:approve(inspect,Peer) of
-                ok -> ba_device_handler:capabilities(true);Error -> Error end;
-            false -> ba_device_handler:capabilities(false)
+        case ba_inspection:capabilities(Metrics,Peer) of
+            {ok,Caps} -> Caps;
+            Error -> Error
         end
     catch exit:_ -> unavailable end,
     case ba_session_control_protocol:reply_capabilities(Peer,Request,Value,now_ms(),maps:get(protocol,S)) of

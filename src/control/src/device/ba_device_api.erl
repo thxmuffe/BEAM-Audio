@@ -51,13 +51,12 @@ command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}=R) ->
     {Pub,_}=ba_device_store:identity(),Local=Device=:=binary:encode_hex(Pub),
     case maps:find(<<"log">>,R) of
         {ok,Log} ->
-            Query=#{<<"log">> => Log,<<"offset">> => maps:get(<<"offset">>,R,0),<<"length">> => maps:get(<<"length">>,R,8192)},
+            Query=#{<<"log">> => Log,<<"offset">> => maps:get(<<"offset">>,R,0),<<"length">> => maps:get(<<"length">>,R,ba_inspection:chunk_size())},
             Request=maps:merge(Query,maps:with([<<"version">>],R)),
             ok=ba_inspection:validate_request(Request),
             case Local of true -> ba_inspection:read(Request,<<"local">>);false -> ba_session_control:read_inspection(Device,Request) end;
         error -> case Local of
-            true -> case ba_device_request:approve(inspect,<<"local">>) of
-                ok -> {ok,ba_device_handler:capabilities(true)};Error -> Error end;
+            true -> ba_inspection:capabilities(true,<<"local">>);
             false -> ba_session_control:read_capabilities(Device,true)
         end
     end;
@@ -107,7 +106,6 @@ command(#{<<"method">> := <<"policy">>,<<"key">> := K,<<"value">> := V}=R) ->
         <<"location">> -> location;
         <<"calibration">> -> calibration;
         <<"dsp">> -> dsp;
-        <<"inspect">> -> inspect;
         _ -> capability_key(K)
     end,
     Value=case V of <<"always">> -> always;<<"ask">> -> ask;<<"no">> -> no end,

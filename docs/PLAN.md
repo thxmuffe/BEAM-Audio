@@ -1,5 +1,12 @@
 # Current plan
 
+Focused cleanup pass (2026-11-20, after the listening test): shared Session-read
+bookkeeping, local/remote Inspect capability approval, log chunk-size definition
+and frontend Calibration grouping are consolidated. No native audio or policy
+changes. Targeted checks pass; the owner still handles app rebuilds and testing.
+Resume automatic Response time/calibration planning and the deferred Chat/UI
+investigation after the latest reconnect fix has been tested on phones.
+
 Reorganized 2026-11-18: dated narratives were collated; completed work and its
 validation limits live in [PROGRESS.md](PROGRESS.md) and the Windows report in
 [WINDOWS-AUDIO-2026-11-18.md](WINDOWS-AUDIO-2026-11-18.md). Git history keeps the

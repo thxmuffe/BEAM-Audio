@@ -28,6 +28,13 @@ from this directory; see [builds](../../docs/BUILDING.md). Use private persisten
 `request_privilege/1`, `grant_privilege/2`, `take_privilege/2` and invitations. Applications use `ba_device_api`;
 frontends submit commands and display snapshots, without owning policy.
 
+`ba_inspection` owns the shared Inspect approval for local/remote capability
+reads and bounded log reads, including log validation and the chunk-size limit
+used by the Device API and CLI. Plain capabilities remain public within an
+authorized Session. `ba_session_control` sends synchronous peer reads through
+one helper for transport errors and caller bookkeeping. See the
+[CLI usage guide](../Tools/CLI/README.md#inspect-consent-and-log-downloads).
+
 Contracts and local consent gate Workers independently of admission. Shared
 clock targets remain in Erlang; native hosts process and transport audio. Reception provides
 connection authentication, live mailbox lookup and bounded opaque routing.

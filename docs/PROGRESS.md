@@ -1,5 +1,21 @@
 # Current implementation and validation
 
+## Focused cleanup pass — 2026-11-20
+
+- Consolidated synchronous Session reads into one send/error/caller-bookkeeping
+  helper, replacing duplicated status, capability and inspection handling.
+- Local and remote private capability reads now use the same `ba_inspection`
+  approval entry point. Log validation owns the single chunk-size definition;
+  the Device API and CLI reuse it, and its base64 limit is derived from it.
+  Removed the redundant Inspect policy-key parsing branch.
+- Frontend Calibration grouping is declared once and reused for displaying
+  choices, pending revocations and preview edits. No UI layout, consent policy,
+  native media, timing or buffering behavior changed.
+- Validation: 46 targeted core EUnit tests and 28 frontend state tests pass;
+  denied/pending/declined private capability reads are checked alongside log
+  consent. Core compilation uses warnings as errors; both diffs pass whitespace
+  checks. No app rebuild, deployment, live-session control or visual review.
+
 ## Mobile playback recovery and Inspect — 2026-11-20, end of session
 
 This section supersedes the earlier mobile-data and inspection status below.

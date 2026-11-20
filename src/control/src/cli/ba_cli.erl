@@ -184,7 +184,7 @@ inspect_session(A) ->
 download_log(A) ->
     Name=one_name(A),Peer=list_to_binary(maps:get(deviceid,A)),
     Query=#{<<"method">> => <<"inspect">>,<<"device">> => Peer,<<"log">> => list_to_binary(maps:get(log,A)),
-            <<"offset">> => 0,<<"length">> => 8192},
+            <<"offset">> => 0,<<"length">> => ba_inspection:chunk_size()},
     First=log_chunk(Name,Query),Path=maps:get(output,A),
     case file:open(Path,[write,binary,exclusive]) of
         {ok,F} ->
@@ -213,7 +213,7 @@ copy_log(Name,Query,Chunk,F,Size,Version) ->
     case Next>=Size of
         true -> ok;
         false when Count>0 ->
-            Q=Query#{<<"offset">> := Next,<<"length">> := min(8192,Size-Next),<<"version">> => Version},
+            Q=Query#{<<"offset">> := Next,<<"length">> := min(ba_inspection:chunk_size(),Size-Next),<<"version">> => Version},
             copy_log(Name,Q,log_chunk(Name,Q),F,Size,Version);
         false -> fail(1,<<"Log ended before its reported size; retry.">>)
     end.

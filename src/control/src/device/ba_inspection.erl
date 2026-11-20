@@ -1,9 +1,18 @@
-%% Bounded log reads, after the ordinary receiving Device approval pipeline.
+%% Private capabilities and bounded logs use the receiving Device approval pipeline.
 %% Only named diagnostic files; never arbitrary paths, identity or settings files.
 -module(ba_inspection).
 -include_lib("kernel/include/file.hrl").
--export([read/2,validate_request/1,validate_reply/1,error/1]).
+-export([capabilities/2,read/2,chunk_size/0,validate_request/1,validate_reply/1,error/1]).
 -define(MAX,8192).
+chunk_size() -> ?MAX.
+%% Local and remote inspection share one approval decision; public capabilities
+%% remain available without Inspect consent.
+capabilities(false,_) -> {ok,ba_device_handler:capabilities(false)};
+capabilities(true,Requester) ->
+    case ba_device_request:approve(inspect,Requester) of
+        ok -> {ok,ba_device_handler:capabilities(true)};
+        Error -> Error
+    end.
 validate_request(P) ->
     ba_session_passport:exact(P,[<<"log">>,<<"offset">>,<<"length">>]++
         case maps:is_key(<<"version">>,P) of true -> [<<"version">>];false -> [] end),
@@ -13,7 +22,7 @@ validate_request(P) ->
     case maps:find(<<"version">>,P) of {ok,V} -> version(V);error -> ok end,ok.
 validate_reply(P) ->
     ba_session_passport:exact(P,[<<"data">>,<<"next">>,<<"size">>,<<"version">>,<<"eof">>]),
-    B=maps:get(<<"data">>,P),true=is_binary(B) andalso byte_size(B)=<10924,
+    B=maps:get(<<"data">>,P),true=is_binary(B) andalso byte_size(B)=<4*((?MAX+2) div 3),
     true=byte_size(base64:decode(B))=< ?MAX,
     true=uint(maps:get(<<"next">>,P)),true=uint(maps:get(<<"size">>,P)),
     version(maps:get(<<"version">>,P)),true=is_boolean(maps:get(<<"eof">>,P)),ok.
