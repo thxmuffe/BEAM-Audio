@@ -9,7 +9,9 @@
 %% timestamps and reported device latency. This is software scheduling
 %% evidence, not physical speaker timing. Receivers are silent unless --audible.
 %%
-%% Usage: escript tests/macOS/audio-engine-sync.escript [--audible] [--seconds N] [--source system]
+%% Usage: escript tests/macOS/audio-engine-sync.escript [--audible] [--seconds N] [--source system] [--loss PERCENT]
+%% --loss drops that share of the sender's first transmissions; receivers must
+%% recover them by asking again (NACK) within the 200 ms delay.
 %% --source system sends this Mac's own output (System Audio Recording
 %% permission) instead of the tone; with --audible you hear it twice more,
 %% 200 ms later, through both receivers.
@@ -28,6 +30,7 @@ main(Args) ->
     Gain=case lists:member("--audible",Args) of true -> 0.1;false -> 0.0 end,
     Seconds=option("--seconds",Args,20),
     Source=list_to_binary(option("--source",Args,"tone")),
+    Loss=option("--loss",Args,0),
     %% Every engine maps its host clock to this Erlang node's system time.
     Clock=fun(Monotonic) -> Monotonic+erlang:time_offset(nanosecond) end,
     Start=fun() -> {ok,P}=ba_audio_engine:start_link(#{executable => Engine,clock => Clock}),P end,
@@ -36,6 +39,7 @@ main(Args) ->
     Ports=[ba_audio_engine:udp_port(R) || R <- [R1,R2]],
     {ok,#{input_rate := InRate}}=ba_audio_engine:command(Sender,#{op => start_capture,source => Source,ssrc => Ssrc,
         rate => Rate,key => Key,peers => [[<<"127.0.0.1">>,P] || P <- Ports]}),
+    {ok,_}=ba_audio_engine:command(Sender,#{op => test_loss,percent => Loss}),
     Anchor=receive {ba_audio_engine,Sender,#{event := <<"capture_started">>,anchor_ns := A}} -> A
            after 3000 -> io:format("FAIL: capture never started~n"),halt(1) end,
     OutRates=[begin {ok,#{output_rate := O}}=ba_audio_engine:command(R,#{op => start_speaker,ssrc => Ssrc,rate => Rate,
@@ -51,6 +55,12 @@ main(Args) ->
     io:format("Sender: ~p~nReceivers: ~p~n",[maps:without([error],maps:get(capture,SenderFinal)),[maps:without([error],F) || F <- Final]]),
     WorstMean=lists:max([M || {_,Ms} <- Rows,M <- Ms]),
     Faults=lists:sum([maps:get(K,F) || F <- Final,K <- [late,rejected,jumps]]),
+    case Loss of
+        0 -> ok;
+        _ -> io:format("Loss ~p%: sender dropped ~p first transmissions and resent ~p; receivers recovered ~p~n",
+            [Loss,maps:get(test_dropped,maps:get(capture,SenderFinal)),maps:get(retransmits,maps:get(capture,SenderFinal)),
+             [maps:get(recovered,F) || F <- Final]])
+    end,
     case WorstMean<100.0 andalso Faults=:=0 of
         true -> io:format("PASS: worst mean scheduling error ~.1f us; no late, rejected or re-positioned audio~n",[WorstMean]),halt(0);
         false -> io:format("FAIL: worst mean scheduling error ~.1f us; late+rejected+jumps ~p~n",[WorstMean,Faults]),halt(1)

@@ -1,5 +1,25 @@
 # Current implementation and validation
 
+## Milestone 2: routing, recovery, hole punching — 2026-11-20
+
+- Connectivity checks: the provider routes a stream only to a receiver address
+  that echoed its probe token (`BAPR`/`BAPA` engine packets). Live: send
+  errors and duplicates went from most packets to 0.
+- Recovery: receivers track RTP sequence numbers and ask for missing packets
+  (`BANK`, up to three times, 30 ms apart); the sender resends from a 512-packet
+  history, only to that stream's routed receivers. With 5% induced loss
+  (`audio-engine-sync.escript --loss 5`): 162 dropped, 162 / 159 recovered, 0
+  rejected or late. libFLAC's gap-filling silent frames no longer reach the ring.
+- Mobile data: owner switched the iPhone from Wi-Fi to mobile data; Session
+  control stayed up (it goes through the Reception) but audio stopped (direct
+  UDP cannot reach a Device behind carrier NAT). The app also froze when Wi-Fi
+  went off; not diagnosed yet (needs the phone's log).
+- Hole punching (owner chose it, relay later): each engine learns its public
+  address via STUN from its media socket (checked: this Mac's public address
+  and port); setup messages carry local + public `ip/port` pairs; the receiver
+  probes the provider every 2 s, opening and holding its NAT. Address changes
+  are re-announced and re-probed. Not yet tested across real NATs.
+
 ## First iPhone playback on the engine — 2026-11-20
 
 - Owner heard Mac → iPhone over the engine: 150 ms with gaps, 300 ms "sounds
@@ -15,7 +35,11 @@
 - For the UI stagger (not yet re-tested on the phone): engine packet and
   control threads use `QOS_CLASS_USER_INTERACTIVE`; clock probes slower than
   5 ms (a busy in-process VM) are discarded instead of skewing the mapping.
-- Engine counters (late, missing, jumps) are not yet in remote diagnostics.
+- Engine counters are in remote diagnostics (`transport.packets`, `.late`,
+  `.missing_frames`, `.jumps`, `.duplicates`, `.schedule_error_*_us`; sender
+  `.sent`, `.send_errors`, `.capture_*`) and in `beamaudio monitor` as
+  "Engine in" / "Engine out" lines; shown when the Device allows speaker
+  calibration (analysis). Checked live with two CLI Devices.
 
 ## iPhone engine shell; GStreamer removed — 2026-11-20
 

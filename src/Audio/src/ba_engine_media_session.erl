@@ -8,6 +8,14 @@
 %% control, which the Reception can read, so no key ever travels in the clear.
 %% One stream key per capture lets the provider encrypt each packet once for
 %% every receiver.
+%%
+%% Routing: the provider sends the stream only to an address that answered a
+%% connectivity probe (a token the receiving engine echoes). Both sides list
+%% their local and public (STUN) addresses; the receiver also probes the
+%% provider, which opens its own NAT towards it (hole punching), and keeps
+%% doing so to hold the path open. The receiver announces its addresses again
+%% when they change; the provider probes again and re-routes, and playback
+%% continues from the same buffer. No relay yet (owner 2026-11-20).
 -module(ba_engine_media_session).
 -behaviour(gen_server).
 -export([start_link/1]).
@@ -16,6 +24,9 @@
 
 -define(HEARTBEAT,250).
 -define(SETUP_TIMEOUT,10000).
+-define(PROBE_INTERVAL,500).
+-define(ADDRESS_CHECK,2000).
+-define(PUNCH_INTERVAL,2000).
 
 start_link(Args) -> gen_server:start_link(?MODULE,Args,[]).
 
@@ -36,13 +47,9 @@ init(#{owner := Owner,role := Role,descriptor := D,attempt := Attempt,context :=
             erlang:send_after(?HEARTBEAT,self(),heartbeat),
             erlang:send_after(?SETUP_TIMEOUT,self(),setup_timeout),
             case Role of
-                receiver ->
-                    Owner ! {audio_signal,self(),#{<<"kind">> => <<"signal.endpoint">>,
-                        <<"public">> => binary:encode_hex(Public),<<"hosts">> => hosts(),
-                        <<"port">> => ba_audio_engine:udp_port(Engine)}};
-                provider -> ok
-            end,
-            {ok,S};
+                receiver -> erlang:send_after(?ADDRESS_CHECK,self(),address_check),{ok,announce(S)};
+                provider -> {ok,S}
+            end;
         {error,R} -> {stop,R}
     end.
 
@@ -61,11 +68,18 @@ handle_call({revoke_permissions,_},_,S) -> {stop,normal,ok,S};
 handle_call(_,_,S) -> {reply,{error,unsupported_engine_command},S}.
 
 handle_cast({renew,Owner,Until},#{owner := Owner,deadline := Old}=S) when Until>Old -> {noreply,S#{deadline := Until}};
-handle_cast({signal,#{<<"kind">> := <<"signal.endpoint">>}=P},#{role := provider,open := false}=S) -> {noreply,provide(P,S)};
+%% Every endpoint (the first, or new addresses later) is probed; the stream's
+%% keys are sent once.
+handle_cast({signal,#{<<"kind">> := <<"signal.endpoint">>}=P},#{role := provider}=S) ->
+    Probing=probe(P,S),
+    {noreply,case maps:get(open,S) of false -> provide(P,Probing);true -> Probing end};
 handle_cast({signal,#{<<"kind">> := <<"signal.stream">>}=P},#{role := receiver,open := false}=S) ->
-    #{<<"public">> := Peer,<<"wrapped">> := Wrapped,<<"ssrc">> := Ssrc,<<"rate">> := Rate,<<"anchor_ns">> := Anchor}=P,
+    #{<<"public">> := Peer,<<"wrapped">> := Wrapped,<<"ssrc">> := Ssrc,<<"rate">> := Rate,<<"anchor_ns">> := Anchor,
+      <<"addresses">> := Addresses}=P,
     Key=unwrap(binary:decode_hex(Wrapped),secret(binary:decode_hex(Peer),S),maps:get(attempt,S)),
-    {noreply,start_speaker(S#{ssrc => Ssrc,key => Key,rate => Rate,anchor => binary_to_integer(Anchor)})};
+    self() ! punch,
+    {noreply,start_speaker(S#{ssrc => Ssrc,key => Key,rate => Rate,anchor => binary_to_integer(Anchor),
+        provider => ba_audio_stream_protocol:addresses(Addresses)})};
 handle_cast(_,S) -> {noreply,S}.
 
 handle_info(heartbeat,S) ->
@@ -75,6 +89,20 @@ handle_info(heartbeat,S) ->
             erlang:send_after(?HEARTBEAT,self(),heartbeat),
             {noreply,follow_delay(S)}
     end;
+handle_info(address_check,#{role := receiver}=S) ->
+    erlang:send_after(?ADDRESS_CHECK,self(),address_check),
+    {noreply,case addresses(S)=:=maps:get(addresses,S) of true -> S;false -> announce(S) end};
+%% Outbound probes open this side's NAT towards the provider and keep it open.
+handle_info(punch,#{role := receiver,engine := Engine,provider := Peers}=S) ->
+    erlang:send_after(?PUNCH_INTERVAL,self(),punch),
+    {ok,_}=ba_audio_engine:command(Engine,#{op => probe,token => crypto:strong_rand_bytes(16),peers => Peers}),
+    {noreply,S};
+handle_info({reprobe,Token},#{probe := Token}=S) ->
+    probe_send(S),erlang:send_after(?PROBE_INTERVAL,self(),{reprobe,Token}),{noreply,S};
+handle_info({ba_audio_engine,_,#{event := <<"probe_reply">>,token := Token,host := Host,port := Port}},#{probe := Token,source := Source}=S) ->
+    %% The first address that answered carries the stream to this receiver.
+    ok=gen_server:call(Source,{stream,{add_peers,self(),[[Host,Port]]}},1000),
+    {noreply,maps:remove(probe,S#{route => [Host,Port]})};
 handle_info(retry_speaker,#{open := false}=S) -> {noreply,start_speaker(S)};
 handle_info(retry_provide,#{open := false,endpoint := P}=S) -> {noreply,provide(P,S)};
 handle_info(setup_timeout,#{open := false}=S) -> {stop,engine_setup_timeout,S};
@@ -92,21 +120,35 @@ format_status(Status) ->
 %% ---- Provider ---------------------------------------------------------------------
 %% The capture may still be starting; its anchor is known once the first frames
 %% arrive, so retry briefly.
-provide(#{<<"public">> := Peer,<<"hosts">> := Hosts,<<"port">> := Port}=P,#{source := Source,attempt := Attempt}=S) ->
+provide(#{<<"public">> := Peer}=P,#{source := Source,attempt := Attempt}=S) ->
     case gen_server:call(Source,{stream,describe},1000) of
         {ok,#{ssrc := Ssrc,key := StreamKey,anchor_ns := Anchor,rate := Rate}} ->
-            Peers=[[H,Port] || H <- ba_audio_stream_protocol:hosts(Hosts)],
-            ok=gen_server:call(Source,{stream,{add_peers,self(),Peers}},1000),
             Wrapped=wrap(StreamKey,secret(binary:decode_hex(Peer),S),Attempt),
             maps:get(owner,S) ! {audio_signal,self(),#{<<"kind">> => <<"signal.stream">>,
                 <<"public">> => binary:encode_hex(maps:get(public,S)),<<"wrapped">> => binary:encode_hex(Wrapped),
-                <<"ssrc">> => Ssrc,<<"rate">> => Rate,<<"anchor_ns">> => integer_to_binary(Anchor)}},
+                <<"ssrc">> => Ssrc,<<"rate">> => Rate,<<"anchor_ns">> => integer_to_binary(Anchor),
+                <<"addresses">> => addresses(S)}},
             S#{open := true};
         {error,capture_starting} ->
             erlang:send_after(100,self(),retry_provide),S#{endpoint => P}
     end.
 
+%% A fresh token per endpoint; the engine probes every address until one answers.
+probe(#{<<"addresses">> := Addresses},S) ->
+    Token=crypto:strong_rand_bytes(16),
+    Next=S#{probe => Token,candidates => ba_audio_stream_protocol:addresses(Addresses)},
+    probe_send(Next),erlang:send_after(?PROBE_INTERVAL,self(),{reprobe,Token}),
+    Next.
+probe_send(#{engine := Engine,probe := Token,candidates := Peers}) ->
+    {ok,_}=ba_audio_engine:command(Engine,#{op => probe,token => Token,peers => Peers}),ok.
+
 %% ---- Receiver ---------------------------------------------------------------------
+%% This Device's engine on its current addresses; sent again when they change.
+announce(#{owner := Owner,public := Public}=S) ->
+    Addresses=addresses(S),
+    Owner ! {audio_signal,self(),#{<<"kind">> => <<"signal.endpoint">>,<<"public">> => binary:encode_hex(Public),
+        <<"addresses">> => Addresses}},
+    S#{addresses => Addresses}.
 %% Plays at the Session's Response time; the engine needs its clock mapping first.
 start_speaker(#{engine := Engine}=S) ->
     case ba_session_clock:presentation([]) of
@@ -148,15 +190,19 @@ unwrap(<<Cipher:30/binary,Tag:16/binary>>,Secret,Attempt) ->
         Key -> Key
     end.
 
-%% This Device's addresses on each usable interface. Without connectivity checks
-%% (milestone 2) the provider sends to all; duplicates are dropped by SRTP.
+%% This Device's engine: its port on each usable interface, then its public
+%% (STUN) address, then loopback (other Devices on this machine).
+addresses(#{engine := Engine}) ->
+    Port=ba_audio_engine:udp_port(Engine),
+    Local=[[H,Port] || H <- lists:sublist(hosts(),6)],
+    Pairs=Local++(ba_audio_engine:mapped(Engine)--Local)++[[<<"127.0.0.1">>,Port]],
+    iolist_to_binary(lists:join(<<" ">>,[[H,"/",integer_to_binary(P)] || [H,P] <- lists:sublist(Pairs,8)])).
 hosts() ->
     {ok,Interfaces}=inet:getifaddrs(),
     Addresses=[A || {_,Options} <- Interfaces,lists:member(up,proplists:get_value(flags,Options,[])),
         lists:member(running,proplists:get_value(flags,Options,[])),
         {addr,A} <- Options,usable(A)],
-    Hosts=lists:usort([list_to_binary(inet:ntoa(A)) || A <- Addresses]),
-    iolist_to_binary(lists:join(<<" ">>,lists:sublist(Hosts,7)++[<<"127.0.0.1">>])).
+    lists:usort([list_to_binary(inet:ntoa(A)) || A <- Addresses]).
 usable({127,_,_,_}) -> false;
 usable({169,254,_,_}) -> false;
 usable({_,_,_,_}) -> true;
@@ -167,9 +213,22 @@ usable({_,_,_,_,_,_,_,_}) -> true.
 %% ---- Helpers --------------------------------------------------------------------------
 live(S) -> erlang:monotonic_time(millisecond)<maps:get(deadline,S) andalso
     ba_device_permission:valid(maps:get(permission,S),maps:get(token,S)).
-engine_stats(#{role := receiver,open := true,engine := Engine,ssrc := Ssrc}) ->
+%% The engine's own counters for this stream, as bounded integers for
+%% diagnostics. The scheduling error covers the time since the previous read.
+engine_stats(#{role := Role,open := true,engine := Engine}=S) ->
     try ba_audio_engine:command(Engine,#{op => status},500) of
-        {ok,#{speakers := Speakers}} -> hd([maps:without([error],X) || #{ssrc := I}=X <- Speakers,I=:=Ssrc]++[#{}]);
+        {ok,Status} -> stream_stats(Role,Status,S);
         _ -> #{}
     catch exit:_ -> #{} end;
 engine_stats(_) -> #{}.
+stream_stats(receiver,#{speakers := Speakers},#{ssrc := Ssrc}) ->
+    case [X || #{ssrc := I}=X <- Speakers,I=:=Ssrc] of
+        [#{error := E}=X] -> (maps:with([packets,duplicates,late,early,rejected,missing_frames,jumps,nacks,recovered],X))#{
+            schedule_error_max_us => round(maps:get(max_us,E)),schedule_error_mean_us => round(maps:get(mean_us,E))};
+        [] -> #{}
+    end;
+stream_stats(provider,#{capture := #{error := E}=C},_) ->
+    #{sent => maps:get(sent,C),send_errors => maps:get(send_errors,C),capture_overruns => maps:get(overruns,C),
+      capture_jumps => maps:get(jumps,C),capture_error_max_us => round(maps:get(max_us,E)),
+      retransmits => maps:get(retransmits,C)};
+stream_stats(_,_,_) -> #{}.

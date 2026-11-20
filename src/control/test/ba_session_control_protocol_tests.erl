@@ -38,12 +38,12 @@ engine_endpoint_roundtrip_test() ->
     Id=binary:copy(<<"C">>,32),
     P=#{<<"kind">> => <<"signal.endpoint">>,<<"source">> => <<"music">>,
         <<"incarnation">> => binary:copy(<<"D">>,32),<<"attempt">> => binary:copy(<<"E">>,32),
-        <<"public">> => binary:copy(<<"F">>,64),<<"hosts">> => <<"192.168.1.5 fd00::5 127.0.0.1">>,<<"port">> => 40000},
+        <<"public">> => binary:copy(<<"F">>,64),<<"addresses">> => <<"192.168.1.5/40000 fd00::5/40000 91.145.90.96/61234">>},
     {ok,Packet,_}=p(audio_message,[B,Id,P,5,SA]),
     ?assertMatch({ok,[],[{audio,Id,P,#{peer := A}}],_},p(receive_packet,[A,Packet,6,SB])),
-    [?assertException(error,_,ba_audio_stream_protocol:validate(P#{<<"hosts">> := Bad}))
-        || Bad <- [null,<<>>,<<"example.com">>,<<"1.2.3.4  5.6.7.8">>,
-                   iolist_to_binary(lists:join(<<" ">>,lists:duplicate(9,<<"10.0.0.1">>)))]].
+    [?assertException(error,_,ba_audio_stream_protocol:validate(P#{<<"addresses">> := Bad}))
+        || Bad <- [null,<<>>,<<"example.com/1">>,<<"1.2.3.4">>,<<"1.2.3.4/0">>,<<"1.2.3.4/1  5.6.7.8/1">>,
+                   iolist_to_binary(lists:join(<<" ">>,lists:duplicate(9,<<"10.0.0.1/1">>)))]].
 
 status_roundtrip_and_replay_test() ->
     {A,B,_,_,SA,SB} = connected(),

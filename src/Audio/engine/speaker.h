@@ -6,7 +6,11 @@
 #include <samplerate.h>
 #include <srtp2/srtp.h>
 
+#include <netinet/in.h>
+
 #include <atomic>
+#include <chrono>
+#include <deque>
 #include <memory>
 
 #include "timing.h"
@@ -27,7 +31,9 @@ class Speaker {
 
     uint32_t ssrc() const { return ssrc_; }
     // Packet thread: an SRTP packet for this SSRC (decrypted in place).
-    void receive(uint8_t *packet, int size);
+    void receive(uint8_t *packet, int size, const sockaddr_in6 &from);
+    // Packet thread: ask the sender again for packets still missing.
+    void send_nacks(int socket);
     // Audio thread: add this stream's frames for Session time `present` to mix.
     void render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate);
     json status();
@@ -41,6 +47,7 @@ class Speaker {
                                                         void *);
     friend void speaker_error(const FLAC__StreamDecoder *, FLAC__StreamDecoderErrorStatus, void *);
     void read_ring(int64_t pos, long frames, float *dest);
+    void track(uint16_t seq);
 
     uint32_t ssrc_ = 0, rate_ = 0;
     int64_t anchor_ = 0;
@@ -53,6 +60,7 @@ class Speaker {
     size_t packet_size_ = 0, packet_offset_ = 0;
     int64_t block_ = 0;
     bool decoded_ = false;
+    float decoded_frame_[Block * Channels] = {};  // the packet's frame, committed after decoding
     std::unique_ptr<float[]> ring_{new float[RingFrames * Channels]()};
     std::unique_ptr<std::atomic<int64_t>[]> marks_{new std::atomic<int64_t>[Blocks]};
     std::atomic<int64_t> read_pos_{0};  // published by render, bounds writes
@@ -67,6 +75,18 @@ class Speaker {
     double play_pos_ = 0, last_ratio_ = 0;
     long chunk_size_ = 0, chunk_used_ = 0;
     std::unique_ptr<float[]> out_{new float[MaxCallback * Channels]()};
+    // Recovery (packet thread only): the stream's sender and the sequence
+    // numbers still missing, each asked for at most three times, 30 ms apart.
+    struct Missing {
+        int64_t seq;
+        std::chrono::steady_clock::time_point asked;
+        int tries;
+    };
+    sockaddr_in6 source_{};
+    bool has_source_ = false;
+    int64_t highest_seq_ = -1;
+    std::deque<Missing> lost_;
+    std::atomic<uint64_t> nacks_{0}, recovered_{0};
     // Counters.
     // duplicates: the same packet again (sent to several of our addresses, or resent).
     std::atomic<uint64_t> packets_{0}, duplicates_{0}, late_{0}, early_{0}, rejected_{0}, missing_{0}, jumps_{0};

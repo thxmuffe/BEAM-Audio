@@ -6,10 +6,11 @@
 %% 2026-11-20). See docs/AUDIO_ENGINE.md.
 -module(ba_audio_engine).
 -behaviour(gen_server).
--export([start_link/0,start_link/1,ensure/0,command/2,command/3,send_command/2,udp_port/1,available/0,executable/0]).
+-export([start_link/0,start_link/1,ensure/0,command/2,command/3,send_command/2,udp_port/1,mapped/1,available/0,executable/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
 
 -define(CLOCK_INTERVAL,5000).
+-define(STUN_INTERVAL,60000).
 -define(MAX_PPM,500).
 %% A probe slower than this was delayed by a busy VM (on iPhone the VM shares the
 %% app's CPU with the UI): its midpoint is not the engine's time; skip it.
@@ -38,6 +39,8 @@ available() -> ba_settings:env("BA_AUDIO_ENGINE_PORT")=/=false orelse filelib:is
 %% or unavailable; defaults to the Session clock), udp_port (default 0: any).
 start_link(Opts) -> gen_server:start_link(?MODULE,Opts#{owner => maps:get(owner,Opts,self())},[]).
 udp_port(Pid) -> gen_server:call(Pid,udp_port).
+%% The engine socket's public address as STUN last saw it: [] or [[Host,Port]].
+mapped(Pid) -> gen_server:call(Pid,mapped).
 %% Returns {ok,Reply} or {error,Text}; Reply is the engine's map without id/op/event.
 command(Pid,Command) -> command(Pid,Command,5000).
 command(Pid,Command,Timeout) -> gen_server:call(Pid,{command,Command},Timeout).
@@ -66,16 +69,19 @@ init(Opts) ->
     end,
     {ok,#{version := 1}}=sync(#{op => hello},S),
     {ok,#{port := Udp}}=sync(#{op => open,port => maps:get(udp_port,Opts,0)},S),
-    S1=map_clock(first,S#{udp_port => Udp,listeners => #{}}),
+    S1=map_clock(first,S#{udp_port => Udp,listeners => #{},mapped => [],stun => undefined}),
     erlang:send_after(?CLOCK_INTERVAL,self(),clock),
+    self() ! stun,
     {ok,S1}.
 
 handle_call(udp_port,_,S) -> {reply,maps:get(udp_port,S),S};
+handle_call(mapped,_,S) -> {reply,maps:get(mapped,S),S};
 handle_call({command,C},{Caller,_}=From,#{next := Id}=S) ->
     send(C#{id => Id},S),
     %% Events about a stream (e.g. capture_started) go to whoever started it.
     Listeners=case C of
         #{op := Op,ssrc := Ssrc} when Op=:=start_capture;Op=:=start_speaker -> (maps:get(listeners,S))#{Ssrc => Caller};
+        #{op := probe,token := Token} -> (maps:get(listeners,S))#{Token => Caller};
         _ -> maps:get(listeners,S)
     end,
     {noreply,S#{next := Id+1,calls := (maps:get(calls,S))#{Id => {caller,From}},listeners := Listeners}}.
@@ -90,6 +96,17 @@ handle_info({tcp_closed,Port},#{port := Port}=S) -> {stop,native_engine_closed,m
 handle_info(clock,S) ->
     erlang:send_after(?CLOCK_INTERVAL,self(),clock),
     {noreply,async(#{op => clock},{clock_probe,erlang:monotonic_time(nanosecond)},S)};
+%% NAT traversal: refresh the public address now and then; DNS runs apart so
+%% this process never waits on it.
+handle_info(stun,S) ->
+    erlang:send_after(?STUN_INTERVAL,self(),stun),
+    Owner=self(),
+    spawn(fun() -> Owner ! {stun_servers,stun_servers()} end),
+    {noreply,S};
+handle_info({stun_servers,[]},S) -> {noreply,S};
+handle_info({stun_servers,Servers},S) ->
+    Token=crypto:strong_rand_bytes(12),
+    {noreply,async(#{op => stun,token => Token,servers => Servers},stun_sent,S#{stun := Token})};
 handle_info({Port,{exit_status,Status}},#{port := Port,crash_file := Crash}=S) ->
     report(iolist_to_binary([io_lib:format("Audio engine exited with status ~p.~n",[Status]),crash_text(Crash)])),
     {stop,{native_engine_exit,Status},maps:remove(port,S)};
@@ -119,12 +136,15 @@ connect(Opts) ->
 send(C,#{kind := program,port := Port}) -> true=port_command(Port,term_to_binary(C)),ok;
 send(C,#{kind := loopback,port := Socket}) -> ok=gen_tcp:send(Socket,term_to_binary(C)).
 
+event(#{event := <<"stun_reply">>,token := Token,host := Host,port := Port},#{stun := Token}=S) ->
+    S#{mapped := [[Host,Port]]};
 event(#{id := Id}=E,#{calls := Calls}=S) ->
     {Pending,Rest}=maps:take(Id,Calls),
     replied(Pending,reply(E),S#{calls := Rest});
 event(E,S) ->
     Target=case E of
         #{ssrc := Ssrc} -> maps:get(Ssrc,maps:get(listeners,S),maps:get(owner,S));
+        #{token := Token} -> maps:get(Token,maps:get(listeners,S),maps:get(owner,S));
         _ -> maps:get(owner,S)
     end,
     case is_pid(Target) of true -> Target ! {ba_audio_engine,self(),E};false -> ok end,
@@ -137,7 +157,16 @@ replied({clock_probe,Sent},{ok,#{internal_ns := Internal,session_ns := Native}},
         Global when is_integer(Global) -> async(clock_map(Internal,Global,Native,S),clock_mapped,S#{revision := maps:get(revision,S)+1});
         _ -> S
     end;
-replied(clock_mapped,{ok,_},S) -> S.
+replied(clock_mapped,{ok,_},S) -> S;
+replied(stun_sent,{ok,_},S) -> S.
+%% Configured STUN servers ("stun:host:port"), resolved to IPv4 addresses.
+stun_servers() ->
+    lists:append([try
+        ["stun",Host|Rest]=string:split(binary_to_list(Url),":",all),
+        Port=case Rest of [P] -> list_to_integer(P);[] -> 3478 end,
+        {ok,Ip}=inet:getaddr(Host,inet),
+        [[list_to_binary(inet:ntoa(Ip)),Port]]
+    catch _:_ -> [] end || Url <- ba_settings:app(direct_stun_urls,[])]).
 async(C,Pending,#{next := Id}=S) ->
     send(C#{id => Id},S),
     S#{next := Id+1,calls := (maps:get(calls,S))#{Id => Pending}}.

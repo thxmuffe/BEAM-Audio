@@ -501,8 +501,11 @@ Status 2026-11-20 (details in PROGRESS.md):
 - CLI: `new device --createsession --enable broadcast` does not turn broadcast
   on (use `call device ... {"method":"capability","capability":"broadcast","enabled":true}`).
 
-Open: whether an existing NACK/RTX implementation is usable outside its
-framework (check libdatachannel's media handlers) before writing a small one.
+Step 2 status (2026-11-20): connectivity checks, NACK/RTX (own small
+implementation, about 80 lines) and STUN hole punching are implemented. Next:
+test Mac ↔ iPhone on mobile data; if punching fails there, decide the relay
+(owner: hole punching first, relay later). Diagnose the iPhone freeze when
+Wi-Fi turns off.
 Packaged apps must link `ei` from the OTP runtime they ship (dev builds link
 Homebrew's, built for macOS 27).
 
@@ -513,6 +516,10 @@ Homebrew's, built for macOS 27).
 ## Backlog (after the next steps)
 
 **Audio**
+- Mac ON AIR from chosen apps only (owner 2026-11-20): a process tap of
+  selected applications instead of "every process except our engines", so
+  system alert sounds and other apps stay out. Our own playback is already
+  excluded by process (all `ba_audio_engine` processes, kept current).
 - Keep Mac playback separate from ON AIR with process-filtered Core Audio taps.
   Existing capture excludes matching playback-helper processes across instances;
   verify coverage for different build paths and future native playback hosts.

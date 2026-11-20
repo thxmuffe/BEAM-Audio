@@ -2,6 +2,7 @@
 
 #include <sys/socket.h>
 
+#include <cstdlib>
 #include <cstring>
 
 #include "net.h"
@@ -36,16 +37,34 @@ FLAC__StreamEncoderWriteStatus sender_write(const FLAC__StreamEncoder *, const F
     s.pending_.pop_front();
     uint8_t packet[1500];
     if (bytes + RtpHeader + SRTP_MAX_TRAILER_LEN > sizeof(packet)) return ++s.send_errors_, FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
-    write_rtp(packet, s.seq_++, timestamp, s.ssrc_);
+    const uint16_t seq = s.seq_++;
+    write_rtp(packet, seq, timestamp, s.ssrc_);
     memcpy(packet + RtpHeader, buffer, bytes);
     int size = int(RtpHeader + bytes);
     if (srtp_protect(s.srtp_, packet, &size) != srtp_err_status_ok) return ++s.send_errors_, FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
+    auto &kept = (*s.history_)[seq % s.history_->size()];
+    kept.seq = seq, kept.size = size;
+    memcpy(kept.data, packet, size_t(size));
+    if (s.test_loss_.load() > 0 && std::rand() % 100 < s.test_loss_.load()) return ++s.test_dropped_, FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
     for (const auto &peer : s.peers_)
         if (sendto(s.socket_, packet, size_t(size), 0, reinterpret_cast<const sockaddr *>(&peer), sizeof(peer)) == size)
             ++s.sent_;
         else
             ++s.send_errors_;
     return FLAC__STREAM_ENCODER_WRITE_STATUS_OK;
+}
+
+void Sender::retransmit(const uint8_t *seqs, int count, const sockaddr_in6 &from) {
+    bool known = false;
+    for (const auto &peer : peers_) known = known || same_peer(peer, from);
+    if (!known) return;  // never send on behalf of someone who is not a receiver
+    for (int i = 0; i < count; ++i) {
+        const uint16_t seq = read16(seqs + 2 * i);
+        const auto &kept = (*history_)[seq % history_->size()];
+        if (kept.size && kept.seq == seq &&
+            sendto(socket_, kept.data, size_t(kept.size), 0, reinterpret_cast<const sockaddr *>(&from), sizeof(from)) == kept.size)
+            ++retransmits_;
+    }
 }
 
 Sender::Sender(const json &c, int socket) : socket_(socket) {
@@ -151,6 +170,7 @@ void Sender::append(const float *data, long frames) {
 
 json Sender::status(const CaptureRing &ring) {
     return {{"ssrc", ssrc_},           {"frames", frames_.load()},        {"sent", sent_.load()},     {"send_errors", send_errors_.load()},
-            {"overruns", ring.overruns.load()}, {"jumps", jumps_.load()}, {"error", error_.take()}};
+            {"overruns", ring.overruns.load()}, {"jumps", jumps_.load()},
+            {"retransmits", retransmits_.load()}, {"test_dropped", test_dropped_.load()}, {"error", error_.take()}};
 }
 }  // namespace ba

@@ -258,7 +258,7 @@ diagnostic_lines(R,Color) ->
                 {K,E} <- lists:sort(maps:to_list(maps:get(<<"audio_meters">>,Caps,#{})))],
             [Errors,MeterLines,case maps:get(<<"diagnostics.analysis">>,D,true) of
                 false -> "  Audio analysis: OFF\n";
-                true -> ["  Diagnostic sample age: ",number(maps:get(<<"diagnostics.age_ms">>,D,null))," ms\n",Clock,Playback,transport_lines(D),output_line(D)]
+                true -> ["  Diagnostic sample age: ",number(maps:get(<<"diagnostics.age_ms">>,D,null))," ms\n",Clock,Playback,transport_lines(D),engine_lines(D),output_line(D)]
             end,case maps:get(<<"diagnostics.meters">>,D,true) of false -> "  Audio meters: OFF\n";true -> [] end,Failures,
             [["  Recent: ",safe(maps:get(<<"stage">>,E))," / ",safe(maps:get(<<"reason">>,E)),
               " (",number(maps:get(<<"age_ms">>,E))," ms ago)\n"] || E <- lists:sublist(lists:sort(fun(A,B) -> maps:get(<<"age_ms">>,A)<maps:get(<<"age_ms">>,B) end,maps:values(maps:get(<<"audio_trace">>,Caps,#{}))),3)]]
@@ -282,6 +282,22 @@ transport_lines(D) ->
              "  ICE servers: ",number(maps:get(<<"transport.ice.stun_urls">>,D,0))," STUN / ",
              number(maps:get(<<"transport.ice.turn_urls">>,D,0))," TURN\n"]
     end.
+%% The audio engine's own counters: receiving and/or sending streams.
+engine_lines(D) ->
+    N=fun(K) -> number(maps:get(<<"transport.",K/binary>>,D,null)) end,
+    Receive=case maps:is_key(<<"transport.packets">>,D) of
+        false -> [];
+        true -> io_lib:format("  Engine in: ~ts packets  ~ts late  ~ts missing frames  ~ts re-positions  ~ts duplicates  ~ts rejected~n"
+                              "    recovery ~ts requests / ~ts recovered  schedule error ~ts us mean / ~ts us max~n",
+            [N(K) || K <- [<<"packets">>,<<"late">>,<<"missing_frames">>,<<"jumps">>,<<"duplicates">>,<<"rejected">>,
+                          <<"nacks">>,<<"recovered">>,<<"schedule_error_mean_us">>,<<"schedule_error_max_us">>]])
+    end,
+    Send=case maps:is_key(<<"transport.sent">>,D) of
+        false -> [];
+        true -> io_lib:format("  Engine out: ~ts sends  ~ts resent  ~ts send errors  ~ts capture overruns  ~ts re-positions  error ~ts us max~n",
+            [N(K) || K <- [<<"sent">>,<<"retransmits">>,<<"send_errors">>,<<"capture_overruns">>,<<"capture_jumps">>,<<"capture_error_max_us">>]])
+    end,
+    [Receive,Send].
 output_line(#{<<"output.supported">> := true}=D) ->
     io_lib:format("  Output (~ts): engine ~ts  player ~ts  route ~ts  volume ~ts/1000~n    ~ts scheduled / ~ts completed frames  ~ts queued / ~ts rejected buffers  stats age ~ts ms~n",[
         safe(maps:get(<<"output.backend">>,D,<<"unknown">>)),

@@ -90,26 +90,44 @@ class MacShell final : public ba::Shell {
         return noErr;
     }
 
-    // Exclude every running engine process (this binary) so received audio is
-    // never captured again.
+    // Capture never includes our own playback: exclude every running audio
+    // engine on this Mac (the app's, the CLI's, the Web Device's), whatever its
+    // path. A feedback loop through the speakers is the failure this prevents.
     static NSArray<NSNumber *> *engine_processes() {
         auto a = address(kAudioHardwarePropertyProcessObjectList);
         UInt32 size = 0;
         check(AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, nullptr, &size), "list audio processes");
         std::vector<AudioObjectID> processes(size / sizeof(AudioObjectID));
         check(AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, nullptr, &size, processes.data()), "read audio processes");
-        char self_path[PROC_PIDPATHINFO_MAXSIZE] = {};
-        proc_pidpath(getpid(), self_path, sizeof(self_path));
         NSMutableArray<NSNumber *> *excluded = [NSMutableArray array];
         for (AudioObjectID process : processes) {
             pid_t pid = 0;
             UInt32 n = sizeof(pid);
             auto p = address(kAudioProcessPropertyPID);
             if (AudioObjectGetPropertyData(process, &p, 0, nullptr, &n, &pid) != noErr) continue;
-            char path[PROC_PIDPATHINFO_MAXSIZE] = {};
-            if (proc_pidpath(pid, path, sizeof(path)) > 0 && !strcmp(path, self_path)) [excluded addObject:@(process)];
+            char name[2 * MAXCOMLEN + 1] = {};
+            if (proc_name(pid, name, sizeof(name)) > 0 && !strcmp(name, "ba_audio_engine")) [excluded addObject:@(process)];
         }
         return excluded;
+    }
+
+    // Engines start and stop while capturing (another Device on this Mac may
+    // begin playing): keep the tap's exclusions current. Rewrite the tap only
+    // when the set changes; a rewrite can restart its capture clock.
+    static OSStatus processes_changed(AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *self) {
+        auto *shell = static_cast<MacShell *>(self);
+        if (shell->tap_ == kAudioObjectUnknown) return noErr;
+        @autoreleasepool {
+            CATapDescription *description = CFBridgingRelease(property<CFTypeRef>(shell->tap_, kAudioTapPropertyDescription));
+            NSArray<NSNumber *> *excluded = engine_processes();
+            if (![[NSSet setWithArray:description.processes ?: @[]] isEqualToSet:[NSSet setWithArray:excluded]]) {
+                description.processes = excluded;
+                CFTypeRef raw = (__bridge CFTypeRef)description;
+                auto a = address(kAudioTapPropertyDescription);
+                AudioObjectSetPropertyData(shell->tap_, &a, 0, nullptr, sizeof(raw), &raw);
+            }
+        }
+        return noErr;
     }
 
    public:
@@ -179,11 +197,17 @@ class MacShell final : public ba::Shell {
             throw std::runtime_error("system tap is not float32");
         check(AudioDeviceCreateIOProcID(aggregate_, captured, this, &io_), "create capture callback");
         check(AudioDeviceStart(aggregate_, io_), "start system audio capture (check System Audio Recording permission)");
+        auto processes = address(kAudioHardwarePropertyProcessObjectList);
+        check(AudioObjectAddPropertyListener(kAudioObjectSystemObject, &processes, processes_changed, this), "watch audio processes");
         return uint32_t(format.mSampleRate);
     }
 
     void stop_capture() override {
         if (tone_running_.exchange(false)) tone_.join();
+        if (tap_ != kAudioObjectUnknown) {
+            auto processes = address(kAudioHardwarePropertyProcessObjectList);
+            AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &processes, processes_changed, this);
+        }
         if (io_) AudioDeviceStop(aggregate_, io_), AudioDeviceDestroyIOProcID(aggregate_, io_), io_ = nullptr;
         if (aggregate_ != kAudioObjectUnknown) AudioHardwareDestroyAggregateDevice(aggregate_), aggregate_ = kAudioObjectUnknown;
         if (tap_ != kAudioObjectUnknown) AudioHardwareDestroyProcessTap(tap_), tap_ = kAudioObjectUnknown;

@@ -117,10 +117,14 @@ struct Engine {
                 pollfd p{socket, POLLIN, 0};
                 poll(&p, 1, 2);
                 for (;;) {
-                    const ssize_t n = recv(socket, buffer, sizeof(buffer), 0);
+                    sockaddr_in6 from{};
+                    socklen_t from_size = sizeof(from);
+                    const ssize_t n = recvfrom(socket, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr *>(&from), &from_size);
                     if (n <= 0) break;
-                    receive(buffer, int(n));
+                    receive(buffer, int(n), from);
                 }
+                for (auto &slot : speakers)
+                    if (Speaker *s = slot.load()) s->send_nacks(socket);
             } else {
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
@@ -128,11 +132,33 @@ struct Engine {
         }
     }
 
-    void receive(uint8_t *packet, int size) {
+    void receive(uint8_t *packet, int size, const sockaddr_in6 &from) {
+        if (size == ProbeSize && tagged(packet, size, "BAPR")) {
+            memcpy(packet, "BAPA", 4);  // echo the token: the path works both ways
+            sendto(socket, packet, size_t(size), 0, reinterpret_cast<const sockaddr *>(&from), sizeof(from));
+            return;
+        }
+        if (size == ProbeSize && tagged(packet, size, "BAPA")) {
+            emit({{"event", "probe_reply"}, {"token", std::string(reinterpret_cast<char *>(packet + 4), 16)},
+                  {"host", host_of(from)}, {"port", ntohs(from.sin6_port)}});
+            return;
+        }
+        std::string transaction;
+        sockaddr_in6 mapped{};
+        if (parse_stun_response(packet, size, transaction, mapped)) {
+            emit({{"event", "stun_reply"}, {"token", transaction}, {"host", host_of(mapped)}, {"port", ntohs(mapped.sin6_port)}});
+            return;
+        }
+        if (size >= 10 && tagged(packet, size, "BANK")) {
+            const int count = read16(packet + 8);
+            Sender *s = sender.load();
+            if (s && s->ssrc() == read32(packet + 4) && size >= 10 + 2 * count) s->retransmit(packet + 10, count, from);
+            return;
+        }
         uint32_t ssrc = 0;
         if (!rtp_ssrc(packet, size, ssrc)) return;
         for (auto &slot : speakers)
-            if (Speaker *s = slot.load(); s && s->ssrc() == ssrc) return s->receive(packet, size);
+            if (Speaker *s = slot.load(); s && s->ssrc() == ssrc) return s->receive(packet, size, from);
     }
 
     // ---- Commands from Erlang --------------------------------------------------
@@ -157,6 +183,14 @@ struct Engine {
         if (op == "route") return route(c.at("ssrc"), parse_peers(c.at("peers")));
         if (op == "volume") return volume(c.at("ssrc"), c.at("gain"));
         if (op == "delay") return delay(c.at("ssrc"), c.at("delay_ms"));
+        if (op == "probe") return probe(c.at("token"), parse_peers(c.at("peers")));
+        if (op == "stun") return stun(c.at("token"), parse_peers(c.at("servers")));
+        if (op == "test_loss") {
+            on_packet_thread([&] {
+                if (Sender *s = sender.load()) s->set_test_loss(c.at("percent"));
+            });
+            return json::object();
+        }
         if (op == "status") return status();
         if (op == "crash") crash(c.at("kind"));
         fail("unknown op " + op);
@@ -247,6 +281,32 @@ struct Engine {
         for (auto &slot : speakers)
             if (Speaker *s = slot.load(); s && s->ssrc() == ssrc) return s->set_gain(gain), json::object();
         fail("no such speaker");
+    }
+
+    // Connectivity check: replies arrive as probe_reply events with the token.
+    json probe(const std::string &token, const std::vector<sockaddr_in6> &peers) {
+        if (token.size() != 16) fail("probe token must be 16 bytes");
+        if (socket < 0) fail("no socket");
+        uint8_t packet[ProbeSize];
+        memcpy(packet, "BAPR", 4), memcpy(packet + 4, token.data(), 16);
+        on_packet_thread([&] {
+            for (const auto &peer : peers)
+                sendto(socket, packet, sizeof(packet), 0, reinterpret_cast<const sockaddr *>(&peer), sizeof(peer));
+        });
+        return json::object();
+    }
+
+    // Asks STUN servers for this socket's public address: stun_reply events.
+    json stun(const std::string &token, const std::vector<sockaddr_in6> &servers) {
+        if (token.size() != 12) fail("STUN transaction ID must be 12 bytes");
+        if (socket < 0) fail("no socket");
+        uint8_t packet[StunHeader];
+        write_stun_request(packet, token);
+        on_packet_thread([&] {
+            for (const auto &server : servers)
+                sendto(socket, packet, sizeof(packet), 0, reinterpret_cast<const sockaddr *>(&server), sizeof(server));
+        });
+        return json::object();
     }
 
     json delay(uint32_t ssrc, int64_t delay_ms) {

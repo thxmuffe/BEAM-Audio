@@ -58,7 +58,8 @@ project(Audio,Clock) ->
             end
         end,Acc,[received,sent,rejected])
     end,O,Transports),
-    T2=lists:foldl(fun setup_fields/2,T,Transports),
+    T1=lists:foldl(fun engine_fields/2,T,Transports),
+    T2=lists:foldl(fun setup_fields/2,T1,Transports),
     D1=failures(<<"receiver">>,maps:get(diagnostics,Audio,#{}),T2),
     D2=failures(<<"mixer">>,maps:get(diagnostics,Mixer,#{}),D1),
     Counts=lists:foldl(fun(View,Acc) -> maps:fold(fun(K,V,A) -> A#{K => maps:get(K,A,0)+V} end,
@@ -68,6 +69,20 @@ project(Audio,Clock) ->
     %% Reserve three fields for switches and cache age; preserve summaries before capped reasons.
     {Failures,Summary}=lists:partition(fun({K,_}) -> binary:match(K,<<".failure.">>)=/=nomatch end,maps:to_list(Filtered)),
     maps:from_list(Summary++lists:sublist(lists:sort(Failures),max(0,125-length(Summary)))).
+%% The audio engine's counters. Received streams are summed; the one capture
+%% is reported by every provider worker, so its counters (and every scheduling
+%% error) combine as the maximum.
+engine_fields(#{stats := Stats},Acc) when is_map(Stats) ->
+    Shared=[sent,send_errors,retransmits,capture_overruns,capture_jumps,capture_error_max_us,schedule_error_max_us,schedule_error_mean_us],
+    maps:fold(fun(K,V,A) when is_atom(K),is_integer(V),V>=0 ->
+            Key=key(<<"transport">>,K),
+            case lists:member(K,Shared) of
+                false -> A#{Key => maps:get(Key,A,0)+V};
+                true -> A#{Key => max(V,maps:get(Key,A,0))}
+            end;
+        (_,_,A) -> A
+    end,Acc,Stats);
+engine_fields(_,Acc) -> Acc.
 %% Connection setup of current transports: how many sit at each step, the
 %% candidate types exchanged (never addresses) and configured STUN/TURN URL counts.
 setup_fields(#{setup := Setup},Acc) when is_map(Setup) ->

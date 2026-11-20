@@ -27,18 +27,21 @@ FLAC__StreamDecoderWriteStatus speaker_write(const FLAC__StreamDecoder *, const 
         ++s.rejected_;
         return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
     }
+    // libFLAC first writes silent frames for any gap in frame numbers (its file
+    // repair); the packet's own frame comes last. Keep only that one.
     const float scale = 1.0f / float(1u << (frame->header.bits_per_sample - 1));
-    float *slot = s.ring_.get() + size_t(s.block_ % Blocks) * Block * Channels;
     for (uint32_t i = 0; i < Block; ++i) {
-        slot[i * 2] = float(channels[0][i]) * scale;
-        slot[i * 2 + 1] = float(channels[1][i]) * scale;
+        s.decoded_frame_[i * 2] = float(channels[0][i]) * scale;
+        s.decoded_frame_[i * 2 + 1] = float(channels[1][i]) * scale;
     }
-    s.marks_[s.block_ % Blocks].store(s.block_ + 1, std::memory_order_release);
     s.decoded_ = true;
     return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
 }
 
-void speaker_error(const FLAC__StreamDecoder *, FLAC__StreamDecoderErrorStatus, void *data) { ++static_cast<Speaker *>(data)->rejected_; }
+// A gap in frame numbers is a lost packet, which recovery handles; not an error.
+void speaker_error(const FLAC__StreamDecoder *, FLAC__StreamDecoderErrorStatus status, void *data) {
+    if (status != FLAC__STREAM_DECODER_ERROR_STATUS_MISSING_FRAME) ++static_cast<Speaker *>(data)->rejected_;
+}
 
 namespace {
 // Packets carry only FLAC frames; the receiver supplies the matching header.
@@ -83,12 +86,16 @@ Speaker::~Speaker() {
     if (srtp_) srtp_dealloc(srtp_);
 }
 
-void Speaker::receive(uint8_t *packet, int size) {
+void Speaker::receive(uint8_t *packet, int size, const sockaddr_in6 &from) {
     const srtp_err_status_t status = srtp_unprotect(srtp_, packet, &size);
     if (status == srtp_err_status_replay_fail || status == srtp_err_status_replay_old) return void(++duplicates_);
     if (status != srtp_err_status_ok) return void(++rejected_);
     Rtp rtp;
     if (!parse_rtp(packet, size, rtp)) return void(++rejected_);
+    // Authenticated by SRTP: this is where the stream comes from now (it may
+    // change with the sender's network), and its sequence shows what is lost.
+    source_ = from, has_source_ = true;
+    track(rtp.seq);
     // Extend the 32-bit timestamp to the stream position nearest the reader.
     const int64_t read = read_pos_.load(std::memory_order_acquire);
     const int64_t pos = read + int32_t(rtp.timestamp - uint32_t(read));
@@ -99,8 +106,54 @@ void Speaker::receive(uint8_t *packet, int size) {
     packet_ = rtp.payload, packet_size_ = rtp.payload_size, packet_offset_ = 0;
     block_ = pos / Block, decoded_ = false;
     FLAC__stream_decoder_process_single(decoder_);
-    if (!decoded_) ++rejected_;
+    if (decoded_) {
+        memcpy(ring_.get() + size_t(block_ % Blocks) * Block * Channels, decoded_frame_, sizeof(decoded_frame_));
+        marks_[block_ % Blocks].store(block_ + 1, std::memory_order_release);
+    } else {
+        ++rejected_;
+    }
     if (FLAC__stream_decoder_get_state(decoder_) != FLAC__STREAM_DECODER_SEARCH_FOR_FRAME_SYNC) FLAC__stream_decoder_flush(decoder_);
+}
+
+void Speaker::track(uint16_t seq) {
+    if (highest_seq_ < 0) return void(highest_seq_ = seq);
+    const int64_t ext = highest_seq_ + int16_t(uint16_t(seq - uint16_t(highest_seq_)));
+    if (ext > highest_seq_) {
+        for (int64_t s = std::max(highest_seq_ + 1, ext - 64); s < ext; ++s) lost_.push_back({s, {}, 0});
+        highest_seq_ = ext;
+        while (lost_.size() > 256) lost_.pop_front();
+    } else {
+        for (auto it = lost_.begin(); it != lost_.end(); ++it)
+            if (it->seq == ext) {
+                lost_.erase(it);
+                ++recovered_;
+                break;
+            }
+    }
+}
+
+void Speaker::send_nacks(int socket) {
+    if (!has_source_ || lost_.empty()) return;
+    const auto now = std::chrono::steady_clock::now();
+    uint8_t packet[10 + 2 * 64];
+    memcpy(packet, "BANK", 4);
+    for (int i = 0; i < 4; ++i) packet[4 + i] = uint8_t(ssrc_ >> (24 - 8 * i));
+    uint16_t count = 0;
+    for (auto it = lost_.begin(); it != lost_.end() && count < 64;) {
+        if (it->tries >= 3) {
+            it = lost_.erase(it);
+            continue;
+        }
+        if (it->tries == 0 || now - it->asked >= std::chrono::milliseconds(30)) {
+            packet[10 + 2 * count] = uint8_t(it->seq >> 8), packet[11 + 2 * count] = uint8_t(it->seq);
+            ++count, ++it->tries, it->asked = now;
+        }
+        ++it;
+    }
+    if (!count) return;
+    packet[8] = uint8_t(count >> 8), packet[9] = uint8_t(count);
+    sendto(socket, packet, 10 + 2 * size_t(count), 0, reinterpret_cast<const sockaddr *>(&source_), sizeof(source_));
+    ++nacks_;
 }
 
 // Copies frames [pos, pos + n) from the ring; absent blocks play as silence.
@@ -169,6 +222,7 @@ void Speaker::render(float *mix, uint32_t frames, int64_t present, uint32_t out_
 json Speaker::status() {
     return {{"ssrc", ssrc_},       {"packets", packets_.load()}, {"duplicates", duplicates_.load()},        {"late", late_.load()},
             {"early", early_.load()}, {"rejected", rejected_.load()},      {"missing_frames", missing_.load()},
-            {"jumps", jumps_.load()}, {"error", error_.take()}};
+            {"jumps", jumps_.load()}, {"nacks", nacks_.load()}, {"recovered", recovered_.load()},
+            {"error", error_.take()}};
 }
 }  // namespace ba

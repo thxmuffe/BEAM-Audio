@@ -45,6 +45,11 @@ class Sender {
     void set_input_rate(uint32_t rate) { in_rate_.store(rate); }
     uint32_t input_rate() const { return in_rate_.load(); }
     void set_peers(std::vector<sockaddr_in6> peers) { peers_ = std::move(peers); }  // packet thread
+    // Packet thread: resend the requested packets, exactly as first sent, to
+    // the requester, if it is one of this stream's receivers.
+    void retransmit(const uint8_t *seqs, int count, const sockaddr_in6 &from);
+    // Measurements only: drop this share of first transmissions to exercise recovery.
+    void set_test_loss(int percent) { test_loss_.store(percent); }
     // Packet thread: encode and send everything the ring holds.
     void drain(CaptureRing &ring, const Clock &clock);
     json status(const CaptureRing &ring);
@@ -73,7 +78,14 @@ class Sender {
     uint32_t filled_ = 0;
     int64_t block_pos_ = 0;
     uint16_t seq_ = 0;
-    std::atomic<uint64_t> sent_{0}, send_errors_{0}, frames_{0}, jumps_{0};
+    struct Sent {
+        uint16_t seq = 0;
+        int size = 0;
+        uint8_t data[1500];
+    };
+    std::unique_ptr<std::array<Sent, 512>> history_{new std::array<Sent, 512>()};  // ~2 s at 250 packets/s
+    std::atomic<int> test_loss_{0};
+    std::atomic<uint64_t> sent_{0}, send_errors_{0}, frames_{0}, jumps_{0}, retransmits_{0}, test_dropped_{0};
     ErrorWindow error_;
 };
 }  // namespace ba

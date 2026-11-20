@@ -1,5 +1,6 @@
 #include "net.h"
 
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <sys/socket.h>
@@ -70,8 +71,56 @@ bool parse_rtp(const uint8_t *packet, int size, Rtp &out) {
     if (packet[0] & 0x20) size -= packet[size - 1];
     if (size <= header) return false;
     out.timestamp = read32(packet + 4);
+    out.seq = read16(packet + 2);
     out.payload = packet + header, out.payload_size = size_t(size - header);
     return true;
+}
+
+bool same_peer(const sockaddr_in6 &a, const sockaddr_in6 &b) {
+    return a.sin6_port == b.sin6_port && !memcmp(&a.sin6_addr, &b.sin6_addr, sizeof(a.sin6_addr));
+}
+
+std::string host_of(const sockaddr_in6 &a) {
+    char text[INET6_ADDRSTRLEN] = {};
+    if (IN6_IS_ADDR_V4MAPPED(&a.sin6_addr)) inet_ntop(AF_INET, &a.sin6_addr.s6_addr[12], text, sizeof(text));
+    else inet_ntop(AF_INET6, &a.sin6_addr, text, sizeof(text));
+    return text;
+}
+
+constexpr uint32_t StunCookie = 0x2112A442;
+
+void write_stun_request(uint8_t *packet, const std::string &transaction) {
+    packet[0] = 0x00, packet[1] = 0x01, packet[2] = 0x00, packet[3] = 0x00;  // Binding request, no attributes
+    for (int i = 0; i < 4; ++i) packet[4 + i] = uint8_t(StunCookie >> (24 - 8 * i));
+    memcpy(packet + 8, transaction.data(), 12);
+}
+
+bool parse_stun_response(const uint8_t *packet, int size, std::string &transaction, sockaddr_in6 &mapped) {
+    if (size < StunHeader || read16(packet) != 0x0101 || read32(packet + 4) != StunCookie) return false;
+    const int length = read16(packet + 2);
+    if (StunHeader + length > size) return false;
+    transaction.assign(reinterpret_cast<const char *>(packet + 8), 12);
+    for (int at = StunHeader; at + 4 <= StunHeader + length;) {
+        const int type = read16(packet + at), len = read16(packet + at + 2);
+        const uint8_t *value = packet + at + 4;
+        if (at + 4 + len > size) return false;
+        if (type == 0x0020 && len >= 8) {  // XOR-MAPPED-ADDRESS
+            mapped = sockaddr_in6{};
+            mapped.sin6_family = AF_INET6;
+            mapped.sin6_port = htons(uint16_t(read16(value + 2) ^ (StunCookie >> 16)));
+            if (value[1] == 0x01) {  // IPv4, as an IPv4-mapped address for the dual-stack socket
+                mapped.sin6_addr.s6_addr[10] = mapped.sin6_addr.s6_addr[11] = 0xff;
+                for (int i = 0; i < 4; ++i) mapped.sin6_addr.s6_addr[12 + i] = value[4 + i] ^ packet[4 + i];
+                return true;
+            }
+            if (value[1] == 0x02 && len >= 20) {  // IPv6: XOR with cookie and transaction ID
+                for (int i = 0; i < 16; ++i) mapped.sin6_addr.s6_addr[i] = value[4 + i] ^ packet[4 + i];
+                return true;
+            }
+        }
+        at += 4 + ((len + 3) & ~3);
+    }
+    return false;
 }
 
 void write_rtp(uint8_t *packet, uint16_t seq, uint32_t timestamp, uint32_t ssrc) {
