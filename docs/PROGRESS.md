@@ -39,6 +39,9 @@ This section supersedes the earlier mobile-data and inspection status below.
   Output callback-gap and packet-queue-delay counters were proposed but **not
   implemented**, following the owner's request to wrap up and test first.
   Leave UI, clock and buffering changes for the next investigation.
+- **Handoff:** stopped the temporary Inspector Device and its foreground monitor;
+  the owner's Mac and iPhones were left running. Changes are ready for the
+  owner's rebuild and manual testing; no further deployment was performed here.
 
 ## Approval Settings and internet playback investigation — 2026-11-20
 
