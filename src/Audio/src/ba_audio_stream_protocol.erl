@@ -34,7 +34,7 @@ validate(#{<<"kind">> := K} = P) ->
 base() -> [<<"kind">>,<<"source">>,<<"incarnation">>,<<"attempt">>].
 media(P) -> identity(P),true = ba_hex:valid(maps:get(<<"attempt">>,P),32).
 identity(P) -> text(maps:get(<<"source">>,P),128),true = ba_hex:valid(maps:get(<<"incarnation">>,P),32),ok.
-exact(P,K) -> ba_buffee_passport:exact(P,K).
+exact(P,K) -> ba_session_passport:exact(P,K).
 text(B,N) -> true = is_binary(B) andalso byte_size(B)>0 andalso byte_size(B)=<N,ok.
 offer(Key,Inc,#{name := Name,paused := Paused,profiles := #{channel := D}}) ->
     P = #{<<"kind">> => <<"catalog.offer">>,<<"source">> => Key,<<"incarnation">> => Inc,

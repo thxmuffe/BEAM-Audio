@@ -17,7 +17,7 @@ handle_info(sample,Owner) ->
             true -> case ba_session_scope:whereis(ba_audio_receiver) of undefined -> #{};_ -> ba_audio_receiver:snapshot() end;
             false -> #{}
         end,
-        Clock=case ba_audio_diagnostics:enabled(analysis) of true -> ba_buffee_clock:status();false -> #{} end,
+        Clock=case ba_audio_diagnostics:enabled(analysis) of true -> ba_session_clock:status();false -> #{} end,
         Owner ! {audio_observation,self(),View,ba_audio_diagnostics:snapshot(View,Clock),ba_audio_diagnostics:trace(View)}
     catch exit:_ -> ok end,
     {noreply,Owner};

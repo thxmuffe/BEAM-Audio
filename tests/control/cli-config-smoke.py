@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-config-') as directory:
         run('set', 'device', '--enable', 'speaker')
         assert not history()['can_redo'], 'new edit retained redo branch'
         view = run('inspect', 'device')
-        assert view['buffee']['state'] == 'idle'
+        assert view['session']['state'] == 'idle'
         assert 'entries' not in view['configuration'], 'polling sends full history'
         run('stop', 'device')
         # A person edits the file while the Device is stopped; the next start uses it.

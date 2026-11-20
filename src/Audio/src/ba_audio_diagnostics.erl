@@ -146,7 +146,7 @@ scalar(V) when is_binary(V),byte_size(V)>0,byte_size(V)=<64 ->
     re:run(V,<<"^[a-z][a-z0-9_]*$">>,[{capture,none}])=:=match;
 scalar(_) -> false.
 field_scalar(<<"clock.raw_offset_ns">>,V) ->
-    try _=ba_buffee_time_protocol:integer(V),true catch _:_ -> false end;
+    try _=ba_session_time_protocol:integer(V),true catch _:_ -> false end;
 field_scalar(_,V) -> scalar(V).
 validate(D) ->
     true=is_map(D) andalso map_size(D)=<128,

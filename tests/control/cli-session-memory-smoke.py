@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-session-memory-') as directory:
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             state = inspect(name)
-            if (state['buffee'].get('buffee') == session_id and
+            if (state['session'].get('session') == session_id and
                     any(d['id'] == peer and d['state'] == 'authorized' for d in state['devices'])):
                 return state
             time.sleep(.1)
@@ -51,11 +51,11 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-session-memory-') as directory:
 
     try:
         url = f'ws://127.0.0.1:{port}/relay/v1'
-        run('new', 'device', '--devicename', 'creator', '--createbuffee', '--desk', url)
+        run('new', 'device', '--devicename', 'creator', '--createsession', '--desk', url)
         creator = inspect('creator')
-        session_id = creator['buffee']['buffee']
+        session_id = creator['session']['session']
         invitation = run('get', 'invitation', '--devicename', 'creator', scalar=True)
-        run('new', 'device', '--devicename', 'member', '--joinbuffee', invitation)
+        run('new', 'device', '--devicename', 'member', '--joinsession', invitation)
         member = joined('member', session_id, creator['device'])
         assert not any(member['consent'].values())
         identity = member['device']
@@ -85,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-session-memory-') as directory:
         run('stop', 'device', '--devicename', 'ba-monitor-' + session_id)
         invitation_file.unlink()
         restored = run('monitor', '--all', '--once', '--json')
-        assert restored['buffee']['buffee'] == session_id
+        assert restored['session']['session'] == session_id
         again = inspect('ba-monitor-' + session_id)
         assert again['device'] == observer['device'] and not any(again['consent'].values())
         print('PASS: monitor remembers and rejoins its last Session; --no-user-state skips selection memory without overwriting it', flush=True)
@@ -97,21 +97,21 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-session-memory-') as directory:
 
         run('forget', 'session', '--devicename', 'member', '--sessionid', 'invalid', ok=False)
         forgotten = run('forget', 'session', '--devicename', 'member', '--sessionid', session_id)
-        assert forgotten['buffee']['state'] == 'idle'
+        assert forgotten['session']['state'] == 'idle'
         assert session_id not in forgotten['contacts']['sessions']
         other = inspect('creator')
-        assert other['buffee']['buffee'] == session_id and 'grant' in other['buffee']['privileges']
+        assert other['session']['session'] == session_id and 'grant' in other['session']['privileges']
         assert other['device'] == creator['device']
 
         run('stop', 'device', '--devicename', 'member')
         run('new', 'device', '--devicename', 'member')
         restarted = inspect('member')
-        assert restarted['device'] == identity and restarted['buffee']['state'] == 'idle'
+        assert restarted['device'] == identity and restarted['session']['state'] == 'idle'
         assert session_id not in restarted['contacts']['sessions']
         print('PASS: CLI Forget stays forgotten after restart; another Device keeps its Session', flush=True)
 
         run('stop', 'device', '--devicename', 'member')
-        run('new', 'device', '--devicename', 'member', '--joinbuffee', invitation)
+        run('new', 'device', '--devicename', 'member', '--joinsession', invitation)
         returned = joined('member', session_id, creator['device'])
         assert returned['device'] == identity and session_id in returned['contacts']['sessions']
         print('PASS: explicit CLI Join remembers the same Session without changing Device identity', flush=True)

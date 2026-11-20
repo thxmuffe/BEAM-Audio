@@ -31,9 +31,9 @@ boot() ->
         ok=application:load(ba_core),
         ok=ba_app_session:configure(#{platform => mac}),
         case maps:get(<<"observer">>,C,false) of
-            true -> application:set_env(ba_core,audio_automation,false),application:set_env(ba_core,buffee_observer,true);
+            true -> application:set_env(ba_core,audio_automation,false),application:set_env(ba_core,session_observer,true);
             %% Like the apps: a Device returns to the Sessions it was in, including as their creator.
-            false -> application:set_env(ba_core,restore_buffee_on_start,true)
+            false -> application:set_env(ba_core,restore_session_on_start,true)
         end,
         {ok,_}=ba_runtime:start(),
         case maps:find(<<"web">>,C) of
@@ -50,10 +50,10 @@ boot() ->
         {ok,Pid}=supervisor:start_child(ba_sup,#{id => ?MODULE,start => {?MODULE,start_link,[Public#{dir => Dir}]},restart => temporary}),
         Command=case maps:get(<<"mode">>,C) of
             <<"idle">> -> #{<<"method">> => <<"snapshot">>};
-            <<"create">> -> #{<<"method">> => <<"create_buffee">>,<<"name">> => maps:get(<<"name">>,C),<<"desks">> => [case maps:get(<<"desk">>,C) of null -> ba_buffee_passport:default_desk();Desk -> Desk end]};
-            <<"join">> -> #{<<"method">> => <<"join_buffee">>,<<"invitation">> => maps:get(<<"invitation">>,C)}
+            <<"create">> -> #{<<"method">> => <<"create_session">>,<<"name">> => maps:get(<<"name">>,C),<<"desks">> => [case maps:get(<<"desk">>,C) of null -> ba_session_passport:default_desk();Desk -> Desk end]};
+            <<"join">> -> #{<<"method">> => <<"join_session">>,<<"invitation">> => maps:get(<<"invitation">>,C)}
         end,
-        Pid ! {start_buffee,Command},
+        Pid ! {start_session,Command},
         receive shutdown -> ok end
     catch Class:Reason:Stack ->
         %% Do not print launch arguments, credentials or private key material.
@@ -103,7 +103,7 @@ accept(L,Parent) ->
         {error,closed} -> ok;
         {error,R} -> exit({accept_failed,R})
     end.
-handle_info({start_buffee,Command},C) ->
+handle_info({start_session,Command},C) ->
     Reply=ba_device_api:request(Command),
     {noreply,C#{startup_error := maps:get(<<"error">>,Reply,null)}};
 handle_info({'EXIT',A,R},#{acceptor := A}=S) -> {stop,{acceptor_exit,R},S};
@@ -125,7 +125,7 @@ handle_call({request,#{<<"instance">> := I}=R},_,#{<<"instance">> := I}=S) ->
     {reply,Reply#{managed => Meta},S};
 handle_call(_,_,S) -> {reply,#{error => <<"Device instance mismatch.">>},S}.
 handle_cast(stop,S) ->
-    ba_buffee:disconnect(),init:stop(),{stop,normal,S};
+    ba_session:disconnect(),init:stop(),{stop,normal,S};
 handle_cast(kill,S) ->
     %% Only this process can be killed, after an instance-checked local command.
     Kill=case os:type() of {win32,_} -> "taskkill /F /PID ";_ -> "/bin/kill -KILL " end,

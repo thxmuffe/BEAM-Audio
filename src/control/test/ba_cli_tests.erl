@@ -6,7 +6,7 @@ idle_link() -> {ok,spawn_link(fun Loop() -> receive stop -> ok;_ -> Loop() end e
 
 command_parser_and_no_restore_command_test() ->
     Spec=ba_cli:spec("/tmp"),
-    ?assertMatch({ok,#{enable := "speaker"},_,_},argparse:parse(["new","device","--devicename","one","--createbuffee","--enable","speaker"],Spec,#{progname => "beam-audio"})),
+    ?assertMatch({ok,#{enable := "speaker"},_,_},argparse:parse(["new","device","--devicename","one","--createsession","--enable","speaker"],Spec,#{progname => "beam-audio"})),
     ?assertMatch({error,_},argparse:parse(["start","device","--devicename","one"],Spec,#{progname => "beam-audio"})),
     ?assertMatch({ok,#{web_assets := "/tmp",web_port := 0},_,_},
         argparse:parse(["new","device","--devicename","one","--web-assets","/tmp","--web-port","0"],Spec,#{progname => "beamaudio"})),
@@ -17,7 +17,7 @@ command_parser_and_no_restore_command_test() ->
     ?assertNot(ba_cli_store:valid_name("../other")),?assert(ba_cli_store:valid_name("test-1")).
 
 readiness_needs_real_work_and_fresh_progress_test() ->
-    Base=#{buffee => #{state => authorized},consent => #{speaker => true,microphone => false,broadcast => true},
+    Base=#{session => #{state => authorized},consent => #{speaker => true,microphone => false,broadcast => true},
         clock => #{state => synchronized,offset_policy => #{ready => true}},
         handler => #{audio => #{broadcast => #{state => starting}}},audio => #{}},
     ?assertNot(maps:get(ready,ba_device_api:readiness(Base))),

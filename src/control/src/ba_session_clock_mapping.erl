@@ -1,5 +1,5 @@
 %% Immutable monotonic-to-POSIX mapping. Corrections slew, never step backwards.
--module(ba_buffee_clock_mapping).
+-module(ba_session_clock_mapping).
 -export([new/2, correct/4, offset/2, from_monotonic/2, to_monotonic/2, remaining/2]).
 -define(MILLION, 1000000).
 

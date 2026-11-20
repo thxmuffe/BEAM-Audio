@@ -1,5 +1,5 @@
 %% Bounded median of measured UTC-minus-monotonic offsets. No timers or I/O.
--module(ba_buffee_clock_filter).
+-module(ba_session_clock_filter).
 -export([new/1, add/2, count/1, estimate/1,current/1]).
 
 new(Size) when is_integer(Size), Size > 0 -> #{size => Size,samples => []}.

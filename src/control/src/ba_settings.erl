@@ -73,7 +73,7 @@ init([]) ->
 
 import() ->
     %% The old binary files are read in safe mode: their atoms must already exist.
-    [code:ensure_loaded(M) || M <- [ba_contacts,ba_device_config,ba_buffee,ba_sessions]],
+    [code:ensure_loaded(M) || M <- [ba_contacts,ba_device_config,ba_session,ba_sessions]],
     Old=fun(Name) -> try ba_device_store:load(Name,undefined) catch _:_ -> undefined end end,
     Consent=case Old(device_configuration) of
         #{states := States,cursor := C} when is_list(States),length(States)>C -> maps:get(config,lists:nth(C+1,States),undefined);

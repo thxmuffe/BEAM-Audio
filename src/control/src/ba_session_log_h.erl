@@ -1,11 +1,11 @@
 %% Best-effort crash summaries, using the existing chat worker. Logger calls
 %% log/2 on the reporting process: never wait for chat, a peer, or a timeout here.
--module(ba_buffee_log_h).
+-module(ba_session_log_h).
 -behaviour(logger_handler).
 -export([log/2]).
 
 log(Event,#{config := #{recipient := Pid}}) ->
-    Target=case ba_session_scope:whereis(ba_buffee_chat) of undefined -> Pid;P -> P end,
+    Target=case ba_session_scope:whereis(ba_session_chat) of undefined -> Pid;P -> P end,
     case notice(Event) of
         none -> ok;
         Text ->

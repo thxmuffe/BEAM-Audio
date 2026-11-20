@@ -110,7 +110,7 @@ def catalog(product):
             if p.name == 'test_analyze_receivers.py':
                 modules = ('numpy',)
             variants = [('default', [])]
-            if p.name == 'buffee-time-smoke.py':
+            if p.name == 'session-time-smoke.py':
                 variants.append(('production cadence', ['--production-cadence']))
             for name, args in variants:
                 result.append(Test(f'{root.name}/{relative} [{name}]', command+args,

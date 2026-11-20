@@ -1,5 +1,5 @@
 %% Exact signed-control payloads; full nanoseconds use canonical decimal strings.
--module(ba_buffee_time_protocol).
+-module(ba_session_time_protocol).
 -export([validate/1,integer/1,encode/1,timeline/2,permission/1,state/1,accept/2]).
 validate(#{<<"kind">> := Kind} = P) ->
     case Kind of
@@ -45,5 +45,5 @@ integer(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<20 ->
     N = binary_to_integer(B),B = integer_to_binary(N),
     true = N>=-9223372036854775808 andalso N=<9223372036854775807,N.
 encode(N) when is_integer(N) -> B = integer_to_binary(N),N = integer(B),B.
-timeline(Buffee,Instance) -> <<"utc/v2/",Buffee/binary,"/",Instance/binary>>.
-exact(P,Keys) -> ba_buffee_passport:exact(P,Keys).
+timeline(Session,Instance) -> <<"utc/v2/",Session/binary,"/",Instance/binary>>.
+exact(P,Keys) -> ba_session_passport:exact(P,Keys).

@@ -59,23 +59,23 @@ def main():
                     names.append(name)
                     cli('new','device','--devicename',name,'--wait','endpoint','--timeout','20s')
                 ids={name:api(name,'snapshot')['device'] for name in names}
-                assert not api('admin','create_buffee',name='Local moderation test',desks=[f'ws://127.0.0.1:{port}/relay/v1'])['error']
+                assert not api('admin','create_session',name='Local moderation test',desks=[f'ws://127.0.0.1:{port}/relay/v1'])['error']
                 invitation=api('admin','invitation')['result']
                 for name in names[1:]:
-                    assert not api(name,'join_buffee',invitation=invitation)['error']
-                    wait(name,lambda s:s['buffee']['state']=='authorized')
+                    assert not api(name,'join_session',invitation=invitation)['error']
+                    wait(name,lambda s:s['session']['state']=='authorized')
                 denied=api('target','remove_device',device=ids['moderator'])
                 assert denied['error']=='This Device needs moderator rights to remove a Device.'
                 assert not api('admin','grant_privilege',device=ids['moderator'],privilege='end_session')['error']
-                wait('moderator',lambda s:'end_session' in s['buffee']['privileges'])
-                assert 'grant' not in api('moderator','snapshot')['buffee']['privileges']
+                wait('moderator',lambda s:'end_session' in s['session']['privileges'])
+                assert 'grant' not in api('moderator','snapshot')['session']['privileges']
                 assert api('moderator','grant_privilege',device=ids['target'],privilege='grant')['error']=='Only a Device with the grant privilege can change privileges.'
                 for target in ('target','admin','independent'):
                     # Dark Sessions: the moderator need not have bumped into the target;
                     # a signed End reaches any Device ID at the Session mailbox.
                     assert not api('moderator','remove_device',device=ids[target])['error']
-                    wait(target,lambda s:s['buffee']['state']=='idle')
-                    assert api('moderator','snapshot')['buffee']['state']=='authorized'
+                    wait(target,lambda s:s['session']['state']=='idle')
+                    assert api('moderator','snapshot')['session']['state']=='authorized'
                 print('PASS: public CLI moderator kicks Devices and Admin, continues without Admin, cannot grant rights; ordinary Device denied')
             finally:
                 for name in reversed(names):

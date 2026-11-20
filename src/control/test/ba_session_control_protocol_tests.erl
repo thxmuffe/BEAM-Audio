@@ -1,4 +1,4 @@
--module(ba_buffee_control_protocol_tests).
+-module(ba_session_control_protocol_tests).
 -include_lib("eunit/include/eunit.hrl").
 
 fixture() ->
@@ -6,15 +6,15 @@ fixture() ->
     KB = {PB,_} = crypto:generate_key(eddsa,ed25519),
     A = binary:encode_hex(PA), B = binary:encode_hex(PB),
     {A,B,KA,KB,
-     ba_buffee_control_protocol:new(KA,policy(A,#{B => [status_read]}),0),
-     ba_buffee_control_protocol:new(KB,policy(B,#{A => [status_read]}),0)}.
-buffee() -> binary:copy(<<"A">>,32).
-invitation() -> ba_buffee_passport:invitation_key(binary:copy(<<"5">>,32)).
+     ba_session_control_protocol:new(KA,policy(A,#{B => [status_read]}),0),
+     ba_session_control_protocol:new(KB,policy(B,#{A => [status_read]}),0)}.
+session() -> binary:copy(<<"A">>,32).
+invitation() -> ba_session_passport:invitation_key(binary:copy(<<"5">>,32)).
 %% Each Device signs its own join certificate with the link's invitation key.
 policy(Self,Members) ->
     {Invitation,Key} = invitation(),
-    #{buffee => buffee(),authority => Self,manager => Self,revision => 1,invitation => Invitation,
-      join => ba_buffee_passport:join(buffee(),Self,Key),members => Members,defaults => [],removed => []}.
+    #{session => session(),authority => Self,manager => Self,revision => 1,invitation => Invitation,
+      join => ba_session_passport:join(session(),Self,Key),members => Members,defaults => [],removed => []}.
 
 otp_diagnostics_redact_keys_test() ->
     {_,_,_,_,P,_} = fixture(),
@@ -22,7 +22,7 @@ otp_diagnostics_redact_keys_test() ->
     Status = #{state => #{protocol => P#{private := Secret},private => Secret},
                message => Secret,reason => Secret,log => [Secret]},
     [?assertEqual(nomatch,binary:match(term_to_binary(Formatted),Secret)) || Formatted <-
-        [ba_buffee_control:format_status(Status),ba_relay:format_status(Status)]].
+        [ba_session_control:format_status(Status),ba_relay:format_status(Status)]].
 
 %% One hello and its ready: both sides now hold the relationship.
 connected() ->
@@ -96,7 +96,7 @@ forgery_recipient_scope_and_policy_test() ->
     ?assertMatch({error,_,SB},p(receive_packet,[B,Request,6,SB])),
     [?assertMatch({error,_,SB},p(receive_packet,[A,resign(Request,KA,F),6,SB])) || F <-
         [fun(M) -> M#{<<"to">> := A} end,
-         fun(M) -> M#{<<"buffee">> := binary:copy(<<"B">>,32)} end,
+         fun(M) -> M#{<<"session">> := binary:copy(<<"B">>,32)} end,
          fun(M) -> M#{<<"join">> := binary:copy(<<"0">>,128)} end,
          fun(M) -> M#{<<"v">> := 999} end,
          fun(M) -> M#{<<"extra">> => true} end,
@@ -167,16 +167,16 @@ any_joined_device_may_ask_with_default_rights_test() ->
     {ok,Chat,_} = p(chat_message,[A,binary:copy(<<"C">>,32),<<"hi">>,5,SC]),
     ?assertMatch({ok,[],[authorized,{chat,_,<<"hi">>,_}],_},p(receive_packet,[Cid,Chat,6,SA])),
     %% A certificate from another Session's invitation key does not count.
-    {Stranger,Key} = ba_buffee_passport:invitation_key(binary:copy(<<"6">>,32)),
-    Outsider = (policy(Cid,#{}))#{invitation := Stranger,join := ba_buffee_passport:join(buffee(),Cid,Key)},
+    {Stranger,Key} = ba_session_passport:invitation_key(binary:copy(<<"6">>,32)),
+    Outsider = (policy(Cid,#{}))#{invitation := Stranger,join := ba_session_passport:join(session(),Cid,Key)},
     {ok,Forged,_} = p(request_status,[B,5,p(new,[KC,Outsider,0])]),
     ?assertMatch({error,_,SB},p(receive_packet,[Cid,Forged,6,SB])).
 
-p(F,Args) -> apply(ba_buffee_control_protocol,F,Args).
+p(F,Args) -> apply(ba_session_control_protocol,F,Args).
 body(Wire) -> json:decode(base64:decode(maps:get(<<"body">>,json:decode(Wire)))).
 resign(Packet,{_,Private},Fun) -> p(seal,[Fun(body(Packet)),Private]).
 raw_seal(Data,Private) ->
-    Sig = crypto:sign(eddsa,none,[<<"beamaudio-buffee-control/v1:">>,Data],[Private,ed25519]),
+    Sig = crypto:sign(eddsa,none,[<<"beamaudio-session-control/v1:">>,Data],[Private,ed25519]),
     iolist_to_binary(json:encode(#{<<"body">> => base64:encode(Data),<<"signature">> => binary:encode_hex(Sig)})).
 
 membership_deadline_is_synchronous_test() ->

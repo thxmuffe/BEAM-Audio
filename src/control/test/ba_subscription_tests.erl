@@ -33,11 +33,11 @@ fresh_clock_required_after_resume_test() ->
 with_store(Fun) ->
     Dir = filename:join("/tmp","ba_core-subscriptions-"++integer_to_list(erlang:unique_integer([positive]))),
     Saved = [{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
-    %% The live Session runtime creates this table (ba_buffee_runtime_sup).
-    ba_session_scope:new_table(ba_buffee_state,[named_table,public,set]),
+    %% The live Session runtime creates this table (ba_session_runtime_sup).
+    ba_session_scope:new_table(ba_session_state,[named_table,public,set]),
     try os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED","test-only"),Fun()
     after
-        ets:delete(ba_buffee_state),
+        ets:delete(ba_session_state),
         [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Saved],
         [file:delete(filename:join(Dir,F)) || F <- ["audio_subscription.term","audio_subscriptions.term"]],file:del_dir(Dir)
     end.

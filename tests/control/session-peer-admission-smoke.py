@@ -17,7 +17,7 @@ def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     return module
-control=load('control',HERE/'buffee-control-smoke.py')
+control=load('control',HERE/'session-control-smoke.py')
 relay=load('relay',HERE.parent/'ReceptionDesk/local_reception.py')
 relay.ERL=Path(shutil.which('erl'))
 ADMIN={'grant','on_air','end_session'}
@@ -26,8 +26,8 @@ def main():
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
     paths=list((control.ROOT/'builds/intermediates/control/default/lib').glob('*/ebin'))
-    output=control.ROOT/'builds/intermediates/buffee-control-check';output.mkdir(parents=True,exist_ok=True)
-    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(output),str(HERE/'ba_buffee_control_probe.erl')],check=True)
+    output=control.ROOT/'builds/intermediates/session-control-check';output.mkdir(parents=True,exist_ok=True)
+    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(output),str(HERE/'ba_session_control_probe.erl')],check=True)
     paths=[output,*paths];runtimes=[];desk=None
     with tempfile.TemporaryDirectory() as state:
         def runtime(name,seed=None):
@@ -45,7 +45,7 @@ def main():
         try:
             desk=relay.start_desk(port);url=f'ws://127.0.0.1:{port}/relay/v1'
             a=runtime('creator');assert a.request('create',desks=[url])['ok']
-            link=a.request('invite')['value'];session=member(a)['buffee']
+            link=a.request('invite')['value'];session=member(a)['session']
             assert '/v5?' in link
             b,c=runtime('b'),runtime('c')
             for r in (b,c):joined(r,link)
@@ -71,7 +71,7 @@ def main():
             for r in (b,c,d):r.close()
             e,f=runtime('e'),runtime('f')
             joined(e,link)
-            assert member(e)['buffee']==session and member(e)['participants']==[]
+            assert member(e)['session']==session and member(e)['participants']==[]
             joined(f,link);meet(e,f)
             for r in (e,f):assert not ADMIN&set(member(r)['privileges'])
             # c returns: its saved policy restores on_air without a grant holder present.

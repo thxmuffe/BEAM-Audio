@@ -1,4 +1,4 @@
-%% Console projection of ordinary Buffee-member observations. No PCM or audio I/O.
+%% Console projection of ordinary Session-member observations. No PCM or audio I/O.
 -module(ba_cli_monitor).
 -export([run/2,run_local/1,render/1,render/2]).
 %% Embedded launchers use the same monitor loop without a second Device/socket.
@@ -16,10 +16,10 @@ run(A,Root) ->
         {ok,Selected} ->
             _=ba_cli:request(Selected,#{<<"method">> => <<"snapshot">>}),
             remember_local(Selected,A),
-            io:format(standard_error,"Monitoring local Device ~s and its current Buffee. Ctrl-C exits this view.~n",[Selected]),
+            io:format(standard_error,"Monitoring local Device ~s and its current Session. Ctrl-C exits this view.~n",[Selected]),
             Selected;
         error ->
-            io:put_chars(standard_error,"Connecting Buffee monitor (audio stays disabled)...\n"),
+            io:put_chars(standard_error,"Connecting Session monitor (audio stays disabled)...\n"),
             Observer=choose(A,Root),
             io:format(standard_error,"Monitoring through Device ~s. Audio disabled. Ctrl-C exits this view; Device stays connected.~n",[Observer]),
             Observer
@@ -29,7 +29,7 @@ choose(A,Root) ->
     Parsed=invitation(A,Root),
     case Parsed of
         {Invitation,Body} ->
-            Id=maps:get(<<"buffee">>,Body),Name="ba-monitor-"++binary_to_list(Id),
+            Id=maps:get(<<"session">>,Body),Name="ba-monitor-"++binary_to_list(Id),
             ensure(Name,Invitation,Id,A,Root),remember(Invitation,A),Name;
         invalid ->
             case maps:get(no_user_state,A,false) of
@@ -40,7 +40,7 @@ choose(A,Root) ->
             Live=[N || N <- Candidates,live_observer(N)],
             case Live of
                 [N] -> io:put_chars(standard_error,"Using existing authorized observer; no new invitation is required.\n"),N;
-                [] -> fail(<<"No active observer or valid saved invitation. Supply a fresh --invitation-file. No Buffee was created.">>);
+                [] -> fail(<<"No active observer or valid saved invitation. Supply a fresh --invitation-file. No Session was created.">>);
                 _ -> fail(<<"Several observers are active. Select one with --devicename or a valid --invitation-file.">>)
             end
     end.
@@ -55,7 +55,7 @@ invitation(A,Root) ->
         end
     end,
     case Data of
-        {ok,B} -> Link=string:trim(B),try {_,I}=ba_buffee_passport:parse_invitation(Link),{Link,I} catch _:_ -> invalid end;
+        {ok,B} -> Link=string:trim(B),try {_,I}=ba_session_passport:parse_invitation(Link),{Link,I} catch _:_ -> invalid end;
         _ -> invalid
     end.
 remember(Link,A) ->
@@ -77,25 +77,25 @@ live_observer(Name) ->
     try
         R=ba_cli:request(Name,#{<<"method">> => <<"snapshot">>}),
         maps:get(<<"observer">>,maps:get(<<"managed">>,R),false) andalso
-        maps:get(<<"state">>,maps:get(<<"buffee">>,R))=:=<<"authorized">>
+        maps:get(<<"state">>,maps:get(<<"session">>,R))=:=<<"authorized">>
     catch _:_ -> false end.
 
 invitation_path(A,Root) -> maps:get(invitation_file,A,filename:join([Root,"builds/CLI/private/monitor-invitation.txt"])).
 ensure(Name,Link,Id,A,Root) ->
     case ba_cli_store:read(Name) of
         {error,not_running} ->
-            ba_cli:new_device(#{devicename => Name,enable => "",createbuffee => false,joinbuffee => binary_to_list(Link),
+            ba_cli:new_device(#{devicename => Name,enable => "",createsession => false,joinsession => binary_to_list(Link),
                 observer => true,until => "admitted",timeout => maps:get(timeout,A,"120s")},Root),ok;
         {ok,_} ->
             R=ba_cli:request(Name,#{<<"method">> => <<"snapshot">>}),
             case maps:get(<<"observer">>,maps:get(<<"managed">>,R),false) of true -> ok;false -> fail(<<"Reserved monitor name is owned by a non-observer Device.">>) end,
-            Buffee=maps:get(<<"buffee">>,R),
-            case {maps:get(<<"state">>,Buffee),maps:get(<<"buffee">>,Buffee,null)} of
-                {<<"idle">>,_} -> ba_cli:request(Name,#{<<"method">> => <<"join_buffee">>,<<"invitation">> => Link});
+            Session=maps:get(<<"session">>,R),
+            case {maps:get(<<"state">>,Session),maps:get(<<"session">>,Session,null)} of
+                {<<"idle">>,_} -> ba_cli:request(Name,#{<<"method">> => <<"join_session">>,<<"invitation">> => Link});
                 {<<"authorized">>,Id} -> ok;
                 {_,Id} ->
-                    ba_cli:request(Name,#{<<"method">> => <<"leave_buffee">>}),
-                    ba_cli:request(Name,#{<<"method">> => <<"join_buffee">>,<<"invitation">> => Link});
+                    ba_cli:request(Name,#{<<"method">> => <<"leave_session">>}),
+                    ba_cli:request(Name,#{<<"method">> => <<"join_session">>,<<"invitation">> => Link});
                 _ -> fail(<<"Monitor belongs to another live gathering. Stop it before changing invitations.">>)
             end,
             await_admission(Name,erlang:monotonic_time(millisecond)+ba_cli:timeout(A),undefined);
@@ -108,9 +108,9 @@ await_admission(Name,Until,LastState) ->
         true -> ok;
         false ->
             case State of
-                <<"idle">> -> fail(<<"The saved gathering is no longer active. Supply a valid invitation from the current Buffee (--invitation-file PATH).">>);
+                <<"idle">> -> fail(<<"The saved gathering is no longer active. Supply a valid invitation from the current Session (--invitation-file PATH).">>);
                 <<"revoked">> -> fail(<<"Admission was denied. Check revocation and that the Owner is online.">>);
-                <<"ended">> -> fail(<<"The saved Buffee ended. A new Buffee needs a valid invitation.">>);
+                <<"ended">> -> fail(<<"The saved Session ended. A new Session needs a valid invitation.">>);
                 _ -> ok
             end,
             case State=:=LastState of
@@ -118,7 +118,7 @@ await_admission(Name,Until,LastState) ->
                 false -> io:format(standard_error,"Waiting for admission (~ts); checking the saved invitation's gathering...~n",[safe(State)])
             end,
             case erlang:monotonic_time(millisecond)>=Until of
-                true -> fail(<<"Timed out joining the saved Buffee. Keep its Owner online or supply a fresh invitation from the current Buffee.">>);
+                true -> fail(<<"Timed out joining the saved Session. Keep its Owner online or supply a fresh invitation from the current Session.">>);
                 false -> receive after 250 -> ok end,await_admission(Name,Until,State)
             end
     end.
@@ -167,8 +167,8 @@ show(R,Name,A,Metrics,Plain,Instances,Names,Now) ->
     end.
 render(Data) -> render(Data,false).
 render(Data,Color) ->
-    Buffee=maps:get(<<"buffee">>,Data),Rows=maps:get(<<"devices">>,Data),
-    Header=io_lib:format("Session: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Buffee,<<>>)),safe(maps:get(<<"buffee">>,Buffee,<<>>)),safe(maps:get(<<"state">>,Data))]),
+    Session=maps:get(<<"session">>,Data),Rows=maps:get(<<"devices">>,Data),
+    Header=io_lib:format("Session: ~ts  ~ts  (~ts)~n",[safe(maps:get(<<"name">>,Session,<<>>)),safe(maps:get(<<"session">>,Session,<<>>)),safe(maps:get(<<"state">>,Data))]),
     Policy=maps:get(<<"offset_policy">>,maps:get(<<"clock">>,Data,#{}),#{}),
     Response=case maps:get(<<"offset_ms">>,Policy,null) of
         Ms when is_integer(Ms) -> [integer_to_list(Ms)," ms",case maps:get(<<"ready">>,Policy,false) of true -> [];false -> " (not ready)" end];
@@ -183,7 +183,7 @@ master_clock_line(Clock,Rows) ->
     try
         #{<<"device">> := Id,<<"utc_time_ns">> := Value,<<"age_ms">> := Age,<<"state">> := State}=maps:get(<<"master_clock">>,Clock),
         true=is_integer(Age) andalso Age>=0,
-        Ms=ba_buffee_time_protocol:integer(Value) div 1000000,
+        Ms=ba_session_time_protocol:integer(Value) div 1000000,
         UTC=calendar:system_time_to_rfc3339(Ms,[{unit,millisecond},{offset,"Z"}]),
         Name=case [R || #{<<"id">> := I}=R <- Rows,I=:=Id] of [R] -> device_name(R);_ -> device_name(#{<<"id">> => Id}) end,
         ["Master clock: ",UTC," | ",Name," | sample age: ",integer_to_list(Age)," ms",

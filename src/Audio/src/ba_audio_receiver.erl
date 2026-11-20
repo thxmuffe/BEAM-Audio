@@ -27,7 +27,7 @@ call(Request) ->
 init([]) ->
     Items = ba_subscription:load(),
     erlang:send_after(250,self(),tick),
-    Control = ba_session_scope:whereis(ba_buffee_control),true = is_pid(Control),monitor(process,Control),
+    Control = ba_session_scope:whereis(ba_session_control),true = is_pid(Control),monitor(process,Control),
     self() ! catalog_bootstrap,
     {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
           providers => #{},catalogs => #{},contracts => #{},control => Control,
@@ -78,8 +78,8 @@ handle_call({clear_contract,Direction,Peer,Key},_,S) when Direction=:=publish;Di
 handle_call({subscribe,Peer,Key,channel},_,#{subscriptions := Items,offers := Offers} = S) when map_size(Items)<16 ->
     Existing = lists:any(fun(R) -> I = maps:get(intent,R),maps:get(device,I)=:=Peer andalso maps:get(source_key,I)=:=Key end,maps:values(Items)),
     case {Existing,maps:find({Peer,Key},Offers),context(Peer)} of
-        {false,{ok,O},{ok,#{buffee := Buffee}}} ->
-            I = ba_subscription:new(Buffee,Peer,O,channel),Id = maps:get(id,I),
+        {false,{ok,O},{ok,#{session := Session}}} ->
+            I = ba_subscription:new(Session,Peer,O,channel),Id = maps:get(id,I),
             Next = persist(S#{subscriptions := Items#{Id => waiting(I)}}),
             {reply,{ok,Id},restore_one(Id,false,Next)};
         {true,_,_} -> {reply,{error,already_subscribed},S};
@@ -159,11 +159,11 @@ handle_info(tick,S) ->
             end end,maps:get(subscriptions,Final))}
     end,
     {noreply,Recovered};
-handle_info({buffee_audio,Context,Id,P},S) ->
+handle_info({session_audio,Context,Id,P},S) ->
     try
-        #{peer := Peer,link := Link,buffee := Buffee,deadline := Deadline} = Context,
+        #{peer := Peer,link := Link,session := Session,deadline := Deadline} = Context,
         true = now_ms()<Deadline,
-        {ok,#{link := Link,buffee := Buffee}} = context(Peer),
+        {ok,#{link := Link,session := Session}} = context(Peer),
         incoming(Context,Id,P,S)
     of Next -> {noreply,Next}
     catch _:_ ->
@@ -366,8 +366,8 @@ restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := 
     Ready = Media=:=undefined andalso State=/=opening andalso now_ms()>=Retry andalso
         (not Automatic orelse clock_ready(S)),
     case {Ready,maps:find({Peer,Key},Offers),maps:find({receive_audio,Peer,Key},Contracts),context(Peer)} of
-        {true,{ok,#{incarnation := Inc,profiles := #{channel := D}}},{ok,Contract},{ok,#{buffee := Buffee} = Context}}
-            when Buffee=:=map_get(buffee,I) ->
+        {true,{ok,#{incarnation := Inc,profiles := #{channel := D}}},{ok,Contract},{ok,#{session := Session} = Context}}
+            when Session=:=map_get(session,I) ->
             case backend_missing(D) of
                 true -> put_sub(Id,R#{state := waiting_for_backend,error => missing_backend_reason(D),retry_at := now_ms()+1000},S);
                 false ->
@@ -383,7 +383,7 @@ restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := 
             end
     end.
 clock_ready(S) ->
-    Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
+    Module = ba_settings:app(audio_clock_adapter,ba_session_clock),
     try ba_subscription:clock_ready(Module:status(),maps:get(resume_after,S)) catch _:_ -> false end.
 start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
     case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
@@ -403,7 +403,7 @@ catalog(Peer,#{catalogs := Cs} = S) ->
             end;
         %% A known source whose relationship lapsed: say hello; its start
         %% (audio_link_up) triggers the read.
-        {false,_} -> ba_buffee_control:introduce(Peer),{{error,no_link},S};
+        {false,_} -> ba_session_control:introduce(Peer),{{error,no_link},S};
         _ -> {{error,pending},S}
     end.
 %% Dark Sessions: an ON AIR Device tells the Devices it can reach that it has
@@ -413,7 +413,7 @@ announce_catalog(#{sources := Sources}=S) ->
     Readers = readers(),announce(Readers,S),
     %% Beyond direct neighbours, the announcement spreads by gossip.
     case map_size(Sources)>0 of
-        true -> try ba_buffee_membership:announce(<<"on_air">>) catch exit:_ -> ok end;
+        true -> try ba_session_membership:announce(<<"on_air">>) catch exit:_ -> ok end;
         false -> ok
     end,
     S#{announced => Readers,announce_at => now_ms()+30000}.
@@ -441,9 +441,9 @@ known_sources(#{offers := Offers,subscriptions := Subs}=S) ->
     lists:usort([P || {P,_} <- maps:keys(Offers)]++[maps:get(device,I) || #{intent := I} <- maps:values(Subs)]++
         [P || {P,Until} <- maps:to_list(maps:get(wanted,S,#{})),Until>Now]).
 refresh_all(S) -> lists:foldl(fun(Peer,Acc) -> {_,Next}=catalog(Peer,Acc),Next end,S,known_sources(S)).
-membership() -> try ba_buffee_membership:current() catch exit:_ -> {error,unavailable} end.
-context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
-send(Peer,Id,P) -> ba_buffee_control:audio_message(Peer,Id,P).
+membership() -> try ba_session_membership:current() catch exit:_ -> {error,unavailable} end.
+context(Peer) -> try ba_session_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
+send(Peer,Id,P) -> ba_session_control:audio_message(Peer,Id,P).
 wire(#{context := #{peer := Peer,link := Link,deadline := Deadline}},Id,P) ->
     Now = now_ms(),
     case context(Peer) of
@@ -451,7 +451,7 @@ wire(#{context := #{peer := Peer,link := Link,deadline := Deadline}},Id,P) ->
         _ -> {error,link_lost}
     end.
 binding(R) -> #{<<"source">> => maps:get(source,R),<<"incarnation">> => maps:get(incarnation,R),<<"attempt">> => maps:get(attempt,R)}.
-matches(#{peer := Peer,link := Link,buffee := Buffee},P,#{context := #{peer := Peer,link := Link,buffee := Buffee,deadline := Deadline}} = R) ->
+matches(#{peer := Peer,link := Link,session := Session},P,#{context := #{peer := Peer,link := Link,session := Session,deadline := Deadline}} = R) ->
     true = now_ms()<Deadline,true = maps:with([<<"source">>,<<"incarnation">>,<<"attempt">>],P)=:=binding(R),ok.
 bound_transport(Context,Id,P,S) ->
     #{peer := Peer,link := Link} = Context,
@@ -553,7 +553,7 @@ terminate(_,S) ->
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([suspended,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
 resync_clock(Reason) ->
-    Module = ba_settings:app(audio_clock_adapter,ba_buffee_clock),
+    Module = ba_settings:app(audio_clock_adapter,ba_session_clock),
     try case erlang:function_exported(Module,resync,1) of
         true -> Module:resync(Reason);false -> Module:resync()
     end catch _:_ -> unavailable end.

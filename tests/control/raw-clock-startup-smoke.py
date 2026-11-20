@@ -15,9 +15,9 @@ spec.loader.exec_module(helper)
 
 def main():
     root = helper.control.ROOT
-    out = root / 'builds/intermediates/buffee-control-check'
+    out = root / 'builds/intermediates/session-control-check'
     out.mkdir(parents=True, exist_ok=True)
-    subprocess.run([shutil.which('erlc'), '-Werror', '-o', str(out), str(HERE / 'ba_buffee_control_probe.erl')], check=True)
+    subprocess.run([shutil.which('erlc'), '-Werror', '-o', str(out), str(HERE / 'ba_session_control_probe.erl')], check=True)
     paths = [out, *(root / 'builds/intermediates/control/default/lib').glob('*/ebin')]
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', 0))

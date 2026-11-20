@@ -4,8 +4,8 @@
 bounded_delivery_test() ->
     URL = <<"wss://desk.example/relay/v1">>,
     Frame = iolist_to_binary(json:encode(#{op => <<"delivery">>,from => <<"peer">>,
-        mailbox => <<"cap">>,payload => #{buffee => <<"buffee">>}})),
-    S = #{owner => self(),url => URL,conn => self(),stream => stream,boxes => #{<<"cap">> => <<"buffee">>}},
+        mailbox => <<"cap">>,payload => #{session => <<"session">>}})),
+    S = #{owner => self(),url => URL,conn => self(),stream => stream,boxes => #{<<"cap">> => <<"session">>}},
     %% An owner with a full mailbox is not sent more.
     [self() ! filler || _ <- lists:seq(1,64)],
     ?assertMatch({noreply,#{diagnostics := #{last_error := desk_owner_overloaded}}},

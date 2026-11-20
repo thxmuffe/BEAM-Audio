@@ -32,21 +32,21 @@ reconcile(S) ->
     end,
     Requested=Gates#{microphone := maps:get(microphone,Gates) andalso ba_settings:get(mic_live,false) =:= true,
                      speaker := maps:get(speaker,Gates) andalso ba_settings:get(muted,false) =/= true},
-    OnAir=lists:member(<<"on_air">>,maps:get(privileges,ba_buffee_membership:status(),[])),
+    OnAir=lists:member(<<"on_air">>,maps:get(privileges,ba_session_membership:status(),[])),
     Desired=Requested#{broadcast := maps:get(broadcast,Requested) andalso OnAir},
     Consent=case ba_settings:app(audio_suspended,false) of
         true -> maps:map(fun(_,_) -> false end,Desired);false -> Desired
     end,Adapter=ba_settings:app(audio_capture_adapter,ba_no_capture),
     [Adapter:stop(K) || K <- [microphone,broadcast],not maps:get(K,Consent),maps:get(state,Adapter:status(K))=/=stopped],
-    case ba_buffee_membership:current() of
-        {ok,#{policy := #{buffee := Buffee,peers := Peers},routes := _}} ->
+    case ba_session_membership:current() of
+        {ok,#{policy := #{session := Session,peers := Peers},routes := _}} ->
             ok=ba_audio_sup:ensure_started(),
             Connected=S,
             Captured=lists:foldl(fun(K,Acc) -> capture(K,maps:get(K,Consent),Adapter,Acc) end,Connected,[microphone,broadcast]),
             View=ba_audio_receiver:snapshot(),
             {Pub,_}=ba_device_store:identity(),Self=binary:encode_hex(Pub),
             Local=[ba_audio:describe(P) || P <- ba_audio:sources()],
-            Publish=[{publish,P,maps:get(source_key,O),ba_app_session:contract(Buffee,Self,#{receiver => P,source => maps:get(source_key,O)})}
+            Publish=[{publish,P,maps:get(source_key,O),ba_app_session:contract(Session,Self,#{receiver => P,source => maps:get(source_key,O)})}
                 || P <- maps:keys(Peers),not ba_app_session:excluded(P),O <- Local],
             Offers=[O || O <- maps:get(offers,View),not ba_app_session:excluded(maps:get(device,O))],
             %% "Open your speakers": an ON AIR Device's offer asks this Device's
@@ -57,7 +57,7 @@ reconcile(S) ->
             end,
             Receive=case maps:get(speaker,Consent) of
                 true -> [{receive_audio,maps:get(device,O),maps:get(source_key,O),
-                    ba_app_session:contract(Buffee,maps:get(device,O),#{receiver => Self,source => maps:get(source_key,O)})} || O <- Offers];
+                    ba_app_session:contract(Session,maps:get(device,O),#{receiver => Self,source => maps:get(source_key,O)})} || O <- Offers];
                 false -> []
             end,
             Wanted=lists:sublist(Publish++Receive,32),
@@ -105,7 +105,7 @@ reconcile(S) ->
 %% Each change becomes a local chat line; the chat process owns the wording.
 announce_on_air(Now,S) ->
     Before=maps:get(on_air,S,[]),
-    case ba_session_scope:whereis(ba_buffee_chat) of
+    case ba_session_scope:whereis(ba_session_chat) of
         undefined -> ok;
         Chat -> [Chat ! {on_air,D,true} || D <- Now--Before],[Chat ! {on_air,D,false} || D <- Before--Now]
     end,

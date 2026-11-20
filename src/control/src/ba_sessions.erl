@@ -9,15 +9,15 @@ request(Command) -> gen_server:call(?MODULE,{request,Command},30000).
 %% The default scope predates Session-named scopes. Clear either copy, through
 %% its owner when running, so a late checkpoint cannot restore forgotten rights.
 forget(Session) ->
-    Scopes=lists:usort([undefined,Session|[Id || #{id := Id,buffee := B} <- ba_settings:get(open_sessions,[]),B=:=Session]]),
+    Scopes=lists:usort([undefined,Session|[Id || #{id := Id,session := B} <- ba_settings:get(open_sessions,[]),B=:=Session]]),
     lists:foreach(fun(Scope) ->
-        in(Scope,fun() -> case ba_session_scope:whereis(ba_buffee) of
+        in(Scope,fun() -> case ba_session_scope:whereis(ba_session) of
             undefined -> ok=ba_device_store:forget_session(Session);
-            _ -> ok=ba_buffee:forget_session(Session)
+            _ -> ok=ba_session:forget_session(Session)
         end end)
     end,Scopes),ok.
 init([]) ->
-    Tabs=ba_settings:get(open_sessions,[#{id => <<"default">>,name => <<"Session">>,buffee => null}]),
+    Tabs=ba_settings:get(open_sessions,[#{id => <<"default">>,name => <<"Session">>,session => null}]),
     self() ! restore,{ok,#{tabs => Tabs}}.
 handle_info(restore,#{tabs := Tabs}=S) ->
     [start(Id) || #{id := Id} <- Tabs,Id=/=<<"default">>],{noreply,S};
@@ -29,21 +29,21 @@ handle_call({request,#{<<"method">> := <<"new_session">>}=Command},_,#{tabs := T
     %% A created Session's ID names its creator, so the scope gets that same ID.
     Nonce=binary:encode_hex(crypto:strong_rand_bytes(16)),
     Id=case maps:get(<<"create">>,Command,false) of
-        true -> {Pub,_}=ba_device_store:identity(),ba_buffee_passport:session_id(binary:encode_hex(Pub),Nonce);
+        true -> {Pub,_}=ba_device_store:identity(),ba_session_passport:session_id(binary:encode_hex(Pub),Nonce);
         false -> Nonce
     end,
     case start(Id) of
         ok ->
             case maps:get(<<"create">>,Command,false) of
                 true ->
-                    Desk=ba_buffee_passport:default_desk(),
-                    Reply=in(Id,fun() -> ba_device_api:request(#{<<"method">> => <<"create_buffee">>,<<"name">> => <<"New Session">>,<<"desks">> => [Desk],<<"nonce">> => Nonce}) end),
+                    Desk=ba_session_passport:default_desk(),
+                    Reply=in(Id,fun() -> ba_device_api:request(#{<<"method">> => <<"create_session">>,<<"name">> => <<"New Session">>,<<"desks">> => [Desk],<<"nonce">> => Nonce}) end),
                     case maps:get(<<"error">>,Reply,null) of
-                        null -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => Id}]}),
+                        null -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,session => Id}]}),
                             {reply,metadata(Id,Reply,Next,Command),Next};
                         _ -> stop(Id),{reply,metadata(null,Reply,S,Command),S}
                     end;
-                false -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,buffee => null}]}),
+                false -> Next=save(S#{tabs := Tabs++[#{id => Id,name => <<"New Session">>,session => null}]}),
                     {reply,metadata(Id,#{},Next,Command),Next}
             end;
         {error,_} -> {reply,metadata(null,#{<<"error">> => <<"Could not start Session.">>},S,Command),S}
@@ -52,7 +52,7 @@ handle_call({request,#{<<"method">> := <<"close_session">>,<<"session">> := Id}=
     case lists:any(fun(D) -> maps:get(id,D)=:=Id end,Tabs) of
         false -> {reply,metadata(null,#{<<"error">> => <<"Unknown Session.">>},S,Command),S};
         true ->
-            _=in(Id,fun ba_buffee:leave/0),stop(Id),
+            _=in(Id,fun ba_session:leave/0),stop(Id),
             Next=save(S#{tabs := [D || D <- Tabs,maps:get(id,D)=/=Id]}),
             {reply,metadata(null,#{},Next,Command),Next}
     end;
@@ -69,9 +69,9 @@ handle_call({request,Command},From,#{tabs := Tabs}=S) ->
             end
     end;
 handle_call({finished,Id,Reply,Command},_,#{tabs := Tabs}=S) ->
-    Next=case maps:get(buffee,Reply,undefined) of
-        #{state := idle} -> save_changed(S,S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{name := <<"New Session">>,buffee := null};false -> D end || D <- Tabs]});
-        #{name := Name,buffee := Buffee} -> save_changed(S,S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{name := Name,buffee := Buffee};false -> D end || D <- Tabs]});
+    Next=case maps:get(session,Reply,undefined) of
+        #{state := idle} -> save_changed(S,S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{name := <<"New Session">>,session := null};false -> D end || D <- Tabs]});
+        #{name := Name,session := Session} -> save_changed(S,S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{name := Name,session := Session};false -> D end || D <- Tabs]});
         _ -> S
     end,
     {reply,metadata(Id,Reply,Next,Command),Next};
@@ -99,10 +99,10 @@ save(#{tabs := Tabs}=S) -> ok=ba_settings:put(open_sessions,Tabs),S.
 metadata(Id,Reply,#{tabs := Tabs},Command) ->
     Base=#{<<"error">> => null,session_id => Id,sessions => Tabs,supports_sessions => true},
     maps:merge(maps:merge(Base,Reply),maps:with([<<"request_id">>],Command)).
-prepare(Id,#{<<"method">> := <<"join_buffee">>,<<"invitation">> := Link},#{tabs := Tabs}=S) ->
+prepare(Id,#{<<"method">> := <<"join_session">>,<<"invitation">> := Link},#{tabs := Tabs}=S) ->
     try
-        {_,I}=ba_buffee_passport:parse_invitation(Link),Target=maps:get(<<"buffee">>,I),
-        Existing=[maps:get(id,D) || D <- Tabs,maps:get(buffee,D,null)=:=Target],
+        {_,I}=ba_session_passport:parse_invitation(Link),Target=maps:get(<<"session">>,I),
+        Existing=[maps:get(id,D) || D <- Tabs,maps:get(session,D,null)=:=Target],
         case Existing of
             [Selected|_] ->
                 case Id=:=Selected of true -> {Id,S};false ->
@@ -120,13 +120,13 @@ prepare(Id,#{<<"method">> := <<"join_buffee">>,<<"invitation">> := Link},#{tabs 
     catch _:_ -> {error,<<"Invalid invitation or Session unavailable.">>} end;
 %% A created Session's ID names its creator, so an empty slot takes that ID
 %% before creating in it (as new_session with create does).
-prepare(Id,#{<<"method">> := <<"create_buffee">>}=Command,#{tabs := Tabs}=S)
+prepare(Id,#{<<"method">> := <<"create_session">>}=Command,#{tabs := Tabs}=S)
         when Id=/=<<"default">>,not is_map_key(<<"nonce">>,Command) ->
     case blank(Id,Tabs) of
         false -> {Id,S};
         true ->
             Nonce=binary:encode_hex(crypto:strong_rand_bytes(16)),
-            {Pub,_}=ba_device_store:identity(),Target=ba_buffee_passport:session_id(binary:encode_hex(Pub),Nonce),
+            {Pub,_}=ba_device_store:identity(),Target=ba_session_passport:session_id(binary:encode_hex(Pub),Nonce),
             case start(Target) of
                 ok -> stop(Id),
                     Next=save(S#{tabs := [case maps:get(id,D)=:=Id of true -> D#{id := Target};false -> D end || D <- Tabs]}),
@@ -135,17 +135,17 @@ prepare(Id,#{<<"method">> := <<"create_buffee">>}=Command,#{tabs := Tabs}=S)
             end
     end;
 prepare(Id,_,S) -> {Id,S}.
-blank(Id,Tabs) -> lists:any(fun(D) -> maps:get(id,D)=:=Id andalso maps:get(buffee,D,null)=:=null end,Tabs).
-dispatch(#{<<"method">> := <<"join_buffee">>,<<"invitation">> := Link}=Command) ->
-    {_,I}=ba_buffee_passport:parse_invitation(Link),
-    case ba_buffee:status() of
-        #{buffee := Buffee} when Buffee=:=map_get(<<"buffee">>,I) ->
+blank(Id,Tabs) -> lists:any(fun(D) -> maps:get(id,D)=:=Id andalso maps:get(session,D,null)=:=null end,Tabs).
+dispatch(#{<<"method">> := <<"join_session">>,<<"invitation">> := Link}=Command) ->
+    {_,I}=ba_session_passport:parse_invitation(Link),
+    case ba_session:status() of
+        #{session := Session} when Session=:=map_get(<<"session">>,I) ->
             ba_contacts:link(Link),ba_device_api:request(#{<<"method">> => <<"snapshot">>});
         _ -> ba_device_api:request(maps:remove(<<"session">>,Command))
     end;
 dispatch(Command) -> ba_device_api:request(maps:remove(<<"session">>,Command)).
 
 default_saved(Target,Tabs) ->
-    Saved=ba_device_store:load(buffee_connection,undefined),
-    is_map(Saved) andalso maps:get(buffee,Saved,undefined)=:=Target andalso
+    Saved=ba_device_store:load(session_connection,undefined),
+    is_map(Saved) andalso maps:get(session,Saved,undefined)=:=Target andalso
         not lists:any(fun(D) -> maps:get(id,D)=:=<<"default">> end,Tabs).

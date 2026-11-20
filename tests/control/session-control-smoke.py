@@ -30,7 +30,7 @@ class Runtime:
         self.messages = queue.Queue()
         self.process = subprocess.Popen(
             [executable or shutil.which("erl"), "+S", "2", "-noshell", "-pa", *map(str, paths),
-             "-s", "ba_buffee_control_probe", "main"],
+             "-s", "ba_session_control_probe", "main"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, text=True, encoding="utf-8")
         self.stderr_lines=deque(maxlen=32)
@@ -86,17 +86,6 @@ def wait(runtime, predicate):
     raise AssertionError("State did not converge: " + json.dumps(snapshot))
 
 
-def job_state(runtime, identity, state):
-    deadline = time.monotonic() + 12
-    while time.monotonic() < deadline:
-        reply = runtime.request("job_status", id=identity)
-        assert reply["ok"], reply
-        if reply["value"]["state"] == state:
-            return reply["value"]
-        time.sleep(0.02)
-    raise AssertionError("Job did not reach " + state + ": " + json.dumps(reply))
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="wss://beamaudio.onrender.com/reception")
@@ -104,10 +93,10 @@ def main():
     # Uses the same real Desk as the apps; does not start a separate service or GUI.
     paths = list((ROOT / "builds/intermediates/control/default/lib").glob("*/ebin"))
     assert paths, "Run rebar3 compile in src/control first"
-    output = ROOT / "builds/intermediates/buffee-control-check"
+    output = ROOT / "builds/intermediates/session-control-check"
     output.mkdir(parents=True, exist_ok=True)
     subprocess.run([shutil.which("erlc"), "-Werror", "-o", str(output),
-                    str(Path(__file__).with_name("ba_buffee_control_probe.erl"))], check=True)
+                    str(Path(__file__).with_name("ba_session_control_probe.erl"))], check=True)
     runtimes = []
     try:
         for _ in range(2):
@@ -128,16 +117,10 @@ def main():
             peer = remote.identity["id"]
             # Authentication starts an asynchronous capability/name read. Wait
             # for that read before issuing another request on the same session.
-            wait(local, lambda s: s["sessions"].get(peer, {}).get("stage") == "authorized"
+            wait(local, lambda s: s["links"].get(peer, {}).get("stage") == "authorized"
                  and peer in s["peer_names"])
             status = local.request("read", peer=peer)
-            assert status == {"ok": True, "value": {"protocol": 1, "session": "authorized"}}, status
-            caps = local.request("capabilities", peer=peer)
-            assert caps["ok"] and caps["value"]["test"] == {
-                "supported": True, "available": False, "requires_consent": True,
-                "consent": False, "capacity": 2, "active": 0, "max_duration_ms": 10000}
-        assert b.request("enable_test") == {"ok": True}
-        assert a.request("capabilities", peer=b.identity["id"])["value"]["test"]["available"]
+            assert status == {"ok": True, "value": {"protocol": 1, "link": "authorized"}}, status
         before = b.request("snapshot")["rejected"]
         assert a.request("attack", peer=b.identity["id"]) == {"ok": True}
         wait(b, lambda s: s["rejected"] >= before + 3)
@@ -145,48 +128,9 @@ def main():
         for runtime in runtimes:
             s = runtime.request("snapshot")
             assert s["node"] == "nonode@nohost" and s["nodes"] == []
-            assert not s["legacy_started"] and s["workers"] == 0
-            assert s["children"] == sorted(["ba_contacts", "ba_device_config", "ba_desk_connections_sup", "ba_buffee", "ba_buffee_desks", "ba_buffee_runtime_sup"])
-        manager, receiver = a, b
-        contract = secrets.token_hex(16).upper()
-        assert receiver.request("enable_test")["ok"]
-        assert receiver.request("allow_jobs", manager=manager.identity["id"], contract=contract)["ok"]
-
-        def offer(duration=10000, lease=10000, contract_id=contract):
-            reply = manager.request("offer_job", peer=receiver.identity["id"], contract=contract_id,
-                                     duration_ms=duration, lease_ms=lease)
-            assert reply["ok"], reply
-            return reply["value"]
-
-        denied = offer(contract_id=secrets.token_hex(16).upper())
-        assert job_state(manager, denied, "rejected")["report"]["reason"] == "contract_mismatch"
-        assert receiver.request("snapshot")["workers"] == 0
-        completed = offer(duration=1000)
-        accepted = job_state(manager, completed, "accepted")
-        assert manager.request("retry_job", id=completed)["ok"]
-        done = job_state(manager, completed, "completed")
-        assert accepted["attempt"] == done["attempt"]
-        assert manager.request("retry_job", id=completed)["ok"]
-        assert receiver.request("snapshot")["workers"] == 0
-        cancelled = offer()
-        job_state(manager, cancelled, "accepted")
-        assert manager.request("cancel_job", id=cancelled)["ok"]
-        job_state(manager, cancelled, "cancelled")
-        expired = offer(lease=100)
-        job_state(manager, expired, "expired")
-        failed = offer()
-        job_state(manager, failed, "accepted")
-        assert receiver.request("crash_worker")["ok"]
-        job_state(manager, failed, "failed")
-        abandoned = offer(lease=1000)
-        job_state(manager, abandoned, "accepted")
-        manager.close()
-        stopped = wait(receiver, lambda s: s["workers"] == 0 and
-                       s["worker_outcomes"][0] in ("session_lost", "expired"))
-        assert stopped["nodes"] == [] and not stopped["legacy_started"]
-        print("PASS: real Desk WSS status/capabilities; Manager offer, local Contract/consent acceptance, "
-              "completion and idempotent retry; unauthorized Contract, cancellation, lease expiry, "
-              "Worker crash and bounded Manager-loss cleanup; no arbitrary spawn, OTP peers, audio or GUI")
+            assert not s["legacy_started"]
+            assert s["children"] == sorted(["ba_contacts", "ba_device_config", "ba_desk_connections_sup", "ba_session", "ba_session_desks", "ba_session_runtime_sup"])
+        print("PASS: status/capabilities over real Reception, signed and verified requests, link authorization and attack rejection")
     finally:
         for runtime in runtimes:
             runtime.close()

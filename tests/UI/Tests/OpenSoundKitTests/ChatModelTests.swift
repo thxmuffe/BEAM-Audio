@@ -22,7 +22,7 @@ private final class TestRuntime: ChatRuntime {
     func respond(id: String? = nil, error: String? = nil, result: String? = nil, relay: [String: Any]? = nil) {
         var reply: [String: Any] = ["node": "test@127.0.0.1", "peers": [], "messages": [],
                                    "connection_string": "beamaudio://connect/v1?node=test&cookie=test",
-            "buffees": [
+            "sessions": [
                 ["id": "one", "name": "Music", "invitation": "invite-one", "members": ["test@127.0.0.1", "peer-a"], "messages": []],
                 ["id": "two", "name": "Another room", "invitation": "invite-two", "members": ["test@127.0.0.1", "peer-b"], "messages": []]
             ],
@@ -31,7 +31,7 @@ private final class TestRuntime: ChatRuntime {
                 ["id": "peer-a", "state": "running", "detail": "responsive"],
                 ["id": "peer-b", "state": "running", "detail": "responsive"]
             ], "edges": [["test@127.0.0.1", "peer-a"], ["test@127.0.0.1", "peer-b"]]]]
-        if let result { reply["result"] = ["buffee_id": result] }
+        if let result { reply["result"] = ["session_id": result] }
         if let relay { reply["relay"] = relay }
         if let id { reply["request_id"] = id }
         if let error { reply["error"] = error }
@@ -133,57 +133,57 @@ final class ChatModelTests: XCTestCase {
             XCTAssertEqual(model.draft, "Unsent")
         }
     }
-    func testDraftsAndAcknowledgementsAreScopedToTheirBuffee() async {
+    func testDraftsAndAcknowledgementsAreScopedToTheirSession() async {
         await MainActor.run {
             let runtime = TestRuntime()
             let model = ChatModel(runtime: runtime)
             model.draft = "Draft for one"
-            model.selectedBuffeeID = "two"
+            model.selectedSessionID = "two"
             XCTAssertEqual(model.draft, "")
             model.draft = "Message for two"
             model.send()
-            XCTAssertEqual(runtime.requests.last?["buffee_id"], "two")
-            model.selectedBuffeeID = "one"
+            XCTAssertEqual(runtime.requests.last?["session_id"], "two")
+            model.selectedSessionID = "one"
             XCTAssertEqual(model.draft, "Draft for one")
             XCTAssertFalse(model.sending)
             runtime.respond(id: runtime.requests.last!["request_id"])
             XCTAssertEqual(model.draft, "Draft for one")
-            model.selectedBuffeeID = "two"
+            model.selectedSessionID = "two"
             XCTAssertEqual(model.draft, "")
         }
     }
 
-    func testGraphAndInvitationsBelongToSelectedBuffee() async {
+    func testGraphAndInvitationsBelongToSelectedSession() async {
         await MainActor.run {
             let runtime = TestRuntime()
             let model = ChatModel(runtime: runtime)
             XCTAssertEqual(model.invitation, "invite-one")
             XCTAssertEqual(Set(model.network.nodes.map(\.id)), ["test@127.0.0.1", "peer-a"])
             XCTAssertEqual(model.network.edges, [["test@127.0.0.1", "peer-a"]])
-            model.selectedBuffeeID = "two"
+            model.selectedSessionID = "two"
             XCTAssertEqual(model.invitation, "invite-two")
             XCTAssertEqual(Set(model.network.nodes.map(\.id)), ["test@127.0.0.1", "peer-b"])
             XCTAssertEqual(model.network.edges, [["test@127.0.0.1", "peer-b"]])
         }
     }
 
-    func testAddingExistingBuffeeSelectsItAndMembershipActionsCaptureScope() async {
+    func testAddingExistingSessionSelectsItAndMembershipActionsCaptureScope() async {
         await MainActor.run {
             let runtime = TestRuntime()
             let model = ChatModel(runtime: runtime)
             model.incomingInvitation = "invite-two"
             model.join()
             runtime.respond(id: runtime.requests.last!["request_id"], result: "two")
-            XCTAssertEqual(model.selectedBuffeeID, "two")
-            model.removeBoth(buffeeID: "two", target: "peer-b")
-            XCTAssertEqual(runtime.requests.last?["buffee_id"], "two")
+            XCTAssertEqual(model.selectedSessionID, "two")
+            model.removeBoth(sessionID: "two", target: "peer-b")
+            XCTAssertEqual(runtime.requests.last?["session_id"], "two")
             XCTAssertEqual(runtime.requests.last?["target"], "peer-b")
-            model.selectedBuffeeID = "one"
+            model.selectedSessionID = "one"
             runtime.respond(id: runtime.requests.last!["request_id"])
-            XCTAssertEqual(model.selectedBuffeeID, "one")
-            model.leaveBuffee("one")
-            XCTAssertEqual(runtime.requests.last?["method"], "leave_buffee")
-            XCTAssertEqual(runtime.requests.last?["buffee_id"], "one")
+            XCTAssertEqual(model.selectedSessionID, "one")
+            model.leaveSession("one")
+            XCTAssertEqual(runtime.requests.last?["method"], "leave_session")
+            XCTAssertEqual(runtime.requests.last?["session_id"], "one")
         }
     }
 

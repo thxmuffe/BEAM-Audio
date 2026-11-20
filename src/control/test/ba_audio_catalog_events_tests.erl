@@ -62,7 +62,7 @@ changed_notification_has_exact_wire_shape_test() ->
     ?assertException(error,_,ba_audio_stream_protocol:validate(#{<<"kind">> => <<"catalog.changed">>,<<"extra">> => true})).
 
 deliver(Peer,Id,Payload,Contexts,S) ->
-    {noreply,Next}=ba_audio_receiver:handle_info({buffee_audio,maps:get(Peer,Contexts),Id,Payload},S),Next.
+    {noreply,Next}=ba_audio_receiver:handle_info({session_audio,maps:get(Peer,Contexts),Id,Payload},S),Next.
 announcements(N) ->
     [?assertMatch({_,_,#{<<"kind">> := <<"catalog.changed">>}},M) || M <- messages(N)].
 messages(N) -> [receive {sent,P,Id,Payload} -> {P,Id,Payload} after 1000 -> error(missing_message) end || _ <- lists:seq(1,N)].
@@ -70,7 +70,7 @@ no_message() -> receive {sent,_,_,_}=M -> error({unexpected_network_message,M}) 
 id() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
 fixture(F) ->
     A=binary:copy(<<"A">>,64),B=binary:copy(<<"B">>,64),Peers=[A,B],Parent=self(),
-    Contexts=maps:from_list([{P,#{peer => P,link => id(),buffee => id(),deadline => erlang:monotonic_time(millisecond)+30000}} || P <- Peers]),
+    Contexts=maps:from_list([{P,#{peer => P,link => id(),session => id(),deadline => erlang:monotonic_time(millisecond)+30000}} || P <- Peers]),
     %% This Device holds on_air, the privilege a publication needs.
     Seed=lists:duplicate(64,$E),{Pub,_}=crypto:generate_key(eddsa,ed25519,binary:decode_hex(list_to_binary(Seed))),
     View=#{policy => #{peers => maps:from_list([{P,[stream_read]} || P <- Peers])},
@@ -81,13 +81,13 @@ fixture(F) ->
             ok=ba_audio_stream_protocol:validate(Payload),Parent ! {sent,P,Id,Payload},gen_server:reply(From,ok),Loop()
     end end),
     Membership=spawn(fun Loop() -> receive {'$gen_call',From,current} -> gen_server:reply(From,{ok,View}),Loop() end end),
-    true=register(ba_buffee_control,Control),true=register(ba_buffee_membership,Membership),
+    true=register(ba_session_control,Control),true=register(ba_session_membership,Membership),
     StateDir=os:getenv("BA_STATE_DIR"),os:unsetenv("BA_STATE_DIR"),
     OldSeed=os:getenv("BA_IDENTITY_SEED"),os:putenv("BA_IDENTITY_SEED",Seed),
     S=#{sources => #{},offers => #{},subscriptions => #{},providers => #{},catalogs => #{},contracts => #{},
         control => Control,suspended => false,resume_after => undefined,rejected => 0},
     try F(S,Peers,Contexts) after
-        unregister(ba_buffee_control),unregister(ba_buffee_membership),exit(Control,kill),exit(Membership,kill),
+        unregister(ba_session_control),unregister(ba_session_membership),exit(Control,kill),exit(Membership,kill),
         case StateDir of false -> ok;_ -> os:putenv("BA_STATE_DIR",StateDir) end,
         case OldSeed of false -> os:unsetenv("BA_IDENTITY_SEED");_ -> os:putenv("BA_IDENTITY_SEED",OldSeed) end
     end.

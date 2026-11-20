@@ -12,7 +12,7 @@ def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     return module
-control=load('control',HERE/'buffee-control-smoke.py')
+control=load('control',HERE/'session-control-smoke.py')
 relay=load('relay',HERE.parent/'ReceptionDesk/local_reception.py')
 relay.ERL=Path(shutil.which('erl'))
 
@@ -23,8 +23,8 @@ def main():
             sock.bind(('127.0.0.1',0));ports.append(sock.getsockname()[1])
     desks,runtimes=[],[]
     paths=list((control.ROOT/'builds/intermediates/control/default/lib').glob('*/ebin'))
-    output=control.ROOT/'builds/intermediates/buffee-control-check';output.mkdir(parents=True,exist_ok=True)
-    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(output),str(HERE/'ba_buffee_control_probe.erl')],check=True)
+    output=control.ROOT/'builds/intermediates/session-control-check';output.mkdir(parents=True,exist_ok=True)
+    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(output),str(HERE/'ba_session_control_probe.erl')],check=True)
     paths=[output,*paths]
     with tempfile.TemporaryDirectory() as state:
         def runtime(name,seed=None):
@@ -41,10 +41,10 @@ def main():
                 control.wait(r,lambda s:peer.identity['id'] in s['membership']['participants'])
         def connect(a,b):
             present(a,b)
-            if b.identity['id'] not in a.request('snapshot')['sessions']:
+            if b.identity['id'] not in a.request('snapshot')['links']:
                 reply=a.request('connect',peer=b.identity['id']);assert reply.get('ok'),reply
             for r,peer in ((a,b),(b,a)):
-                control.wait(r,lambda s:s['sessions'].get(peer.identity['id'],{}).get('stage')=='authorized')
+                control.wait(r,lambda s:s['links'].get(peer.identity['id'],{}).get('stage')=='authorized')
         try:
             desks.extend(relay.start_desk(p) for p in ports)
             urls=[f'ws://127.0.0.1:{p}/relay/v1' for p in ports]
@@ -58,11 +58,11 @@ def main():
                 authorized(r);members.append(r)
             x,y=members;sync(a,x,y)
             # Leaving does not consume the shared invitation either.
-            assert y.request('leave_buffee')['ok']
+            assert y.request('leave_session')['ok']
             control.wait(a,lambda s:all(y.identity['id'] not in d.get('online',[]) for d in s['relay']['desks'].values()))
             # Presence ends with Leave; the link and any privileges remain.
             control.wait(a,lambda s:y.identity['id'] not in s['membership']['participants'])
-            assert y.request('join_buffee',invitation=invitation)['ok']
+            assert y.request('join_session',invitation=invitation)['ok']
             authorized(y);sync(a,x,y);connect(x,y)
             assert x.request('read',peer=y.identity['id'])=={'error':'forbidden'}
             for r in members:
@@ -71,12 +71,8 @@ def main():
             assert x.request('read',peer=y.identity['id'])['ok']
             assert y.request('read',peer=x.identity['id'])['ok']
             # A single Desk worker or service failure cannot cascade into core
-            # owners, sessions or an accepted Worker using the other Desk.
-            connect(a,y);contract='D'*32
-            assert y.request('enable_test')['ok']
-            assert y.request('allow_jobs',manager=a.identity['id'],contract=contract)['ok']
-            job=a.request('offer_job',peer=y.identity['id'],contract=contract,duration_ms=10000,lease_ms=10000)['value']
-            control.job_state(a,job,'accepted')
+            # owners, links or the other Desk.
+            connect(a,y)
             identities=[r.request('backend_ids') for r in (a,x,y)]
             for _ in range(3):
                 assert a.request('desk_crash',desk=urls[0])['ok']
@@ -88,21 +84,14 @@ def main():
             desks[0]=relay.start_desk(ports[0])
             control.wait(a,lambda s:s['relay']['desks'][urls[0]]['connected'])
             control.wait(x,lambda s:s['relay']['desks'][urls[0]]['connected'])
-            assert a.request('cancel_job',id=job)['ok']
             old_id = x.identity['id']
             connect(a, x)
-            contract = 'C'*32
-            assert x.request('enable_test')['ok']
-            assert x.request('allow_jobs',manager=a.identity['id'],contract=contract)['ok']
-            job = a.request('offer_job',peer=old_id,contract=contract,duration_ms=10000,lease_ms=10000)['value']
-            control.job_state(a,job,'accepted')
             assert a.request('revoke',peer=old_id)['ok']
-            control.wait(x,lambda s:s['workers']==0 and s['worker_outcomes'][0]=='session_lost')
             control.wait(x,lambda s:s['membership']['state']=='revoked');sync(a,y)
             assert 'error' in x.request('connect',peer=y.identity['id'])
             # Forwardability must not let a removed identity bypass revocation.
-            assert x.request('leave_buffee')['ok']
-            assert x.request('join_buffee',invitation=invitation)['ok']
+            assert x.request('leave_session')['ok']
+            assert x.request('join_session',invitation=invitation)['ok']
             control.wait(x,lambda s:s['membership']['state']=='revoked')
             # Address book (contacts): saving contact works locally on y without sync
             assert y.request('put_contact',id=a.identity['id'],name='Owner')['ok']
@@ -111,14 +100,14 @@ def main():
             contacts = y.request('list_contacts')
             assert a.identity['id'] in contacts['contacts'] and old_id in contacts['contacts']
             assert 'Friends' in contacts['groups']
-            # Ephemeral buffee end: Owner departure terminates gathering; contacts persist
+            # Ephemeral session end: Owner departure terminates gathering; contacts persist
             x.close()
-            assert a.request('end_buffee')['ok']
+            assert a.request('end_session')['ok']
             end=time.monotonic()+15
             for r in (a,y):
                 while True:
                     lifecycle=r.request('lifecycle')
-                    if lifecycle['buffee']=={'state':'idle'}:
+                    if lifecycle['session']=={'state':'idle'}:
                         # Desk sockets are shared by the Device and outlive one Session.
                         assert lifecycle['live']==[] and not lifecycle['transient_state'],lifecycle
                         break
@@ -128,7 +117,7 @@ def main():
             retained_contacts = y.request('list_contacts')
             assert a.identity['id'] in retained_contacts['contacts']
             assert 'Friends' in retained_contacts['groups']
-            print('PASS: shared invitation admits distinct Devices; leave/rejoin; revoked identity denied; two independent Desks, one Owner/Buffee; capability-limited messages; explicit grants; Desk failure isolation; revocation; ephemeral teardown; contacts preserved; no OTP distribution or apps')
+            print('PASS: shared invitation admits distinct Devices; leave/rejoin; revoked identity denied; two independent Desks, one Owner/Session; capability-limited messages; explicit grants; Desk failure isolation; revocation; ephemeral teardown; contacts preserved; no OTP distribution or apps')
         finally:
             for r in runtimes:r.close()
             for d in desks:

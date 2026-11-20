@@ -1,23 +1,23 @@
 %% Session observation and explicit diagnostic switches through signed capability permissions.
 %% No audio subscription, hardware access or remote code execution.
--module(ba_buffee_monitor).
+-module(ba_session_monitor).
 -export([snapshot/1,configure/2]).
 configure(Device,Options) ->
     ok=ba_audio_diagnostics:validate_options(Options),
     #{device := Self}=ba_app_session:snapshot(),
     case Device of
         Self -> ba_audio_diagnostics:configure(Options);
-        _ -> ba_buffee_control:read_capabilities(Device,Options)
+        _ -> ba_session_control:read_capabilities(Device,Options)
     end.
 snapshot(#{metrics := Metrics,plain := Plain}) when is_boolean(Metrics),is_list(Plain),length(Plain)=<32 ->
-    Local=ba_app_session:snapshot(),Buffee=maps:get(buffee,Local),Self=maps:get(device,Local),
+    Local=ba_app_session:snapshot(),Session=maps:get(session,Local),Self=maps:get(device,Local),
     %% An explicit observer reads the Devices it knows plus the ones Reception
     %% reports reachable; reading them is how it bumps into them.
-    Peers=lists:usort([Self|maps:get(members,Buffee,[])++maps:get(participants,Buffee,[])]),Parent=self(),Ref=make_ref(),
+    Peers=lists:usort([Self|maps:get(members,Session,[])++maps:get(participants,Session,[])]),Parent=self(),Ref=make_ref(),
     Workers=[{Peer,ba_session_scope:spawn_monitor(fun() -> Parent ! {Ref,Peer,read(Peer,Self,Metrics andalso not lists:member(Peer,Plain))} end)} || Peer <- Peers],
     Rows=collect(Workers,Ref,erlang:monotonic_time(millisecond)+6500,[]),
-    #{buffee => Buffee,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(contacts,Local)) || Row <- Rows],
-      state => maps:get(state,Buffee),observed_at_ms => erlang:system_time(millisecond)}.
+    #{session => Session,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(contacts,Local)) || Row <- Rows],
+      state => maps:get(state,Session),observed_at_ms => erlang:system_time(millisecond)}.
 named(#{id := Id}=Row,#{contacts := Contacts}) ->
     Caps=maps:get(capabilities,Row,#{}),
     case maps:get(<<"device_name">>,Caps,maps:get(Id,Contacts,<<>>)) of
@@ -26,7 +26,7 @@ named(#{id := Id}=Row,#{contacts := Contacts}) ->
 read(Self,Self,Metrics) ->
     case ba_session_scope:whereis(ba_device_handler) of
         undefined ->
-            %% An idle Device has no Buffee audio Handler. Report that honestly,
+            %% An idle Device has no Session audio Handler. Report that honestly,
             %% so a local monitor can stay open across Create/Join/Leave.
             #{id => Self,local => true,state => idle,
               name => ba_device_label:local(Self)};
@@ -38,7 +38,7 @@ read(Peer,_,Metrics) ->
         fetch(Peer,Metrics)
     catch exit:_ -> #{id => Peer,state => unavailable} end.
 fetch(Peer,Metrics) ->
-    Result=ba_buffee_control:read_capabilities(Peer,Metrics),
+    Result=ba_session_control:read_capabilities(Peer,Metrics),
     case Result of
         {ok,C} -> #{id => Peer,state => ok,capabilities => C};
         {error,R} -> #{id => Peer,state => R}

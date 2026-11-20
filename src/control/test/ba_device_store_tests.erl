@@ -33,13 +33,13 @@ forget_discards_return_and_privileges_in_both_scopes_test() ->
     try
         os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$1)),
         [ba_session_scope:run(Scope,fun() ->
-            ok=ba_device_store:save(buffee_sessions,#{Session => #{signed => old_privileges},Other => #{signed => keep_privileges}}),
-            ok=ba_device_store:save(buffee_connection,#{buffee => Session,config => #{invitation => <<"forgotten link">>}})
+            ok=ba_device_store:save(saved_sessions,#{Session => #{signed => old_privileges},Other => #{signed => keep_privileges}}),
+            ok=ba_device_store:save(session_connection,#{session => Session,config => #{invitation => <<"forgotten link">>}})
         end) || Scope <- [undefined,Session]],
         ok=ba_sessions:forget(Session),
         [ba_session_scope:run(Scope,fun() ->
-            ?assertEqual(#{Other => #{signed => keep_privileges}},ba_device_store:load(buffee_sessions,#{})),
-            ?assertEqual(undefined,ba_device_store:load(buffee_connection,undefined))
+            ?assertEqual(#{Other => #{signed => keep_privileges}},ba_device_store:load(saved_sessions,#{})),
+            ?assertEqual(undefined,ba_device_store:load(session_connection,undefined))
         end) || Scope <- [undefined,Session]]
     after
         [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Saved],

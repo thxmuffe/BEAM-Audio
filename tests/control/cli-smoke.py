@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real independent CLI VMs and local sockets; no Buffee/network/audio hardware."""
+"""Real independent CLI VMs and local sockets; no Session/network/audio hardware."""
 import json
 import os
 from pathlib import Path
@@ -37,10 +37,10 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-check-') as directory:
         one = run('inspect', 'device', '--devicename', 'test1')
         two = run('inspect', 'device', '--devicename', 'test2')
         for name, view in [('test1', one), ('test2', two)]:
-            assert view['profile'] == 'buffee_control'
+            assert view['profile'] == 'session_control'
             assert view['managed']['node'] == 'nonode@nohost'
             assert view['managed']['name'] == name
-            assert view['buffee']['state'] == 'idle'
+            assert view['session']['state'] == 'idle'
             assert not any(view['consent'].values())
             record_path = Path(directory, name, 'running.json')
             record = json.loads(record_path.read_text())
@@ -65,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-check-') as directory:
         run('wait', 'device', '--devicename', 'test1,test2', '--until', 'endpoint', '--timeout', '1s')
         failure = run('wait', 'device', '--devicename', 'test1,test2', '--until', 'ready', '--timeout', '100ms', ok=False)
         assert json.loads(failure.stderr)['error'] == 'readiness_timeout'
-        run('get', 'buffee', '--devicename', 'test1', ok=False)
+        run('get', 'session', '--devicename', 'test1', ok=False)
         run('get', 'invitation', '--devicename', 'test1', ok=False)
         run('stop', 'device', '--devicename', 'test1')
         assert run('inspect', 'device', '--devicename', 'test2')['device'] == two['device']
@@ -74,12 +74,12 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-check-') as directory:
         again = run('inspect', 'device', '--devicename', 'test1')
         assert again['device'] == one['device']
         assert again['managed']['instance'] != one['managed']['instance']
-        assert again['buffee']['state'] == 'idle' and not any(again['consent'].values())
+        assert again['session']['state'] == 'idle' and not any(again['consent'].values())
         run('kill', 'device', '--devicename', 'test1')
         run('stop', 'device', '--all')
         assert not list(Path(directory).glob('*/running.json'))
         assert not list(Path(directory).glob('*/launch.json'))
-        print('CLI smoke passed: independent VMs, protected local API, identity isolation, readiness, stop/kill; no audio/Buffee.')
+        print('CLI smoke passed: independent VMs, protected local API, identity isolation, readiness, stop/kill; no audio/Session.')
     finally:
         for name in ['test1', 'test2']:
             subprocess.run([str(CLI), 'stop', 'device', '--devicename', name, '--timeout', '2s'],

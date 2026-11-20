@@ -6,10 +6,10 @@
 start_link() -> supervisor:start_link(ba_session_scope:registration(?MODULE), ?MODULE, []).
 
 ensure_started() ->
-    case ba_session_scope:whereis(ba_buffee_control) of
-        undefined -> {error, buffee_control_not_started};
+    case ba_session_scope:whereis(ba_session_control) of
+        undefined -> {error, session_control_not_started};
         _ ->
-            case supervisor:start_child(ba_session_scope:ref(ba_buffee_runtime_sup),
+            case supervisor:start_child(ba_session_scope:ref(ba_session_runtime_sup),
                     #{id => ?MODULE, start => {?MODULE, start_link, []},
                       type => supervisor, shutdown => infinity}) of
                 {ok, _} -> ok;

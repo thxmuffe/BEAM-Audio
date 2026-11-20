@@ -37,8 +37,8 @@ spec(Root) ->
           handler => fun(A) -> ba_cli_monitor:run(A,Root) end},
       "new" => #{commands => #{"device" => Device(fun(A) -> emit(new_device(A,Root)) end,
           [#{name => next_instance,long => "-next-instance",action => {store,true},default => false},
-           #{name => createbuffee,long => "-createbuffee",action => {store,true},default => false},
-           #{name => joinbuffee,long => "-joinbuffee",type => string},
+           #{name => createsession,long => "-createsession",action => {store,true},default => false},
+           #{name => joinsession,long => "-joinsession",type => string},
            #{name => enable,long => "-enable",type => string},
            #{name => desk,long => "-desk",type => string},
            #{name => until,long => "-wait",type => {string,["endpoint","admitted","ready"]},default => "admitted"},
@@ -52,7 +52,7 @@ spec(Root) ->
               end,
               emit(request(one_name(A),Command))
           end,[#{name => deviceid,long => "-deviceid",type => string}]),
-          "buffee" => Device(fun inspect_buffee/1,[#{name => buffeeid,long => "-buffeeid",type => string,required => true}])}},
+          "session" => Device(fun inspect_session/1,[#{name => sessionid,long => "-sessionid",type => string,required => true}])}},
       "get" => #{commands => #{
           "methods" => #{handler => fun(_) -> emit(ba_device_api:methods()) end},
           "web" => Device(fun(A) ->
@@ -62,7 +62,7 @@ spec(Root) ->
                   URL -> scalar(URL,A)
               end
           end,[]),
-          "buffee" => Device(fun(A) -> scalar(get_buffee(A),A) end,[]),
+          "session" => Device(fun(A) -> scalar(get_session(A),A) end,[]),
           "invitation" => Device(fun(A) -> R=request(one_name(A),#{<<"method">> => <<"invitation">>}),scalar(maps:get(<<"result">>,R),A) end,[])}},
       "history" => #{commands => #{"device" => Device(fun(A) -> emit(request(one_name(A),#{<<"method">> => <<"configuration">>})) end,[])}},
       "undo" => #{commands => #{"device" => Device(fun(A) -> history_action(A,<<"undo">>) end,[])}},
@@ -81,8 +81,8 @@ spec(Root) ->
     }}.
 new_device(A,Root) ->
     BaseName=one_name(A),Enabled=capabilities(maps:get(enable,A,"")),Timeout=timeout(A),
-    Create=maps:get(createbuffee,A),Join=maps:get(joinbuffee,A,undefined),
-    case Create andalso Join=/=undefined of true -> fail(2,<<"Choose createbuffee or joinbuffee, not both.">>);false -> ok end,
+    Create=maps:get(createsession,A),Join=maps:get(joinsession,A,undefined),
+    case Create andalso Join=/=undefined of true -> fail(2,<<"Choose createsession or joinsession, not both.">>);false -> ok end,
     %% Observation and control are platform independent; only the CLI's own
     %% audio helpers are macOS builds so far.
     case Enabled=/=[] andalso os:type()=/={unix,darwin} of
@@ -167,14 +167,14 @@ poll(N,Previous) ->
         _ -> #{<<"endpoint">> => false}
     end.
 predicate(P,V) -> V#{<<"satisfied">> => maps:get(list_to_binary(P),V,false)}.
-inspect_buffee(A) ->
-    Id=list_to_binary(maps:get(buffeeid,A)),
+inspect_session(A) ->
+    Id=list_to_binary(maps:get(sessionid,A)),
     Candidates=case maps:find(devicename,A) of {ok,_} -> names(A);error -> ba_cli_store:names() end,
-    Views=[R || N <- Candidates,R <- [request(N,#{<<"method">> => <<"snapshot">>})],maps:get(<<"buffee">>,maps:get(<<"buffee">>,R,#{}),null)=:=Id],
-    case Views of [] -> fail(1,<<"No running authorized local view of that Buffee. Supply --devicename when needed.">>);_ -> emit(#{buffee => Id,views => Views}) end.
-get_buffee(A) ->
+    Views=[R || N <- Candidates,R <- [request(N,#{<<"method">> => <<"snapshot">>})],maps:get(<<"session">>,maps:get(<<"session">>,R,#{}),null)=:=Id],
+    case Views of [] -> fail(1,<<"No running authorized local view of that Session. Supply --devicename when needed.">>);_ -> emit(#{session => Id,views => Views}) end.
+get_session(A) ->
     R=request(one_name(A),#{<<"method">> => <<"snapshot">>}),
-    case maps:get(<<"buffee">>,maps:get(<<"buffee">>,R),null) of null -> fail(1,<<"Device has no active Buffee.">>);Id -> Id end.
+    case maps:get(<<"session">>,maps:get(<<"session">>,R),null) of null -> fail(1,<<"Device has no active Session.">>);Id -> Id end.
 set_device(A) ->
     N=one_name(A),On=capabilities(maps:get(enable,A)),Off=capabilities(maps:get(disable,A)),
     case [K || K <- On,lists:member(K,Off)] of [] -> ok;_ -> fail(2,<<"A capability cannot be both enabled and disabled.">>) end,

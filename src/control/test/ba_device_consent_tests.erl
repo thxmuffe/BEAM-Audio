@@ -5,10 +5,10 @@
 %% A new Device starts in tight; presets write real settings; advanced only reveals them.
 presets_test() ->
     Env=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
-    Old=[{K,application:get_env(ba_core,K)} || K <- [restore_buffee_on_start,device_default_preset]],
+    Old=[{K,application:get_env(ba_core,K)} || K <- [restore_session_on_start,device_default_preset]],
     Dir=filename:join("/tmp","ba-presets-"++integer_to_list(erlang:unique_integer([positive]))),
     ok=file:make_dir(Dir),os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$C)),
-    application:set_env(ba_core,restore_buffee_on_start,false),
+    application:set_env(ba_core,restore_session_on_start,false),
     application:unset_env(ba_core,device_default_preset),
     {ok,Sup}=ba_sup:start_link(),unlink(Sup),
     try
@@ -48,11 +48,11 @@ presets_test() ->
 
 device_wide_consent_test() ->
     Env=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
-    Keys=[restore_buffee_on_start,device_default_preset],
+    Keys=[restore_session_on_start,device_default_preset],
     Old=[{K,application:get_env(ba_core,K)} || K <- Keys],
     Dir=filename:join("/tmp","ba-consent-"++integer_to_list(erlang:unique_integer([positive]))),
     ok=file:make_dir(Dir),os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$B)),
-    application:set_env(ba_core,restore_buffee_on_start,false),
+    application:set_env(ba_core,restore_session_on_start,false),
     %% These tests start from the plain defaults; the presets have their own test below.
     application:set_env(ba_core,device_default_preset,advanced),
     {ok,Sup}=ba_sup:start_link(),unlink(Sup),

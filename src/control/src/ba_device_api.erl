@@ -9,8 +9,8 @@ methods() -> lists:usort(client_methods()++[
     <<"network_changed">>,<<"audio_lifecycle">>]).
 %% The one list of commands an app window may send (web, Mac, iOS, Windows).
 client_methods() ->
-    [<<"audio_diagnostics">>,<<"answer_consent">>,<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_buffee">>,<<"join_buffee">>,<<"leave_buffee">>,
-     <<"end_buffee">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"preset">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
+    [<<"audio_diagnostics">>,<<"answer_consent">>,<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_session">>,<<"join_session">>,<<"leave_session">>,
+     <<"end_session">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"preset">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
      <<"ui_get">>,<<"ui_set">>,<<"microphone_live">>,<<"speaker_mute">>,<<"undo">>,<<"redo">>,<<"send">>,<<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
      <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
      <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>].
@@ -36,18 +36,18 @@ printable(refused) -> <<"Not allowed in this Device's Settings.">>;
 printable(grant_holder_unavailable) -> <<"No Device that can grant privileges is reachable right now.">>;
 printable(local_approval_required) -> <<"Enable this permission explicitly in My Device; history cannot grant access.">>;
 printable(configuration_changed) -> <<"Settings changed in another client. Review the latest state and retry.">>;
-printable(invalid_buffee_config) -> <<"Invalid Session name, Reception address or invitation link.">>;
+printable(invalid_session_config) -> <<"Invalid Session name, Reception address or invitation link.">>;
 printable(R) when is_binary(R) -> R;
 printable(R) when is_atom(R) -> atom_to_binary(R);
 printable(R) -> iolist_to_binary(io_lib:format("~p",[R])).
 
 command(#{<<"method">> := <<"audio_diagnostics">>,<<"options">> := Options}=R) ->
     case maps:find(<<"device">>,R) of
-        {ok,Device} -> ba_buffee_monitor:configure(Device,Options);
+        {ok,Device} -> ba_session_monitor:configure(Device,Options);
         error -> ba_audio_diagnostics:configure(Options)
     end;
 command(#{<<"method">> := <<"audio_diagnostics">>}) -> {ok,ba_audio_diagnostics:options()};
-command(#{<<"method">> := <<"monitor">>}=R) -> {ok,ba_buffee_monitor:snapshot(#{metrics => maps:get(<<"metrics">>,R,false),plain => maps:get(<<"plain">>,R,[])})};
+command(#{<<"method">> := <<"monitor">>}=R) -> {ok,ba_session_monitor:snapshot(#{metrics => maps:get(<<"metrics">>,R,false),plain => maps:get(<<"plain">>,R,[])})};
 command(#{<<"method">> := <<"readiness">>}=R) ->
     {ok,readiness(ba_app_session:snapshot(),maps:get(<<"previous">>,R,#{}))};
 command(#{<<"method">> := <<"audio_lifecycle">>,<<"active">> := Active}) when is_boolean(Active) ->
@@ -85,7 +85,7 @@ command(#{<<"method">> := <<"preset">>,<<"name">> := Name}=R) ->
 command(#{<<"method">> := <<"auto_grant">>,<<"enabled">> := Enabled}=R) when is_boolean(Enabled) ->
     ba_device_config:auto_grant(Enabled,config_options(R));
 command(#{<<"method">> := <<"decline_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->
-    ba_buffee_membership:decline_privilege(Device,ba_session_privileges:parse(Name));
+    ba_session_membership:decline_privilege(Device,ba_session_privileges:parse(Name));
 command(#{<<"method">> := <<"policy">>,<<"key">> := K,<<"value">> := V}=R) ->
     Key=case K of
         <<"on_air_requests">> -> on_air_requests;
@@ -96,30 +96,30 @@ command(#{<<"method">> := <<"policy">>,<<"key">> := K,<<"value">> := V}=R) ->
     Value=case V of <<"always">> -> always;<<"ask">> -> ask;<<"no">> -> no end,
     ba_device_config:policy(Key,Value,config_options(R));
 command(#{<<"method">> := <<"exclude">>,<<"device">> := Id,<<"excluded">> := B}) -> ba_app_session:exclude(Id,B);
-command(#{<<"method">> := <<"rename_session">>,<<"name">> := Name}) -> ba_buffee_membership:rename(Name);
+command(#{<<"method">> := <<"rename_session">>,<<"name">> := Name}) -> ba_session_membership:rename(Name);
 command(#{<<"method">> := <<"request_privilege">>,<<"privilege">> := Name}) ->
-    ba_buffee_membership:request_privilege(ba_session_privileges:parse(Name));
+    ba_session_membership:request_privilege(ba_session_privileges:parse(Name));
 command(#{<<"method">> := <<"grant_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->
-    ba_buffee_membership:grant_privilege(Device,ba_session_privileges:parse(Name));
+    ba_session_membership:grant_privilege(Device,ba_session_privileges:parse(Name));
 command(#{<<"method">> := <<"take_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->
-    ba_buffee_membership:take_privilege(Device,ba_session_privileges:parse(Name));
-command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_buffee_chat:send(Text);
-command(#{<<"method">> := <<"offset">>,<<"automatic">> := Automatic}) when is_boolean(Automatic) -> ba_buffee_clock:set_automatic(Automatic);
-command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_buffee_clock:set_offset(Offset);
+    ba_session_membership:take_privilege(Device,ba_session_privileges:parse(Name));
+command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_session_chat:send(Text);
+command(#{<<"method">> := <<"offset">>,<<"automatic">> := Automatic}) when is_boolean(Automatic) -> ba_session_clock:set_automatic(Automatic);
+command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_session_clock:set_offset(Offset);
 command(#{<<"method">> := <<"inspect">>,<<"device">> := Device}) ->
     {Pub,_}=ba_device_store:identity(),
-    case Device=:=binary:encode_hex(Pub) of true -> {ok,ba_device_handler:capabilities()};false -> ba_buffee_control:read_capabilities(Device) end;
-command(#{<<"method">> := <<"invitation">>}) -> remember_link(ba_buffee_membership:invite(null));
+    case Device=:=binary:encode_hex(Pub) of true -> {ok,ba_device_handler:capabilities()};false -> ba_session_control:read_capabilities(Device) end;
+command(#{<<"method">> := <<"invitation">>}) -> remember_link(ba_session_membership:invite(null));
 command(#{<<"method">> := <<"snapshot">>}) -> null;
 command(#{<<"method">> := <<"list_contacts">>}) ->
     {ok, ba_contacts:list()};
 command(#{<<"method">> := <<"save_contact">>,<<"value">> := Value,<<"name">> := Name}) ->
     case ba_hex:valid(Value,64) of
         true -> ba_contacts:put(Value,Name);
-        false -> {_,I}=ba_buffee_passport:parse_invitation(Value),ba_contacts:put(maps:get(<<"authority">>,I),Name)
+        false -> {_,I}=ba_session_passport:parse_invitation(Value),ba_contacts:put(maps:get(<<"authority">>,I),Name)
     end;
 command(#{<<"method">> := <<"contact_from_invitation">>,<<"invitation">> := Link,<<"name">> := Name}) ->
-    {_,I}=ba_buffee_passport:parse_invitation(Link),ba_contacts:put(maps:get(<<"authority">>,I),Name);
+    {_,I}=ba_session_passport:parse_invitation(Link),ba_contacts:put(maps:get(<<"authority">>,I),Name);
 command(#{<<"method">> := <<"put_contact">>, <<"id">> := Id, <<"name">> := Name}) ->
     ba_contacts:put(Id, Name);
 command(#{<<"method">> := <<"delete_contact">>, <<"id">> := Id}) ->
@@ -129,13 +129,13 @@ command(#{<<"method">> := <<"put_group">>, <<"name">> := Name, <<"ids">> := Ids}
 command(#{<<"method">> := <<"delete_group">>, <<"name">> := Name}) ->
     ba_contacts:delete_group(Name);
 %% A Session exists once its invitation link exists: creating one makes its link.
-command(#{<<"method">> := <<"create_buffee">>, <<"name">> := Name, <<"desks">> := Desks}=C) ->
-    case ba_buffee:create(Name, Desks, maps:get(<<"nonce">>, C, undefined)) of
-        ok -> _=try remember_link(ba_buffee_membership:invite(null)) catch _:_ -> ok end,ok;
+command(#{<<"method">> := <<"create_session">>, <<"name">> := Name, <<"desks">> := Desks}=C) ->
+    case ba_session:create(Name, Desks, maps:get(<<"nonce">>, C, undefined)) of
+        ok -> _=try remember_link(ba_session_membership:invite(null)) catch _:_ -> ok end,ok;
         Other -> Other
     end;
-command(#{<<"method">> := <<"join_buffee">>, <<"invitation">> := Link}) ->
-    case ba_buffee:join(Link) of ok -> ba_contacts:link(Link),ok;Other -> Other end;
+command(#{<<"method">> := <<"join_session">>, <<"invitation">> := Link}) ->
+    case ba_session:join(Link) of ok -> ba_contacts:link(Link),ok;Other -> Other end;
 %% Live audio actions next to ON AIR; saved like every Device setting.
 command(#{<<"method">> := <<"microphone_live">>,<<"enabled">> := B}) when is_boolean(B) -> ba_settings:put(mic_live,B);
 command(#{<<"method">> := <<"speaker_mute">>,<<"muted">> := B}) when is_boolean(B) -> ba_settings:put(muted,B);
@@ -159,17 +159,17 @@ command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
         #{<<"group">> := G} -> {group, G};
         Ids when is_list(Ids) -> Ids
     end,
-    ba_buffee:invite(Selection, TTL);
+    ba_session:invite(Selection, TTL);
 %% A kicked Device stays in this Device's memory of the Session, marked kicked.
 command(#{<<"method">> := <<"remove_device">>,<<"device">> := Device}) ->
-    case ba_buffee_membership:revoke(Device) of
-        ok -> case ba_buffee:status() of #{buffee := Session} -> ba_contacts:kicked(Session,Device);_ -> ok end,ok;
+    case ba_session_membership:revoke(Device) of
+        ok -> case ba_session:status() of #{session := Session} -> ba_contacts:kicked(Session,Device);_ -> ok end,ok;
         Other -> Other
     end;
-command(#{<<"method">> := <<"leave_buffee">>}) ->
-    ba_buffee:leave();
-command(#{<<"method">> := <<"end_buffee">>}) ->
-    ba_buffee:end_buffee();
+command(#{<<"method">> := <<"leave_session">>}) ->
+    ba_session:leave();
+command(#{<<"method">> := <<"end_session">>}) ->
+    ba_session:end_session();
 command(_) ->
     {error, <<"Unsupported request.">>}.
 
@@ -187,11 +187,11 @@ config_options(R) -> maps:from_list([{K,V} || {Wire,K} <- [{<<"request_id">>,req
 
 %% Predicates are shared policy, not delays chosen by individual UIs/scripts.
 readiness(S) ->
-    Buffee=maps:get(buffee,S),Consent=maps:get(consent,S),
+    Session=maps:get(session,S),Consent=maps:get(consent,S),
     Rows=maps:get(audio,maps:get(handler,S,#{}),#{}),
     Failures=[#{capability => K,error => maps:get(error,R,<<"Audio failed.">>)} || {K,R} <- maps:to_list(Rows),maps:get(state,R,waiting)=:=error],
     Captures=lists:all(fun(K) -> not maps:get(K,Consent) orelse maps:get(state,maps:get(K,Rows,#{}),waiting)=:=running end,[microphone,broadcast]),
-    Authorized=maps:get(state,Buffee,idle)=:=authorized,
+    Authorized=maps:get(state,Session,idle)=:=authorized,
     Clock=maps:get(state,maps:get(clock,S,#{}),idle),
     ClockReady=Clock=:=synchronized andalso maps:get(ready,maps:get(offset_policy,maps:get(clock,S,#{}),#{}),false),
     Subs=maps:get(subscriptions,maps:get(audio,S,#{}),#{}),
@@ -200,7 +200,7 @@ readiness(S) ->
         broadcast => maps:get(blocks,maps:get(broadcast,Rows,#{}),0),
         speaker => maps:get(rendered,maps:get(mixer,maps:get(audio,S,#{}),#{}),0)},
     #{endpoint => true,admitted => Authorized,clock => ClockReady,consent => Consent,
-      membership_state => maps:get(state,Buffee,idle),
+      membership_state => maps:get(state,Session,idle),
       clock_status => maps:with([state,last_error,filter_sample_count,filter_required_samples,offset_policy,uncertainty_ns],maps:get(clock,S,#{})),
       capabilities => Rows,desks => maps:get(desks,S,#{}),
       receiving => Receiving,progress => Progress,

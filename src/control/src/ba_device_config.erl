@@ -1,4 +1,4 @@
-%% Durable desired Device settings. Runtime observations and Buffee state are not
+%% Durable desired Device settings. Runtime observations and Session state are not
 %% configuration. One serialized owner records changes from every supported client.
 -module(ba_device_config).
 -behaviour(gen_server).

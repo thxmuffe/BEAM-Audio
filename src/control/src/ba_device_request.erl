@@ -2,7 +2,7 @@
 %% decides it here, for every requester alike (a Manager gains nothing):
 %%
 %%   1. authenticate: the request carries its sender's signature and names this
-%%      Device and the current Session policy (ba_buffee_control_protocol).
+%%      Device and the current Session policy (ba_session_control_protocol).
 %%   2. authorize/3:  the sender's Session rights allow the operation.
 %%   3. approve/2:    this Device's user consents. Always approves automatically,
 %%      Ask leaves the request for the user, No refuses. Requests that only
@@ -34,7 +34,7 @@ required(<<"stream.message">>,#{<<"kind">> := <<"subscribe">>}) -> [stream_subsc
 %% Changing the shared offset is a Session setting: grant or on_air holders.
 required(<<"time.message">>,#{<<"kind">> := <<"offset.set">>}) -> [owner,stream_publish];
 required(<<"time.message">>,#{<<"kind">> := Kind}) ->
-    case ba_buffee_time_protocol:permission(Kind) of none -> [];P -> [P] end;
+    case ba_session_time_protocol:permission(Kind) of none -> [];P -> [P] end;
 %% Session requests, answered by the Device able to execute them (a grant holder,
 %% or the target of End). Anyone may ask for or give up a privilege.
 required(<<"session.request">>,#{<<"kind">> := <<"rename_request">>}) -> [stream_publish];

@@ -45,17 +45,14 @@ alone do not prove audible playback or physical speaker timing. Keep invitations
 and identity seeds out of logs, reports and commits. Visual/listening acceptance
 remains user-led.
 
-## Session replaces Buffee — 2026-11-15
+## Session replaces Buffee — 2026-11-20
 
-**Session** is the name of the concept in UI, documentation and new code. The
-Buffee/buffet analogy is retired. Existing `buffee` identifiers (module names,
-wire fields, signed domains, saved-state files, CLI flags, the Reception URL)
-may stay and leave gradually: rename one only when it is in the way, never as
-bulk cleanup, and keep signed/wire/storage constants unless an explicit migration
-changes them. Do not introduce new Buffee names. Where "session" could also mean
-the control protocol's authenticated peer session or a Media Session, qualify it.
-This supersedes every rule below that calls Buffee the intentional backend or
-product term.
+**Session** is the name of the concept in UI, documentation, wire protocol and code.
+The Buffee/buffet analogy is fully retired. All `buffee` identifiers (modules,
+wire fields, signed domains, saved-state files, CLI flags, APIs) have been renamed
+to `session`. Do not introduce new Buffee names. Where "session" could also mean
+the control protocol's authenticated link or a Media Session, qualify it (e.g.
+"link" for authenticated device-to-device relationships, "media" for native media workers).
 
 ## Privileges replace roles — 2026-11-15
 
@@ -69,18 +66,6 @@ privileges never answer Device consent; only a Device's own user does. This
 supersedes every rule below that speaks of Owner, Chef or Guest roles; read
 "Owner" there as a `grant` holder and "Chef" as a Device holding `on_air`. See
 docs/TERMINOLOGY.md.
-
-## UI vocabulary boundary — 2026-11-11
-
-In the UI use **Session**, **Device**, **Group**, **Join**, **Leave** and
-**Destroy**. Buffee remains the intentional backend term. Use Owner, Chef and
-Guest as role labels. Manager and Inspector are process names, not additional
-Device roles. Leave disconnects only this Device; Destroy requests ending the
-Session for all participants and is available only to an Owner. Existing
-signed-End delivery limitations still apply. Never relabel a local Leave as Destroy.
-This rule supersedes earlier recommendations to display Buffee in product UI.
-Connection status belongs in Settings, not repetitive page-footer prose. Omit
-chat-footer instructions telling users to create or join from Audio.
 
 # Repository Instructions
 
@@ -175,8 +160,8 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
   Session diagnostics must remain explicitly requested observer work, not a
   background dependency of ordinary Devices. Existing full-mesh control is a
   limitation to replace incrementally, not a pattern to extend.
-- Do not give mutually untrusted Buffee devices Distributed Erlang connectivity or the ability to invoke arbitrary remote functions. Keep supervision local and cross-device operations authenticated, allowlisted and scoped to explicit permissions.
-- Implementation sources belong under `src/`: platform apps in `src/Apps/`, app-specific shared code in `src/Apps/Shared/`, audio processing and native audio adapters in `src/Audio/`, shared networking/buffee runtime in `src/control/`, and independently deployed services in `src/Services/`. Cross-component integration checks belong in top-level `tests/`; component unit tests can stay beside their component. Documentation belongs in `docs/` and repository-wide tooling in `scripts/`.
+- Do not give mutually untrusted Session devices Distributed Erlang connectivity or the ability to invoke arbitrary remote functions. Keep supervision local and cross-device operations authenticated, allowlisted and scoped to explicit permissions.
+- Implementation sources belong under `src/`: platform apps in `src/Apps/`, app-specific shared code in `src/Apps/Shared/`, audio processing and native audio adapters in `src/Audio/`, shared networking/session runtime in `src/control/`, and independently deployed services in `src/Services/`. Cross-component integration checks belong in top-level `tests/`; component unit tests can stay beside their component. Documentation belongs in `docs/` and repository-wide tooling in `scripts/`.
 - Keep `src/Audio/src/` platform independent. Platform audio bindings, including
   Erlang port/format/OS-clock adapters and native helpers, belong together under
   `src/Audio/adapters/<platform>/`. Adapters supply source-format descriptions,
@@ -190,20 +175,20 @@ Act as an experienced **Erlang/OTP architect**, not merely a coding assistant.
 
 ### Repository split
 
-Use **Buffee** for logical, mutually untrusted device collaboration,
+Use **Session** for logical, mutually untrusted device collaboration,
 **Reception** for public admission/introductions, and **Response time** for the
-shared playback delay in new user-facing design. Owner is trusted administration; Chef and Guest are participation roles. Manager and Inspector are predefined processes whose VM placement grants no ownership or override of local consent.
-Keep computing capacity literal. The explicit 2026-11-11 namespace migration applies Buffee to active code, paths, APIs and signed domains; do not add obsolete aliases. **BEAM Audio** is the open-source
+shared playback delay in new user-facing design. Manager and Inspector are predefined processes whose VM placement grants no ownership or override of local consent.
+Keep computing capacity literal. **BEAM Audio** is the open-source
 technology; **OpenSound App** names only the commercial user interface. Use the
 canonical component terminology in docs/TERMINOLOGY.md. Core-owned Erlang modules,
 registered processes and native exports use the `ba_` prefix; the OTP application
 is `ba_core`, its facade is `ba_runtime`, and configuration uses `BA_*`. A
 Subscription is persistent intent; a Media Session is a temporary transport.
-Use Buffee Clock and Playback Offset consistently. Legacy "cluster" names describe
-only explicitly trusted Distributed Erlang code, never the secure Buffee boundary.
+Use Session Clock and Playback Offset consistently. Legacy "cluster" names describe
+only explicitly trusted Distributed Erlang code, never the secure Session boundary.
 Preserve device identity storage, established invitation schemes and signed/wire
 protocol constants unless an explicit migration changes them. See docs/NAMING.md
-and the accepted Buffee roadmap in docs/PLAN.md.
+and the accepted roadmap in docs/PLAN.md.
 
 BEAM Audio owns reusable runtime, audio handlers, platform bindings, services,
 tooling, tests and project documentation. Commercial UI/app sources live in the
@@ -214,12 +199,11 @@ Canonical shared PNG/SVG logo artwork belongs in `src/Branding/`. OpenSound keep
 its commercial product name while using the BEAM-Audio logo and, where space
 permits, “Powered by BEAM-Audio”; platform icon copies are derived from this art.
 
-Device is the entity; Chef/Guest is its participation role and Owner is independent trusted administration. Manager is a
+Device is the entity; privileges determine participation. Manager is a
 separate coordination responsibility; Worker is a local process. Keep Device
-in entity labels, lists and counts, and display role information separately.
+in entity labels, lists and counts, and display privilege information separately.
 
-**Buffee** in existing identifiers is a retired name for a Session, not a typo.
-Do not autocorrect it to “buffet”; see the 2026-11-15 rule above.
+**Buffee** is a retired name for a Session. Do not introduce or restore it.
 
 ## Trusted grant holders and return
 

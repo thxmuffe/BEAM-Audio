@@ -15,7 +15,7 @@ def load(name, path):
     spec.loader.exec_module(module)
     return module
 
-control = load('control', HERE / 'buffee-control-smoke.py')
+control = load('control', HERE / 'session-control-smoke.py')
 relay = load('relay', HERE.parent / 'ReceptionDesk/local_reception.py')
 relay.ERL = Path(shutil.which('erl'))
 
@@ -23,9 +23,9 @@ def main():
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-    output = control.ROOT / 'builds/intermediates/buffee-control-check'
+    output = control.ROOT / 'builds/intermediates/session-control-check'
     output.mkdir(parents=True, exist_ok=True)
-    subprocess.run([shutil.which('erlc'), '-Werror', '-o', str(output), str(HERE / 'ba_buffee_control_probe.erl')], check=True)
+    subprocess.run([shutil.which('erlc'), '-Werror', '-o', str(output), str(HERE / 'ba_session_control_probe.erl')], check=True)
     paths = [output, *(control.ROOT / 'builds/intermediates/control/default/lib').glob('*/ebin')]
     devices = []
     desk = relay.start_desk(port)
@@ -105,7 +105,7 @@ def main():
             assert a.request('grant',peer=b.identity['id'],permissions=['stream_publish','time_read'])['ok']
             assert a.request('grant',peer=c.identity['id'],permissions=['time_read'])['ok']
             holds(b, 'on_air')
-            assert b.request('end_buffee')=={'error':'end_privilege_required'}
+            assert b.request('end_session')=={'error':'end_privilege_required'}
             assert b.request('grant_privilege', peer=c.identity['id'], privilege='on_air') == {'error': 'grant_required'}
             assert a.request('grant_privilege', peer=b.identity['id'], privilege='grant')['ok']
             holds(b, 'grant', 'on_air')
@@ -118,7 +118,7 @@ def main():
             assert not any(m['text'] in ('is here','is online') for d in (a, b, c) for m in d.request('chat_history'))
             timeline=b.request('clock_snapshot')['timeline']
             first_id, first_seed = a.identity['id'], a.seed
-            assert a.request('leave_buffee')['ok']
+            assert a.request('leave_session')['ok']
             assert b.request('grant_privilege', peer=c.identity['id'], privilege='on_air')['ok']
             holds(c, 'on_air')
             clocks(b, c)
@@ -139,7 +139,7 @@ def main():
             holds(a, 'grant', 'on_air', 'end_session')
             control.wait(a, lambda s: s['membership']['revision'] == b.request('snapshot')['membership']['revision'])
             # The returning creator keeps its original Session identity.
-            assert a.request('snapshot')['membership']['buffee'] == b.request('snapshot')['membership']['buffee']
+            assert a.request('snapshot')['membership']['session'] == b.request('snapshot')['membership']['session']
             assert a.request('grant_privilege',peer=b.identity['id'],privilege='grant')['ok']
             holds(b,'grant','on_air')
             assert b.request('take_privilege', peer=first_id, privilege='grant')['ok']
@@ -147,19 +147,19 @@ def main():
             assert a.request('take_privilege', peer=c.identity['id'], privilege='on_air') == {'error': 'grant_required'}
             # End is its own privilege: grant alone does not end, but a grant
             # holder's own request for it needs nobody else.
-            assert b.request('end_buffee')=={'error':'end_privilege_required'}
+            assert b.request('end_session')=={'error':'end_privilege_required'}
             assert b.request('request_privilege',privilege='end_session')['ok']
             holds(b,'grant','on_air','end_session')
             rev = b.request('snapshot')['membership']['revision']
             revision(a, rev); revision(c, rev)
-            assert b.request('end_buffee')['ok']
+            assert b.request('end_session')['ok']
             for d in (a, b, c):
                 deadline = time.monotonic() + 10
-                while d.request('buffee_status') != {'state': 'idle'}:
+                while d.request('session_status') != {'state': 'idle'}:
                     assert time.monotonic() < deadline
                     time.sleep(.1)
             saved_seed=b.seed;b.close();b=device('second',saved_seed);b.request('start_app')
-            assert b.request('buffee_status')=={'state':'idle'}
+            assert b.request('session_status')=={'state':'idle'}
             print('PASS: requested privileges; shared grant; creator return; acquired clock continues with on-air Devices and no online grant holder; giving up grant; End needs its own privilege (software timing only)')
             # Stop the VMs before their state folder is removed (Windows keeps
             # open files locked, so cleanup would otherwise fail).

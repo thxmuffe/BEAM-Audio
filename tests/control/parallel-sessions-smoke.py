@@ -34,20 +34,20 @@ try:
   url=f'ws://127.0.0.1:{port}/relay/v1';aslots=[];bslots=[];links=[]
   for name in ['One','Two']:
    aid='default' if name=='One' else a.req('new_session')['session_id']
-   ra=a.req('create_buffee',session=aid,name=name,desks=[url])
+   ra=a.req('create_session',session=aid,name=name,desks=[url])
    aid=ra['session_id'];aslots.append(aid)
-   if aid!='default':assert ra['buffee']['buffee']==aid
+   if aid!='default':assert ra['session']['session']==aid
    a.wait(aid,lambda s:s['desks']['desks'][url]['connected'])
    link=a.req('invitation',session=aid)['result'];links.append(link)
    bid=b.req('new_session')['session_id']
    b.req('capability',session=bid,capability='microphone',enabled=True)
-   rb=b.req('join_buffee',session=bid,invitation=link);bid=rb['session_id'];bslots.append(bid)
-   assert b.wait(bid,lambda s:s['buffee']['state']=='authorized')['consent']['microphone']
+   rb=b.req('join_session',session=bid,invitation=link);bid=rb['session_id'];bslots.append(bid)
+   assert b.wait(bid,lambda s:s['session']['state']=='authorized')['consent']['microphone']
    a.wait(aid,lambda s:len(s['devices'])==2 and all(d['state']=='authorized' for d in s['devices']))
    b.wait(bid,lambda s:len(s['devices'])==2 and all(d['state']=='authorized' for d in s['devices']))
   assert a.req('snapshot',session=aslots[0])['device']==a.req('snapshot',session=aslots[1])['device']
   assert a.req('connections')['count']==b.req('connections')['count']==1
-  print('PASS: two concurrent Buffees, shared Device identity and one authenticated socket per Device',flush=True)
+  print('PASS: two concurrent Sessions, shared Device identity and one authenticated socket per Device',flush=True)
   a.req('send',session=aslots[0],text='Only One')
   b.wait(bslots[0],lambda s:any(m['text']=='Only One' for m in s['messages']))
   assert not any(m['text']=='Only One' for m in b.req('snapshot',session=bslots[1])['messages'])
@@ -58,27 +58,27 @@ try:
   a.req('send',session=aslots[1],text='Two still works')
   b.wait(bslots[1],lambda s:any(m['text']=='Two still works' for m in s['messages']))
   print('PASS: chat isolation; Device-wide consent; closing one tab preserves delivery in another',flush=True)
-  new=a.req('new_session')['session_id'];ra=a.req('join_buffee',session=new,invitation=links[0]);assert ra['session_id']==aslots[0];a.wait(aslots[0],lambda s:'grant' in s['buffee'].get('privileges',[]))
+  new=a.req('new_session')['session_id'];ra=a.req('join_session',session=new,invitation=links[0]);assert ra['session_id']==aslots[0];a.wait(aslots[0],lambda s:'grant' in s['session'].get('privileges',[]))
   print('PASS: closed grant holder returns through its link with saved privileges',flush=True)
   a.close();a=Device(str(Path(state)/'a'),'14'*32);devices.append(a)
-  a.wait(aslots[0],lambda s:'grant' in s['buffee'].get('privileges',[]));a.wait(aslots[1],lambda s:'grant' in s['buffee'].get('privileges',[]))
+  a.wait(aslots[0],lambda s:'grant' in s['session'].get('privileges',[]));a.wait(aslots[1],lambda s:'grant' in s['session'].get('privileges',[]))
   assert a.req('connections')['count']==1
   print('PASS: both open Sessions restore after full runtime restart')
   # Forget a closed named scope from another open Session. Its cached grant
   # must disappear without disturbing that other Session or changing identity.
   bid=b.req('snapshot',session=bslots[1])['device']
-  second=b.req('snapshot',session=bslots[1])['buffee']['buffee']
+  second=b.req('snapshot',session=bslots[1])['session']['session']
   a.req('grant_privilege',session=aslots[1],device=bid,privilege='grant')
-  b.wait(bslots[1],lambda s:'grant' in s['buffee'].get('privileges',[]))
+  b.wait(bslots[1],lambda s:'grant' in s['session'].get('privileges',[]))
   b.req('close_session',session=bslots[1])
   b.req('forget_saved_session',session=bslots[0],entry=second)
   assert second not in b.req('snapshot',session=bslots[0])['contacts']['sessions']
   b.req('send',session=bslots[0],text='One survives Forget')
   a.wait(aslots[0],lambda s:any(m['text']=='One survives Forget' for m in s['messages']))
   a.close();b.close();b=Device(str(Path(state)/'b'),'15'*32);devices.append(b)
-  slot=b.req('new_session')['session_id'];r=b.req('join_buffee',session=slot,invitation=links[1])
+  slot=b.req('new_session')['session_id'];r=b.req('join_session',session=slot,invitation=links[1])
   assert r['device']==bid
-  assert 'grant' not in r['buffee']['privileges'] and r['buffee']['revision']==0
+  assert 'grant' not in r['session']['privileges'] and r['session']['revision']==0
   print('PASS: Forget clears a closed named Session and cached grant, preserves another Session and keeps Device identity')
 finally:
  for device in devices:device.close()

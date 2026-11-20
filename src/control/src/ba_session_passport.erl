@@ -1,12 +1,12 @@
 %% Signed Session documents: the creator's permanent invitation link, the
 %% versioned privilege policy and `grant` delegation certificates. The module
 %% keeps its historical name; there is no separate passport credential.
--module(ba_buffee_passport).
+-module(ba_session_passport).
 -export([default_desk/0,sign/2,verify/2,decode/1,exact/2,session_id/2,mailbox/1,
          invitation/1,link/1,parse_invitation/1,genesis/2,policy/1,statement/2,delegation/4,
          grant_revision/3,urls/1,permissions/1,permission/1,
          invitation_key/1,join/3,joined/4,envelope_key/1,seal_envelope/3,open_envelope/3]).
--define(DOMAIN,<<"beamaudio-buffee-membership/v1:">>).
+-define(DOMAIN,<<"beamaudio-session-membership/v1:">>).
 -define(MAILBOX,<<"beamaudio-session-mailbox/v1:">>).
 sign(Body,Private) ->
     Data = iolist_to_binary(json:encode(Body)),
@@ -36,13 +36,13 @@ mailbox(Secret) ->
 %% does not. Signatures inside still prove who wrote each message.
 -define(ENVELOPE,<<"beamaudio-session-envelope/v1:">>).
 envelope_key(Secret) -> true = secret(Secret),crypto:hash(sha256,[?ENVELOPE,Secret]).
-seal_envelope(Key,Buffee,Plain) ->
+seal_envelope(Key,Session,Plain) ->
     Nonce = crypto:strong_rand_bytes(12),
-    {Cipher,Tag} = crypto:crypto_one_time_aead(chacha20_poly1305,Key,Nonce,Plain,Buffee,true),
+    {Cipher,Tag} = crypto:crypto_one_time_aead(chacha20_poly1305,Key,Nonce,Plain,Session,true),
     base64:encode(<<Nonce/binary,Tag/binary,Cipher/binary>>).
-open_envelope(Key,Buffee,Sealed) ->
+open_envelope(Key,Session,Sealed) ->
     <<Nonce:12/binary,Tag:16/binary,Cipher/binary>> = base64:decode(Sealed),
-    case crypto:crypto_one_time_aead(chacha20_poly1305,Key,Nonce,Cipher,Buffee,Tag,false) of
+    case crypto:crypto_one_time_aead(chacha20_poly1305,Key,Nonce,Cipher,Session,Tag,false) of
         error -> error(envelope_rejected);
         Plain -> Plain
     end.
@@ -50,12 +50,12 @@ invitation_key(Secret) ->
     true = secret(Secret),
     {Public,Private} = crypto:generate_key(eddsa,ed25519,crypto:hash(sha256,[?INVITATION_KEY,Secret])),
     {binary:encode_hex(Public),Private}.
-join(Buffee,Device,Private) ->
-    true = ba_hex:valid(Buffee,32) andalso ba_hex:valid(Device,64),
-    binary:encode_hex(crypto:sign(eddsa,none,[?JOIN,Buffee,Device],[Private,ed25519])).
-joined(Buffee,Device,Join,Invitation) ->
+join(Session,Device,Private) ->
+    true = ba_hex:valid(Session,32) andalso ba_hex:valid(Device,64),
+    binary:encode_hex(crypto:sign(eddsa,none,[?JOIN,Session,Device],[Private,ed25519])).
+joined(Session,Device,Join,Invitation) ->
     ba_hex:valid(Join,128) andalso ba_hex:valid(Invitation,64) andalso
-        crypto:verify(eddsa,none,[?JOIN,Buffee,Device],binary:decode_hex(Join),[binary:decode_hex(Invitation),ed25519]).
+        crypto:verify(eddsa,none,[?JOIN,Session,Device],binary:decode_hex(Join),[binary:decode_hex(Invitation),ed25519]).
 %% v6 links carry a 128-bit secret; v5 links carried 256 bits.
 secret(Secret) -> ba_hex:valid(Secret,32) orelse ba_hex:valid(Secret,64).
 
@@ -85,7 +85,7 @@ parse_invitation(<<"beamaudio://s/",Ticket/binary>>=Link) when byte_size(Link) =
     Desks = case Tail of <<>> -> [default_desk()];_ -> binary:split(Tail,<<"\n">>,[global]) end,
     urls(Desks),
     [C,N] = [binary:encode_hex(X) || X <- [Creator,Nonce]],
-    Body = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"buffee">> => session_id(C,N),<<"authority">> => C,
+    Body = #{<<"v">> => 1,<<"type">> => <<"invitation">>,<<"session">> => session_id(C,N),<<"authority">> => C,
              <<"nonce">> => N,<<"secret">> => binary:encode_hex(Secret),<<"desks">> => Desks,<<"name">> => <<"Session">>},
     {Link,Body};
 %% v5 links still parse, so a Session saved by an older build cannot stop a Device.
@@ -95,23 +95,23 @@ parse_invitation(Link) when is_binary(Link),byte_size(Link) =< 32768 ->
     <<Sig:64/binary,Data/binary>> = base64:decode(B64,#{mode => urlsafe,padding => false}),
     Packet=iolist_to_binary(json:encode(#{<<"body">> => base64:encode(Data),<<"signature">> => binary:encode_hex(Sig)})),
     Body = verify(Packet,maps:get(<<"authority">>,decode(Data))),
-    exact(Body,[<<"v">>,<<"type">>,<<"buffee">>,<<"authority">>,<<"nonce">>,<<"secret">>,<<"desks">>,<<"name">>]),
-    #{<<"v">> := 1,<<"type">> := <<"invitation">>,<<"buffee">> := Buffee,<<"authority">> := Creator,<<"nonce">> := Nonce} = Body,
-    Buffee = session_id(Creator,Nonce),true = ba_hex:valid(maps:get(<<"secret">>,Body),64),
+    exact(Body,[<<"v">>,<<"type">>,<<"session">>,<<"authority">>,<<"nonce">>,<<"secret">>,<<"desks">>,<<"name">>]),
+    #{<<"v">> := 1,<<"type">> := <<"invitation">>,<<"session">> := Session,<<"authority">> := Creator,<<"nonce">> := Nonce} = Body,
+    Session = session_id(Creator,Nonce),true = ba_hex:valid(maps:get(<<"secret">>,Body),64),
     Name = maps:get(<<"name">>,Body),true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
     urls(maps:get(<<"desks">>,Body)),{Packet,Body}.
 
 %% Revision 0 follows from the link alone: the creator holds every privilege.
 genesis(Invitation,Defaults) ->
     Creator=maps:get(<<"authority">>,Invitation),
-    #{<<"v">> => 2,<<"type">> => <<"policy">>,<<"buffee">> => maps:get(<<"buffee">>,Invitation),
+    #{<<"v">> => 2,<<"type">> => <<"policy">>,<<"session">> => maps:get(<<"session">>,Invitation),
       <<"authority">> => Creator,<<"manager">> => Creator,<<"revision">> => 0,
       <<"members">> => #{Creator => #{<<"permissions">> => ba_session_privileges:creator(Defaults)}},
       <<"removed">> => []}.
 policy(P) ->
-    exact(P,[<<"v">>,<<"type">>,<<"buffee">>,<<"authority">>,<<"manager">>,<<"revision">>,<<"members">>,<<"removed">>]),
+    exact(P,[<<"v">>,<<"type">>,<<"session">>,<<"authority">>,<<"manager">>,<<"revision">>,<<"members">>,<<"removed">>]),
     #{<<"v">> := 2,<<"type">> := <<"policy">>,<<"members">> := Members,<<"removed">> := Removed} = P,
-    true = ba_hex:valid(maps:get(<<"buffee">>,P),32),
+    true = ba_hex:valid(maps:get(<<"session">>,P),32),
     true = is_map(Members) andalso map_size(Members) =< 16,
     [true = ba_hex:valid(maps:get(K,P),64) || K <- [<<"authority">>,<<"manager">>]],
     natural(maps:get(<<"revision">>,P)),
@@ -127,22 +127,22 @@ statement(Packet,Signer) ->
     ok = policy(maps:get(<<"policy">>,St)),
     D = maps:get(<<"delegations">>,St),true = is_map(D) andalso map_size(D) =< 16,St.
 %% Issued when `grant` is given; verifiable without the issuer being present.
-delegation(Buffee,Issuer,Grantee,Revision) ->
-    #{<<"v">> => 1,<<"type">> => <<"delegation">>,<<"buffee">> => Buffee,
+delegation(Session,Issuer,Grantee,Revision) ->
+    #{<<"v">> => 1,<<"type">> => <<"delegation">>,<<"session">> => Session,
       <<"issuer">> => Issuer,<<"grantee">> => Grantee,<<"revision">> => Revision}.
 %% Revision at which Signer received `grant`, following certificates to the creator.
 grant_revision(Signer,Creator,#{<<"policy">> := P,<<"delegations">> := D}) ->
-    chain(Signer,Creator,maps:get(<<"buffee">>,P),D,[]).
+    chain(Signer,Creator,maps:get(<<"session">>,P),D,[]).
 chain(Creator,Creator,_,_,_) -> 0;
-chain(Grantee,Creator,Buffee,D,Seen) ->
+chain(Grantee,Creator,Session,D,Seen) ->
     false = lists:member(Grantee,Seen),true = length(Seen) < 16,
     Cert = maps:get(Grantee,D),
     Issuer = maps:get(<<"issuer">>,decode(base64:decode(maps:get(<<"body">>,decode(Cert))))),
     Body = verify(Cert,Issuer),
-    exact(Body,[<<"v">>,<<"type">>,<<"buffee">>,<<"issuer">>,<<"grantee">>,<<"revision">>]),
-    #{<<"v">> := 1,<<"type">> := <<"delegation">>,<<"buffee">> := Buffee,<<"grantee">> := Grantee,<<"revision">> := R} = Body,
+    exact(Body,[<<"v">>,<<"type">>,<<"session">>,<<"issuer">>,<<"grantee">>,<<"revision">>]),
+    #{<<"v">> := 1,<<"type">> := <<"delegation">>,<<"session">> := Session,<<"grantee">> := Grantee,<<"revision">> := R} = Body,
     true = is_integer(R) andalso R > 0,
-    _ = chain(Issuer,Creator,Buffee,D,[Grantee|Seen]),R.
+    _ = chain(Issuer,Creator,Session,D,[Grantee|Seen]),R.
 
 permissions(L) ->
     true = is_list(L) andalso length(L) =< 10 andalso lists:usort(L) =:= L,

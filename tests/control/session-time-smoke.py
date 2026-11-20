@@ -12,7 +12,7 @@ HERE=Path(__file__).resolve().parent
 def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path)
     m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
-control=load('control',HERE/'buffee-control-smoke.py')
+control=load('control',HERE/'session-control-smoke.py')
 relay=load('relay',HERE.parent/'ReceptionDesk/local_reception.py');relay.ERL=Path(shutil.which('erl'))
 
 def clock(r,predicate,timeout=20):
@@ -31,8 +31,8 @@ def main():
     parser.add_argument('--production-cadence',action='store_true',help='Acquire the default 20x5s window across the 60s session renewal')
     args=parser.parse_args()
     root=control.ROOT;paths=list((root/'builds/intermediates/control/default/lib').glob('*/ebin'))
-    out=root/'builds/intermediates/buffee-control-check';out.mkdir(parents=True,exist_ok=True)
-    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(out),str(HERE/'ba_buffee_control_probe.erl')],check=True)
+    out=root/'builds/intermediates/session-control-check';out.mkdir(parents=True,exist_ok=True)
+    subprocess.run([shutil.which('erlc'),'-Werror','-o',str(out),str(HERE/'ba_session_control_probe.erl')],check=True)
     ports=[]
     for _ in range(2):
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));ports.append(sock.getsockname()[1])

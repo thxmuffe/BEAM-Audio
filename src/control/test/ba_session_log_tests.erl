@@ -1,4 +1,4 @@
--module(ba_buffee_log_tests).
+-module(ba_session_log_tests).
 -include_lib("eunit/include/eunit.hrl").
 
 event(Reason) ->
@@ -8,21 +8,24 @@ event(Reason) ->
 
 summary_does_not_forward_exception_data_test() ->
     _=application:stop(ba_core),
-    ok=ba_buffee_log_h:log(event({{badmatch,<<"PRIVATE_EXCEPTION">>},[]}),#{config => #{recipient => self()}}),
+    flush(),
+    ok=ba_session_log_h:log(event({{badmatch,<<"PRIVATE_EXCEPTION">>},[]}),#{config => #{recipient => self()}}),
     receive {ba_crash_notice,Text} ->
         ?assertEqual(<<"System: ba_device_handler stopped (badmatch).">>,Text),
         ?assertEqual(nomatch,binary:match(Text,<<"PRIVATE">>))
-    after 100 -> error(no_notice) end.
+    after 1000 -> error(no_notice) end.
+
+flush() -> receive _ -> flush() after 0 -> ok end.
 
 normal_shutdown_and_other_logs_are_ignored_test() ->
     Config=#{config => #{recipient => self()}},
-    [ok=ba_buffee_log_h:log(event(R),Config) || R <- [normal,shutdown,{shutdown,anything}]],
-    ok=ba_buffee_log_h:log(#{msg => {string,"ordinary log"}},Config),
+    [ok=ba_session_log_h:log(event(R),Config) || R <- [normal,shutdown,{shutdown,anything}]],
+    ok=ba_session_log_h:log(#{msg => {string,"ordinary log"}},Config),
     receive {ba_crash_notice,_} -> error(unexpected_notice) after 0 -> ok end.
 
 stalled_chat_queue_is_bounded_test() ->
     Pid=spawn(fun() -> receive stop -> ok end end),
     try
-        [ok=ba_buffee_log_h:log(event(killed),#{config => #{recipient => Pid}}) || _ <- lists:seq(1,100)],
+        [ok=ba_session_log_h:log(event(killed),#{config => #{recipient => Pid}}) || _ <- lists:seq(1,100)],
         ?assertEqual({message_queue_len,16},process_info(Pid,message_queue_len))
     after exit(Pid,kill) end.

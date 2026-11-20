@@ -3,7 +3,7 @@
 
 render_master_clock_value_age_and_staleness_test() ->
     Id=binary:copy(<<"A">>,64),
-    View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,
+    View=#{<<"session">> => #{},<<"state">> => <<"authorized">>,
         <<"devices">> => [#{<<"id">> => Id,<<"name">> => <<"Broadcast Mac">>,<<"state">> => <<"ok">>}]},
     Reading=#{<<"device">> => Id,<<"utc_time_ns">> => <<"1794941608123456789">>,<<"age_ms">> => 250,<<"state">> => <<"fresh">>},
     Render=fun(R) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => #{<<"master_clock">> => R}})) end,
@@ -13,7 +13,7 @@ render_master_clock_value_age_and_staleness_test() ->
     ?assertNotEqual(nomatch,binary:match(Render(#{}),<<"Master clock: N/A\n">>)).
 
 render_shared_response_time_and_readiness_test() ->
-    View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => []},
+    View=#{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => []},
     Render=fun(P) -> iolist_to_binary(ba_cli_monitor:render(View#{<<"clock">> => #{<<"offset_policy">> => P}})) end,
     ?assertNotEqual(nomatch,binary:match(Render(#{<<"offset_ms">> => 150,<<"ready">> => true}),<<"Response time: 150 ms\n">>)),
     ?assertNotEqual(nomatch,binary:match(Render(#{<<"offset_ms">> => 800,<<"ready">> => false}),<<"Response time: 800 ms (not ready)">>)),
@@ -21,7 +21,7 @@ render_shared_response_time_and_readiness_test() ->
 
 render_missing_levels_is_not_silence_test() ->
     Id=binary:copy(<<"A">>,64),Entry=#{<<"state">> => <<"running">>,<<"consent">> => true,<<"available">> => true},
-    View=#{<<"buffee">> => #{<<"name">> => <<"Test">>,<<"buffee">> => binary:copy(<<"B">>,32)},<<"state">> => <<"authorized">>,
+    View=#{<<"session">> => #{<<"name">> => <<"Test">>,<<"session">> => binary:copy(<<"B">>,32)},<<"state">> => <<"authorized">>,
         <<"devices">> => [#{<<"id">> => Id,<<"state">> => <<"ok">>,<<"capabilities">> => #{<<"audio">> => #{<<"broadcast">> => Entry}}}]},
     Text=iolist_to_binary(ba_cli_monitor:render(View)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"N/A">>)),
@@ -57,7 +57,7 @@ render_devices_once_with_separators_and_opt_in_color_test() ->
     Id=binary:copy(<<"A">>,64),Other=binary:copy(<<"B">>,64),
     Running=#{<<"state">> => <<"running">>},Disabled=#{<<"state">> => <<"disabled">>},
     Name = <<"Paavo’s iPhone (2)"/utf8>>,
-    View=#{<<"buffee">> => #{<<"name">> => <<"Together">>},<<"state">> => <<"authorized">>,
+    View=#{<<"session">> => #{<<"name">> => <<"Together">>},<<"state">> => <<"authorized">>,
         <<"devices">> => [#{<<"id">> => Id,<<"name">> => Name,<<"state">> => <<"ok">>,
             <<"capabilities">> => #{<<"audio">> => #{<<"speaker">> => Running,<<"microphone">> => Disabled,<<"broadcast">> => Disabled}}},
             #{<<"id">> => Other,<<"state">> => <<"connecting">>}]},
@@ -72,14 +72,14 @@ render_devices_once_with_separators_and_opt_in_color_test() ->
     ?assertNotEqual(nomatch,binary:match(Color,<<27,"[90m">>)).
 
 render_untrusted_device_names_without_terminal_controls_test() ->
-    View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
+    View=#{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
         #{<<"id">> => binary:copy(<<"A">>,64),<<"name">> => <<"Phone",27,"[2J",10,"spoof">>,<<"state">> => <<"connecting">>}]},
     Text=unicode:characters_to_binary(ba_cli_monitor:render(View)),
     ?assertEqual(nomatch,binary:match(Text,<<27>>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"Phone?[2J?spoof">>)).
 
 render_channel_error_and_missed_targets_test() ->
-    View=#{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
+    View=#{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
         #{<<"id">> => binary:copy(<<"A">>,64),<<"state">> => <<"ok">>,<<"capabilities">> => #{
             <<"audio">> => #{<<"speaker">> => #{<<"state">> => <<"error">>,<<"error">> => <<"output_closed">>}},
             <<"audio_diagnostics">> => #{<<"clock.state">> => <<"synchronized">>,<<"mixer.rendered">> => 10,
@@ -91,7 +91,7 @@ render_channel_error_and_missed_targets_test() ->
     ?assertNotEqual(nomatch,binary:match(Text,<<"10 rendered  2 dropped  5 queued">>)).
 
 render_output_progress_and_analysis_off_test() ->
-    View=fun(D) -> #{<<"buffee">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
+    View=fun(D) -> #{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
         #{<<"id">> => binary:copy(<<"A">>,64),<<"state">> => <<"ok">>,<<"capabilities">> => #{<<"audio_diagnostics">> => D}}]} end,
     Text=iolist_to_binary(ba_cli_monitor:render(View(#{<<"output.supported">> => true,<<"output.backend">> => <<"ios">>,
         <<"output.engine_running">> => true,<<"output.player_running">> => true,<<"output.route">> => <<"speaker">>,

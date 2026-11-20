@@ -101,7 +101,7 @@ preview_is_isolated(C) ->
     URL=start(C,#{mode => preview,record => "does-not-exist"}),
     {200,_,Session}=get(URL,"/api/session"),
     ?assertEqual(<<"preview">>,maps:get(<<"mode">>,json:decode(Session))),
-    ?assertEqual(409,status(post(URL,#{method => create_buffee}))).
+    ?assertEqual(409,status(post(URL,#{method => create_session}))).
 
 socket_bridge(#{dir := Dir}=C) ->
     %% Unix-domain socket paths have a short OS limit; checkout paths may exceed it.
@@ -166,13 +166,13 @@ direct_device(#{dir := Dir}=C) ->
             [#{method => request_privilege,privilege => on_air},#{method => grant_privilege,device => <<"unknown">>,privilege => on_air},
              #{method => take_privilege,device => <<"unknown">>,privilege => on_air},
              #{method => remove_device,device => <<"unknown">>}]],
-        ?assertEqual(<<"idle">>,maps:get(<<"state">>,maps:get(<<"buffee">>,Snapshot))),
+        ?assertEqual(<<"idle">>,maps:get(<<"state">>,maps:get(<<"session">>,Snapshot))),
         ?assertNot(maps:is_key(<<"managed">>,Snapshot)),
         {200,_,Changed}=post(URL,#{method => capability,capability => microphone,enabled => true}),
         ?assertEqual(true,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Changed)))),
         ?assertEqual(true,maps:get(microphone,ba_device_config:consent())),
         ?assertEqual(undefined,whereis(ba_device_handler)),
-        Monitor=ba_buffee_monitor:snapshot(#{metrics => false,plain => []}),
+        Monitor=ba_session_monitor:snapshot(#{metrics => false,plain => []}),
         ?assertMatch([#{local := true,state := idle}],maps:get(devices,Monitor)),
         {200,_,Undone}=post(URL,#{method => undo}),
         ?assertEqual(false,maps:get(<<"microphone">>,maps:get(<<"consent">>,json:decode(Undone)))),

@@ -13,7 +13,7 @@ identity() ->
 load(Name, Default) ->
     case transient(Name) of
         true ->
-            try ets:lookup(ba_session_scope:table(ba_buffee_state),Name) of [{_,Data}] -> Data;[] -> Default
+            try ets:lookup(ba_session_scope:table(ba_session_state),Name) of [{_,Data}] -> Data;[] -> Default
             catch error:badarg -> Default end;
         false -> load_file(Name,Default)
     end.
@@ -27,7 +27,7 @@ load_file(Name,Default) ->
                     case decode(Name, Bytes) of
                         stale -> Default;
                         #{version := 2, data := Data} -> Data;
-                        %% User-requested clean start for the Buffee migration.
+                        %% User-requested clean start for the Session migration.
                         %% Device identity is held separately in secure storage.
                         #{version := 1} -> Default;
                         _ -> error({unsupported_device_state,Name})
@@ -41,14 +41,14 @@ load_file(Name,Default) ->
 %% instead of stopping the whole runtime. Other records still fail loudly.
 decode(Name, Bytes) ->
     try binary_to_term(Bytes, [safe])
-    catch error:badarg when Name =:= buffee_connection ->
+    catch error:badarg when Name =:= session_connection ->
         logger:warning("Ignoring an unreadable or outdated saved Session record."),
         stale
     end.
 
 save(Name, Data) ->
     case transient(Name) of
-        true -> ets:insert(ba_session_scope:table(ba_buffee_state),{Name,Data}),ok;
+        true -> ets:insert(ba_session_scope:table(ba_session_state),{Name,Data}),ok;
         false -> save_file(Name,Data)
     end.
 save_file(Name,Data) ->
@@ -71,13 +71,13 @@ save_file(Name,Data) ->
 %% Called by the Session owner after stopping its workers, or for a closed
 %% scope. Forget discards both the return link and the accepted privilege policy.
 forget_session(Session) ->
-    Saved=load(buffee_sessions,#{}),
+    Saved=load(saved_sessions,#{}),
     case maps:is_key(Session,Saved) of
-        true -> ok=save(buffee_sessions,maps:remove(Session,Saved));
+        true -> ok=save(saved_sessions,maps:remove(Session,Saved));
         false -> ok
     end,
-    case load(buffee_connection,undefined) of
-        #{buffee := Session} -> save(buffee_connection,undefined);
+    case load(session_connection,undefined) of
+        #{session := Session} -> save(session_connection,undefined);
         _ -> ok
     end.
 
@@ -90,7 +90,7 @@ path(Name) ->
             filename:join(Directory, atom_to_list(Name) ++ ".term")
     end.
 
-%% Live records never read/write device files, including old Buffee snapshots.
+%% Live records never read/write device files, including old Session snapshots.
 transient(Name) ->
-    lists:member(Name,[buffee_authority,buffee_member,buffee_desks,buffee_time_policy,
-                      buffee_time_cache,audio_subscriptions,buffee_exclusions]).
+    lists:member(Name,[session_authority,session_member,session_desks,session_time_policy,
+                      session_time_cache,audio_subscriptions,session_exclusions]).

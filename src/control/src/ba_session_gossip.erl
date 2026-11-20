@@ -8,24 +8,24 @@
 -define(KINDS,[<<"on_air">>]).
 
 %% Signed by its author, with its join certificate.
-note(Buffee,Device,Join,Kind,Private) ->
+note(Session,Device,Join,Kind,Private) ->
     true = lists:member(Kind,?KINDS),
     Id = binary:encode_hex(crypto:strong_rand_bytes(16)),
-    {Id,ba_buffee_passport:sign(#{<<"v">> => 1,<<"type">> => <<"note">>,<<"id">> => Id,<<"kind">> => Kind,
-        <<"buffee">> => Buffee,<<"author">> => Device,<<"join">> => Join,<<"at">> => erlang:system_time(second)},Private)}.
+    {Id,ba_session_passport:sign(#{<<"v">> => 1,<<"type">> => <<"note">>,<<"id">> => Id,<<"kind">> => Kind,
+        <<"session">> => Session,<<"author">> => Device,<<"join">> => Join,<<"at">> => erlang:system_time(second)},Private)}.
 
-check(Id,Packet,#{buffee := Buffee,invitation := Invitation}) ->
+check(Id,Packet,#{session := Session,invitation := Invitation}) ->
     try
-        #{<<"body">> := Encoded} = ba_buffee_passport:decode(Packet),
-        #{<<"author">> := Author} = ba_buffee_passport:decode(base64:decode(Encoded)),
-        Body = ba_buffee_passport:verify(Packet,Author),
-        ba_buffee_passport:exact(Body,[<<"v">>,<<"type">>,<<"id">>,<<"kind">>,<<"buffee">>,<<"author">>,<<"join">>,<<"at">>]),
-        #{<<"v">> := 1,<<"type">> := <<"note">>,<<"id">> := Id,<<"buffee">> := Buffee,<<"kind">> := Kind,
+        #{<<"body">> := Encoded} = ba_session_passport:decode(Packet),
+        #{<<"author">> := Author} = ba_session_passport:decode(base64:decode(Encoded)),
+        Body = ba_session_passport:verify(Packet,Author),
+        ba_session_passport:exact(Body,[<<"v">>,<<"type">>,<<"id">>,<<"kind">>,<<"session">>,<<"author">>,<<"join">>,<<"at">>]),
+        #{<<"v">> := 1,<<"type">> := <<"note">>,<<"id">> := Id,<<"session">> := Session,<<"kind">> := Kind,
           <<"join">> := Join,<<"at">> := At} = Body,
         true = lists:member(Kind,?KINDS),
         Now = erlang:system_time(second),
         true = is_integer(At) andalso At > Now-?TTL andalso At =< Now+?SKEW,
-        true = ba_buffee_passport:joined(Buffee,Author,Join,Invitation),
+        true = ba_session_passport:joined(Session,Author,Join,Invitation),
         {ok,Body}
     catch _:_ -> error end.
 

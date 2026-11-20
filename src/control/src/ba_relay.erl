@@ -1,5 +1,5 @@
 %% Outbound, authenticated WebSocket connection to one Reception, signed with
-%% this Device's identity. Owners (ba_buffee_desks of each Session) attach
+%% this Device's identity. Owners (ba_session_desks of each Session) attach
 %% mailboxes and watches by pid; events go to them as {relay,URL,Event}.
 -module(ba_relay).
 -behaviour(gen_server).
@@ -33,18 +33,18 @@ handle_call({send, To, Cap, Payload}, _, #{ready := true} = S) ->
               request => maps:get(<<"request">>, Payload, null)},
     {reply, ws(Frame, S), S};
 handle_call({send, _, _, _}, _, S) -> {reply, {error, disconnected}, S};
-handle_call({lookup,Buffee,Cap},From,#{ready := true,lookups := Pending}=S) when map_size(Pending)<16 ->
+handle_call({lookup,Session,Cap},From,#{ready := true,lookups := Pending}=S) when map_size(Pending)<16 ->
     Request=binary:encode_hex(crypto:strong_rand_bytes(16)),
-    case ws(#{op => <<"lookup">>,request => Request,buffee => Buffee,mailbox => Cap},S) of
+    case ws(#{op => <<"lookup">>,request => Request,session => Session,mailbox => Cap},S) of
         ok -> erlang:send_after(3000,self(),{lookup_timeout,Request}),
               {noreply,S#{lookups := Pending#{Request => From}}};
         Error -> {reply,Error,S}
     end;
 handle_call({lookup,_,_},_,S) -> {reply,{error,disconnected},S}.
-handle_cast({open,Buffee,Cap,Owner},S) when is_pid(Owner) ->
+handle_cast({open,Session,Cap,Owner},S) when is_pid(Owner) ->
     Owners=maps:get(mailbox_owners,S,#{}),
     case lists:member(Owner,maps:values(Owners)) of false -> monitor(process,Owner);true -> ok end,
-    handle_cast({open,Buffee,Cap},S#{mailbox_owners => Owners#{Cap => Owner}});
+    handle_cast({open,Session,Cap},S#{mailbox_owners => Owners#{Cap => Owner}});
 handle_cast({watch,Nodes,Owner},S) when is_pid(Owner) ->
     Watches=(maps:get(owner_watches,S,#{}))#{Owner => Nodes},
     handle_cast({watch,lists:usort(lists:append(maps:values(Watches)))},S#{owner_watches => Watches});
@@ -54,8 +54,8 @@ handle_cast({detach,Owner},S) ->
     Watches=maps:remove(Owner,maps:get(owner_watches,S,#{})),
     handle_cast({watch,lists:usort(lists:append(maps:values(Watches)))},
         Next#{mailbox_owners => maps:without(Caps,Owners),owner_watches => Watches});
-handle_cast({open, Buffee, Cap}, #{boxes := Boxes} = S) ->
-    Next = S#{boxes := Boxes#{Cap => Buffee}}, maybe_ws(#{op => <<"open">>, buffee => Buffee, mailbox => Cap}, Next), {noreply, Next};
+handle_cast({open, Session, Cap}, #{boxes := Boxes} = S) ->
+    Next = S#{boxes := Boxes#{Cap => Session}}, maybe_ws(#{op => <<"open">>, session => Session, mailbox => Cap}, Next), {noreply, Next};
 handle_cast({close, Cap}, #{boxes := Boxes} = S) ->
     maybe_ws(#{op => <<"close">>, mailbox => Cap}, S), {noreply, S#{boxes := maps:remove(Cap, Boxes)}};
 handle_cast({watch, Nodes}, S) ->
@@ -102,12 +102,12 @@ incoming(#{<<"op">> := <<"challenge">>, <<"v">> := 1, <<"nonce">> := Nonce}, S)
     ok = ws(#{op => <<"hello">>,v => 1,id => maps:get(identity,S),signature => binary:encode_hex(Sig)},S),S;
 incoming(#{<<"op">> := <<"ready">>, <<"v">> := 1, <<"id">> := Id}, S) ->
     Id = maps:get(identity,S), Next = S#{ready := true, backoff := 500, error := null},
-    [ws(#{op => <<"open">>, buffee => Buffee, mailbox => Cap}, Next) || {Cap, Buffee} <- maps:to_list(maps:get(boxes, S))],
+    [ws(#{op => <<"open">>, session => Session, mailbox => Cap}, Next) || {Cap, Session} <- maps:to_list(maps:get(boxes, S))],
     ws(#{op => <<"watch">>, nodes => maps:get(watch, S)}, Next),
     notify(connected, Next), Next;
 incoming(#{<<"op">> := <<"delivery">>, <<"from">> := From, <<"mailbox">> := Cap, <<"payload">> := Payload}, #{boxes := Boxes} = S) ->
     Delivery = case {maps:find(Cap, Boxes), Payload} of
-        {{ok, Buffee}, #{<<"buffee">> := Buffee}} -> notify({delivery, From, Cap, Payload}, S);
+        {{ok, Session}, #{<<"session">> := Session}} -> notify({delivery, From, Cap, Payload}, S);
         _ -> ok
     end,
     case Delivery of {error,overloaded} -> ba_diagnostics:count(desk_owner_overloaded,S);_ -> S end;

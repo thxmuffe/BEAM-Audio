@@ -22,7 +22,7 @@ relay.ERL = Path(shutil.which('erl'))
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
-with tempfile.TemporaryDirectory(prefix='ba-cli-buffee-') as directory:
+with tempfile.TemporaryDirectory(prefix='ba-cli-session-') as directory:
     # Normal production algorithm with an explicit system reference and short
     # sampling window for this no-audio fixture. CLI defaults remain unchanged.
     flags = '-ba_core clock_reference system clock_filter_samples 3 clock_sample_interval_ms 100'
@@ -34,20 +34,20 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-buffee-') as directory:
                                     capture_output=True, text=True, timeout=40)
             assert result.returncode == 0, (args[:2], result.stderr)
             if args[:1] == ('monitor',):
-                assert 'Connecting Buffee monitor' in result.stderr
+                assert 'Connecting Session monitor' in result.stderr
             return result.stdout.strip() if scalar else json.loads(result.stdout)
 
         url = f'ws://127.0.0.1:{port}/relay/v1'
-        run('new', 'device', '--devicename', 'test1', '--createbuffee', '--desk', url, '--timeout', '15s')
-        buffee = run('get', 'buffee', '--devicename', 'test1', scalar=True)
+        run('new', 'device', '--devicename', 'test1', '--createsession', '--desk', url, '--timeout', '15s')
+        session = run('get', 'session', '--devicename', 'test1', scalar=True)
         invitation = run('get', 'invitation', '--devicename', 'test1', scalar=True)
-        assert len(buffee) == 32 and invitation.startswith('beamaudio://')
-        run('new', 'device', '--devicename', 'test2', '--joinbuffee', invitation, '--timeout', '15s')
+        assert len(session) == 32 and invitation.startswith('beamaudio://')
+        run('new', 'device', '--devicename', 'test2', '--joinsession', invitation, '--timeout', '15s')
         ready = run('wait', 'device', '--devicename', 'test1,test2', '--until', 'ready', '--timeout', '20s')
         assert ready['state'] == 'ready'
-        views = run('inspect', 'buffee', '--buffeeid', buffee)['views']
+        views = run('inspect', 'session', '--sessionid', session)['views']
         assert len(views) == 2
-        assert all(v['buffee']['buffee'] == buffee and len(v['devices']) == 2 for v in views)
+        assert all(v['session']['session'] == session and len(v['devices']) == 2 for v in views)
         assert all(v['managed']['node'] == 'nonode@nohost' and not any(v['consent'].values()) for v in views)
         member = run('inspect', 'device', '--devicename', 'test2')
         scoped = run('inspect', 'device', '--devicename', 'test1', '--deviceid', member['device'])
@@ -64,7 +64,7 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-buffee-') as directory:
             assert time.monotonic() < end, frame
             frame = monitor()
         assert len(frame['devices']) == 3
-        observer_name = 'ba-monitor-' + buffee
+        observer_name = 'ba-monitor-' + session
         observer = run('inspect', 'device', '--devicename', observer_name)
         assert observer['managed']['observer'] and not any(observer['consent'].values())
         # Foreground monitoring can be interrupted without ending membership.
@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-buffee-') as directory:
         # Extended, signed diagnostics carry the named CLI Devices end to end.
         for _ in range(5):
             named_frame = json.loads(view.stdout.readline())
-            if {row.get('name') for row in named_frame['devices']} == {'test1', 'test2', 'Buffee monitor'}:
+            if {row.get('name') for row in named_frame['devices']} == {'test1', 'test2', 'Session monitor'}:
                 break
         else:
             raise AssertionError(('Monitor did not receive Device names',[(r.get('name'),r.get('state')) for r in named_frame['devices']]))
@@ -85,14 +85,14 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-buffee-') as directory:
                 assert 'clock.state' in diagnostics and 'mixer.dropped' in diagnostics
         view.send_signal(signal.SIGINT)
         view.wait(timeout=5)
-        assert run('inspect', 'device', '--devicename', observer_name)['buffee']['state'] == 'authorized'
+        assert run('inspect', 'device', '--devicename', observer_name)['session']['state'] == 'authorized'
         invitation_file.unlink()
         assert monitor()['state'] == 'authorized', 'active membership required another invitation'
         run('stop', 'device', '--all')
         assert not list(Path(directory).glob('*/running.json'))
-        print('CLI Buffee smoke passed: loopback admission, invitation, shared readiness, scoped inspection, teardown; no audio.')
+        print('CLI Session smoke passed: loopback admission, invitation, shared readiness, scoped inspection, teardown; no audio.')
     finally:
-        for name in ['test1', 'test2', 'ba-monitor-' + locals().get('buffee', '')]:
+        for name in ['test1', 'test2', 'ba-monitor-' + locals().get('session', '')]:
             subprocess.run([str(CLI), 'stop', 'device', '--devicename', name, '--timeout', '2s'],
                            env=env, capture_output=True, timeout=25)
         desk.terminate()

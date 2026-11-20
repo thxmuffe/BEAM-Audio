@@ -1,5 +1,5 @@
-%% Local clock/Offset owner. Cross-device work uses scoped signed Buffee messages.
--module(ba_buffee_clock).
+%% Local clock/Offset owner. Cross-device work uses scoped signed Session messages.
+-module(ba_session_clock).
 -behaviour(gen_server).
 -compile({no_auto_import,[now/0]}).
 -export([start_link/0,id/0,now/0,filtered_utc_time/0,from_monotonic/1,to_monotonic/1,map_times/1,
@@ -16,12 +16,12 @@ filtered_utc_time() -> now().
 from_monotonic(T) -> case map_times([T]) of {ok,[U]} -> {ok,U};Error -> Error end.
 map_times(Times) ->
     D = snapshot(),case ready(D) of
-        true -> M = maps:get(mapping,D),{ok,[ba_buffee_clock_mapping:from_monotonic(M,T) || T <- Times]};
+        true -> M = maps:get(mapping,D),{ok,[ba_session_clock_mapping:from_monotonic(M,T) || T <- Times]};
         false -> {error,clock_unavailable}
     end.
 to_monotonic(T) ->
     D = snapshot(),case playback_ready(D) of
-        true -> {ok,ba_buffee_clock_mapping:to_monotonic(maps:get(mapping,D),T)};
+        true -> {ok,ba_session_clock_mapping:to_monotonic(maps:get(mapping,D),T)};
         false -> {error,clock_unavailable}
     end.
 presentation(Times) ->
@@ -30,7 +30,7 @@ presentation(Times) ->
             P = maps:get(offset,D),M = maps:get(mapping,D),
             {ok,#{clock => maps:get(timeline,D),offset_ms => maps:get(<<"offset_ms">>,P),
                   offset_revision => maps:get(<<"revision">>,P),
-                  times => [ba_buffee_clock_mapping:from_monotonic(M,T) || T <- Times]}};
+                  times => [ba_session_clock_mapping:from_monotonic(M,T) || T <- Times]}};
         false -> {error,clock_or_offset_unavailable}
     end.
 offset() -> D = snapshot(),case offset_ready(D) of
@@ -44,9 +44,9 @@ set_reference(Mode) -> gen_server:call(ba_session_scope:ref(?MODULE),{reference,
 resync() -> resync(explicit).
 resync(Reason) when Reason=:=explicit;Reason=:=resume;Reason=:=network_changed ->
     gen_server:call(ba_session_scope:ref(?MODULE),{resync,Reason}).
-reference_sample() -> {error,use_authenticated_buffee_control}.
-peer_sample(_,_) -> {error,use_authenticated_buffee_control}.
-seed_sample(_) -> {error,use_authenticated_buffee_control}.
+reference_sample() -> {error,use_authenticated_session_control}.
+peer_sample(_,_) -> {error,use_authenticated_session_control}.
+seed_sample(_) -> {error,use_authenticated_session_control}.
 status() ->
     D = snapshot(),Base = maps:without([mapping,offset,offset_until,authorization_until,master_sample],D),
     M = maps:get(mapping,D,undefined),Now = mono(),
@@ -57,8 +57,8 @@ status() ->
         _ -> holdover
     end,
     Extra = case M of undefined -> #{};_ ->
-        #{filtered_utc_time => ba_buffee_clock_mapping:from_monotonic(M,Now),
-          offset_ns => ba_buffee_clock_mapping:offset(M,Now),remaining_correction_ns => ba_buffee_clock_mapping:remaining(M,Now)} end,
+        #{filtered_utc_time => ba_session_clock_mapping:from_monotonic(M,Now),
+          offset_ns => ba_session_clock_mapping:offset(M,Now),remaining_correction_ns => ba_session_clock_mapping:remaining(M,Now)} end,
     Quality=case {M,maps:get(role,D,waiting),maps:get(filter_ready,D,false)} of
         {undefined,_,_} -> unavailable;
         {_,master,_} -> reference;
@@ -73,7 +73,7 @@ status() ->
 %% Keep full UTC nanoseconds as a decimal string across JSON boundaries.
 master_clock(#{role := master,mapping := M,master := Id}=D,Now) when is_map(M) ->
     case ready(D) of
-        true -> #{device => Id,utc_time_ns => ns(ba_buffee_clock_mapping:from_monotonic(M,Now)),age_ms => 0,state => fresh};
+        true -> #{device => Id,utc_time_ns => ns(ba_session_clock_mapping:from_monotonic(M,Now)),age_ms => 0,state => fresh};
         false -> #{}
     end;
 master_clock(#{master := Id,master_sample := #{device := Id,utc_time_ns := UTC,received_at_ns := T}}=D,Now) ->
@@ -122,7 +122,7 @@ init([]) ->
         offset => undefined,offset_until => undefined,authorization_until => undefined},
     S = #{clock => D,scope => undefined,role => waiting,view => undefined,reference => Reference,
         pending => #{},upstream => undefined,blocked => false,last_external_start => undefined,next_external => now_ms(),backoff_ms => 30000,
-        filter => ba_buffee_clock_filter:new(Count),filter_reference => undefined,acquisition => undefined,
+        filter => ba_session_clock_filter:new(Count),filter_reference => undefined,acquisition => undefined,
         born => now_ms(),filter_last_slot => undefined,sample_due => now_ms(),offset_due => now_ms(),phase_due => now_ms()+Phase},
     erlang:send_after(100,self(),tick),{ok,save(S)}.
 handle_call({offset,Value,Expected},From,S) when is_integer(Value),Value>=5,Value=<30000 ->
@@ -193,10 +193,10 @@ handle_info(tick,S0) ->
         waiting -> S2
     end,
     {noreply,save(correct(S3))};
-handle_info({buffee_time,Context,Id,P},S) ->
+handle_info({session_time,Context,Id,P},S) ->
     try
-        #{peer := Peer,link := Link,buffee := Buffee,deadline := Deadline} = Context,
-        {Buffee,_} = maps:get(scope,S),
+        #{peer := Peer,link := Link,session := Session,deadline := Deadline} = Context,
+        {Session,_} = maps:get(scope,S),
         true = now_ms()<Deadline,{ok,#{link := Link}} = context(Peer),
         incoming(Context,Id,P,S)
     of Next -> {noreply,save(Next)}
@@ -214,13 +214,13 @@ handle_info({'DOWN',Ref,process,_,_},#{upstream := #{monitor := Ref}} = S) ->
 handle_info(_,S) -> {noreply,S}.
 
 membership(S) ->
-    View = try ba_buffee_membership:current() catch exit:_ -> {error,unavailable} end,
+    View = try ba_session_membership:current() catch exit:_ -> {error,unavailable} end,
     case View of
-        {ok,#{policy := #{buffee := Buffee,authority := Authority}} = V} ->
+        {ok,#{policy := #{session := Session,authority := Authority}} = V} ->
             {Pub,_} = ba_device_store:identity(),Self=binary:encode_hex(Pub),
             Provider=provider(Authority,Self,V),
             Role=case Self=:=Provider of true -> authority;false -> member end,
-            Scope = {Buffee,Provider},
+            Scope = {Session,Provider},
             Next = case maps:get(scope,S)=:=Scope of true -> S;false -> change_provider(Scope,Role,S) end,
             D = maps:get(clock,Next),ClockRole = case Role of authority -> master;member -> follower end,
             Until = maps:get(until,V),OffsetUntil = case Role of authority -> infinity;member -> maps:get(offset_until,D) end,
@@ -229,11 +229,11 @@ membership(S) ->
         _ ->
             D = maps:get(clock,S),invalidate(S#{role := waiting,clock := D#{role := waiting,authorization_until := undefined}})
     end.
-scope({Buffee,Authority}=Scope,Role,S) ->
-    Name = case Role of authority -> buffee_time_policy;member -> buffee_time_cache end,
+scope({Session,Authority}=Scope,Role,S) ->
+    Name = case Role of authority -> session_time_policy;member -> session_time_cache end,
     Default = case Role of authority -> #{<<"revision">> => 1,<<"offset_ms">> => 150};member -> undefined end,
     Saved = ba_device_store:load(Name,undefined),
-    P = case Saved of #{buffee := Buffee,authority := Authority,policy := Policy} -> ba_buffee_time_protocol:state(Policy),Policy;_ -> Default end,
+    P = case Saved of #{session := Session,authority := Authority,policy := Policy} -> ba_session_time_protocol:state(Policy),Policy;_ -> Default end,
     case Role of authority -> checkpoint(Name,Scope,P);member -> ok end,
     Next = reset_filter(scope_changed,invalidate(S)),D = maps:get(clock,Next),
     Scoped=Next#{scope := Scope,acquisition := undefined,clock := D#{offset := P,offset_until := undefined,
@@ -301,7 +301,7 @@ incoming(Context,Id,#{<<"kind">> := <<"sample.request">>,<<"t1">> := T1},#{role 
         true ->
             T2 = maps:get(received_at_ns,Context),T3 = mono(),M = maps:get(mapping,D),
             P = #{<<"kind">> => <<"sample.reply">>,<<"t1">> => T1,
-                <<"t2">> => ns(ba_buffee_clock_mapping:from_monotonic(M,T2)),<<"t3">> => ns(ba_buffee_clock_mapping:from_monotonic(M,T3)),
+                <<"t2">> => ns(ba_session_clock_mapping:from_monotonic(M,T2)),<<"t3">> => ns(ba_session_clock_mapping:from_monotonic(M,T3)),
                 <<"timeline">> => maps:get(timeline,D),<<"instance">> => maps:get(instance,D),
                 <<"reference_revision">> => maps:get(reference_revision,D),<<"uncertainty_ns">> =>
                     case maps:get(measurement_uncertainty_ns,D) of unknown -> null;U -> ns(U) end},
@@ -342,15 +342,15 @@ incoming(Context,Id,#{<<"kind">> := Kind},S)
     reply_error(Context,Id,Kind,<<"unavailable">>),S;
 incoming(_,_,_,_) -> error(unexpected_time_message).
 
-apply_sample(P,T4,Until,#{scope := {Buffee,Provider},clock := D0}=S0) ->
+apply_sample(P,T4,Until,#{scope := {Session,Provider},clock := D0}=S0) ->
     T1 = number(maps:get(<<"t1">>,P)),T2 = number(maps:get(<<"t2">>,P)),T3 = number(maps:get(<<"t3">>,P)),
-    Instance = maps:get(<<"instance">>,P),Timeline = ba_buffee_time_protocol:timeline(Buffee,Instance),
+    Instance = maps:get(<<"instance">>,P),Timeline = ba_session_time_protocol:timeline(Session,Instance),
     Timeline = maps:get(<<"timeline">>,P),Revision = maps:get(<<"reference_revision">>,P),
     case maps:get(master_instance,D0)=:=Instance of
         true -> true = Revision>=maps:get(reference_revision,D0);
         false -> ok
     end,
-    {ok,Sample} = ba_buffee_clock_sync:measure(T1,T2,T3,T4),true = maps:get(round_trip_ns,Sample)=<4000000000,
+    {ok,Sample} = ba_session_clock_sync:measure(T1,T2,T3,T4),true = maps:get(round_trip_ns,Sample)=<4000000000,
     Key = {Timeline,Instance,Revision},Stale = age(maps:get(last_sync,D0),T4),
     Reference=maps:get(filter_reference,S0),
     %% A gap means samples are missing, not that earlier ones were wrong: within
@@ -367,17 +367,17 @@ apply_sample(P,T4,Until,#{scope := {Buffee,Provider},clock := D0}=S0) ->
     end,D = maps:get(clock,S),
     Slot = (mono_ms(T4)-maps:get(born,S)) div maps:get(sample_interval_ms,D),
     Filter = case Slot=:=maps:get(filter_last_slot,S) of
-        true -> maps:get(filter,S);false -> ba_buffee_clock_filter:add(Sample,maps:get(filter,S)) end,
-    Estimate = ba_buffee_clock_filter:estimate(Filter),
+        true -> maps:get(filter,S);false -> ba_session_clock_filter:add(Sample,maps:get(filter,S)) end,
+    Estimate = ba_session_clock_filter:estimate(Filter),
     Full = element(1,Estimate)=:=ok,
     Old = case maps:get(timeline,D)=:=Timeline of true -> maps:get(mapping,D);false -> undefined end,
     %% The authenticated raw sample establishes a usable mapping immediately.
     %% Initial calibration may replace this provisional anchor before audio;
     %% subsequent estimates slew the committed mapping while the filter warms.
-    Mapping = case Old of undefined -> ba_buffee_clock_mapping:new(T4,maps:get(offset_ns,Sample));_ -> Old end,
+    Mapping = case Old of undefined -> ba_session_clock_mapping:new(T4,maps:get(offset_ns,Sample));_ -> Old end,
     U = case maps:get(<<"uncertainty_ns">>,P) of null -> unknown;B -> number(B)+maps:get(round_trip_ns,Sample) div 2 end,
     NextD = D#{mapping := Mapping,timeline := Timeline,master_instance := Instance,reference_revision := Revision,
-        last_sync := T4,confirmed := true,filter_ready := Full,filter_sample_count := ba_buffee_clock_filter:count(Filter),
+        last_sync := T4,confirmed := true,filter_ready := Full,filter_sample_count := ba_session_clock_filter:count(Filter),
         measurement_uncertainty_ns := U,round_trip_ns => maps:get(round_trip_ns,Sample),
         raw_offset_ns => ns(maps:get(offset_ns,Sample)),
         master_sample => #{device => Provider,utc_time_ns => T3,received_at_ns => T4},
@@ -399,8 +399,8 @@ finish_acquisition(#{acquisition := #{count := Count,best := Best,until := Until
     case Count>=?INITIAL_SAMPLES orelse now_ms()>=Until of
         false -> S;
         true ->
-            Mapping=ba_buffee_clock_mapping:new(maps:get(sampled_at,Best),maps:get(offset_ns,Best)),
-            Filter=ba_buffee_clock_filter:add(Best,ba_buffee_clock_filter:new(maps:get(filter_required_samples,D))),
+            Mapping=ba_session_clock_mapping:new(maps:get(sampled_at,Best),maps:get(offset_ns,Best)),
+            Filter=ba_session_clock_filter:add(Best,ba_session_clock_filter:new(maps:get(filter_required_samples,D))),
             S#{acquisition := undefined,filter := Filter,phase_due := now_ms()+maps:get(interval_ms,D),
                sample_due := now_ms()+maps:get(sample_interval_ms,D),
                clock := D#{mapping := Mapping,initial_sync_complete => true,
@@ -413,9 +413,9 @@ correct(#{role := member,clock := D}=S) ->
         false -> S;
         true ->
             Next = S#{phase_due := now_ms()+maps:get(interval_ms,D)},
-            case {playback_ready(D),ba_buffee_clock_filter:current(maps:get(filter,S))} of
+            case {playback_ready(D),ba_session_clock_filter:current(maps:get(filter,S))} of
                 {true,{ok,Target}} ->
-                    {M,_,Changed} = ba_buffee_clock_sync:correct(maps:get(mapping,D),mono(),Target,2000000,maps:get(slew_ppm,D)),
+                    {M,_,Changed} = ba_session_clock_sync:correct(maps:get(mapping,D),mono(),Target,2000000,maps:get(slew_ppm,D)),
                     Next#{clock := D#{mapping := M,revision := maps:get(revision,D)+case Changed of true -> 1;false -> 0 end}};
                 _ -> Next
             end
@@ -435,9 +435,9 @@ upstream(#{upstream := undefined}=S) ->
                 clock := D#{last_error := null}}
     end;
 upstream(S) -> S.
-apply_upstream({ok,#{offset_ns := Offset,sampled_at := T,uncertainty_ns := U}},#{scope := {Buffee,_},clock := D}=S) ->
-    {M,_,_} = ba_buffee_clock_sync:correct(maps:get(mapping,D),T,Offset,2000000,maps:get(slew_ppm,D)),
-    Timeline = ba_buffee_time_protocol:timeline(Buffee,maps:get(instance,D)),
+apply_upstream({ok,#{offset_ns := Offset,sampled_at := T,uncertainty_ns := U}},#{scope := {Session,_},clock := D}=S) ->
+    {M,_,_} = ba_session_clock_sync:correct(maps:get(mapping,D),T,Offset,2000000,maps:get(slew_ppm,D)),
+    Timeline = ba_session_time_protocol:timeline(Session,maps:get(instance,D)),
     S#{backoff_ms := 30000,next_external := infinity,acquisition := undefined,clock := D#{mapping := M,timeline := Timeline,
         master_instance := maps:get(instance,D),reference_revision := maps:get(reference_revision,D)+1,
         revision := maps:get(revision,D)+1,last_sync := T,confirmed := true,filter_ready := true,
@@ -468,7 +468,7 @@ commit(Value,Automatic,Revision,#{clock := #{offset := P}=D,scope := Scope}=S) -
                 true -> P;
                 false -> with_automatic(Automatic,P#{<<"revision">> := Revision+1,<<"offset_ms">> := Value})
             end,
-            ba_buffee_time_protocol:state(NextP),checkpoint(buffee_time_policy,Scope,NextP),
+            ba_session_time_protocol:state(NextP),checkpoint(session_time_policy,Scope,NextP),
             Next = S#{clock := D#{offset := NextP,offset_until := infinity}},broadcast(Next),{ok,Next}
     end.
 with_automatic(true,P) -> P#{<<"automatic">> => true};
@@ -483,8 +483,8 @@ required(Value,#{clock := #{offset := P}}=S) ->
         false -> S
     end.
 adopt(P,Until,#{clock := #{offset := Old}=D,scope := Scope}=S) ->
-    New = ba_buffee_time_protocol:accept(maps:with([<<"revision">>,<<"offset_ms">>,<<"automatic">>],P),Old),
-    checkpoint(buffee_time_cache,Scope,New),S#{clock := D#{offset := New,offset_until := Until,offset_error := null}}.
+    New = ba_session_time_protocol:accept(maps:with([<<"revision">>,<<"offset_ms">>,<<"automatic">>],P),Old),
+    checkpoint(session_time_cache,Scope,New),S#{clock := D#{offset := New,offset_until := Until,offset_error := null}}.
 broadcast(#{view := #{policy := #{peers := Peers}}}=S) ->
     P = offset_payload(<<"offset.changed">>,S),
     maps:foreach(fun(Peer,Grants) -> case lists:member(time_read,Grants) of true -> _ = send(Peer,fresh(),P);false -> ok end end,Peers).
@@ -493,15 +493,15 @@ revision(current,#{clock := #{offset := P}=D}) ->
     case offset_ready(D) of true -> maps:get(<<"revision">>,P);false -> {error,offset_unavailable} end;
 revision(N,_) when is_integer(N),N>0,N=<9007199254740991 -> N;
 revision(_,_) -> {error,invalid_revision}.
-checkpoint(Name,{Buffee,Authority},P) ->
-    try ok = ba_device_store:save(Name,#{buffee => Buffee,authority => Authority,policy => P})
+checkpoint(Name,{Session,Authority},P) ->
+    try ok = ba_device_store:save(Name,#{session => Session,authority => Authority,policy => P})
     catch _:_ -> exit({time_storage_failed,Name}) end.
 reply(#{peer := Peer},Id,P) -> send(Peer,Id,P).
 reply_error(C,Id,Operation,Reason) -> reply(C,Id,#{<<"kind">> => <<"error">>,<<"operation">> => Operation,<<"reason">> => Reason}).
 %% Deliberately uncaught: if control is replaced or stuck, this clock crashes and
 %% its supervisor restarts it with fresh authenticated links (recovery path).
-send(Peer,Id,P) -> ba_buffee_control:time_message(Peer,Id,P).
-context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
+send(Peer,Id,P) -> ba_session_control:time_message(Peer,Id,P).
+context(Peer) -> try ba_session_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
 answer(#{caller := From},Result) -> gen_server:reply(From,Result);
 answer(_,_) -> ok.
 expire(#{pending := Pending}=S) ->
@@ -515,14 +515,14 @@ expire(#{pending := Pending}=S) ->
 introduce(Peer,S) ->
     Now=now_ms(),
     case Now>=maps:get(introduce_after,S,Now) of
-        true -> _ = try ba_buffee_control:connect(Peer) catch exit:_ -> ok end,S#{introduce_after => Now+2000};
+        true -> _ = try ba_session_control:connect(Peer) catch exit:_ -> ok end,S#{introduce_after => Now+2000};
         false -> S
     end.
 invalidate(S) ->
     maps:foreach(fun(_,P) -> answer(P,{error,unconfirmed}) end,maps:get(pending,S)),
     D = maps:get(clock,S),S#{pending := #{},clock := D#{confirmed := false,offset_until := undefined}}.
 reset_filter(Reason,#{clock := D}=S) ->
-    S#{filter := ba_buffee_clock_filter:new(maps:get(filter_required_samples,D)),filter_reference := undefined,filter_last_slot := undefined,
+    S#{filter := ba_session_clock_filter:new(maps:get(filter_required_samples,D)),filter_reference := undefined,filter_last_slot := undefined,
        clock := D#{filter_ready := false,filter_sample_count := 0,
            filter_reset_count => maps:get(filter_reset_count,D,0)+1,filter_reset_reason => Reason}}.
 fail(Reason,#{clock := D}=S) -> S#{clock := D#{confirmed := false,last_error := Reason}}.
@@ -540,8 +540,8 @@ valid_reference({ntp,H}) -> valid_host(H);
 valid_reference({ntp,H,P}) -> valid_host(H) andalso is_integer(P) andalso P>0 andalso P<65536;
 valid_reference(_) -> false.
 valid_host(H) -> is_list(H) andalso H=/=[] andalso length(H)=<253 andalso lists:all(fun(C) -> is_integer(C) andalso C>0 andalso C<128 end,H).
-ns(N) -> ba_buffee_time_protocol:encode(N).
-number(B) -> ba_buffee_time_protocol:integer(B).
+ns(N) -> ba_session_time_protocol:encode(N).
+number(B) -> ba_session_time_protocol:integer(B).
 mono() -> erlang:monotonic_time(nanosecond).
 now_ms() -> erlang:monotonic_time(millisecond).
 mono_ms(N) -> erlang:convert_time_unit(N,nanosecond,millisecond).
@@ -569,7 +569,7 @@ provider(Reference,Self,#{device_privileges := Privileges}=V) ->
             end
     end;
 provider(Reference,_,_) -> Reference.
-change_provider({Buffee,_}=Scope,Role,#{scope := {Buffee,_},clock := D}=S) ->
+change_provider({Session,_}=Scope,Role,#{scope := {Session,_},clock := D}=S) ->
     case Role=:=member orelse handover_ready(D) of
         true ->
             NextD=case Role of

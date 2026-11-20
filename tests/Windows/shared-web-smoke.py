@@ -74,7 +74,7 @@ class Device:
 
 
 def summary(state):
-    return dict(state=state.get("buffee", {}).get("state"),
+    return dict(state=state.get("session", {}).get("state"),
                 connection=state.get("connection"),
                 devices=[dict(local=d.get("local"), state=d.get("state")) for d in state.get("devices", [])],
                 desks=[dict(connected=d.get("connected"), error=d.get("error"), diagnostics=d.get("diagnostics"))
@@ -124,7 +124,7 @@ def main():
             a = Device(Path(temporary)/"a", secrets.token_hex(32)); devices.append(a)
             b = Device(Path(temporary)/"b", secrets.token_hex(32)); devices.append(b)
             sa, sb = a.req("snapshot"), b.req("snapshot")
-            assert sa["profile"] == sb["profile"] == "buffee_control"
+            assert sa["profile"] == sb["profile"] == "session_control"
             assert sa["device"] != sb["device"] and a.url != b.url
             assert not any(sa["consent"].get(k) for k in ("microphone", "speaker", "broadcast"))
             for asset in (APP / "assets").iterdir():
@@ -133,17 +133,17 @@ def main():
             print("PASS: packaged shared frontend, isolated Devices/ports, audio consent off", flush=True)
             if args.invitation_file:
                 invitation = args.invitation_file.read_text().strip()
-                for device in (a, b): device.req("join_buffee", invitation=invitation)
+                for device in (a, b): device.req("join_session", invitation=invitation)
                 for device in (a, b):
                     other = sb["device"] if device is a else sa["device"]
-                    state = device.wait(lambda s: s["buffee"]["state"] == "authorized" and
+                    state = device.wait(lambda s: s["session"]["state"] == "authorized" and
                         any(d["id"] == other and d["state"] == "authorized" for d in s["devices"]), seconds=65)
                     print("PASS: supplied invitation, authorized peer visibility: " + json.dumps(summary(state)), flush=True)
                 return
-            a.req("create_buffee", name="Windows integration check", desks=[desk_url])
+            a.req("create_session", name="Windows integration check", desks=[desk_url])
             a.wait(lambda s: any(d.get("connected") for d in s["desks"]["desks"].values()))
             invitation = a.req("invitation")["result"]
-            b.req("join_buffee", invitation=invitation)
+            b.req("join_session", invitation=invitation)
             a.wait(connected); b.wait(connected)
             print("PASS: two packaged Windows Devices see each other through local Reception", flush=True)
             a.req("send", text="Windows isolated integration check")
@@ -163,20 +163,20 @@ def main():
             b = Device(b.directory, b.seed); devices.append(b)
             a.wait(connected, seconds=65); b.wait(connected, seconds=65)
             c = Device(Path(temporary)/"c", secrets.token_hex(32)); devices.append(c)
-            c.req("join_buffee", invitation=invitation)
-            c.wait(lambda s: s["buffee"]["state"] == "authorized" and len(s["devices"]) == 3 and connected(s))
+            c.req("join_session", invitation=invitation)
+            c.wait(lambda s: s["session"]["state"] == "authorized" and len(s["devices"]) == 3 and connected(s))
             a.wait(connected); b.wait(connected)
             print("PASS: both endpoints restart; the original invitation admits a new Device", flush=True)
             # Match Home's Join path while another Session is already active.
             slot = a.req("new_session")["session_id"]
-            a.req("create_buffee", session=slot, name="Second local Session", desks=[desk_url])
+            a.req("create_session", session=slot, name="Second local Session", desks=[desk_url])
             link2 = a.req("invitation", session=slot)["result"]
             blank = b.req("new_session")["session_id"]
-            joined = b.req("join_buffee", session=blank, invitation=link2)["session_id"]
+            joined = b.req("join_session", session=blank, invitation=link2)["session_id"]
             a.wait(connected, session=slot); b.wait(connected, session=joined)
             b.wait(lambda s: len(s["devices"]) == 3 and connected(s), session="default")
             again = b.req("new_session")["session_id"]
-            result = b.req("join_buffee", session=again, invitation=link2)
+            result = b.req("join_session", session=again, invitation=link2)
             assert result["session_id"] == joined and len(result["sessions"]) == 2
             print("PASS: join into a second Session, original peers retained, repeat join deduplicated", flush=True)
         finally:

@@ -37,7 +37,7 @@ handle_call(start,{Caller,_},#{state := stopped}=S) ->
             Helper ->
                 [monitor(process,P) || P <- lists:usort([Caller]++
                     [P || Name <- [ba_device_config,ba_permission_pg],P <- [whereis(Name)],is_pid(P)]++
-                    [P || Name <- [ba_buffee,ba_device_handler,ba_device_sup,ba_device_worker_sup],P <- [ba_session_scope:whereis(Name)],is_pid(P)])],
+                    [P || Name <- [ba_session,ba_device_handler,ba_device_sup,ba_device_worker_sup],P <- [ba_session_scope:whereis(Name)],is_pid(P)])],
                 %% Excluding BEAM's process tree keeps this Device's own playback
                 %% (the receiving host is BEAM's child) out of what it sends.
                 Port=open_port({spawn_executable,Helper},[binary,{packet,4},exit_status,use_stdio,hide,
@@ -57,7 +57,7 @@ handle_info(heartbeat,#{port := Port,token := T}=S) ->
     case ba_device_permission:valid(broadcast,T) of
         true -> try true=port_command(Port,<<$h>>),erlang:send_after(250,self(),heartbeat),
                 Next=case maps:find(source,S) of
-                    {ok,Source} -> Clock=ba_buffee_clock:id(),
+                    {ok,Source} -> Clock=ba_session_clock:id(),
                         case Clock=:=maps:get(source_clock,S,Clock) of
                             true -> S;false -> ok=ba_audio:rebind(Source,Clock),S#{source_clock => Clock}
                         end;
@@ -70,7 +70,7 @@ handle_info(heartbeat,#{port := Port,token := T}=S) ->
 handle_info({Port,{data,<<9,P:16>>}},#{port := Port}=S) -> {noreply,S#{endpoint => P}};
 handle_info({Port,{data,<<1,Rate:32/little,Channels:32/little>>}},#{port := Port}=S) when Rate>0,Channels>0 ->
     D=#{encoding => pcm,sample_format => float32_le,sample_rate => Rate,channel_count => Channels,
-        clock => ba_buffee_clock:id(),stream_handler => native_gst_aac},
+        clock => ba_session_clock:id(),stream_handler => native_gst_aac},
     case ba_audio:publish(#{source_key => <<"default-output">>,name => <<"Windows output — AAC 320 kb/s">>,profiles => #{channel => D}},self()) of
         {ok,Source} -> monitor(process,Source),
             {noreply,S#{state := running,source => Source,source_clock => maps:get(clock,D),format => #{rate => Rate,channels => Channels}}};

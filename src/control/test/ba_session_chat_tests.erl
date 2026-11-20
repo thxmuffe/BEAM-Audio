@@ -1,10 +1,10 @@
--module(ba_buffee_chat_tests).
+-module(ba_session_chat_tests).
 -include_lib("eunit/include/eunit.hrl").
 %% Users see joins, on-air starts, requests and granted privileges; presence
 %% changes, removals, losses and off-air are debug-level and never stored.
 
 texts(#{messages := M}) -> [{maps:get(sender,E),maps:get(text,E)} || E <- lists:reverse(M)].
-step(Message,S) -> {noreply,Next}=ba_buffee_chat:handle_info(Message,S),Next.
+step(Message,S) -> {noreply,Next}=ba_session_chat:handle_info(Message,S),Next.
 
 visible_notices_test() ->
     S0=#{messages => [],present => [],privileges => undefined},
@@ -24,7 +24,7 @@ visible_notices_test() ->
 audio_deadline_warning_is_shared_and_rate_limited_test() ->
     Member=spawn(fun Loop() -> receive {'$gen_call',From,current} ->
         gen_server:reply(From,{ok,#{policy => #{peers => #{}}}}),Loop() end end),
-    register(ba_buffee_membership,Member),
+    register(ba_session_membership,Member),
     OldSeed=os:getenv("BA_IDENTITY_SEED"),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$A)),
     try
         Report=#{discarded => 12,mean_late_ms => 80,required_ms => 380,response_ms => 300},
@@ -36,6 +36,6 @@ audio_deadline_warning_is_shared_and_rate_limited_test() ->
         S3=step({audio_lateness,Report},S2#{last_audio_warning := maps:get(last_audio_warning,S2)-30000}),
         ?assertEqual(2,length(maps:get(messages,S3)))
     after
-        unregister(ba_buffee_membership),exit(Member,kill),
+        unregister(ba_session_membership),exit(Member,kill),
         case OldSeed of false -> os:unsetenv("BA_IDENTITY_SEED");_ -> os:putenv("BA_IDENTITY_SEED",OldSeed) end
     end.

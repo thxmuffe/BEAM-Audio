@@ -17,7 +17,7 @@ def load(name, path):
     return module
 
 
-control = load('automatic_control', HERE / 'buffee-control-smoke.py')
+control = load('automatic_control', HERE / 'session-control-smoke.py')
 relay = load('automatic_relay', HERE.parent / 'ReceptionDesk/local_reception.py')
 relay.ERL = Path(shutil.which('erl'))
 
@@ -34,9 +34,9 @@ def policy(device, predicate):
 
 def main():
     root = control.ROOT
-    out = root / 'builds/intermediates/buffee-control-check'
+    out = root / 'builds/intermediates/session-control-check'
     out.mkdir(parents=True, exist_ok=True)
-    subprocess.run([shutil.which('erlc'), '-Werror', '-o', str(out), str(HERE / 'ba_buffee_control_probe.erl')], check=True)
+    subprocess.run([shutil.which('erlc'), '-Werror', '-o', str(out), str(HERE / 'ba_session_control_probe.erl')], check=True)
     paths = [out, *(root / 'builds/intermediates/control/default/lib').glob('*/ebin')]
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', 0))

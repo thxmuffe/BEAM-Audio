@@ -14,7 +14,7 @@ def load(name, path):
     spec.loader.exec_module(module)
     return module
 
-control = load('control', HERE / 'buffee-control-smoke.py')
+control = load('control', HERE / 'session-control-smoke.py')
 relay = load('relay', HERE.parent / 'ReceptionDesk/local_reception.py')
 relay.ERL = Path(shutil.which('erl'))
 
@@ -22,10 +22,10 @@ with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
 paths = list((control.ROOT / 'builds/intermediates/control/default/lib').glob('*/ebin'))
-output = control.ROOT / 'builds/intermediates/buffee-reconnect-check'
+output = control.ROOT / 'builds/intermediates/session-reconnect-check'
 output.mkdir(parents=True, exist_ok=True)
 subprocess.run([shutil.which('erlc'), '-Werror', '-o', str(output),
-                str(HERE / 'ba_buffee_control_probe.erl')], check=True)
+                str(HERE / 'ba_session_control_probe.erl')], check=True)
 paths = [output, *paths]
 runtimes = []
 desk = relay.start_desk(port)
@@ -45,11 +45,11 @@ try:
         assert member.request('join', invitation=invitation, desk=url)['ok']
         old = control.wait(member, lambda s: s['membership']['state'] == 'authorized')['membership']
         # A saved Passport replaces the admission link: no invitation required at restart.
-        saved_path = Path(state) / 'member' / 'buffee_connection.term'
+        saved_path = Path(state) / 'member' / 'session_connection.term'
         assert saved_path.exists() and saved_path.stat().st_mode & 0o777 == 0o600
         seed = member.seed
         assert member.request('disconnect_app')['ok']
-        assert member.request('buffee_status') == {'state': 'idle'}
+        assert member.request('session_status') == {'state': 'idle'}
         member.close()
         member = runtime('member', seed)
         first = member.request('start_app')
@@ -57,7 +57,7 @@ try:
         assert first['connection']['name'] == 'Test gathering'
         assert first['connection']['state'] in ('rejoining', 'joined')
         restored = control.wait(member, lambda s: s['membership']['state'] == 'authorized')['membership']
-        assert restored['buffee'] == old['buffee']
+        assert restored['session'] == old['session']
         assert restored['membership'] == old['membership']
         assert member.request('start_app')['connection']['state'] == 'joined'
         # A persisted Passport cannot bypass removal while the app is closed.
@@ -69,11 +69,11 @@ try:
         control.wait(member, lambda s: s['membership']['state'] == 'revoked')
         assert member.request('start_app')['connection']['state'] == 'revoked'
         # An explicit Leave differs from closing the app: it clears reconnect intent.
-        assert member.request('leave_buffee')['ok']
+        assert member.request('leave_session')['ok']
         member.close()
         member = runtime('member', seed)
         fresh = member.request('start_app')
-        assert fresh['buffee'] == {'state': 'idle'} and fresh['connection'] == {'state': 'idle'}
+        assert fresh['session'] == {'state': 'idle'} and fresh['connection'] == {'state': 'idle'}
         # A grant holder's restart returns to the same Session through its link.
         owner_seed = owner.seed
         owner.close()
@@ -82,9 +82,9 @@ try:
             # Plain application startup, before any bridge/UI configure call.
             restarted = owner.request('start_runtime')['connection']
             assert restarted['state'] in ('joined', 'rejoining'), restarted
-            assert restarted['name'] == 'Test gathering' and restarted['buffee'] == old['buffee']
+            assert restarted['name'] == 'Test gathering' and restarted['session'] == old['session']
             owner.close()
-        print('PASS: OTP immediately restores participant from its saved link and policy; same Buffee; private storage; revocation still enforced; explicit Leave clears intent; grant holder restart returns to the same Session; no UI or audio')
+        print('PASS: OTP immediately restores participant from its saved link and policy; same Session; private storage; revocation still enforced; explicit Leave clears intent; grant holder restart returns to the same Session; no UI or audio')
 finally:
     for r in runtimes:
         r.close()

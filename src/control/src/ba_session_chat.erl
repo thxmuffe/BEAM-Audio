@@ -1,7 +1,7 @@
 %% Bounded text history for this Session: authenticated chat messages, plus
 %% local info entries this Device derives from authenticated links and signed
 %% privilege changes. Info entries are never sent; every Device derives its own.
--module(ba_buffee_chat).
+-module(ba_session_chat).
 -behaviour(gen_server).
 -export([start_link/0,send/1,history/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
@@ -12,7 +12,7 @@ init([]) ->
     process_flag(trap_exit,true),
     %% One shared handler dispatches notices to the reporting Session.
 
-    logger:add_handler(ba_buffee_chat,ba_buffee_log_h,#{level => error,config => #{recipient => self()}}),
+    logger:add_handler(ba_session_chat,ba_session_log_h,#{level => error,config => #{recipient => self()}}),
     %% Membership starts first; ask for its current view so the baseline is the
     %% Session as this Device first saw it and every later member is a join.
     self() ! resync,
@@ -23,7 +23,7 @@ handle_call({send,Text},_,S) when is_binary(Text),byte_size(Text)>0,byte_size(Te
 handle_call(_,_,S) -> {reply,{error,invalid_text},S}.
 handle_cast(_,S) -> {noreply,S}.
 handle_info(resync,S) ->
-    case ba_session_scope:whereis(ba_buffee_membership) of undefined -> ok;_ -> ba_buffee_membership:resend_chat() end,
+    case ba_session_scope:whereis(ba_session_membership) of undefined -> ok;_ -> ba_session_membership:resend_chat() end,
     {noreply,S};
 handle_info({ba_crash_notice,Text},S) ->
     %% This worker may wait on the ordinary chat API; the failing process never
@@ -41,8 +41,8 @@ handle_info({audio_lateness,Report},S) ->
             M=try publish(Text,maps:get(messages,S)) of {_,Messages} -> Messages catch _:_ -> maps:get(messages,S) end,
             {noreply,S#{messages := M,last_audio_warning => Now}}
     end;
-handle_info({buffee_chat,#{peer := Peer,link := Link},Id,Text},S) ->
-    case ba_buffee_control:audio_context(Peer) of
+handle_info({session_chat,#{peer := Peer,link := Link},Id,Text},S) ->
+    case ba_session_control:audio_context(Peer) of
         {ok,#{link := Link}} -> {noreply,S#{messages := add(Id,Peer,Text,maps:get(messages,S))}};
         _ -> {noreply,S}
     end;
@@ -85,18 +85,18 @@ info(Subject,Text,#{messages := M}=S) ->
 debug(Subject,Text,S) ->
     logger:debug(#{event => session_notice,device => Subject,text => Text}),S.
 terminate(_,_) ->
-    Other=[P || {ba_session,_,ba_buffee_chat}=Name <- global:registered_names(),
+    Other=[P || {ba_session,_,ba_session_chat}=Name <- global:registered_names(),
         P <- [global:whereis_name(Name)],is_pid(P),P=/=self()],
-    Default=erlang:whereis(ba_buffee_chat),
+    Default=erlang:whereis(ba_session_chat),
     case Other=:=[] andalso (Default=:=undefined orelse Default=:=self()) of
-        true -> logger:remove_handler(ba_buffee_chat);false -> ok end,ok.
+        true -> logger:remove_handler(ba_session_chat);false -> ok end,ok.
 
 publish(Text,S) ->
     Id=binary:encode_hex(crypto:strong_rand_bytes(16)),
     {Pub,_}=ba_device_store:identity(),Self=binary:encode_hex(Pub),
-    case ba_buffee_membership:current() of
+    case ba_session_membership:current() of
         {ok,#{policy := #{peers := Peers}}} ->
-            Results=[ba_buffee_control:chat_message(P,Id,Text) || P <- maps:keys(Peers),not ba_app_session:excluded(P)],
+            Results=[ba_session_control:chat_message(P,Id,Text) || P <- maps:keys(Peers),not ba_app_session:excluded(P)],
             Reply=case lists:all(fun(R) -> R=:=ok end,Results) of true -> ok;false -> {error,some_recipients_unavailable} end,
             {Reply,add(Id,Self,Text,S)};
         _ -> {{error,no_authorized_membership},S}

@@ -12,7 +12,7 @@ wire(end_session) -> <<"end_session">>.
 parse(<<"grant">>) -> wire(grant);
 parse(<<"on_air">>) -> wire(on_air);
 parse(Name) when Name=/= <<"owner">>,Name=/= <<"stream_publish">> ->
-    ok=ba_buffee_passport:permissions([Name]),Name.
+    ok=ba_session_passport:permissions([Name]),Name.
 names(Permissions) -> lists:sort([name(P) || P <- Permissions]).
 name(<<"owner">>) -> <<"grant">>;
 name(<<"stream_publish">>) -> <<"on_air">>;

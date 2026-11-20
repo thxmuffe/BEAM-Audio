@@ -1,4 +1,4 @@
-%% Local publication API. Remote discovery/subscription belongs to Buffee control.
+%% Local publication API. Remote discovery/subscription belongs to Session control.
 -module(ba_audio).
 -export([publish/1,publish/2,unpublish/1,rebind/2,sources/0,describe/1,validate_offer/1]).
 publish(Offer) -> publish(Offer,self()).

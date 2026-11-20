@@ -1,7 +1,7 @@
 %% Session policy -> native clock calibration. No media or per-packet decisions.
 -module(ba_audio_native_clock).
 -export([plan/5,ready/0]).
-module() -> ba_settings:app(audio_clock_adapter,ba_buffee_clock).
+module() -> ba_settings:app(audio_clock_adapter,ba_session_clock).
 ready() -> M=module(),case M:presentation([]) of {ok,_} -> true;_ -> false end.
 plan(#{<<"internal_ns">> := I,<<"session_ns">> := Native},Sent,Received,Descriptor,Previous)
         when is_integer(Sent),is_integer(Received),Received>=Sent ->

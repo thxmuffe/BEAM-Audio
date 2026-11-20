@@ -13,7 +13,7 @@ main() ->
     application:set_env(ba_core, clock_resolver, {?MODULE, resolve_host}),
     CA = filename:join(code:root_dir(), "cacerts.pem"),
     case filelib:is_file(CA) of true -> application:set_env(ba_core, relay_cacertfile, CA); false -> ok end,
-    %% The embedded app is always an unnamed, scoped Buffee Device.
+    %% The embedded app is always an unnamed, scoped Session Device.
     {ok, _} = application:ensure_all_started(crypto),
     {ok, _} = application:ensure_all_started(ba_core),
     Proof = #{status => <<"running">>, otp => list_to_binary(erlang:system_info(otp_release)),
@@ -50,6 +50,6 @@ serve(Socket) ->
         {error, _} ->
             %% Do not call init:stop: the VM shares the native app process.
             gen_tcp:close(Socket),
-            ba_buffee:disconnect(),
+            ba_session:disconnect(),
             ok
     end.

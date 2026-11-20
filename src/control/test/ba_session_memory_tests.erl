@@ -24,7 +24,7 @@ end).
 old_session_groups_become_sessions_test() -> fixture(fun() ->
     gen_server:stop(ba_contacts),
     ok=ba_settings:put(contacts,#{contacts => #{id($A) => <<"Mac">>},groups => #{<<"GOLDEN">> => [id($A)],<<"Kitchen">> => []},
-                                  buffee_groups => #{?S => <<"GOLDEN">>}}),
+                                  session_groups => #{?S => <<"GOLDEN">>}}),
     {ok,_}=ba_contacts:start_link(),
     L=ba_contacts:list(),
     ?assertEqual(#{<<"Kitchen">> => []},maps:get(groups,L)),
@@ -63,10 +63,10 @@ end).
 
 explicit_link_remembers_a_forgotten_session_test() -> fixture(fun() ->
     {Pub,_}=crypto:generate_key(eddsa,ed25519),
-    Link=ba_buffee_passport:link(#{<<"authority">> => binary:encode_hex(Pub),
+    Link=ba_session_passport:link(#{<<"authority">> => binary:encode_hex(Pub),
         <<"nonce">> => binary:copy(<<"A">>,32),<<"secret">> => binary:copy(<<"B">>,32),
         <<"desks">> => [<<"ws://127.0.0.1:4000/relay/v1">>]}),
-    {_,I}=ba_buffee_passport:parse_invitation(Link),Session=maps:get(<<"buffee">>,I),
+    {_,I}=ba_session_passport:parse_invitation(Link),Session=maps:get(<<"session">>,I),
     ba_contacts:link(Link),sync(),ok=ba_contacts:forget_session(Session),
     ba_contacts:link(Link),ba_contacts:observe(Session,<<"Revisited">>,[id($A)]),sync(),
     ?assertNot(ba_contacts:forgotten(Session)),

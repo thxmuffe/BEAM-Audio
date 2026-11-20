@@ -2,7 +2,7 @@
 -module(ba_device_permission).
 -export([allowed/1,enter/1,valid/2,revoke/1,revoke/2]).
 allowed(broadcast) ->
-    try ba_buffee:broadcast() andalso lists:member(<<"on_air">>,maps:get(privileges,ba_buffee_membership:status(),[]))
+    try ba_session:broadcast() andalso lists:member(<<"on_air">>,maps:get(privileges,ba_session_membership:status(),[]))
     catch exit:_ -> false end;
 allowed(playback) -> ba_device_config:allowed(speaker);
 allowed(record) -> ba_device_config:allowed(microphone);
@@ -17,7 +17,7 @@ key(record) -> microphone;
 key(microphone) -> microphone;
 key(K) -> K.
 enter(broadcast) ->
-    case allowed(broadcast) of true -> ba_buffee:broadcast_token();false -> {error,consent_required} end;
+    case allowed(broadcast) of true -> ba_session:broadcast_token();false -> {error,consent_required} end;
 enter(Operation) ->
     try
         Registry=whereis(ba_permission_pg),Group=key(Operation),
@@ -26,7 +26,7 @@ enter(Operation) ->
         end,
         ba_device_config:token(Group)
     catch exit:_ -> {error,permission_registry_unavailable} end.
-valid(broadcast,Token) -> try allowed(broadcast) andalso ba_buffee:broadcast_token()=:={ok,Token} catch exit:_ -> false end;
+valid(broadcast,Token) -> try allowed(broadcast) andalso ba_session:broadcast_token()=:={ok,Token} catch exit:_ -> false end;
 valid(Operation,Token) -> ba_device_config:token(key(Operation))=:={ok,Token}.
 revoke(Keys) -> revoke(Keys,[]).
 revoke(Keys,Previous) ->

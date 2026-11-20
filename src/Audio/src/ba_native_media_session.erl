@@ -15,7 +15,7 @@ init(#{owner := Owner,role := Role,descriptor := D,context := #{deadline := Dead
         {ok,Token} ->
             Owners=[Owner|case maps:find(source_pid,Args) of {ok,P} -> [P];error -> [] end]++
                 [P || Name <- [ba_device_config,ba_permission_pg],P <- [whereis(Name)],is_pid(P)]++
-                [P || Name <- [ba_buffee,ba_buffee_control,ba_device_handler,ba_device_sup,ba_device_worker_sup],P <- [ba_session_scope:whereis(Name)],is_pid(P)],
+                [P || Name <- [ba_session,ba_session_control,ba_device_handler,ba_device_sup,ba_device_worker_sup],P <- [ba_session_scope:whereis(Name)],is_pid(P)],
             [monitor(process,P) || P <- lists:usort(Owners)],
             Port=case Role of
                 provider -> {ok,P0}=gen_server:call(maps:get(source_pid,Args),native_endpoint,1000),P0;

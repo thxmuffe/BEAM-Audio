@@ -6,7 +6,7 @@
 -endif.
 local(Instance) ->
     Name=display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",os_name()))),
-    Label=case ba_settings:app(buffee_observer,false) of true -> <<"Inspector ",Name/binary>>;false -> Name end,
+    Label=case ba_settings:app(session_observer,false) of true -> <<"Inspector ",Name/binary>>;false -> Name end,
     %% "Web" marks a Device people open in a browser. A native app host that
     %% merely draws the same UI in its own window sets BA_NATIVE_APP=1.
     Origin=case ba_settings:env("BA_NATIVE_APP") of

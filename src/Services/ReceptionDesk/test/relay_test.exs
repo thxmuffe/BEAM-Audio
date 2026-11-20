@@ -33,19 +33,19 @@ defmodule ReceptionDesk.RelayTest do
       end
     end
   end
-  test "mailboxes bind authenticated sender, recipient and buffee; no offline queue" do
+  test "mailboxes bind authenticated sender, recipient and session; no offline queue" do
     owner = Base.encode16(:crypto.strong_rand_bytes(32))
     sender = Base.encode16(:crypto.strong_rand_bytes(32))
     cap = Base.encode16(:crypto.strong_rand_bytes(16))
-    buffee = Base.encode16(:crypto.strong_rand_bytes(16))
+    session = Base.encode16(:crypto.strong_rand_bytes(16))
     :ok = :ba_reception_sessions.attach(owner, self())
     :ok = :ba_reception_sessions.attach(sender, self())
-    assert :ok = :ba_reception_sessions.command(owner, self(), %{"op" => "open", "mailbox" => cap, "buffee" => buffee})
-    envelope = %{"op" => "send", "to" => owner, "mailbox" => cap, "payload" => %{"buffee" => buffee, "from" => "forged"}}
+    assert :ok = :ba_reception_sessions.command(owner, self(), %{"op" => "open", "mailbox" => cap, "session" => session})
+    envelope = %{"op" => "send", "to" => owner, "mailbox" => cap, "payload" => %{"session" => session, "from" => "forged"}}
     assert :ok = :ba_reception_sessions.command(sender, self(), envelope)
     assert_receive {:relay, %{op: "delivery", from: ^sender, mailbox: ^cap}}
     assert {:error, :unavailable} = :ba_reception_sessions.command(sender, self(), %{envelope | "mailbox" => "wrong"})
-    assert {:error, :unavailable} = :ba_reception_sessions.command(sender, self(), %{envelope | "payload" => %{"buffee" => "wrong"}})
+    assert {:error, :unavailable} = :ba_reception_sessions.command(sender, self(), %{envelope | "payload" => %{"session" => "wrong"}})
     other = spawn(fn -> receive do :stop -> :ok end end)
     assert {:error, :unauthenticated} = :ba_reception_sessions.command(sender, other, envelope)
     send(other, :stop)
@@ -55,18 +55,18 @@ defmodule ReceptionDesk.RelayTest do
 
   test "capability lookup reports live owners without electing one" do
     cap = Base.encode16(:crypto.strong_rand_bytes(16))
-    buffee = Base.encode16(:crypto.strong_rand_bytes(16))
+    session = Base.encode16(:crypto.strong_rand_bytes(16))
     request = Base.encode16(:crypto.strong_rand_bytes(16))
     client = Base.encode16(:crypto.strong_rand_bytes(32))
     :ok = :ba_reception_sessions.attach(client, self())
-    lookup = %{"op" => "lookup", "mailbox" => cap, "buffee" => buffee, "request" => request}
+    lookup = %{"op" => "lookup", "mailbox" => cap, "session" => session, "request" => request}
     assert :ok = :ba_reception_sessions.command(client, self(), lookup)
     assert_receive {:relay, %{op: "found", request: ^request, owners: []}}
     owners = for _ <- 1..2 do
       id = Base.encode16(:crypto.strong_rand_bytes(32))
       pid = spawn(fn -> receive do :stop -> :ok end end)
       :ok = :ba_reception_sessions.attach(id, pid)
-      :ok = :ba_reception_sessions.command(id, pid, %{"op" => "open", "mailbox" => cap, "buffee" => buffee})
+      :ok = :ba_reception_sessions.command(id, pid, %{"op" => "open", "mailbox" => cap, "session" => session})
       {id, pid}
     end
     try do

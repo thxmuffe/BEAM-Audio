@@ -12,7 +12,7 @@ main() ->
 
 loop() ->
     case io:get_line(standard_io, "") of
-        eof -> close_buffee(),init:stop();
+        eof -> close_session(),init:stop();
         {error, _} -> init:stop(1);
         Line ->
             io:put_chars(standard_io, [request(Line), $\n]),
@@ -44,5 +44,5 @@ request(JSON) when is_binary(JSON) ->
     iolist_to_binary(json:encode(Reply));
 request(JSON) -> request(iolist_to_binary(JSON)).
 
-close_buffee() ->
-    case whereis(ba_buffee) of undefined -> ok;_ -> try ba_buffee:disconnect() catch exit:_ -> ok end end.
+close_session() ->
+    case whereis(ba_session) of undefined -> ok;_ -> try ba_session:disconnect() catch exit:_ -> ok end end.

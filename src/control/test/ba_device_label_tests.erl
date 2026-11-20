@@ -47,16 +47,16 @@ native_app_hosting_device_web_is_not_web_test() ->
 
 observer_label_is_visible_before_the_host_name_test() ->
     Old=[{K,os:getenv(K)} || K <- ["BA_PLATFORM","BA_DEVICE_NAME"]],
-    Observer=application:get_env(ba_core,buffee_observer),
+    Observer=application:get_env(ba_core,session_observer),
     try
         os:putenv("BA_PLATFORM","mac"),os:putenv("BA_DEVICE_NAME","Test Mac"),
-        application:set_env(ba_core,buffee_observer,true),
+        application:set_env(ba_core,session_observer,true),
         ?assertEqual(<<"Inspector Mac | Test Mac | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>)),
-        application:set_env(ba_core,buffee_observer,false),
+        application:set_env(ba_core,session_observer,false),
         ?assertEqual(<<"Mac | Test Mac | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>))
     after
         lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old),
-        case Observer of undefined -> application:unset_env(ba_core,buffee_observer);{ok,V} -> application:set_env(ba_core,buffee_observer,V) end
+        case Observer of undefined -> application:unset_env(ba_core,session_observer);{ok,V} -> application:set_env(ba_core,session_observer,V) end
     end.
 
 windows_family_type_test() ->

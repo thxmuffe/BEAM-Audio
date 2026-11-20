@@ -1,5 +1,24 @@
 # Current implementation and validation
 
+## Cleanup pass 3: buffee → session rename (wire, modules, API, UI) — 2026-11-20
+
+- **Disambiguated terms (Step A):**
+  - Authenticated relationship between two Devices renamed to **link** (`links` in `ba_session_control_protocol`, `link` in message contexts and packet headers, `link_renewed/replaced/expired`, `audio_link_up/down/renewed`, `time_link_down`, `drop_link`, status reply `"link": "authorized"`).
+  - Native media worker in audio receiver/source/supervisor renamed to **media** (`media := Pid`, `ba_audio_sup:start_media/1`, diagnostic `transport.media`).
+  - "Session" only means the Session itself.
+- **Renamed buffee → session end-to-end (Step B):**
+  - Modules: All 16 `ba_buffee*.erl` modules renamed to `ba_session*.erl` and all 9 test modules in `src/control/test` renamed to `ba_session*`.
+  - Wire & Relay: `ba_reception_sessions.erl` and `ba_relay.erl` use `<<"session">>` instead of `<<"buffee">>`. Wire domains updated (`beamaudio-session-membership/v1:`).
+  - API: `create/join/leave/end_buffee` renamed to `create/join/leave/end_session` across core, DeviceWeb, CLI, and WebApp.
+  - Swift: `BuffeeRuntime` → `DeviceRuntime`, `BuffeeValue` → `RuntimeValue`, `BuffeeValue.swift` → `RuntimeValue.swift`.
+  - Smoke tests: `ba_buffee_control_probe.erl` → `ba_session_control_probe.erl`, `buffee-*-smoke.py` → `session-*-smoke.py`. Leftover test jobs from pass 2 removed from probe and smoke scripts.
+- **Validation on Windows:**
+  - Core EUnit: 182 / 182 tests pass (0 failures).
+  - DeviceWeb EUnit: 6 / 6 tests pass (0 failures).
+  - Web UI (Node): 35 / 35 tests pass (0 failures).
+  - Python tests: `test_run_tests.py` 2 / 2 pass.
+  - Project naming audit: `naming-check.py` 343 / 343 text files pass.
+
 ## Cleanup pass 2: test jobs, single sources, dead code — 2026-11-20
 
 - Test jobs removed end to end: `ba_buffee_job`, `ba_device_test_worker`, the job

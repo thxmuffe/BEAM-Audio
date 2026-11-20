@@ -1,5 +1,5 @@
 %% Disposable integration harness, never packaged as a runtime command endpoint.
--module(ba_buffee_control_probe).
+-module(ba_session_control_probe).
 -export([main/0,crash_child/0]).
 crash_child() -> {ok,spawn_link(fun() -> receive crash -> exit({badmatch,<<"PRIVATE_EXCEPTION">>}) end end)}.
 
@@ -23,23 +23,23 @@ loop(Id,Cap) ->
             loop(Id,Cap)
     end.
 command(#{<<"op">> := <<"start_runtime">>},_,_) -> ensure_started(),ba_app_session:snapshot();
-command(#{<<"op">> := <<"chat_history">>},_,_) -> ba_buffee_chat:history();
+command(#{<<"op">> := <<"chat_history">>},_,_) -> ba_session_chat:history();
 %% The app path: the same Device API the windows use (it also records Session memory).
 %% Like the CLI and the apps: the app layer, so the audio worker (which opens links) runs.
 command(#{<<"op">> := <<"configure_app">>},_,_) ->
     application:load(ba_core),result(ba_app_session:configure(#{platform => mac,consent => #{speaker => false,microphone => false,broadcast => false}}));
 command(#{<<"op">> := <<"debug_control">>},_,_) ->
-    #{protocol := P}=sys:get_state(ba_session_scope:ref(ba_buffee_control)),
+    #{protocol := P}=sys:get_state(ba_session_scope:ref(ba_session_control)),
     #{peers => [binary:part(K,0,6) || K <- maps:keys(maps:get(peers,maps:get(policy,P,#{}),#{}))],
       deadline => maps:get(membership_deadline,P,none),now => erlang:monotonic_time(millisecond),
-      sessions => [binary:part(K,0,6) || K <- maps:keys(maps:get(sessions,P,#{}))],
-      control_pid => list_to_binary(pid_to_list(ba_session_scope:whereis(ba_buffee_control))),
-      rejection => list_to_binary(io_lib:format("~p",[maps:get(last_rejection,sys:get_state(ba_session_scope:ref(ba_buffee_control)),none)])),
-      diag => list_to_binary(io_lib:format("~p",[ba_diagnostics:view(sys:get_state(ba_session_scope:ref(ba_buffee_control)))])),
-      config_hash => erlang:phash2(maps:get(config,sys:get_state(ba_session_scope:ref(ba_buffee_control)))),
-      routes => erlang:phash2(maps:get(routes,maps:get(config,sys:get_state(ba_session_scope:ref(ba_buffee_control))))),
+      links => [binary:part(K,0,6) || K <- maps:keys(maps:get(links,P,#{}))],
+      control_pid => list_to_binary(pid_to_list(ba_session_scope:whereis(ba_session_control))),
+      rejection => list_to_binary(io_lib:format("~p",[maps:get(last_rejection,sys:get_state(ba_session_scope:ref(ba_session_control)),none)])),
+      diag => list_to_binary(io_lib:format("~p",[ba_diagnostics:view(sys:get_state(ba_session_scope:ref(ba_session_control)))])),
+      config_hash => erlang:phash2(maps:get(config,sys:get_state(ba_session_scope:ref(ba_session_control)))),
+      routes => erlang:phash2(maps:get(routes,maps:get(config,sys:get_state(ba_session_scope:ref(ba_session_control))))),
       revision => maps:get(revision,maps:get(policy,P,#{}),none),
-      membership => case ba_buffee_membership:current() of
+      membership => case ba_session_membership:current() of
           {ok,#{policy := #{peers := Peers}}} -> [binary:part(K,0,6) || K <- maps:keys(Peers)];
           Other -> list_to_binary(io_lib:format("~p",[Other])) end};
 command(#{<<"op">> := <<"debug_trace_start">>},_,_) ->
@@ -49,9 +49,9 @@ command(#{<<"op">> := <<"debug_trace_start">>},_,_) ->
             {close_peer,[_,Reason|_]} -> Reason;{rejected,[Reason|_]} -> Reason;{reset,[Reason|_]} -> Reason;_ -> x end}|Acc]);
         _ -> Loop(Acc) end end)([]) end),
     register(ba_debug_collector,Collector),
-    erlang:trace(ba_session_scope:whereis(ba_buffee_control),true,[call,{tracer,Collector}]),
-    erlang:trace_pattern({ba_buffee_control,'_','_'},true,[local]),
-    erlang:trace_pattern({ba_buffee_control_protocol,'_','_'},true,[local]),#{ok => true};
+    erlang:trace(ba_session_scope:whereis(ba_session_control),true,[call,{tracer,Collector}]),
+    erlang:trace_pattern({ba_session_control,'_','_'},true,[local]),
+    erlang:trace_pattern({ba_session_control_protocol,'_','_'},true,[local]),#{ok => true};
 command(#{<<"op">> := <<"debug_trace_get">>},_,_) ->
     ba_debug_collector ! {get,self()},
     receive {traced,L} -> [list_to_binary(io_lib:format("~p:~p/~p ~p",[M,F,A,X])) || {M,F,A,X} <- L,
@@ -63,34 +63,34 @@ command(#{<<"op">> := <<"crash_test_worker">>},_,_) ->
         #{id => ba_crash_test_child,start => {?MODULE,crash_child,[]},restart => temporary}),
     Child ! crash,#{ok => true};
 command(#{<<"op">> := <<"set_observer">>},_,_) ->
-    application:set_env(ba_core,buffee_observer,true),#{ok => true};
+    application:set_env(ba_core,session_observer,true),#{ok => true};
 command(#{<<"op">> := <<"start_app">>},_,_) ->
-    application:load(ba_core),application:set_env(ba_core,restore_buffee_on_start,true),
+    application:load(ba_core),application:set_env(ba_core,restore_session_on_start,true),
     ensure_started(),ba_app_session:snapshot();
-command(#{<<"op">> := <<"disconnect_app">>},_,_) -> result(ba_buffee:disconnect());
+command(#{<<"op">> := <<"disconnect_app">>},_,_) -> result(ba_session:disconnect());
 command(#{<<"op">> := <<"create">>,<<"desks">> := URLs},_,_) ->
     start(#{mode => create,name => <<"Test gathering">>,desks => URLs});
 command(#{<<"op">> := <<"join">>,<<"invitation">> := Link,<<"desk">> := Desk},_,_) ->
     start(#{mode => join,invitation => Link,desk => Desk});
-command(#{<<"op">> := <<"create_buffee">>,<<"name">> := Name,<<"desks">> := URLs},_,_) ->
-    ensure_started(),result(ba_buffee:create(Name,URLs));
-command(#{<<"op">> := <<"join_buffee">>,<<"invitation">> := Link},_,_) ->
-    ensure_started(),result(ba_buffee:join(Link));
-command(#{<<"op">> := <<"invite_buffee">>,<<"selection">> := Sel},_,_) ->
+command(#{<<"op">> := <<"create_session">>,<<"name">> := Name,<<"desks">> := URLs},_,_) ->
+    ensure_started(),result(ba_session:create(Name,URLs));
+command(#{<<"op">> := <<"join_session">>,<<"invitation">> := Link},_,_) ->
+    ensure_started(),result(ba_session:join(Link));
+command(#{<<"op">> := <<"invite_session">>,<<"selection">> := Sel},_,_) ->
     ensure_started(),Selection = case Sel of #{<<"group">> := G} -> {group,G};L -> L end,
-    result(ba_buffee:invite(Selection,3600));
-command(#{<<"op">> := <<"leave_buffee">>},_,_) -> ensure_started(),result(ba_buffee:leave());
-command(#{<<"op">> := <<"end_buffee">>},_,_) -> ensure_started(),result(ba_buffee:end_buffee());
-command(#{<<"op">> := <<"buffee_status">>},_,_) -> ensure_started(),ba_buffee:status();
+    result(ba_session:invite(Selection,3600));
+command(#{<<"op">> := <<"leave_session">>},_,_) -> ensure_started(),result(ba_session:leave());
+command(#{<<"op">> := <<"end_session">>},_,_) -> ensure_started(),result(ba_session:end_session());
+command(#{<<"op">> := <<"session_status">>},_,_) -> ensure_started(),ba_session:status();
 command(#{<<"op">> := <<"lifecycle">>},_,_) ->
     ensure_started(),
-    #{buffee => ba_buffee:status(),transient_state => ets:whereis(ba_buffee_state)=/=undefined,
+    #{session => ba_session:status(),transient_state => ets:whereis(ba_session_state)=/=undefined,
       connections => map_size(ba_desk_connections_sup:connections()),
       %% The shared Reception socket may stay after Leave; its Session mailboxes may not.
       mailboxes => lists:sum([try map_size(maps:get(boxes,sys:get_state(P,1000),#{})) catch exit:_ -> 0 end
           || P <- maps:values(ba_desk_connections_sup:connections())]),
-      live => [atom_to_binary(N) || N <- [ba_buffee_runtime_sup,ba_buffee_membership,
-        ba_device_sup,ba_buffee_control,ba_buffee_clock_sup,ba_buffee_clock,
+      live => [atom_to_binary(N) || N <- [ba_session_runtime_sup,ba_session_membership,
+        ba_device_sup,ba_session_control,ba_session_clock_sup,ba_session_clock,
         ba_audio_sup,ba_audio_receiver],is_pid(whereis(N))]};
 %% Scheduler evidence (OTP system_monitor): which processes/ports held a
 %% scheduler or garbage-collected for longer than 40 ms. Test diagnostics only.
@@ -107,9 +107,9 @@ command(#{<<"op">> := <<"vm_report">>},_,_) ->
 %% Saved return intent: End must leave no return link and no saved policy for it.
 command(#{<<"op">> := <<"saved_sessions">>},_,_) ->
     ensure_started(),
-    #{return_link => ba_device_store:load(buffee_connection,undefined)=/=undefined,
-      sessions => maps:keys(ba_device_store:load(buffee_sessions,#{}))};
-command(#{<<"op">> := <<"crash_buffee">>},_,_) -> exit(whereis(ba_buffee_membership),kill),#{ok => true};
+    #{return_link => ba_device_store:load(session_connection,undefined)=/=undefined,
+      sessions => maps:keys(ba_device_store:load(saved_sessions,#{}))};
+command(#{<<"op">> := <<"crash_session">>},_,_) -> exit(whereis(ba_session_membership),kill),#{ok => true};
 command(#{<<"op">> := <<"list_contacts">>},_,_) -> ensure_started(),ba_contacts:list();
 command(#{<<"op">> := <<"put_contact">>,<<"id">> := Id,<<"name">> := Name},_,_) ->
     ensure_started(),result(ba_contacts:put(Id,Name));
@@ -119,87 +119,70 @@ command(#{<<"op">> := <<"group_contacts">>,<<"name">> := Name,<<"ids">> := Ids},
     ensure_started(),result(ba_contacts:group(Name,Ids));
 command(#{<<"op">> := <<"delete_group">>,<<"name">> := Name},_,_) ->
     ensure_started(),result(ba_contacts:delete_group(Name));
-command(#{<<"op">> := <<"invite">>},_,_) -> result(ba_buffee_membership:invite(3600));
+command(#{<<"op">> := <<"invite">>},_,_) -> result(ba_session_membership:invite(3600));
 command(#{<<"op">> := <<"grant">>,<<"peer">> := Peer,<<"permissions">> := Ps},_,_) ->
-    result(ba_buffee_membership:grant(Peer,Ps));
+    result(ba_session_membership:grant(Peer,Ps));
 command(#{<<"op">> := <<"answer_on_air_requests">>,<<"value">> := V},_,_) ->
     result(ba_device_config:policy(on_air_requests,binary_to_existing_atom(V),#{}));
 command(#{<<"op">> := <<"decline_privilege">>,<<"peer">> := Peer,<<"privilege">> := Name},_,_) ->
-    result(ba_buffee_membership:decline_privilege(Peer,ba_session_privileges:parse(Name)));
+    result(ba_session_membership:decline_privilege(Peer,ba_session_privileges:parse(Name)));
 command(#{<<"op">> := <<"request_privilege">>,<<"privilege">> := Name},_,_) ->
-    result(ba_buffee_membership:request_privilege(ba_session_privileges:parse(Name)));
+    result(ba_session_membership:request_privilege(ba_session_privileges:parse(Name)));
 command(#{<<"op">> := <<"grant_privilege">>,<<"peer">> := Peer,<<"privilege">> := Name},_,_) ->
-    result(ba_buffee_membership:grant_privilege(Peer,ba_session_privileges:parse(Name)));
+    result(ba_session_membership:grant_privilege(Peer,ba_session_privileges:parse(Name)));
 command(#{<<"op">> := <<"take_privilege">>,<<"peer">> := Peer,<<"privilege">> := Name},_,_) ->
-    result(ba_buffee_membership:take_privilege(Peer,ba_session_privileges:parse(Name)));
-command(#{<<"op">> := <<"revoke">>,<<"peer">> := Peer},_,_) -> result(ba_buffee_membership:revoke(Peer));
+    result(ba_session_membership:take_privilege(Peer,ba_session_privileges:parse(Name)));
+command(#{<<"op">> := <<"revoke">>,<<"peer">> := Peer},_,_) -> result(ba_session_membership:revoke(Peer));
 command(#{<<"op">> := <<"snapshot">>},_,_) ->
-    (ba_buffee_control:snapshot())#{node => atom_to_binary(node()),
+    (ba_session_control:snapshot())#{node => atom_to_binary(node()),
         nodes => [atom_to_binary(N) || N <- nodes()],
         old_core_loaded => lists:any(fun({M,_}) ->
             M=:=list_to_atom("par"++"vi") orelse lists:prefix("par"++"vi_",atom_to_list(M))
         end,code:all_loaded()),
         legacy_started => lists:any(fun(N) -> whereis(N) =/= undefined end,
             [ba_legacy_cluster_desk,ba_legacy_cluster_trust,ba_chat,ba_audio_sup]),
-        workers => proplists:get_value(active,supervisor:count_children(ba_device_worker_sup)),
-        worker_outcomes => [maps:get(state,W) || W <- maps:get(history,ba_device_handler:status())],
         children => lists:sort([atom_to_binary(N) || {N,_,_,_} <- supervisor:which_children(ba_sup)])};
 command(#{<<"op">> := <<"connect">>,<<"peer">> := Peer},_,_) ->
-    result(ba_buffee_control:connect(Peer));
+    result(ba_session_control:connect(Peer));
 command(#{<<"op">> := <<"read">>,<<"peer">> := Peer},_,_) ->
-    result(ba_buffee_control:read_status(Peer));
+    result(ba_session_control:read_status(Peer));
 command(#{<<"op">> := <<"capabilities">>,<<"peer">> := Peer},_,_) ->
-    result(ba_buffee_control:read_capabilities(Peer));
-command(#{<<"op">> := <<"enable_test">>},_,_) ->
-    %% The test job also needs this Device's DSP consent (the `friendly` preset).
-    ok=ba_device_config:preset(friendly,#{}),
-    result(ba_device_handler:enable_test(true));
-command(#{<<"op">> := <<"allow_jobs">>,<<"manager">> := Manager,<<"contract">> := Contract},_,_) ->
-    result(ba_device_handler:set_test_contract(Manager,Contract,1));
-command(#{<<"op">> := <<"offer_job">>,<<"peer">> := Peer,<<"contract">> := Contract,
-          <<"duration_ms">> := Duration,<<"lease_ms">> := Lease},_,_) ->
-    result(ba_buffee_control:offer_job(Peer,#{<<"contract">> => Contract,<<"contract_revision">> => 1,
-        <<"capability">> => <<"test">>,<<"duration_ms">> => Duration,<<"lease_ms">> => Lease}));
-command(#{<<"op">> := <<"retry_job">>,<<"id">> := Id},_,_) -> result(ba_buffee_control:retry_job(Id));
-command(#{<<"op">> := <<"cancel_job">>,<<"id">> := Id},_,_) -> result(ba_buffee_control:cancel_job(Id));
-command(#{<<"op">> := <<"job_status">>,<<"id">> := Id},_,_) -> result(ba_buffee_control:job_status(Id));
-command(#{<<"op">> := <<"crash_worker">>},_,_) ->
-    [{_,Pid,_,_}] = supervisor:which_children(ba_device_worker_sup),exit(Pid,kill),#{ok => true};
+    result(ba_session_control:read_capabilities(Peer));
 command(#{<<"op">> := <<"attack">>,<<"peer">> := Peer},Id,_) ->
     %% Local harness access only: sign forbidden/replayed packets as the real sender.
-    #{protocol := P,config := #{policy := #{buffee := Buffee,authority := Authority,manager := Manager,epoch := Epoch,revision := Revision},routes := _Routes}} =
-        sys:get_state(ba_buffee_control),
+    #{protocol := P,config := #{policy := #{session := Session,authority := Authority,manager := Manager,epoch := Epoch,revision := Revision},routes := _Routes}} =
+        sys:get_state(ba_session_control),
     #{instance := Session,seq := Seq} = P,
-    Body = #{<<"v">> => 2,<<"from">> => Id,<<"to">> => Peer,<<"buffee">> => Buffee,
+    Body = #{<<"v">> => 2,<<"from">> => Id,<<"to">> => Peer,<<"session">> => Session,
         <<"authority">> => Authority,<<"manager">> => Manager,<<"epoch">> => Epoch,<<"revision">> => Revision,
-        <<"session">> => Session,<<"seq">> => Seq+1,<<"sent">> => os:system_time(millisecond),
-        <<"request">> => binary:copy(<<"0">>,32),<<"op">> => <<"worker.start">>,<<"payload">> => #{}},
+        <<"link">> => Session,<<"seq">> => Seq+1,<<"sent">> => os:system_time(millisecond),
+        <<"request">> => binary:copy(<<"0">>,32),<<"op">> => <<"status.read">>,<<"payload">> => #{}},
     Private = maps:get(private,P),
-    Forbidden = ba_buffee_control_protocol:seal(Body,Private),
+    Forbidden = ba_session_control_protocol:seal(Body#{<<"op">> => <<"unsupported.op">>},Private),
     {_FakePub,FakePriv} = crypto:generate_key(eddsa,ed25519),
-    Forged = ba_buffee_control_protocol:seal(Body#{<<"op">> := <<"status.read">>},FakePriv),
-    Replay = ba_buffee_control_protocol:seal(Body#{<<"seq">> := 0,<<"op">> := <<"status.read">>},Private),
-    [ok = ba_buffee_desks:send(Peer,<<"buffee_control">>,Wire) || Wire <- [Forbidden,Forged,Replay]],
+    Forged = ba_session_control_protocol:seal(Body#{<<"op">> => <<"status.read">>},FakePriv),
+    Replay = ba_session_control_protocol:seal(Body#{<<"seq">> := 0,<<"op">> => <<"status.read">>},Private),
+    [ok = ba_session_desks:send(Peer,<<"session_control">>,Wire) || Wire <- [Forbidden,Forged,Replay]],
     #{ok => true};
-command(#{<<"op">> := <<"clock_snapshot">>},_,_) -> ba_buffee_clock:status();
+command(#{<<"op">> := <<"clock_snapshot">>},_,_) -> ba_session_clock:status();
 command(#{<<"op">> := <<"clock_audio_ready">>},_,_) ->
-    #{subscription => ba_subscription:clock_ready(ba_buffee_clock:status(),undefined),
-      presentation => case ba_buffee_clock:presentation([]) of {ok,_} -> true;_ -> false end};
+    #{subscription => ba_subscription:clock_ready(ba_session_clock:status(),undefined),
+      presentation => case ba_session_clock:presentation([]) of {ok,_} -> true;_ -> false end};
 command(#{<<"op">> := <<"clock_prepare">>,<<"interval_ms">> := I,<<"samples">> := Count},_,_) ->
     application:load(ba_core),application:set_env(ba_core,clock_reference,system),
     application:set_env(ba_core,clock_sample_interval_ms,I),application:set_env(ba_core,clock_filter_samples,Count),
     #{ok => true};
 command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value,<<"revision">> := Rev},_,_) ->
-    result(ba_buffee_clock:set_offset(Value,Rev));
-command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value},_,_) -> result(ba_buffee_clock:set_offset(Value));
-command(#{<<"op">> := <<"offset_automatic">>,<<"enabled">> := Enabled},_,_) -> result(ba_buffee_clock:set_automatic(Enabled));
+    result(ba_session_clock:set_offset(Value,Rev));
+command(#{<<"op">> := <<"offset_set">>,<<"offset_ms">> := Value},_,_) -> result(ba_session_clock:set_offset(Value));
+command(#{<<"op">> := <<"offset_automatic">>,<<"enabled">> := Enabled},_,_) -> result(ba_session_clock:set_automatic(Enabled));
 command(#{<<"op">> := <<"offset_required">>,<<"offset_ms">> := Value,<<"revision">> := Rev},_,_) ->
-    ba_buffee_clock:require_offset(Value,Rev),#{ok => true};
-command(#{<<"op">> := <<"clock_resync">>},_,_) -> result(ba_buffee_clock:resync());
-command(#{<<"op">> := <<"clock_reference">>},_,_) -> result(ba_buffee_clock:set_reference(system));
+    ba_session_clock:require_offset(Value,Rev),#{ok => true};
+command(#{<<"op">> := <<"clock_resync">>},_,_) -> result(ba_session_clock:resync());
+command(#{<<"op">> := <<"clock_reference">>},_,_) -> result(ba_session_clock:set_reference(system));
 command(#{<<"op">> := <<"clock_restart">>},_,_) ->
-    restart(ba_buffee_clock),#{ok => true,initial => ba_buffee_clock:status()};
-command(#{<<"op">> := <<"control_reset">>},_,_) -> restart(ba_buffee_control),#{ok => true};
+    restart(ba_session_clock),#{ok => true,initial => ba_session_clock:status()};
+command(#{<<"op">> := <<"control_reset">>},_,_) -> restart(ba_session_control),#{ok => true};
 command(#{<<"op">> := <<"backend_ids">>},_,_) ->
     %% Supervisor reports include child start arguments. Identity must be loaded
     %% inside each relay, never supplied in its child specification.
@@ -208,9 +191,8 @@ command(#{<<"op">> := <<"backend_ids">>},_,_) ->
         nomatch = binary:match(term_to_binary(Spec),Private)
      end || URL <- maps:keys(ba_desk_connections_sup:connections())],
     #{processes => maps:from_list([{atom_to_binary(N),list_to_binary(pid_to_list(whereis(N)))} || N <-
-        [ba_buffee_desks,ba_buffee_membership,ba_device_sup,ba_device_worker_sup,ba_buffee_control,ba_buffee_clock]]),
-      sessions => maps:map(fun(_,V) -> maps:get(id,V) end,maps:get(sessions,maps:get(protocol,sys:get_state(ba_buffee_control)))),
-      workers => lists:sort([list_to_binary(pid_to_list(P)) || {_,P,_,_} <- supervisor:which_children(ba_device_worker_sup),is_pid(P)])};
+        [ba_session_desks,ba_session_membership,ba_device_sup,ba_session_control,ba_session_clock]]),
+      links => maps:map(fun(_,V) -> maps:get(id,V) end,maps:get(links,maps:get(protocol,sys:get_state(ba_session_control))))};
 command(#{<<"op">> := <<"desk_crash">>,<<"desk">> := URL},_,_) ->
     P = maps:get(URL,ba_desk_connections_sup:connections()),exit(P,kill),#{ok => true};
 command(#{<<"op">> := <<"renewal_prepare">>,<<"lease_ms">> := Lease},_,_) when Lease>=2000,Lease=<60000 ->
@@ -240,7 +222,7 @@ ensure_started() ->
     end.
 start(Config) ->
     ensure_started(),
-    result(ba_buffee:start(Config)).
+    result(ba_session:start(Config)).
 result(ok) -> #{ok => true};
 result({ok,V}) -> #{ok => true,value => V};
 result({error,R}) -> #{error => R}.
@@ -261,7 +243,7 @@ filter_handshakes(Target) ->
     receive
         Message ->
             Drop = try
-                {relay,_,{delivery,_,_,#{<<"type">> := <<"buffee_control">>,<<"packet">> := P}}} = Message,
+                {relay,_,{delivery,_,_,#{<<"type">> := <<"session_control">>,<<"packet">> := P}}} = Message,
                 #{<<"body">> := B} = json:decode(P),#{<<"op">> := Op} = json:decode(base64:decode(B)),
                 lists:member(Op,[<<"hello">>,<<"challenge">>,<<"proof">>,<<"ready">>,
                     <<"lease.request">>,<<"lease.challenge">>,<<"lease.proof">>,<<"lease.ready">>])

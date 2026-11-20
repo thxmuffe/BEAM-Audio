@@ -3,7 +3,7 @@ import CryptoKit
 import Security
 import Darwin
 
-/// Platform storage only. Erlang owns Buffee membership and reconnection.
+/// Platform storage only. Erlang owns Session membership and reconnection.
 public struct NativeIdentity: Sendable {
     public let seedHex: String
     public let publicKeyHex: String

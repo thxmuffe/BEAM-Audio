@@ -6,8 +6,8 @@
 -endif.
 configure() ->
     case ba_settings:env("BA_PLATFORM") of
-        "mac" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => mac}),forget_snapshots();
-        "ios" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => ios}),forget_snapshots();
+        "mac" -> application:set_env(ba_core,restore_session_on_start,true),configure(#{platform => mac}),forget_snapshots();
+        "ios" -> application:set_env(ba_core,restore_session_on_start,true),configure(#{platform => ios}),forget_snapshots();
         %% Native AAC through ba_native_stream.exe when the host app ships it.
         "windows" -> configure(#{platform => windows}),ok=ba_windows_native_host:start();
         _ -> ok
@@ -22,55 +22,55 @@ consent() ->
     case ba_session_scope:whereis(ba_device_config) of
         undefined -> #{speaker => false,microphone => false,broadcast => false,calibrate_microphone => false,calibrate_speaker => false,dsp => false};
         _ -> C=ba_device_config:consent(),
-             B=try ba_buffee:broadcast() catch exit:_ -> false end,C#{broadcast => B}
+             B=try ba_session:broadcast() catch exit:_ -> false end,C#{broadcast => B}
     end.
-capability(broadcast,B) when is_boolean(B) -> ba_buffee:broadcast(B);
+capability(broadcast,B) when is_boolean(B) -> ba_session:broadcast(B);
 capability(Key,B) when (Key=:=speaker orelse Key=:=microphone),is_boolean(B) ->
     ba_device_config:change(#{Key => B},#{});
 capability(_,_) -> {error,invalid_capability}.
-exclusions() -> ba_device_store:load(buffee_exclusions,[]).
+exclusions() -> ba_device_store:load(session_exclusions,[]).
 excluded(Peer) -> lists:member(Peer,exclusions()).
 exclude(Peer,B) when is_boolean(B) ->
     {Public,_}=ba_device_store:identity(),Self=binary:encode_hex(Public),
-    case ba_hex:valid(Peer,64) andalso Peer=/=Self andalso is_pid(ba_session_scope:whereis(ba_buffee_control)) of
+    case ba_hex:valid(Peer,64) andalso Peer=/=Self andalso is_pid(ba_session_scope:whereis(ba_session_control)) of
         true ->
             Old=exclusions(),New=case B of true -> lists:usort([Peer|Old]);false -> lists:delete(Peer,Old) end,
-            ok=ba_device_store:save(buffee_exclusions,New),
-            ok=ba_buffee_control:exclude(Peer),ba_device_handler:audio_changed();
+            ok=ba_device_store:save(session_exclusions,New),
+            ok=ba_session_control:exclude(Peer),ba_device_handler:audio_changed();
         false -> {error,invalid_or_inactive_device}
     end.
-contract(Buffee,Publisher,#{receiver := Receiver,source := Source}) ->
-    <<Id:16/binary,_/binary>>=crypto:hash(sha256,term_to_binary({Buffee,Publisher,Receiver,Source})),binary:encode_hex(Id).
+contract(Session,Publisher,#{receiver := Receiver,source := Source}) ->
+    <<Id:16/binary,_/binary>>=crypto:hash(sha256,term_to_binary({Session,Publisher,Receiver,Source})),binary:encode_hex(Id).
 snapshot() ->
     {Public,_}=ba_device_store:identity(),Id=binary:encode_hex(Public),
-    Buffee=ba_buffee:status(),Config=ba_device_config:snapshot(),
-    Base=#{profile => buffee_control,device => Id,device_name => ba_device_label:local(Id),device_label => ba_device_label:display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name()))),buffee => Buffee,connection => ba_buffee:connection(),contacts => ba_contacts:list(),live => #{microphone => ba_settings:get(mic_live,false)=:=true,muted => ba_settings:get(muted,false)=:=true},
-        desks => safe(fun ba_buffee_desks:status/0,#{}),
-        default_desk => ba_buffee_passport:default_desk(),
+    Session=ba_session:status(),Config=ba_device_config:snapshot(),
+    Base=#{profile => session_control,device => Id,device_name => ba_device_label:local(Id),device_label => ba_device_label:display(unicode:characters_to_binary(ba_settings:env("BA_DEVICE_NAME",ba_device_label:os_name()))),session => Session,connection => ba_session:connection(),contacts => ba_contacts:list(),live => #{microphone => ba_settings:get(mic_live,false)=:=true,muted => ba_settings:get(muted,false)=:=true},
+        desks => safe(fun ba_session_desks:status/0,#{}),
+        default_desk => ba_session_passport:default_desk(),
         configuration => maps:without([entries],Config),consent => consent(),excluded => exclusions(),messages => [],devices => [],
         audio_diagnostics => ba_audio_diagnostics:options(),audio => #{},clock => #{state => idle},passport => #{},
         unavailable_capabilities => unavailable_capabilities()},
-    case maps:get(state,Buffee) of
+    case maps:get(state,Session) of
         idle -> Base;
         _ ->
-            Handler=safe(fun ba_device_handler:status/0,#{}),Control=safe(fun ba_buffee_control:snapshot/0,#{}),
+            Handler=safe(fun ba_device_handler:status/0,#{}),Control=safe(fun ba_session_control:snapshot/0,#{}),
             Audio=safe(fun() -> case ba_session_scope:whereis(ba_audio_receiver) of undefined -> #{};_ -> ba_audio_receiver:snapshot() end end,#{}),
-            Clock=ba_buffee_clock:status(),
+            Clock=ba_session_clock:status(),
             LocalName=maps:get(<<"device_name">>,maps:get(capabilities,Handler,#{}),ba_device_label:local(Id)),
             Privileges=device_privileges(),
             Devices=[#{id => D,name => case D=:=Id of true -> LocalName;false -> maps:get(D,maps:get(peer_names,Control,#{}),<<>>) end,
                 local => D=:=Id,excluded => excluded(D),
                 has_error => maps:get(D,maps:get(peer_errors,Control,#{}),false),
                 privileges => maps:get(D,Privileges,[]),
-                requests => maps:get(D,maps:get(requests,Buffee,#{}),[]),
+                requests => maps:get(D,maps:get(requests,Session,#{}),[]),
                 %% Only Devices this one has encountered are listed; connected
                 %% while their requests are flowing.
                 state => case D=:=Id orelse maps:get(stage,maps:get(D,maps:get(links,Control,#{}),#{}),lapsed)=:=authorized of
                     true -> authorized;false -> disconnected end}
-                || D <- maps:get(members,Buffee,[])],
+                || D <- maps:get(members,Session,[])],
             Base#{device_name := LocalName,handler => Handler,devices := Devices,audio := Audio,clock := Clock,
-                messages := safe(fun ba_buffee_chat:history/0,[]),
-                passport := maps:with([buffee,owner,grant_holders,membership,privileges,state,epoch,revision],Buffee)}
+                messages := safe(fun ba_session_chat:history/0,[]),
+                passport := maps:with([session,owner,grant_holders,membership,privileges,state,epoch,revision],Session)}
     end.
 safe(F,Default) -> try F() catch exit:_ -> Default end.
 %% Capabilities this platform's capture binding cannot provide, with the reason
@@ -89,12 +89,12 @@ forget_snapshots() ->
         false -> ok;
         Dir -> lists:foreach(fun(Name) ->
             case file:delete(filename:join(Dir,Name)) of ok -> ok;{error,enoent} -> ok;{error,R} -> error({snapshot_cleanup_failed,R}) end
-        end,["authority.term","policy.term","desk.term","audio_subscription.term","buffee_authority.term","buffee_member.term","buffee_sessions.term","buffee_desks.term","buffee_time_policy.term",
-            "buffee_time_cache.term","audio_subscriptions.term","audio_subscription.term","clock_status.json"])
+        end,["authority.term","policy.term","desk.term","audio_subscription.term","session_authority.term","session_member.term","saved_sessions.term","session_desks.term","session_time_policy.term",
+            "session_time_cache.term","audio_subscriptions.term","audio_subscription.term","clock_status.json"])
     end.
 
 device_privileges() ->
-    case ba_buffee_membership:current() of
+    case ba_session_membership:current() of
         {ok,#{device_privileges := Held}} -> maps:map(fun(_,Wires) -> ba_session_privileges:names(Wires) end,Held);
         _ -> #{}
     end.

@@ -1,5 +1,5 @@
 %% Four-timestamp measurement and bounded correction policy, independent of OTP I/O.
--module(ba_buffee_clock_sync).
+-module(ba_session_clock_sync).
 -export([measure/4, correct/5]).
 
 measure(T1,T2,T3,T4) when T3 >= T2, T4 >= T1 ->
@@ -11,10 +11,10 @@ measure(T1,T2,T3,T4) when T3 >= T2, T4 >= T1 ->
     end;
 measure(_,_,_,_) -> {error,invalid_peer_timestamps}.
 
-correct(undefined,T,Target,_,_) -> {ba_buffee_clock_mapping:new(T,Target),0,true};
+correct(undefined,T,Target,_,_) -> {ba_session_clock_mapping:new(T,Target),0,true};
 correct(Mapping,T,Target,Threshold,PPM) ->
-    Error = Target-ba_buffee_clock_mapping:offset(Mapping,T),
+    Error = Target-ba_session_clock_mapping:offset(Mapping,T),
     case abs(Error) > Threshold of
-        true -> {ba_buffee_clock_mapping:correct(Mapping,T,Target,PPM),Error,true};
+        true -> {ba_session_clock_mapping:correct(Mapping,T,Target,PPM),Error,true};
         false -> {Mapping,Error,false}
     end.

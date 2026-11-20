@@ -1,4 +1,4 @@
-%% Device-local address book. Saving a key never grants Buffee permissions.
+%% Device-local address book. Saving a key never grants Session permissions.
 -module(ba_contacts).
 -behaviour(gen_server).
 -export([start_link/0,list/0,put/2,delete/1,group/2,delete_group/1,resolve/1,observe/3,observe_name/2]).
@@ -8,7 +8,7 @@
 -export([link/1,kicked/2,rename_session/2,forget_session/1,forgotten/1]).
 %% Only the person removes an entry; nothing is forgotten automatically.
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
-observe(Buffee,Name,Ids) -> gen_server:cast(?MODULE,{observe,Buffee,Name,Ids}).
+observe(Session,Name,Ids) -> gen_server:cast(?MODULE,{observe,Session,Name,Ids}).
 observe_name(Id,Name) -> gen_server:cast(?MODULE,{observe_name,Id,Name}).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 list() -> gen_server:call(?MODULE,list).
@@ -30,13 +30,13 @@ init([]) ->
     ok=ba_settings:put(contacts,S),{ok,S}.
 %% Earlier versions kept each Session as a group named after it; those become Session entries.
 sessions_from_groups(#{groups := Groups}=S) ->
-    Links=maps:get(buffee_groups,S,#{}),Sessions=maps:get(sessions,S,#{}),
+    Links=maps:get(session_groups,S,#{}),Sessions=maps:get(sessions,S,#{}),
     Moved=maps:fold(fun(Session,Group,Acc) ->
         case maps:is_key(Session,Acc) of
             true -> Acc;
             false -> Acc#{Session => #{name => Group,link => null,devices => maps:from_keys(maps:get(Group,Groups,[]),member)}}
         end end,Sessions,Links),
-    (maps:remove(buffee_groups,S))#{groups := maps:without(maps:values(Links),Groups),sessions => Moved}.
+    (maps:remove(session_groups,S))#{groups := maps:without(maps:values(Links),Groups),sessions => Moved}.
 handle_call(list,_,S) -> {reply,maps:with([contacts,groups,sessions],S),S};
 handle_call({forget_session,Session},_,S) ->
     Sessions=maps:get(sessions,S,#{}),
@@ -82,20 +82,20 @@ update({group,Name,Ids},#{contacts := Contacts,groups := Groups}=S) ->
 update({delete_group,Name},#{groups := Groups}=S) -> S#{groups := maps:remove(Name,Groups)}.
 label(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<128 -> is_list(unicode:characters_to_list(B));
 label(_) -> false.
-handle_cast({observe,Buffee,Name,Ids},S) ->
+handle_cast({observe,Session,Name,Ids},S) ->
     try
-        true=ba_hex:valid(Buffee,32),true=label(Name),
-        true=not forgotten(Buffee,S),
+        true=ba_hex:valid(Session,32),true=label(Name),
+        true=not forgotten(Session,S),
         true=is_list(Ids) andalso length(Ids)=<32,
         true=lists:all(fun(Id) -> ba_hex:valid(Id,64) end,Ids),
         Collected=lists:foldl(fun(Id,Acc) -> observed_name(Id,binary:part(Id,0,12),Acc) end,S,lists:usort(Ids)),
-        persist(seen(Buffee,Name,Ids,Collected),S)
+        persist(seen(Session,Name,Ids,Collected),S)
     catch error:{badmatch,false} -> {noreply,S} end;
 %% The first link known for a Session is kept: it is the Session's permanent invitation.
 handle_cast({link,Link},S) ->
     try
-        {_,I}=ba_buffee_passport:parse_invitation(Link),
-        Session=maps:get(<<"buffee">>,I),Sessions=maps:get(sessions,S,#{}),
+        {_,I}=ba_session_passport:parse_invitation(Link),
+        Session=maps:get(<<"session">>,I),Sessions=maps:get(sessions,S,#{}),
         E=maps:get(Session,Sessions,#{name => maps:get(<<"name">>,I),link => null,devices => #{}}),
         Linked=case maps:get(link,E) of null -> E#{link := Link};_ -> E end,
         persist(S#{sessions => Sessions#{Session => Linked#{last => now_s()}},
