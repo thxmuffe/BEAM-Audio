@@ -186,7 +186,9 @@ start_speaker(#{engine := Engine}=S) ->
         {ok,#{offset_ms := Delay}} ->
             C=#{op => start_speaker,ssrc => maps:get(ssrc,S),rate => maps:get(rate,S),anchor_ns => maps:get(anchor,S),
                 delay_ms => Delay,key => maps:get(key,S),gain => maps:get(gain,S)},
-            case ba_audio_engine:command(Engine,C) of
+            %% Starting the first speaker activates the OS audio session, which
+            %% can take seconds on iPhone.
+            case ba_audio_engine:command(Engine,C,15000) of
                 {ok,_} -> maps:get(owner,S) ! {audio_transport,self(),open},S#{open := true,delay => Delay};
                 {error,<<"clock mapping required",_/binary>>} -> erlang:send_after(?HEARTBEAT,self(),retry_speaker),S
             end;

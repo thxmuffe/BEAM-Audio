@@ -38,6 +38,7 @@ class IOSShell final : public ba::Shell {
     // so a route change keeps playback on Session time; read on audio threads.
     std::atomic<uint64_t> output_latency_ns_{0}, input_latency_ns_{0};
     id route_observer_ = nil;
+    NSOperationQueue *route_queue_ = nil;
     // Microphone: its own RemoteIO unit, input only.
     AudioComponentInstance input_ = nullptr;
     void *input_session_ = nullptr;
@@ -71,9 +72,13 @@ class IOSShell final : public ba::Shell {
 
     void follow_route() {
         if (route_observer_) return;
+        // Its own queue: never read the session on the thread that posts the
+        // notification, which may be inside an activation on the control thread.
+        route_queue_ = [NSOperationQueue new];
+        route_queue_.maxConcurrentOperationCount = 1;
         route_observer_ = [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionRouteChangeNotification
                                                                           object:nil
-                                                                           queue:nil
+                                                                           queue:route_queue_
                                                                       usingBlock:^(NSNotification *) {
                                                                           AVAudioSession *s = AVAudioSession.sharedInstance;
                                                                           output_latency_ns_ = uint64_t(s.outputLatency * 1e9);

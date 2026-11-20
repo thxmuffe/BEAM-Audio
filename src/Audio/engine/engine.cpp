@@ -190,14 +190,22 @@ struct Engine {
         return json::object();
     }
 
+    // A start for a stream that already has a speaker replaces it: the newest
+    // attempt owns the stream (an earlier start may have finished after its
+    // caller gave up waiting).
     json start_speaker(const json &c) {
         auto s = std::make_unique<Speaker>(c, clock);
+        for (auto &slot : speakers)
+            if (Speaker *p = slot.load(); p && p->ssrc() == s->ssrc()) {
+                slot.store(s.release());
+                on_packet_thread([this, p] {
+                    retired.emplace_back(std::chrono::steady_clock::now() + std::chrono::seconds(1), [p] { delete p; });
+                });
+                return {{"output_rate", out_rate.load()}};
+            }
         bool first = true;
         for (auto &slot : speakers)
-            if (Speaker *p = slot.load()) {
-                if (p->ssrc() == s->ssrc()) fail("speaker already started for this ssrc");
-                first = false;
-            }
+            if (slot.load()) first = false;
         if (first && !out_rate.load()) out_rate.store(shell.start_output());
         for (auto &slot : speakers)
             if (!slot.load()) {
