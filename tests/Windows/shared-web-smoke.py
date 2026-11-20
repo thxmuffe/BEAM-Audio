@@ -130,7 +130,14 @@ def main():
             assert not any(sa["consent"].get(k) for k in ("microphone", "speaker", "broadcast"))
             for asset in (APP / "assets").iterdir():
                 original = PRODUCT/"src/Apps/WebApp/public"/asset.name
-                if original.is_file(): assert asset.read_bytes() == original.read_bytes(), asset.name
+                if original.is_file():
+                    if asset.name == "index.html":
+                        # Packaging stamps the version; all other page content
+                        # must still match the shared frontend source.
+                        packaged = re.sub(r"Version 0\.\d+", "Version development", asset.read_text(encoding="utf-8"))
+                        assert packaged == original.read_text(encoding="utf-8"), asset.name
+                    else:
+                        assert asset.read_bytes() == original.read_bytes(), asset.name
             print("PASS: packaged shared frontend, isolated Devices/ports, audio consent off", flush=True)
             if args.invitation_file:
                 invitation = args.invitation_file.read_text().strip()

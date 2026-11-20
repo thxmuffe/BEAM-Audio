@@ -7,26 +7,22 @@
 
 ## Run every test
 
-Open the sibling OpenSound `Run Tests.command`, or run
+Open the sibling OpenSound `Run Tests.cmd` on Windows or `Run Tests.command`
+on Mac, or run
 `python3 scripts/run-tests.py` from this repository. The same shared catalog
 discovers EUnit/ExUnit projects, Swift test packages, Node test directories,
 standalone Python tests, and test escripts in both repositories. Python helper
 fixtures/probes without standalone test names are exercised by their parent
 scenarios, not launched as tests. Generated builds/dependencies are excluded.
-Current inventory: 54 suites/scenarios, including the test runner's own tests.
+Use `--list` for the current inventory, including the runner's own tests.
 
-The Device/Session test includes default, five-second/two-Device/150-ms,
-shared-clock, ephemeral-lifecycle, sustained/reference-restart, 125-second
-renewal, maximum-delay renewal, authorization-expiry and Opus scenarios.
-Clock tests also include production cadence. This is the named scenario catalog,
-not every possible combination of command-line values.
+Clock tests include both default and production cadence.
 
 Tests run sequentially and continue after failure. Final output lists every
 selected result and writes `builds/test-results/TIMESTAMP/summary.json`.
 UNAVAILABLE identifies a different required OS, missing executable, packaged
 build or optional dependency. Windows tests require a Windows host; packaged
-Mac tests require the Mac bundle. Opus requires `BA_GSTREAMER_PYTHON` pointing
-to the prepared GStreamer Python. Native transport tests need the existing
+Mac tests require the Mac bundle. Native transport tests need the existing
 compiled transport; the runner does not silently build/install native stacks.
 Existing test scripts may invoke their normal build prerequisites themselves.
 Some tests open GUI windows or contact the public Reception.

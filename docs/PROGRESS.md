@@ -2709,3 +2709,36 @@ CLI, Inspector and web UI. No identity stores were merged.
 Validation: 184 core EUnit tests pass, including new coverage for Always/Ask/No
 across speaker and both rights categories, automation override separation and
 invalid requests. No native app build, deployment or live audio test in this pass.
+
+
+## 2026-11-20 — Windows all-tests launcher and baseline
+
+Added OpenSound's top-level `Run Tests.cmd`: it invokes the same core Python
+catalog as `Run Tests.command`, forwards arguments and preserves exit status.
+`OPENSOUND_TEST_NO_PAUSE=1` disables the closing pause. No duplicate test catalog.
+Prepared repository-local Reception dependencies and a production release.
+
+Ran all 35 registered suites through the Windows launcher: **17 passed,
+8 failed, 10 unavailable (macOS-only)**. Core EUnit: 184 passing; DeviceWeb:
+6; Reception ExUnit: 4. Web Node/browser, saved-session rejoin, release boot,
+moderation, privileges, restart and both clock variants passed.
+Full machine-readable report: `builds/test-results/20261120-133408/summary.json`;
+console log: `builds/intermediates/all-tests-windows.log`.
+
+Failures to triage before claiming a clean integration baseline:
+
+| Suite | Observed failure |
+| --- | --- |
+| Windows shared web | Version stamp caused a false asset mismatch; corrected comparison. Retest passes discovery/chat/restart, then times out waiting for all three Devices after both original endpoints restart. |
+| Crash/chat | Test reads removed `sessions` snapshot field. |
+| Device label | Wait for policy revision >= 3 times out. |
+| Parallel sessions | `create_session` response times out. |
+| Session control | Authorized-link/capabilities convergence times out. |
+| Membership | Read-after-policy-change result differs from expected `forbidden`. |
+| Peer admission | Test expects `/v5?` invitation instead of compact format. |
+| Reconnect | Test requires POSIX mode 0600 on Windows. |
+
+Windows smoke retest: `builds/test-results/20261120-134226/summary.json`, log
+`builds/intermediates/shared-web-retest.log`. It still fails, so aggregate counts
+are unchanged. Failures include stale assertions and unresolved behavior; they
+are not all confirmed product defects. Apple tests were not executed here.

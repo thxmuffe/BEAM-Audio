@@ -29,6 +29,13 @@ Removed Apple startup's obsolete deletion of saved signed policy; 183 core tests
 and a public iOS-configured cold-return check pass. Apple apps need rebuilding;
 already erased names require a surviving signed copy. See PROGRESS.md.
 
+Windows integration baseline (2026-11-20): the shared all-tests runner now has
+an OpenSound `Run Tests.cmd` launcher. Full run: 17 passed, 8 failed, 10 macOS-only
+unavailable. Next cleanup should reconcile stale integration assertions and
+investigate the remaining multi-Device/session timeouts and membership result.
+See PROGRESS.md for each failure and the full reports; unit-test success alone
+does not establish a working integration baseline.
+
 ## Decisions in force
 
 - **One Device request pipeline (owner 2026-11-20).** Requests for rights and
