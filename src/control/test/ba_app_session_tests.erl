@@ -7,10 +7,10 @@ contract_is_scoped_to_receiver_and_source_test() ->
     ?assertNotEqual(Id,ba_app_session:contract(<<"buffee">>,<<"publisher">>,#{receiver => <<"two">>,source => <<"mic">>})),
     ?assertNotEqual(Id,ba_app_session:contract(<<"buffee">>,<<"publisher">>,#{receiver => <<"one">>,source => <<"output">>})).
 capability_reports_real_work_instead_of_permission_alone_test() ->
-    Old=[{K,application:get_env(ba_core,K)} || K <- [audio_automation,audio_consent]],
+    Old=[{K,application:get_env(ba_core,K)} || K <- [audio_automation]],
     try
         application:set_env(ba_core,audio_automation,true),
-        application:set_env(ba_core,audio_consent,#{speaker => true,microphone => true,broadcast => false}),
+        ba_test_consent:with(#{speaker => true,microphone => true},fun() ->
         S=#{active => #{},enabled => false,instance => binary:copy(<<"A">>,32),revision => 0,
             audio => #{speaker => #{state => ready},microphone => #{state => error},broadcast => #{state => disabled}}},
         {reply,Caps,_}=ba_device_handler:handle_call(capabilities,undefined,S),
@@ -18,17 +18,16 @@ capability_reports_real_work_instead_of_permission_alone_test() ->
         ?assertMatch(#{<<"consent">> := true,<<"available">> := true},maps:get(<<"speaker">>,A)),
         ?assertMatch(#{<<"consent">> := true,<<"available">> := false},maps:get(<<"microphone">>,A)),
         ?assertMatch(#{<<"consent">> := false,<<"available">> := false},maps:get(<<"broadcast">>,A))
+        end)
     after restore(Old) end.
 exclusions_are_memory_only_test() ->
-    Old=application:get_env(ba_core,runtime_profile),application:set_env(ba_core,runtime_profile,buffee_control),
     ets:new(ba_buffee_state,[named_table,public]),
     try
         Id=binary:copy(<<"A">>,64),?assertNot(ba_app_session:excluded(Id)),
         ok=ba_device_store:save(buffee_exclusions,[Id]),?assert(ba_app_session:excluded(Id)),
         ets:delete(ba_buffee_state),?assertNot(ba_app_session:excluded(Id))
     after
-        case ets:whereis(ba_buffee_state) of undefined -> ok;_ -> ets:delete(ba_buffee_state) end,
-        restore([{runtime_profile,Old}])
+        case ets:whereis(ba_buffee_state) of undefined -> ok;_ -> ets:delete(ba_buffee_state) end
     end.
 restore(Entries) -> [case V of undefined -> application:unset_env(ba_core,K);{ok,X} -> application:set_env(ba_core,K,X) end || {K,V} <- Entries],ok.
 

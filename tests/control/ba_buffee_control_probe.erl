@@ -234,7 +234,7 @@ ensure_started() ->
         undefined ->
             application:load(ba_core),
             application:set_env(ba_core,clock_reference,system),
-            {ok,_} = ba_runtime:start(buffee_control),
+            {ok,_} = ba_runtime:start(),
             ok;
         _ -> ok
     end.

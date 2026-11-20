@@ -118,9 +118,11 @@ with_clock(Role,Fun) ->
     try
         os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED",binary_to_list(binary:encode_hex(Seed))),
         [application:unset_env(ba_core,K) || K <- Keys],application:set_env(ba_core,clock_reference,system),
+        ba_session_scope:new_table(ba_buffee_state,[named_table,public,set]),
         {ok,_} = ba_buffee_clock:start_link(),Fun({Buffee,Authority})
     after
         case whereis(ba_buffee_clock) of undefined -> ok;P -> gen_server:stop(P) end,
+        case ets:whereis(ba_buffee_state) of undefined -> ok;_ -> ets:delete(ba_buffee_state) end,
         unregister(ba_buffee_membership),exit(Member,kill),
         [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Env],
         [case V of undefined -> application:unset_env(ba_core,K);{ok,X} -> application:set_env(ba_core,K,X) end || {K,V} <- AppEnv],

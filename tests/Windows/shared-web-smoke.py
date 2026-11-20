@@ -24,7 +24,7 @@ class Device:
             "-pa", str(APP / "ebin"), "-s", "os_windows_host", "boot", "-extra",
             "--assets", str(APP / "assets"), "--port", "0", "--local-device"
         ], cwd=APP, env=dict(os.environ, BA_STATE_DIR=str(directory), BA_IDENTITY_SEED=seed,
-                           ERL_LIBS=str(APP / "lib"), BA_RECEPTION_DESK_URL=""),
+                           ERL_LIBS=str(APP / "lib")),
            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
         def read():
             for line in self.process.stdout:
@@ -115,7 +115,7 @@ def main():
         try:
             browser_lifetime(Path(temporary))
             if not args.invitation_file:
-                spec = importlib.util.spec_from_file_location("relay", CORE/"tests/ReceptionDesk/relay-smoke.py")
+                spec = importlib.util.spec_from_file_location("relay", CORE/"tests/ReceptionDesk/local_reception.py")
                 relay = importlib.util.module_from_spec(spec); spec.loader.exec_module(relay)
                 with socket.socket() as probe:
                     probe.bind(("127.0.0.1", 0)); port = probe.getsockname()[1]

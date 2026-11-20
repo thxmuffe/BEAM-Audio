@@ -79,11 +79,9 @@ handle_cast(_,S) -> {noreply,S}.
 handle_info(_,S) -> {noreply,S}.
 
 fixture(F) ->
-    Old=application:get_env(ba_core,runtime_profile),DirEnv=os:getenv("BA_STATE_DIR"),
-    os:unsetenv("BA_STATE_DIR"),application:set_env(ba_core,runtime_profile,buffee_control),
+    DirEnv=os:getenv("BA_STATE_DIR"),os:unsetenv("BA_STATE_DIR"),
     {ok,_}=pg:start_link(ba_permission_pg),{ok,C}=ba_device_config:start_link(),
     try F() after
         gen_server:stop(C),gen_server:stop(ba_permission_pg),
-        case Old of undefined -> application:unset_env(ba_core,runtime_profile);{ok,V} -> application:set_env(ba_core,runtime_profile,V) end,
         case DirEnv of false -> os:unsetenv("BA_STATE_DIR");_ -> os:putenv("BA_STATE_DIR",DirEnv) end
     end.

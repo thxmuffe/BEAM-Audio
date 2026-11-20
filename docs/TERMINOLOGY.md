@@ -70,9 +70,8 @@ automatically.
 | Response time | Buffee-wide delay before scheduled playback; existing technical APIs use Playback Offset and `offset_ms`. |
 
 The OTP application is `ba_core`; the facade is `ba_runtime`; core modules use
-`ba_` and environment variables use `BA_*`. The shared runtime profile is
-`buffee_control`. `native_cluster` refers only to the older trusted Distributed
-Erlang compatibility path, not to the secure Buffee boundary.
+`ba_` and environment variables use `BA_*`. There is one runtime behaviour;
+the trusted Distributed Erlang cluster and its profiles were removed (2026-11-20).
 
 See [membership and ownership](BUFFEE_MEMBERSHIP.md), [clock](BUFFEE_TIME.md),
 [names and migration](NAMING.md) and [current plan](PLAN.md).

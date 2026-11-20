@@ -3,11 +3,7 @@
 -export([start/2, stop/1]).
 
 start(_Type, _Args) ->
-    %% Releases may start the application before the native bridge entry point.
-    %% Configure both Apple hosts before starting any restore/audio owners.
-    case ba_settings:app(runtime_profile,legacy_apps) of
-        buffee_control -> ba_app_session:configure();
-        _ -> ok
-    end,
+    %% Configure the platform before starting any restore/audio owners.
+    ba_app_session:configure(),
     ba_sup:start_link().
 stop(_State) -> ok.

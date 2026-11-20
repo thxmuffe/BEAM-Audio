@@ -16,11 +16,10 @@ beamaudio --help
 beamaudio new device --help
 ```
 
-The source-tree escript uses OTP's `argparse`, compiled core modules and the
-existing native dependency packager. Helpers/dependencies are under `builds/CLI/`;
-OTP itself comes from the installed `erl`. No product checkout is required. First
-build may need `python3 scripts/setup-host.py` / `bash scripts/build-native.sh` as
-in the core build guide. Nothing is installed globally, launched or captured by
+The source-tree escript uses OTP's `argparse` and the compiled core modules.
+The native audio helper is under `builds/CLI/`; OTP itself comes from the
+installed `erl`. No product checkout is required. Build with `./build.sh` as in
+the core build guide. Nothing is installed globally, launched or captured by
 building. Standalone release distribution and Windows launch support are later.
 
 ## Windows

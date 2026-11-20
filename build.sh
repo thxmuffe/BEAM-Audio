@@ -25,19 +25,13 @@ if [ "$(uname -s)" != Darwin ]; then echo 'This script supports macOS and Window
 if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app/Contents/Developer ]; then
   export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
-python3 "$ROOT/scripts/setup-host.py"
-export PATH="$ROOT/builds/intermediates/tools/elixir/bin:$ROOT/builds/intermediates/tools/cargo/bin:/opt/homebrew/bin:$PATH"
-export CARGO_HOME="$ROOT/builds/intermediates/tools/cargo"
-export RUSTUP_HOME="$ROOT/builds/intermediates/tools/rustup"
-export HEX_HOME="$ROOT/builds/intermediates/tools/hex"
-export MIX_HOME="$ROOT/builds/intermediates/tools/mix"
-export REBAR_CACHE_DIR="$ROOT/builds/intermediates/rebar-cache"
-bash "$ROOT/scripts/build-native.sh"
+export PATH="/opt/homebrew/bin:$PATH" REBAR_CACHE_DIR="$ROOT/builds/intermediates/rebar-cache"
+(cd "$ROOT/src/control" && rebar3 compile)
 if [ "$TARGET" = all ] || [ "$TARGET" = mac ]; then
   # Audio is native AAC only: the Mac helper captures into GStreamer.
   bash "$ROOT/scripts/platforms/macOS/build-native-stream.sh"
 fi
 if [ "$TARGET" = all ] || [ "$TARGET" = ios ]; then
-  python3 "$ROOT/scripts/platforms/iOS/prepare-runtime.py" --target device --transport native
+  python3 "$ROOT/scripts/platforms/iOS/prepare-runtime.py" --target device
 fi
 echo "BEAM Audio build complete: $TARGET. Artifacts: $ROOT/builds"

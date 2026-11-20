@@ -13,7 +13,7 @@ def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path)
     m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 control=load('control',HERE/'buffee-control-smoke.py')
-relay=load('relay',HERE.parent/'ReceptionDesk/relay-smoke.py');relay.ERL=Path(shutil.which('erl'))
+relay=load('relay',HERE.parent/'ReceptionDesk/local_reception.py');relay.ERL=Path(shutil.which('erl'))
 
 def clock(r,predicate,timeout=20):
     deadline=time.monotonic()+timeout

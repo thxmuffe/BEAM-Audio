@@ -3,12 +3,27 @@
 Reorganized 2026-11-18: dated narratives were collated; completed work and its
 validation limits live in [PROGRESS.md](PROGRESS.md) and the Windows report in
 [WINDOWS-AUDIO-2026-11-18.md](WINDOWS-AUDIO-2026-11-18.md). Git history keeps the
-previous plan. **Goal: audio works on every platform.** At the owner's request,
-the migration is paused for iterative unused-code cleanup; broad restructuring
-and cosmetic cleanup still wait.
+previous plan. **Goal: audio works on every platform.**
+
+**Priorities (owner 2026-11-20):** (1) extensive code cleanup, in passes, see
+[Simplification plan](#simplification-plan-owner-concern-2026-11-19-tackle-soon);
+(2) the rights model, soon after; (3) packet recovery and audio quality last.
+iPhone background playback works (owner confirmed). Native microphone capture
+is deferred.
 
 ## Decisions in force
 
+- **Cleanup first; one default way (owner 2026-11-20).** Clean architecture and
+  code come first, even if things break meanwhile. Work towards standard
+  behaviour so OTP and the libraries in use do the work, instead of custom
+  behaviour layered on top of them. There is exactly one way to do each thing:
+  no alternative methods, fallbacks or compatibility paths. The system's model
+  is simple and sound; slightly differing behaviours and custom handling of
+  exceptions are to be removed. Debug and logging code may stay as it is. Work
+  in passes: each removal reveals what can go next, so never try to clean
+  everything at once. Ask the owner when the primary default behaviour is
+  unclear. Breaking compatibility (including the buffee → session rename of
+  wire constants) is accepted.
 - **Separate resource and data consent (owner 2026-11-19).** Settings should
   offer Calibration, Processing and Inspect, each Always / Ask / No. Calibration
   combines microphone and speaker calibration; Processing names DSP/computing
@@ -249,18 +264,53 @@ with a 60 s timer and SNTP; native audio host linked to an OTP owner. Not Erlang
 distribution between Devices (it grants arbitrary code execution); keep signed
 messages behind an Erlang-shaped API.
 
+Work in passes (owner 2026-11-20); each pass is committed before the next is
+chosen, because removals reveal more.
+
 Order: (1) delete the legacy stack and its Elixir/Rust/iOS transport builds;
-(2) delete test jobs unless wanted; (3) rename buffee → session including wire
+(2) delete test jobs and unused tests; (3) rename buffee → session including wire
 constants; (4) UTC-once-a-minute clock; (5) one request behaviour; (6) erlfmt +
-elvis, one module per concept. Open owner questions: keep test jobs? Is
-millisecond-to-tens-of-ms clock accuracy acceptable for now? OK to break
-compatibility with the rename?
+elvis, one module per concept.
 
+Owner answers (2026-11-20): remove the test-job capability and unused tests (new
+tests come after the cleanup); millisecond clock accuracy (or a tenth of it) is
+fine for now; breaking compatibility with the rename is accepted.
 
-Immediate (owner 2026-11-19): packet recovery on the native RTP path
-(retransmission first, redundancy for bursts, after measuring lost/late/
-dropped); package GStreamer and the native host into the Mac app (send and
-receive); native microphone capture; background playback; then the rights model.
+**The model the rename must follow (owner 2026-11-20).** BEAM Audio is a zero-trust,
+gossip-based peer-to-peer audio network. Real things: invitations (URLs), Devices
+(processes), Reception (a process relaying Devices) and the streaming at a Device
+through its ports. A Session is not an entity: no data structure, database or
+server holds or governs it; it is ephemeral gossip among Devices holding an
+invitation. Streams are likewise a description of what Devices do. Rename
+buffee/buffees to session(s) without introducing a "session" entity.
+
+**Pass 1 done (2026-11-20; see PROGRESS).** One runtime behaviour: the
+`legacy_apps`/`native_cluster` profiles and every branch on them are gone, with the
+trusted-cluster stack, the Elixir/Rust transport, the legacy Inspector, the old
+Reception HTTP directory and their builds and tests. Core Erlang 528k → 365k
+characters, 71 → 50 modules.
+
+**Pass 2 candidates** (found during pass 1; choose after committing pass 1):
+- Test jobs: `ba_buffee_job`, `ba_device_test_worker`, the job parts of
+  `ba_device_handler`, the `job_offer` permission and their tests.
+- 127 xref "unused export" warnings (many are `start_link` false positives; the
+  rest are dead API, e.g. in `ba_audio`, `ba_audio_receiver`, `ba_buffee_clock`).
+- Two ways to configure one thing: the default Reception URL is written in three
+  places (`ba_core.app.src`, `ba_buffee_passport`, `ba_sessions`); the Reception CA
+  comes from `BA_RELAY_CA_FILE` or the `relay_cacertfile` setting.
+- Fallbacks: `ba_device_store:identity/0` makes a random key when no seed is set
+  (every launcher sets one); `audio_automation=false` and its no-Worker speaker
+  states exist only for the CLI observer.
+- Release contents: `compiler` in the relx release and `inets` in the app's
+  dependencies may only have served the removed stack.
+- Docs describing removed behaviour (older dated sections of the BUFFEE_* docs).
+- Rebuild a TLS/public-Reception check on the CLI (the old one drove the legacy
+  client and was deleted).
+
+Audio work, after the cleanup and the rights model (owner 2026-11-20): Mac app
+native receive; packet recovery on the native RTP path (retransmission first,
+redundancy for bursts, after measuring lost/late/dropped) and audio quality
+last. Microphone capture is deferred; iPhone background playback works.
 
 1. **GStreamer backend and enforced control lifetime — prototype implemented.**
    Backend assessment and replacement control contract are recorded in

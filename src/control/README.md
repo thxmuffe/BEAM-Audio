@@ -5,11 +5,10 @@ Ordinary Devices never obtain Distributed Erlang connectivity. Owner is trusted
 administration independent of Chef/Guest participation and process placement.
 
 Compile with `rebar3 compile` here. Run repository EUnit checks with `rebar3 eunit`
-from the core root. Native transport dependencies are prepared separately; see
-[builds](../../docs/BUILDING.md). Use private persistent `BA_STATE_DIR` and
+from the core root; see [builds](../../docs/BUILDING.md). Use private persistent `BA_STATE_DIR` and
 `BA_IDENTITY_SEED` for a stable Device. Never print or share identity seeds.
 
-`ba_runtime:start(buffee_control)` starts an idle runtime. `ba_buffee:create/2`,
+`ba_runtime:start()` starts an idle runtime. `ba_buffee:create/2`,
 `join/1`, `leave/0` and `end_buffee/0` control participation. Membership provides
 `request_privilege/1`, `grant_privilege/2`, `take_privilege/2` and invitations. Applications use `ba_device_api`;
 frontends submit commands and display snapshots, without owning policy.

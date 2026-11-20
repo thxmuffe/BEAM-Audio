@@ -52,8 +52,7 @@ spec(Root) ->
               end,
               emit(request(one_name(A),Command))
           end,[#{name => deviceid,long => "-deviceid",type => string}]),
-          "buffee" => Device(fun inspect_buffee/1,[#{name => buffeeid,long => "-buffeeid",type => string,required => true}]),
-          "legacy" => #{handler => fun(_) -> fail(2,<<"Use src/Tools/Inspector/run.sh; the legacy Inspector is unchanged and is not a scoped Buffee client.">>) end}}},
+          "buffee" => Device(fun inspect_buffee/1,[#{name => buffeeid,long => "-buffeeid",type => string,required => true}])}},
       "get" => #{commands => #{
           "methods" => #{handler => fun(_) -> emit(ba_device_api:methods()) end},
           "web" => Device(fun(A) ->
@@ -123,7 +122,6 @@ new_device(A,Root) ->
         ok=ba_cli_store:write(filename:join(D,"launch.json"),C),
         Erl=os:find_executable("erl"),
         Paths=filelib:wildcard(filename:join([Root,"builds/intermediates/control/default/lib","*","ebin"]))++
-              filelib:wildcard(filename:join([Root,"builds/CLI/runtime/native_lib","*","ebin"]))++
               case maps:is_key(web,C) of
                   true -> filelib:wildcard(filename:join([Root,"builds/intermediates/DeviceWeb/default/lib","*","ebin"]));
                   false -> []

@@ -29,14 +29,13 @@ boot() ->
             false -> os:putenv("BA_GSTREAMER_RUNTIME",filename:join([Root,"builds/intermediates/gstreamer/runtime"]));_ -> ok
         end,
         ok=application:load(ba_core),
-        Consent=#{speaker => false,microphone => false,broadcast => false},
-        ok=ba_app_session:configure(#{platform => mac,consent => Consent}),
+        ok=ba_app_session:configure(#{platform => mac}),
         case maps:get(<<"observer">>,C,false) of
             true -> application:set_env(ba_core,audio_automation,false),application:set_env(ba_core,buffee_observer,true);
             %% Like the apps: a Device returns to the Sessions it was in, including as their creator.
             false -> application:set_env(ba_core,restore_buffee_on_start,true)
         end,
-        {ok,_}=ba_runtime:start(buffee_control),
+        {ok,_}=ba_runtime:start(),
         case maps:find(<<"web">>,C) of
             {ok,#{<<"assets">> := Assets,<<"port">> := WebPort}} ->
                 application:set_env(ba_device_web,options,#{assets => binary_to_list(Assets),port => WebPort}),

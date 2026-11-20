@@ -63,19 +63,9 @@ bash src/Services/ReceptionDesk/build.sh
 bash src/Services/ReceptionDesk/run.sh
 ```
 
-Rebuilt native apps automatically connect to the public BEAM Audio Reception configured in
-`src/control/src/ba_core.app.src` (`default_reception_desk_url`). No URL entry is needed.
-In the legacy UI, enter another **Reception URL** and select **Use Reception (new
-session)** to switch Receptions, which replaces transient memberships. Native UI
-switching is currently disabled; supply a startup override instead. Select a buffee in one app, copy its
-invitation and paste it into **Add a buffee** in another. Only one admission is
-needed. New and existing memberships stay independent. Changing UI selection
-never joins or leaves a buffee.
-
-Set `BA_RECEPTION_DESK_URL` to override the bundled default before startup.
-Set it to an empty string for local-only development; an unset variable uses the
-public default. An explicit OTP `reception_desk_url` setting (including the UI
-choice) takes priority over both. Restart to apply startup configuration. Never use the
+New Sessions use the public BEAM Audio Reception configured in
+`src/control/src/ba_core.app.src` (`default_reception_desk_url`); an invitation
+carries its Session's Reception, so joining needs no URL entry. Never use a
 localhost URL on a different device: localhost always refers to that device.
 
 The default belongs to BEAM Audio; app hosts can supply the OTP setting before
@@ -158,29 +148,18 @@ python build.py --test
 cd src/Services/ReceptionDesk
 mix test
 cd ../..
-python tests/ReceptionDesk/relay-smoke.py --idle
-python tests/ReceptionDesk/tls-smoke.py
-python tests/ReceptionDesk/public-smoke.py wss://beamaudio.onrender.com/reception
-python tests/Windows/relay-ui-smoke.py
+python tests/ReceptionDesk/release-smoke.py
 ```
 
-The relay integration test runs a temporary Phoenix Reception with three separate
-BEAM VMs **without node names or Distributed Erlang**. It checks overlapping
-buffees, isolated chat, peer invitations, mutual removal/revocation and a Reception
-restart. `--idle` verifies ping/pong beyond the inactivity timeout. The TLS test
-uses a private temporary certificate; it checks WSS chat and rejects wrong
-hostnames and untrusted certificates. It never installs a trust anchor.
-The helper currently locates Windows build products and the portable Elixir
+`tests/ReceptionDesk/local_reception.py` is the local Reception fixture the Session
+integration tests use (`start_desk`). The TLS and public-Reception client checks
+were removed with the legacy client on 2026-11-20; rebuild them on the CLI later.
+The fixture locates Windows build products and the portable Elixir
 cache; override `BA_TEST_ERL` / `BA_ELIXIR_ROOT` for another local runtime.
 The production release also boots locally with runtime configuration and
 distribution disabled (`tests/ReceptionDesk/release-smoke.py`). Docker image execution was not
 verified here because the Docker engine is not running; the image still needs
 its Linux/Render deployment check.
-
-The original `inets` node-name directory is retained separately for legacy
-regression tests: `run-legacy.sh`. It is unauthenticated local
-discovery, not this relay and not suitable for public hosting. The old directory
-smoke test now launches that explicit legacy service.
 
 ## Dependency provenance
 

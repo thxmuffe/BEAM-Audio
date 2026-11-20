@@ -37,13 +37,7 @@ class RunnerTests(unittest.TestCase):
         for p in runner.files(runner.CORE/'tests'):
             if p.name.endswith(('-smoke.py', '-e2e.py', '.escript')) or p.name in {'smoke.py', 'naming-check.py'}:
                 self.assertIn(str(p.resolve()), paths, str(p))
-        audio = [t for t in tests if 'device-session-e2e.py' in t.name]
-        self.assertEqual(9, len(audio))
-        short = next(t for t in audio if 'two Devices' in t.name)
-        self.assertIn('--ephemeral', short.command)
-        self.assertEqual('150', short.command[short.command.index('--offset-ms')+1])
         self.assertTrue(any('DeviceWeb/rebar.config' in t.name for t in tests))
-        self.assertTrue(any('ReceptionDesk/rebar.config' in t.name for t in tests))
         self.assertTrue(any('tests/UI/Package.swift' in t.name for t in tests))
 
 

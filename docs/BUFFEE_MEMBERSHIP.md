@@ -57,7 +57,7 @@ Supply a stable `BA_IDENTITY_SEED` and a private `BA_STATE_DIR`, then start an
 unnamed VM:
 
 ```erlang
-{ok,_} = ba_runtime:start(buffee_control).
+{ok,_} = ba_runtime:start().
 ok = ba_buffee:create(<<"Evening session">>,[ReceptionURL]).
 {ok,Link} = ba_buffee_membership:invite(null).
 %% On a different Device:

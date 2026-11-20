@@ -113,8 +113,7 @@ repair(#{urls := URLs}=S) ->
     Bound = maps:from_list([begin
         P = case maps:find(URL,Existing) of
             {ok,Pid} -> Pid;
-            error -> ba_desk_connections_sup:ensure(URL,#{owner => self(),delivery => raw,register => false,
-                url => URL,tag => URL,max_owner_queue => 64})
+            error -> ba_desk_connections_sup:ensure(URL,#{owner => self(),url => URL})
         end,
         case is_pid(P) andalso maps:get(URL,maps:get(bound,S),undefined)=/=P of
             true -> gen_server:cast(P,{open,maps:get(buffee,S),maps:get(mailbox,S),self()}),

@@ -1,14 +1,12 @@
 %% Supervised native RTP endpoint. Only control/signalling crosses this socket.
 -module(ba_native_media_session).
 -behaviour(gen_server).
--export([start_link/1,available/0,ice_servers/0]).
+-export([start_link/1,available/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 %% The host app starts the native stream listener and names its port.
 available() -> ba_settings:env("BA_NATIVE_STREAM_PORT")=/=false.
-%% Every platform uses the same ICE servers: an explicit native_ice_servers
-%% setting, else the configured STUN URLs.
-ice_servers() ->
-    application:get_env(ba_transport,native_ice_servers,[#{urls => ba_settings:app(direct_stun_urls,[])}]).
+%% Every platform uses the same ICE servers: the configured STUN URLs.
+ice_servers() -> [#{urls => ba_settings:app(direct_stun_urls,[])}].
 start_link(Args) -> gen_server:start_link(?MODULE,Args,[]).
 init(#{owner := Owner,role := Role,descriptor := D,context := #{deadline := Deadline}}=Args) ->
     process_flag(trap_exit,true),

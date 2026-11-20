@@ -54,21 +54,13 @@ Reception; run the relevant check deliberately after building its components.
 
 | Directory | Existing checks |
 | --- | --- |
-| `control/` | Two local BEAM nodes through `smoke.escript` |
-| `Windows/` | Packaged runtime, UI reload and relay checks; Erlang probe helpers |
-| `macOS/` | Packaged runtime, buffees and public-relay checks |
-| `ReceptionDesk/` | Directory, relay, TLS, release and public-service checks |
-| `transport/` | WebRTC carrier, OTP distribution and trust checks |
+| `control/` | Session integration checks with local CLI/runtime Devices |
+| `Windows/` | Packaged Windows app and shared Web API check |
+| `ReceptionDesk/` | Local Reception fixture and release check |
+| `transport/` | Native AAC stream helper smoke |
 
-From the repository root, examples are `python tests/Windows/reload-smoke.py`
-and `escript tests/control/smoke.escript`. These are existing checks moved from
-component tool directories, not a new test framework. Windows checks need the
+From the repository root, an example is `python tests/transport/native-stream-smoke.py`. Windows checks need the
 Windows bundle; Mac checks need the Mac bundle. Component unit tests remain in
 their existing `test/` or Swift `Tests/` directories under `src/`.
 
-`escript tests/transport/audio-packet-target.escript` runs the pinned ExWebRTC RTP
-sender and ExRTP wire decoder without a network connection. Build the core/native
-transport first. It checks the actual RTP timestamp bytes and target recovery
-with nonuniform targets, a lost neighbour and reverse arrival. EUnit's
-`ba_audio_rtp_time_tests` additionally covers clock wrap, assignment precision
-and rejection. These do not prove native playback or physical speaker timing.
+

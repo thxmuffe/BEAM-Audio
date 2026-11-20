@@ -13,7 +13,7 @@ def load(name, path):
     return module
 
 control = load('control', HERE / 'buffee-control-smoke.py')
-relay = load('relay', HERE.parent / 'ReceptionDesk/relay-smoke.py')
+relay = load('relay', HERE.parent / 'ReceptionDesk/local_reception.py')
 
 def main():
     with socket.socket() as sock:

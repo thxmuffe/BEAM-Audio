@@ -14,9 +14,7 @@ main() ->
     CA = filename:join(code:root_dir(), "cacerts.pem"),
     case filelib:is_file(CA) of true -> application:set_env(ba_core, relay_cacertfile, CA); false -> ok end,
     %% The embedded app is always an unnamed, scoped Buffee Device.
-    {ok,buffee_control} = ba_settings:app(runtime_profile),
     {ok, _} = application:ensure_all_started(crypto),
-    resolve_ice_servers(),
     {ok, _} = application:ensure_all_started(ba_core),
     Proof = #{status => <<"running">>, otp => list_to_binary(erlang:system_info(otp_release)),
               erts => list_to_binary(erlang:system_info(version)),
@@ -43,19 +41,6 @@ resolve_host(Host) ->
             end;
         Error -> Error
     end.
-
-resolve_ice_servers() ->
-    %% ExICE uses inet lookup for STUN/TURN. Seed its configured hostnames using
-    %% the same in-process platform resolver as Gun; never spawn inet_gethost.
-    Servers = ba_native_media_session:ice_servers(),
-    application:set_env(ba_transport,native_ice_servers,Servers),
-    URLs = lists:append([case maps:get(urls, S, []) of
-        U when is_binary(U) -> [U]; Us -> Us end || S <- Servers]),
-    lists:foreach(fun(URL) -> case 'Elixir.ExSTUN.URI':parse(URL) of
-        {ok, #{host := Host}} -> resolve_host(Host);
-        _ -> ok
-    end end, URLs),
-    ok.
 
 serve(Socket) ->
     case gen_tcp:recv(Socket, 0) of

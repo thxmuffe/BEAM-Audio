@@ -583,11 +583,6 @@ transport_status(#{session := P}) when is_pid(P) ->
 transport_status(_) -> #{}.
 
 publication_allowed(Peer,Key) ->
-    case ba_settings:app(runtime_profile,legacy_apps) of
-        buffee_control -> buffee_publication_allowed(Peer,Key);
-        _ -> true
-    end.
-buffee_publication_allowed(Peer,Key) ->
     case membership() of
         {ok,#{device_privileges := Privileges}} ->
             case maps:find(Peer,Privileges) of

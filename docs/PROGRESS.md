@@ -1,5 +1,60 @@
 # Current implementation and validation
 
+## Cleanup pass 1: one runtime behaviour — 2026-11-20
+
+Owner direction: cleanup first, one default way, no fallbacks, work in passes.
+The core had three runtime profiles; only `buffee_control` was used by the apps,
+yet `legacy_apps` was the default and ~20 places branched on the profile.
+- Removed the profile setting and every branch; the `buffee_control` behaviour is
+  now simply how the runtime works. `ba_runtime` is just `start/0`; `ba_sup` has
+  one child list; `ba_bridge` is only the app-window gate.
+- Deleted the trusted-cluster stack, found by reachability from the real entry
+  points (`ba_bridge`, `ba_ios`, `ba_cli`/`ba_cli_device`, `ba_device_web_cli`):
+  `ba_chat`, `ba_discovery`, `ba_dist_channel`, `ba_inspector`, `ba_legacy_cluster_*`,
+  `ba_media_channel`, `ba_native_bridge`, `ba_network`, `ba_node_api`,
+  `ba_node_diagnostics`, `ba_webrtc_dist`, `ba_buffees`, `ba_direct`,
+  `ba_peer_connection`, `ba_legacy_connection`, `ba_invitation`, `ba_buffee_wire`,
+  and `ba_events` (its `ba_pg` scope only ran under the legacy profiles).
+- `ba_relay` keeps only its live mode: pid-addressed owners, the Device's own
+  identity, an explicit URL, events as `{relay,URL,Event}`. Gone: the registered
+  name and API, the throwaway-key `buffee` delivery, the env/app URL defaults and
+  `reconnect` (only the legacy API used it). `BA_RECEPTION_DESK_URL` and the
+  `reception_desk_url` setting no longer exist.
+- Dead settings removed: `audio_consent` (nothing read it), the `consent` option of
+  `ba_app_session:configure/1`, the `ba_transport` `native_ice_servers` override
+  and iOS's ExICE STUN-host pre-resolution (ICE servers come only from
+  `direct_stun_urls`), `config/local.config`.
+- Deleted `src/control/transport` (Elixir/Rust), `scripts/build-native.sh`,
+  `scripts/setup-host.py`, macOS `package-native.py`, iOS `prepare-transport.py`
+  and `transport/`, `src/Tools/Inspector`, the CLI's `inspect legacy`, and
+  Reception's legacy HTTP directory (`src/`, `rebar.config`, `run-legacy.sh`).
+- Builds: the Mac app no longer compiles the transport or loads `native_lib`; the
+  Apple hosts no longer pass a profile; iOS has one runtime variant (no
+  `--transport`, no transport NIFs) and links OTP `crypto` with the
+  `libcrypto.a` shipped in the pinned iOS OTP runtime, as the former `relay`
+  variant did. The CLI build is the core compile plus the native helper.
+- Tests: deleted those that only exercised removed code (legacy cluster, chat,
+  connection strings, relay client, ExWebRTC carrier, OTP distribution/trust, the
+  wx relay UI, Mac bridge/relay smokes, Reception TLS/public client checks). Tests
+  of live code that silently ran under the legacy default now set up the real
+  conditions: consent via a running `ba_device_config` (`ba_test_consent`), the
+  Session state table, an `on_air` grant. Undo/redo now cannot re-grant consent
+  in tests either, as in the apps. `relay-smoke.py` became the Reception fixture
+  `tests/ReceptionDesk/local_reception.py`.
+- Windows build scripts delete a helper folder only after deleting its
+  `ba_native_stream.exe` succeeds, so a build never half-deletes the DLLs of a
+  running Device (seen with the Web UI running).
+
+Validation on Windows: baseline before the pass was 224/224 eunit; after it core
+eunit 203/203 (the difference is deleted legacy-only tests), DeviceWeb 6/6,
+`run-tests.py` unit tests OK (two dead assertions about the deleted PCM e2e test
+removed; they failed at baseline too), xref reports no undefined calls. Core
+Erlang 528k → 365k characters, 71 → 50 modules. Not verified: the Mac app, the
+iOS app and their builds (no Mac here; the xcconfig/link changes need an Xcode
+build), the Windows app rebuild (blocked while the owner's app and Web UI were
+running; the build now refuses cleanly), and the Session-level integration
+smokes in `tests/control/`.
+
 ## No PowerShell; Windows builds without legacy steps — 2026-11-20
 
 Owner direction: no PowerShell, and nothing builds legacy transports. Every

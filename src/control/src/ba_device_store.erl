@@ -99,6 +99,5 @@ path(Name) ->
 
 %% Live records never read/write device files, including old Buffee snapshots.
 transient(Name) ->
-    ba_settings:app(runtime_profile,legacy_apps)=:=buffee_control andalso
     lists:member(Name,[buffee_authority,buffee_member,buffee_desks,buffee_time_policy,
                       buffee_time_cache,audio_subscriptions,buffee_exclusions]).

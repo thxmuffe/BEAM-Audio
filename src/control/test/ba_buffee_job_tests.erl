@@ -9,11 +9,12 @@ jobs_test_() ->
         fun control_failure_cleanup/0,fun worker_failure_retry/0,fun bounded_deduplication/0]}.
 setup() ->
     {ok,_} = application:ensure_all_started(crypto),
+    Consent = ba_test_consent:start(#{dsp => true}),
     {ok,Sup} = ba_device_sup:start_link(),
     Control = spawn(fun control/0), true = register(ba_buffee_control,Control),
     ok = ba_device_handler:set_test_contract(manager(),contract(),1),
-    {Sup,Control}.
-cleanup({Sup,Control}) -> gen_server:stop(Sup),exit(Control,kill).
+    {Sup,Control,Consent}.
+cleanup({Sup,Control,Consent}) -> gen_server:stop(Sup),exit(Control,kill),ba_test_consent:stop(Consent).
 control() ->
     receive
         {'$gen_call',From,{run,Fun}} -> gen_server:reply(From,Fun()),control();

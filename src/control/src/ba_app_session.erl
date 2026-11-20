@@ -12,40 +12,23 @@ configure() ->
         "windows" -> configure(#{platform => windows}),ok=ba_windows_native_host:start();
         _ -> ok
     end.
-configure(#{platform := Platform}=Options) ->
+configure(#{platform := Platform}) ->
     %% Native AAC is the only audio path; output is the native stream host.
     Capture=case Platform of mac -> ba_mac_native_audio;windows -> ba_windows_native_audio;_ -> ba_no_capture end,
     application:set_env(ba_core,audio_automation,true),
     application:set_env(ba_core,audio_capture_adapter,Capture),
-    application:set_env(ba_core,buffee_default_permissions,permissions()),
-    case maps:find(consent,Options) of
-        {ok,#{speaker := S,microphone := M,broadcast := B}=C} when is_boolean(S),is_boolean(M),is_boolean(B) ->
-            case ba_session_scope:whereis(ba_device_config) of
-                undefined -> application:set_env(ba_core,audio_consent,C);
-                _ -> ba_device_config:change(C,#{})
-            end;
-        error -> ok
-    end.
+    application:set_env(ba_core,buffee_default_permissions,permissions()).
 
 permissions() -> [<<"capabilities_read">>,<<"job_offer">>,<<"status_read">>,
     <<"stream_read">>,<<"stream_subscribe">>,<<"time_read">>].
 consent() ->
     case ba_session_scope:whereis(ba_device_config) of
-        undefined -> case ba_settings:app(runtime_profile,legacy_apps) of
-            buffee_control -> #{speaker => false,microphone => false,broadcast => false,calibrate_microphone => false,calibrate_speaker => false,dsp => false};
-            _ -> ba_settings:app(audio_consent,#{speaker => true,microphone => false,broadcast => false}) end;
+        undefined -> #{speaker => false,microphone => false,broadcast => false,calibrate_microphone => false,calibrate_speaker => false,dsp => false};
         _ -> C=ba_device_config:consent(),
-             case ba_settings:app(runtime_profile,legacy_apps) of
-                 buffee_control -> B=try ba_buffee:broadcast() catch exit:_ -> false end,C#{broadcast => B};
-                 _ -> C
-             end
+             B=try ba_buffee:broadcast() catch exit:_ -> false end,C#{broadcast => B}
     end.
-capability(broadcast,B) when is_boolean(B) ->
-    case ba_settings:app(runtime_profile,legacy_apps) of
-        buffee_control -> ba_buffee:broadcast(B);
-        _ -> ba_device_config:change(#{broadcast => B},#{})
-    end;
-capability(Key,B) when (Key=:=speaker orelse Key=:=microphone orelse Key=:=broadcast),is_boolean(B) ->
+capability(broadcast,B) when is_boolean(B) -> ba_buffee:broadcast(B);
+capability(Key,B) when (Key=:=speaker orelse Key=:=microphone),is_boolean(B) ->
     ba_device_config:change(#{Key => B},#{});
 capability(_,_) -> {error,invalid_capability}.
 exclusions() -> ba_device_store:load(buffee_exclusions,[]).

@@ -67,7 +67,7 @@ a missing renamed dependency.
 Run from the BEAM-Audio root unless noted. Every integration runtime is unnamed,
 uses a temporary state directory and fresh test identity, and exits at completion.
 No product app or audio device is opened. Local service/socket access is required.
-Use the existing compiled control, Reception and BeamTransport dependencies;
+Use the existing compiled control and Reception dependencies;
 do not launch an installed app to supply them.
 
 From `src/control`, compile and run every unit/protocol test (223 on 2026-11-17):

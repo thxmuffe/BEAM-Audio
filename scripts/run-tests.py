@@ -91,18 +91,12 @@ def catalog(product):
                 continue
             command = [sys.executable, str(p)] if python else ['escript', str(p)]
             platform, required, modules = '', [], ()
-            if relative.startswith(('tests/macOS/', 'tests/apple/')):
+            if relative.startswith('tests/apple/'):
                 platform = 'darwin'
             if relative.startswith('tests/Windows/') or relative == 'tests/ReceptionDesk/release-smoke.py':
                 platform = 'win32'
                 required.append(CORE/'builds/Services/ReceptionDesk/bin/reception_desk.bat'
                     if relative == 'tests/ReceptionDesk/release-smoke.py' else product/'builds/Windows/OpenSound')
-            if relative.startswith('tests/macOS/') or relative == 'tests/ReceptionDesk/smoke.py':
-                platform = 'darwin'
-                required.append(product/'builds/macOS/OpenSound.app/Contents/Resources/runtime')
-            if relative in {'tests/ReceptionDesk/relay-smoke.py', 'tests/ReceptionDesk/tls-smoke.py',
-                            'tests/ReceptionDesk/public-smoke.py'}:
-                required.append(product/'builds/Windows/OpenSound')
             if relative.startswith('tests/control/cli-') or p.name == 'desktop-web-instances-smoke.py':
                 platform = 'darwin'
             if relative.startswith(('tests/control/', 'tests/transport/')):

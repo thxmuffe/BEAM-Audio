@@ -18,7 +18,7 @@ def load(name,path):
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     return module
 control=load('control',HERE/'buffee-control-smoke.py')
-relay=load('relay',HERE.parent/'ReceptionDesk/relay-smoke.py')
+relay=load('relay',HERE.parent/'ReceptionDesk/local_reception.py')
 relay.ERL=Path(shutil.which('erl'))
 ADMIN={'grant','on_air','end_session'}
 

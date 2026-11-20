@@ -45,17 +45,12 @@ preset_patch(#{auto_accept := Auto,choices := Choices}) ->
     maps:from_list([{K,Auto orelse maps:get(K,Choices,ask)=:=always} || K <- ?PROTECTED]).
 %% Read-only, fail-closed view for hot execution paths. Only this owner writes it.
 allowed(Key) ->
-    case ba_settings:app(runtime_profile,legacy_apps) of
-        buffee_control ->
-            try ets:lookup(?MODULE,permissions) of
-                [{permissions,C,_,Registry}] -> Registry=/=undefined andalso Registry=:=whereis(ba_permission_pg) andalso maps:get(Key,C,false)=:=true;
-                _ -> false
-            catch error:badarg -> false end;
-        _ -> true % Explicit legacy compatibility profile; not the secure path.
-    end.
+    try ets:lookup(?MODULE,permissions) of
+        [{permissions,C,_,Registry}] -> Registry=/=undefined andalso Registry=:=whereis(ba_permission_pg) andalso maps:get(Key,C,false)=:=true;
+        _ -> false
+    catch error:badarg -> false end.
 init([]) ->
     ets:new(?MODULE,[named_table,protected,set,{read_concurrency,true}]),
-    Secure=ba_settings:app(runtime_profile,legacy_apps)=:=buffee_control,
     %% The Device starts from its settings: every grant, ON AIR and the standing
     %% choices. Only a first start begins with everything off. Undo history lives
     %% only while the Device runs.
@@ -64,7 +59,7 @@ init([]) ->
     %% (advanced); a new one starts in the default preset (tight in the apps).
     Existing=lists:any(fun(K) -> ba_settings:get(K,undefined)=/=undefined end,[automation,consent,contacts]),
     Preset=case maps:get(preset,Gates0,undefined) of
-        undefined -> case Existing orelse not Secure of
+        undefined -> case Existing of
             true -> advanced;
             false -> ba_settings:app(device_default_preset,tight)
         end;
@@ -76,11 +71,7 @@ init([]) ->
             {Gates0#{preset => Preset,auto_accept => maps:get(auto_accept,V),auto_grant => maps:get(auto_grant,V),choices => maps:get(choices,V)},preset_patch(V)};
         _ -> {Gates0,#{}}
     end,
-    Default0=case Secure of
-        true -> maps:from_keys([broadcast|?PROTECTED],false);
-        false -> ba_settings:app(audio_consent,#{speaker => true,microphone => false,broadcast => false})
-    end,
-    Default=maps:merge(Default0,Fresh),
+    Default=maps:merge(maps:from_keys([broadcast|?PROTECTED],false),Fresh),
     Saved=ba_settings:get(consent,undefined),
     Consent=case valid_config(Saved) of true -> Saved;false -> Default end,
     S=#{format => 1,revision => 0,cursor => 0,seen => [],
@@ -211,7 +202,7 @@ handle_call(Command,_,S) ->
           error:function_clause -> {reply,{error,invalid_configuration},S}
     end.
 commit(Old,Next) ->
-    case ba_settings:app(runtime_profile,legacy_apps)=/=buffee_control orelse maps:get(permission_registry,Old,whereis(ba_permission_pg))=:=whereis(ba_permission_pg) of
+    case maps:get(permission_registry,Old,whereis(ba_permission_pg))=:=whereis(ba_permission_pg) of
         true -> commit_registered(Old,Next);false -> {reply,{error,permission_registry_lost},Old}
     end.
 commit_registered(Old,Next) ->
@@ -285,13 +276,10 @@ history_edit(Old,New) -> case history_allowed(current(Old),current(New)) of true
 persist(S) -> try ba_settings:put(consent,current(S)) of ok -> ok;_ -> {error,configuration_save_failed}
               catch _:_ -> {error,configuration_save_failed} end.
 token(Key) ->
-    case ba_settings:app(runtime_profile,legacy_apps) of
-        buffee_control -> try ets:lookup(?MODULE,permissions) of
-            [{permissions,C,T,Registry}] -> case Registry=/=undefined andalso Registry=:=whereis(ba_permission_pg) andalso maps:get(Key,C,false) of true -> {ok,maps:get(Key,T)};false -> {error,consent_required} end;
-            _ -> {error,consent_required}
-        catch error:badarg -> {error,consent_required} end;
-        _ -> {ok,legacy}
-    end.
+    try ets:lookup(?MODULE,permissions) of
+        [{permissions,C,T,Registry}] -> case Registry=/=undefined andalso Registry=:=whereis(ba_permission_pg) andalso maps:get(Key,C,false) of true -> {ok,maps:get(Key,T)};false -> {error,consent_required} end;
+        _ -> {error,consent_required}
+    catch error:badarg -> {error,consent_required} end.
 publish(S) ->
     C=current(S),{Previous,Tokens}=case ets:lookup(?MODULE,permissions) of
         [{permissions,PC,PT,_}] -> {PC,PT};[] -> {#{},#{}} end,
@@ -302,7 +290,6 @@ changed() ->
     Names=[ba_device_handler|[{global,N} || {ba_session,_,ba_device_handler}=N <- global:registered_names()]],
     [gen_server:cast(Name,audio_changed) || Name <- Names],ok.
 history_allowed(Old,New) ->
-    ba_settings:app(runtime_profile,legacy_apps)=/=buffee_control orelse
     not lists:any(fun(K) -> maps:get(K,New,false) andalso not maps:get(K,Old,false) end,?PROTECTED).
 auto(S) -> maps:get(auto_accept,S,false).
 stored(Key,S) -> maps:get(Key,maps:get(choices,S,#{}),ask).

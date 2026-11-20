@@ -1,24 +1,11 @@
-%% Outbound, authenticated WebSocket transport. No distribution ports required.
+%% Outbound, authenticated WebSocket connection to one Reception, signed with
+%% this Device's identity. Owners (ba_buffee_desks of each Session) attach
+%% mailboxes and watches by pid; events go to them as {relay,URL,Event}.
 -module(ba_relay).
 -behaviour(gen_server).
--export([start_link/0, start_link/1, id/0, enabled/0, url/0, valid_url/1, open/2, close/1, send/3, watch/1, status/0, reconnect/0]).
+-export([start_link/1, valid_url/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
-start_link() -> start_link(#{owner => ba_buffees, delivery => buffee}).
-%% A native connector can receive mailbox envelopes without the buffee decoder.
-start_link(Options) ->
-    case maps:get(register,Options,true) of
-        true -> gen_server:start_link({local,?MODULE},?MODULE,Options,[]);
-        false -> gen_server:start_link(?MODULE,Options,[])
-    end.
-id() -> persistent_term:get({?MODULE, id}, node()).
-enabled() -> is_binary(id()).
-url() -> persistent_term:get({?MODULE, url}, undefined).
-open(Buffee, Cap) -> gen_server:cast(?MODULE, {open, Buffee, Cap}).
-close(Cap) -> gen_server:cast(?MODULE, {close, Cap}).
-watch(Nodes) -> gen_server:cast(?MODULE, {watch, Nodes}).
-send(To, Cap, Payload) -> gen_server:call(?MODULE, {send, To, Cap, Payload}, 2000).
-status() -> gen_server:call(?MODULE, status).
-reconnect() -> gen_server:cast(?MODULE, reconnect).
+start_link(Options) -> gen_server:start_link(?MODULE,Options,[]).
 valid_url(URL) when is_binary(URL), byte_size(URL) =< 512 ->
     try
         #{scheme := Scheme, host := Host} = Map = uri_string:parse(URL),
@@ -31,41 +18,15 @@ valid_url(URL) when is_binary(URL), byte_size(URL) =< 512 ->
         true
     catch _:_ -> false end;
 valid_url(_) -> false.
-init(#{owner := Owner, delivery := Delivery} = Options) ->
-    DefaultURL = case ba_settings:app(reception_desk_url) of
-        {ok, U} -> U;
-        undefined -> case ba_settings:env("BA_RECEPTION_DESK_URL") of
-            false -> ba_settings:app(default_reception_desk_url, undefined);
-            "" -> undefined;
-            V -> list_to_binary(V)
-        end
-    end,
-    URL = maps:get(url,Options,DefaultURL),
-    {Identity, Private} = case URL of
-        undefined -> {node(), undefined};
-        _ ->
-            true = valid_url(URL),
-            {Pub, Priv} = case Delivery of
-                raw -> case maps:find(identity,Options) of
-                    {ok,Keys} -> Keys;
-                    error -> ba_device_store:identity()
-                end;
-                buffee -> crypto:generate_key(eddsa, ed25519)
-            end,
-            {binary:encode_hex(Pub), Priv}
-    end,
-    case maps:get(register,Options,true) of
-        true -> persistent_term:put({?MODULE,id},Identity),persistent_term:put({?MODULE,url},URL);
-        false -> ok
-    end,
-    case URL of undefined -> ok; _ -> self() ! connect end,
-    {ok, #{owner => Owner, delivery => Delivery,
-           max_owner_queue => maps:get(max_owner_queue,Options,infinity),
-           identity => Identity,tag => maps:get(tag,Options,undefined),
-           url => URL, private => Private, conn => undefined, stream => undefined,
-           ready => false, boxes => #{}, lookups => #{}, watch => [], online => [], backoff => 500, error => null}}.
+init(#{owner := Owner, url := URL}) ->
+    true = valid_url(URL),
+    {Pub, Private} = ba_device_store:identity(),
+    self() ! connect,
+    {ok, #{owner => Owner, identity => binary:encode_hex(Pub), url => URL, private => Private,
+           conn => undefined, stream => undefined, ready => false, boxes => #{}, lookups => #{},
+           watch => [], online => [], backoff => 500, error => null}}.
 handle_call(status, _, S) ->
-    {reply, #{id => name(maps:get(identity,S)),url => case maps:get(url,S) of undefined -> null; U -> U end,
+    {reply, #{id => maps:get(identity,S),url => maps:get(url,S),
               connected => maps:get(ready, S), online => maps:get(online, S), watched => maps:get(watch, S), error => maps:get(error, S),diagnostics => ba_diagnostics:view(S)}, S};
 handle_call({send, To, Cap, Payload}, _, #{ready := true} = S) ->
     Frame = #{op => <<"send">>, to => To, mailbox => Cap, payload => Payload,
@@ -100,16 +61,8 @@ handle_cast({close, Cap}, #{boxes := Boxes} = S) ->
 handle_cast({watch, Nodes}, S) ->
     Next = S#{watch := lists:sublist(lists:usort([N || N <- Nodes, is_binary(N)]), 256)},
     maybe_ws(#{op => <<"watch">>, nodes => maps:get(watch, Next)}, Next), {noreply, Next};
-handle_cast(reconnect, #{conn := Pid} = S) ->
-    case Pid of undefined -> ok; _ -> try gun:close(Pid) catch _:_ -> ok end end,
-    notify(disconnected,S),
-    self() ! connect,
-    changed({noreply,S#{conn := undefined,stream := undefined,ready := false,
-        online := [],backoff := 500,error := null}},S);
 handle_cast(_, S) -> {noreply, S}.
-handle_info(Message, S) -> changed(handle_info_event(Message, S), S).
-
-handle_info_event(connect, #{conn := undefined, url := URL} = S) when is_binary(URL) ->
+handle_info(connect, #{conn := undefined, url := URL} = S) when is_binary(URL) ->
     #{scheme := Scheme, host := Host} = U = uri_string:parse(URL),
     TLS = Scheme =:= <<"wss">>, Port = maps:get(port, U, case TLS of true -> 443; false -> 80 end),
     try
@@ -127,22 +80,22 @@ handle_info_event(connect, #{conn := undefined, url := URL} = S) when is_binary(
         erlang:send_after(10000, self(), {handshake_timeout, Pid}),
         {noreply, S#{conn := Pid}}
     catch _:_ -> {noreply, retry(connect_failed,S)} end;
-handle_info_event({gun_up, Pid, http}, #{conn := Pid} = S) ->
+handle_info({gun_up, Pid, http}, #{conn := Pid} = S) ->
     Stream = gun:ws_upgrade(Pid, "/relay/v1", [],
         #{max_frame_size => 131072, compress => false}),
     {noreply, S#{stream := Stream}};
-handle_info_event({gun_upgrade, Pid, Stream, [<<"websocket">>], _}, #{conn := Pid, stream := Stream} = S) -> {noreply, S};
-handle_info_event({gun_ws, Pid, Stream, {text, Text}}, #{conn := Pid, stream := Stream} = S) when byte_size(Text) =< 131072 ->
+handle_info({gun_upgrade, Pid, Stream, [<<"websocket">>], _}, #{conn := Pid, stream := Stream} = S) -> {noreply, S};
+handle_info({gun_ws, Pid, Stream, {text, Text}}, #{conn := Pid, stream := Stream} = S) when byte_size(Text) =< 131072 ->
     try {noreply, incoming(json:decode(Text), S)} catch _:_ -> {noreply, retry(invalid_desk_message,S)} end;
-handle_info_event({gun_down, Pid, _, Reason, _}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
-handle_info_event({'DOWN', _, process, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(connection_closed,S)};
-handle_info_event({'DOWN',_,process,Owner,_},S) -> handle_cast({detach,Owner},S);
-handle_info_event({handshake_timeout, Pid}, #{conn := Pid, ready := false} = S) -> {noreply, retry(handshake_timeout,S)};
-handle_info_event({gun_error, Pid, _, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
-handle_info_event({gun_error, Pid, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
-handle_info_event({gun_response, Pid, _, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(http_upgrade_rejected,S)};
-handle_info_event({lookup_timeout,Request},S) -> {noreply,lookup_reply(Request,{error,lookup_timeout},S)};
-handle_info_event(_, S) -> {noreply, S}.
+handle_info({gun_down, Pid, _, Reason, _}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
+handle_info({'DOWN', _, process, Pid, _}, #{conn := Pid} = S) -> {noreply, retry(connection_closed,S)};
+handle_info({'DOWN',_,process,Owner,_},S) -> handle_cast({detach,Owner},S);
+handle_info({handshake_timeout, Pid}, #{conn := Pid, ready := false} = S) -> {noreply, retry(handshake_timeout,S)};
+handle_info({gun_error, Pid, _, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
+handle_info({gun_error, Pid, Reason}, #{conn := Pid} = S) -> {noreply, retry(Reason,S)};
+handle_info({gun_response, Pid, _, _, _, _}, #{conn := Pid} = S) -> {noreply, retry(http_upgrade_rejected,S)};
+handle_info({lookup_timeout,Request},S) -> {noreply,lookup_reply(Request,{error,lookup_timeout},S)};
+handle_info(_, S) -> {noreply, S}.
 incoming(#{<<"op">> := <<"challenge">>, <<"v">> := 1, <<"nonce">> := Nonce}, S)
         when is_binary(Nonce), byte_size(Nonce) =:= 64 ->
     Sig = crypto:sign(eddsa, none, <<"beamaudio-desk/v1:", Nonce/binary>>, [maps:get(private, S), ed25519]),
@@ -153,20 +106,8 @@ incoming(#{<<"op">> := <<"ready">>, <<"v">> := 1, <<"id">> := Id}, S) ->
     ws(#{op => <<"watch">>, nodes => maps:get(watch, S)}, Next),
     notify(connected, Next), Next;
 incoming(#{<<"op">> := <<"delivery">>, <<"from">> := From, <<"mailbox">> := Cap, <<"payload">> := Payload}, #{boxes := Boxes} = S) ->
-    Delivery = case maps:find(Cap, Boxes) of
-        {ok, Buffee} ->
-            case maps:get(delivery, S) of
-                raw ->
-                    case Payload of
-                        #{<<"buffee">> := Buffee} -> notify({delivery, From, Cap, Payload}, S);
-                        _ -> ok
-                    end;
-                buffee ->
-                    case ba_buffee_wire:decode(Payload) of
-                        {ok, Buffee, Event} -> notify({delivery, From, Event}, S);
-                        _ -> ok
-                    end
-            end;
+    Delivery = case {maps:find(Cap, Boxes), Payload} of
+        {{ok, Buffee}, #{<<"buffee">> := Buffee}} -> notify({delivery, From, Cap, Payload}, S);
         _ -> ok
     end,
     case Delivery of {error,overloaded} -> ba_diagnostics:count(desk_owner_overloaded,S);_ -> S end;
@@ -203,32 +144,16 @@ ws(Msg, #{conn := Pid, stream := Stream}) ->
             end;
         false -> {error, too_large}
     end.
-notify({delivery,_,Cap,_}=Event,#{mailbox_owners := Owners}=S) ->
-    case maps:find(Cap,Owners) of
-        {ok,P} -> deliver(P,Event,S);
-        error -> notify_default(Event,S)
-    end;
-notify(Event,#{mailbox_owners := Owners}=S) ->
-    [deliver(P,Event,S) || P <- lists:usort(maps:values(Owners))],ok;
-notify(Event,S) -> notify_default(Event,S).
-deliver(P,Event,S) ->
+%% Mailbox deliveries go to that mailbox's owner; other events to every owner.
+notify({delivery,_,Cap,_}=Event,S) ->
+    deliver(maps:get(Cap,maps:get(mailbox_owners,S,#{}),maps:get(owner,S)),Event,S);
+notify(Event,S) ->
+    [deliver(P,Event,S) || P <- lists:usort([maps:get(owner,S)|maps:values(maps:get(mailbox_owners,S,#{}))])],ok.
+deliver(P,Event,#{url := URL}) ->
     case process_info(P,message_queue_len) of
-        {message_queue_len,N} when N<64 -> P ! owner_message(Event,S),ok;
+        {message_queue_len,N} when N<64 -> P ! {relay,URL,Event},ok;
         _ -> {error,overloaded}
     end.
-notify_default({delivery,_,_,_} = Event, #{owner := Owner} = S) when is_pid(Owner) ->
-    Limit = maps:get(max_owner_queue,S,infinity),
-    case process_info(Owner,message_queue_len) of
-        {message_queue_len,N} when N < Limit -> Owner ! owner_message(Event,S);
-        _ -> {error,overloaded}
-    end;
-notify_default(Event,#{owner := Owner} = S) when is_pid(Owner) -> Owner ! owner_message(Event,S);
-notify_default(Event,#{owner := Name} = S) ->
-    case whereis(Name) of undefined -> {error,unavailable}; Pid -> notify_default(Event,S#{owner := Pid}) end.
-owner_message(Event,S) ->
-    case maps:get(tag,S,undefined) of undefined -> {relay,Event}; Tag -> {relay,Tag,Event} end.
-name(N) when is_atom(N) -> atom_to_binary(N);
-name(N) -> N.
 tls_options() ->
     Setting = case ba_settings:env("BA_RELAY_CA_FILE") of
         false -> ba_settings:app(relay_cacertfile);
@@ -245,12 +170,3 @@ terminate(_, #{conn := Pid}) -> case Pid of undefined -> ok; _ -> try gun:close(
 format_status(Status) ->
     maps:map(fun(state,S) -> maps:with([url,ready,backoff,error],S);
                 (log,_) -> []; (_,_) -> redacted end,Status).
-
-changed({noreply,Next}, Old) ->
-    notify_changed(Old,Next), {noreply,Next};
-changed(Result, _) -> Result.
-notify_changed(Old,Next) ->
-    View = fun(S) -> maps:with([ready,error,online],S) end,
-    case View(Old) =:= View(Next) of
-        true -> ok; false -> ba_events:notify(relay)
-    end.

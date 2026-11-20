@@ -32,11 +32,8 @@ supervisor_kill_stops_native_test() -> fixture(fun(Args,_) ->
 end).
 
 registry_loss_stops_native_test() -> fixture(fun(Args,_) ->
-    Registry=spawn(fun() -> receive quit -> ok end end),true=register(ba_permission_pg,Registry),
-    try
-        {ok,P}=ba_native_media_session:start_link(Args),unlink(P),Ref=monitor(process,P),prepared(),
-        exit(Registry,kill),stopped(),down(Ref,P)
-    after exit(Registry,kill) end
+    {ok,P}=ba_native_media_session:start_link(Args),unlink(P),Ref=monitor(process,P),prepared(),
+    exit(whereis(ba_permission_pg),kill),stopped(),down(Ref,P)
 end).
 
 revocation_waits_for_native_ack_test() -> fixture(fun(Args,_) ->
@@ -50,11 +47,14 @@ prepared() -> receive native_prepared -> ok after 2000 -> error(missing_prepare)
 stopped() -> receive native_stopped -> ok after 2000 -> error(missing_stop_ack) end.
 down(Ref,P) -> receive {'DOWN',Ref,process,P,_} -> ok after 2000 -> error(worker_survived_owner) end.
 fixture(F) ->
-    Saved=[{K,os:getenv(K)} || K <- ["BA_NATIVE_STREAM_TRIAL","BA_NATIVE_STREAM_PORT"]],
-    Old=[{K,application:get_env(ba_core,K)} || K <- [runtime_profile,audio_consent,audio_clock_adapter]],
-    application:set_env(ba_core,runtime_profile,legacy_apps),application:set_env(ba_core,audio_consent,#{speaker => true}),
+    Saved=[{K,os:getenv(K)} || K <- ["BA_NATIVE_STREAM_PORT","BA_STATE_DIR"]],
+    Old=[{K,application:get_env(ba_core,K)} || K <- [audio_clock_adapter]],
     application:set_env(ba_core,audio_clock_adapter,?MODULE),
-    os:putenv("BA_NATIVE_STREAM_TRIAL","1"),
+    %% Playback consent granted the one way: the Device configuration owner.
+    os:unsetenv("BA_STATE_DIR"),
+    {ok,PG}=pg:start_link(ba_permission_pg),unlink(PG),
+    {ok,Config}=ba_device_config:start_link(),unlink(Config),
+    ok=ba_device_config:change(#{speaker => true},#{}),
     {ok,L}=gen_tcp:listen(0,[binary,{packet,4},{active,false},{ip,{127,0,0,1}}]),
     {ok,{_,Port}}=inet:sockname(L),os:putenv("BA_NATIVE_STREAM_PORT",integer_to_list(Port)),
     Parent=self(),{Server,SR}=spawn_monitor(fun() ->
@@ -72,6 +72,7 @@ fixture(F) ->
     try F(Args,Owner),receive {'DOWN',SR,process,Server,normal} -> ok after 2000 -> error(server_failed) end
     after
         exit(Owner,kill),exit(Server,kill),gen_tcp:close(L),
+        [begin Ref=monitor(process,P),exit(P,kill),receive {'DOWN',Ref,_,_,_} -> ok end end || P <- [Config,PG]],
         [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Saved],
         [case V of undefined -> application:unset_env(ba_core,K);{ok,X} -> application:set_env(ba_core,K,X) end || {K,V} <- Old]
     end.

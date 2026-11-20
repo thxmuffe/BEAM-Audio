@@ -5,42 +5,13 @@
 start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    case ba_settings:app(runtime_profile,legacy_apps) of
-        buffee_control ->
-            ok=ba_session_scope:init(),
-            {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
-                 [#{id => ba_settings,start => {ba_settings,start_link,[]}},
-                  #{id => ba_permission_pg,start => {pg,start_link,[ba_permission_pg]}},
-                  #{id => ba_device_config,start => {ba_device_config,start_link,[]}},
-                  #{id => ba_contacts,start => {ba_contacts,start_link,[]}},
-                  #{id => ba_desk_connections_sup,start => {ba_desk_connections_sup,start_link,[]},type => supervisor,shutdown => infinity},
-                  #{id => ba_buffee_desks,start => {ba_buffee_desks,start_link,[]}},
-                  #{id => ba_buffee,start => {ba_buffee,start_link,[]}},
-                  #{id => ba_sessions,start => {ba_sessions,start_link,[]}}]}};
-        _ -> existing_profile()
-    end.
-
-existing_profile() ->
-    %% Restart chat too if its process-group scope disappears.
-    Core = [
-        #{id => ba_settings, start => {ba_settings, start_link, []}},
-        #{id => ba_pg, start => {pg, start_link, [ba_pg]}},
-        #{id => ba_chat, start => {ba_chat, start_link, []}}
-    ],
-    Compatibility = [
-        #{id => ba_discovery, start => {ba_discovery, start_link, []}},
-        #{id => ba_relay, start => {ba_relay, start_link, []}},
-        #{id => ba_direct, start => {ba_direct, start_link, []}},
-        #{id => ba_network, start => {ba_network, start_link, []}},
-        #{id => ba_buffees, start => {ba_buffees, start_link, []}}
-    ],
-    Children = case ba_settings:app(runtime_profile, legacy_apps) of
-        native_cluster -> Core ++ case ba_settings:app(native_desk, false) of
-            true -> [#{id => ba_legacy_cluster_desk, start => {ba_legacy_cluster_desk, start_link, []}}];
-            false -> []
-        end;
-        legacy_apps -> Core ++ Compatibility
-    end,
-    Clock = #{id => ba_buffee_clock_sup, start => {ba_buffee_clock_sup, start_link, []},
-              type => supervisor, shutdown => infinity},
-    {ok, {#{strategy => rest_for_one, intensity => 5, period => 10}, Children ++ [Clock]}}.
+    ok=ba_session_scope:init(),
+    {ok,{#{strategy => one_for_one,intensity => 5,period => 10},
+         [#{id => ba_settings,start => {ba_settings,start_link,[]}},
+          #{id => ba_permission_pg,start => {pg,start_link,[ba_permission_pg]}},
+          #{id => ba_device_config,start => {ba_device_config,start_link,[]}},
+          #{id => ba_contacts,start => {ba_contacts,start_link,[]}},
+          #{id => ba_desk_connections_sup,start => {ba_desk_connections_sup,start_link,[]},type => supervisor,shutdown => infinity},
+          #{id => ba_buffee_desks,start => {ba_buffee_desks,start_link,[]}},
+          #{id => ba_buffee,start => {ba_buffee,start_link,[]}},
+          #{id => ba_sessions,start => {ba_sessions,start_link,[]}}]}}.

@@ -31,8 +31,7 @@ main() ->
                 application:load(ba_core),
                 application:set_env(ba_core,restore_buffee_on_start,true),
                 application:set_env(ba_core,buffee_default_permissions,ba_app_session:permissions()),
-                application:set_env(ba_core,audio_consent,#{speaker => false,microphone => false,broadcast => false}),
-                {ok,_}=ba_runtime:start(buffee_control);
+                {ok,_}=ba_runtime:start();
             false -> ok
         end,
         application:set_env(ba_device_web,options,Options),

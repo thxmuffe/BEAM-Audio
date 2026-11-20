@@ -103,11 +103,23 @@ def imports(path):
     return names
 
 
+def remove(folder):
+    """Delete a helper folder whole or not at all. Windows refuses to delete a
+    running executable, so removing the helper first proves nothing in the
+    folder is loaded before any DLL or plugin is touched."""
+    if not folder.exists():
+        return
+    try:
+        (folder / 'ba_native_stream.exe').unlink(missing_ok=True)
+    except OSError:
+        raise RuntimeError(f'{folder} is in use. Stop the Devices using it (app, Web UI, CLI) and build again.')
+    shutil.rmtree(folder)
+
+
 def package(base, helper):
     bin_dir, plugin_dir = base / 'bin', base / 'lib/gstreamer-1.0'
     available = {p.name.lower(): p for p in bin_dir.glob('*.dll')}
-    if OUT.exists():
-        shutil.rmtree(OUT)
+    remove(OUT)
     (OUT / 'plugins').mkdir(parents=True)
     shutil.copy2(helper, OUT / helper.name)
     queue = imports(helper)

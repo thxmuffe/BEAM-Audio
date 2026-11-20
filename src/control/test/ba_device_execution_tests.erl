@@ -3,10 +3,8 @@
 
 execution_gates_test() ->
     Env=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
-    Old=application:get_env(ba_core,runtime_profile),
     Dir=filename:join("/tmp","ba-gates-"++integer_to_list(erlang:unique_integer([positive]))),
     ok=file:make_dir(Dir),os:putenv("BA_STATE_DIR",Dir),os:putenv("BA_IDENTITY_SEED",lists:duplicate(64,$C)),
-    application:set_env(ba_core,runtime_profile,buffee_control),
     {ok,PG}=pg:start_link(ba_permission_pg),unlink(PG),
     {ok,Config}=ba_device_config:start_link(),unlink(Config),
     try
@@ -27,6 +25,5 @@ execution_gates_test() ->
     after
         case is_process_alive(Config) of true -> gen_server:stop(Config);false -> ok end,
         gen_server:stop(PG),file:del_dir_r(Dir),
-        [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Env],
-        case Old of undefined -> application:unset_env(ba_core,runtime_profile);{ok,V} -> application:set_env(ba_core,runtime_profile,V) end
+        [case V of false -> os:unsetenv(K);_ -> os:putenv(K,V) end || {K,V} <- Env]
     end.

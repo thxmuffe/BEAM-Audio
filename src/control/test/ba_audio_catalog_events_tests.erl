@@ -71,7 +71,10 @@ id() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
 fixture(F) ->
     A=binary:copy(<<"A">>,64),B=binary:copy(<<"B">>,64),Peers=[A,B],Parent=self(),
     Contexts=maps:from_list([{P,#{peer => P,session => id(),buffee => id(),deadline => erlang:monotonic_time(millisecond)+30000}} || P <- Peers]),
-    View=#{policy => #{peers => maps:from_list([{P,[stream_read]} || P <- Peers])}},
+    %% This Device holds on_air, the privilege a publication needs.
+    Seed=lists:duplicate(64,$E),{Pub,_}=crypto:generate_key(eddsa,ed25519,binary:decode_hex(list_to_binary(Seed))),
+    View=#{policy => #{peers => maps:from_list([{P,[stream_read]} || P <- Peers])},
+           device_privileges => #{binary:encode_hex(Pub) => [ba_session_privileges:wire(on_air)]}},
     Control=spawn(fun Loop() -> receive
         {'$gen_call',From,{audio_context,P}} -> gen_server:reply(From,{ok,maps:get(P,Contexts)}),Loop();
         {'$gen_call',From,{audio_message,P,Id,Payload}} ->
@@ -79,12 +82,12 @@ fixture(F) ->
     end end),
     Membership=spawn(fun Loop() -> receive {'$gen_call',From,current} -> gen_server:reply(From,{ok,View}),Loop() end end),
     true=register(ba_buffee_control,Control),true=register(ba_buffee_membership,Membership),
-    Old=application:get_env(ba_core,runtime_profile),StateDir=os:getenv("BA_STATE_DIR"),
-    application:set_env(ba_core,runtime_profile,legacy_apps),os:unsetenv("BA_STATE_DIR"),
+    StateDir=os:getenv("BA_STATE_DIR"),os:unsetenv("BA_STATE_DIR"),
+    OldSeed=os:getenv("BA_IDENTITY_SEED"),os:putenv("BA_IDENTITY_SEED",Seed),
     S=#{sources => #{},offers => #{},subscriptions => #{},providers => #{},catalogs => #{},contracts => #{},
         control => Control,suspended => false,resume_after => undefined,rejected => 0},
     try F(S,Peers,Contexts) after
         unregister(ba_buffee_control),unregister(ba_buffee_membership),exit(Control,kill),exit(Membership,kill),
-        case Old of undefined -> application:unset_env(ba_core,runtime_profile);{ok,V} -> application:set_env(ba_core,runtime_profile,V) end,
-        case StateDir of false -> ok;_ -> os:putenv("BA_STATE_DIR",StateDir) end
+        case StateDir of false -> ok;_ -> os:putenv("BA_STATE_DIR",StateDir) end,
+        case OldSeed of false -> os:unsetenv("BA_IDENTITY_SEED");_ -> os:putenv("BA_IDENTITY_SEED",OldSeed) end
     end.

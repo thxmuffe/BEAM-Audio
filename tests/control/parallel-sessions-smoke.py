@@ -6,7 +6,7 @@ import subprocess,os,json,tempfile,socket,importlib.util,shutil,time,queue,threa
 core=Path(__file__).resolve().parents[2]
 output=core/'builds/intermediates/session-check';output.mkdir(parents=True,exist_ok=True)
 subprocess.run([shutil.which('erlc'),'-Werror','-o',str(output),str(core/'tests/control/ba_sessions_probe.erl')],check=True)
-spec=importlib.util.spec_from_file_location('relay',core/'tests/ReceptionDesk/relay-smoke.py');relay=importlib.util.module_from_spec(spec);spec.loader.exec_module(relay);relay.ERL=Path(shutil.which('erl'))
+spec=importlib.util.spec_from_file_location('relay',core/'tests/ReceptionDesk/local_reception.py');relay=importlib.util.module_from_spec(spec);spec.loader.exec_module(relay);relay.ERL=Path(shutil.which('erl'))
 class Device:
  def __init__(self,state,seed):
   self.q=queue.Queue();self.p=subprocess.Popen(['erl','+S','2','-noshell','-pa',str(output),*map(str,(core/'builds/intermediates/control/default/lib').glob('*/ebin')),'-s','ba_sessions_probe','main'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=dict(os.environ,BA_STATE_DIR=state,BA_IDENTITY_SEED=seed))

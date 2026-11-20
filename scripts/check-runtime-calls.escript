@@ -1,8 +1,7 @@
 #!/usr/bin/env escript
 %% Static BEAM import/export validation; this does not load target NIFs.
 main([Root]) ->
-    Files = lists:usort(filelib:wildcard(filename:join(Root,"lib/*/ebin/*.beam")) ++
-        filelib:wildcard(filename:join(Root,"native_lib/*/ebin/*.beam"))),
+    Files = filelib:wildcard(filename:join(Root,"lib/*/ebin/*.beam")),
     Exports = maps:from_list([begin {ok,{M,[{exports,E}]}}=beam_lib:chunks(P,[exports]),{M,E} end || P <- Files]),
     Core = filelib:wildcard(filename:join(Root,"lib/ba_core-*/ebin/*.beam")),
     case Core of [] -> io:format(standard_error,"No core BEAM modules under ~s~n",[Root]),halt(2); _ -> ok end,

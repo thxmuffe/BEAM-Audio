@@ -15,7 +15,7 @@ import signal
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / 'scripts/cli/beamaudio'
-spec = importlib.util.spec_from_file_location('relay_fixture', ROOT / 'tests/ReceptionDesk/relay-smoke.py')
+spec = importlib.util.spec_from_file_location('relay_fixture', ROOT / 'tests/ReceptionDesk/local_reception.py')
 relay = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(relay)
 relay.ERL = Path(shutil.which('erl'))

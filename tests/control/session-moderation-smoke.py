@@ -13,7 +13,7 @@ CORE = Path(__file__).resolve().parents[2]
 
 
 def main():
-    spec = importlib.util.spec_from_file_location('moderation_relay', CORE/'tests/ReceptionDesk/relay-smoke.py')
+    spec = importlib.util.spec_from_file_location('moderation_relay', CORE/'tests/ReceptionDesk/local_reception.py')
     relay = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(relay)
     otp = CORE/'builds/intermediates/Windows/otp/bin'

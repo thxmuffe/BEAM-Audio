@@ -8,8 +8,9 @@ device_handler_test_() ->
         fun worker_supervisor_crash/0,fun stale_events/0,fun bounded_history/0]}.
 setup() ->
     {ok,_} = application:ensure_all_started(crypto),
-    {ok,Sup} = ba_device_sup:start_link(), Sup.
-cleanup(Sup) -> gen_server:stop(Sup).
+    Consent = ba_test_consent:start(#{dsp => true}),
+    {ok,Sup} = ba_device_sup:start_link(), {Sup,Consent}.
+cleanup({Sup,Consent}) -> gen_server:stop(Sup),ba_test_consent:stop(Consent).
 test_cap() -> maps:get(<<"test">>,ba_device_handler:capabilities()).
 start(Duration) -> ba_device_handler:start(test,#{duration_ms => Duration}).
 pid(Id) ->

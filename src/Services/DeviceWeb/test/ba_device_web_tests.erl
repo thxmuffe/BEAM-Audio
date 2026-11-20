@@ -136,15 +136,13 @@ socket_bridge(#{dir := Dir}=C) ->
     after gen_tcp:close(L),file:delete(Path) end.
 
 direct_device(#{dir := Dir}=C) ->
-    Old=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED","BA_RECEPTION_DESK_URL"]],
+    Old=[{K,os:getenv(K)} || K <- ["BA_STATE_DIR","BA_IDENTITY_SEED"]],
     os:putenv("BA_STATE_DIR",Dir),
     os:putenv("BA_IDENTITY_SEED",binary_to_list(binary:encode_hex(crypto:strong_rand_bytes(32)))),
-    os:putenv("BA_RECEPTION_DESK_URL",""),
     application:load(ba_core),
     application:set_env(ba_core,audio_automation,false),
-    application:set_env(ba_core,audio_consent,#{speaker => false,microphone => false,broadcast => false}),
     try
-        {ok,_}=ba_runtime:start(buffee_control),
+        {ok,_}=ba_runtime:start(),
         URL=start(C,#{}),
         NativeListRequest = <<"native-list-request">>,
         NativeList = json:decode(ba_bridge:request(json:encode(

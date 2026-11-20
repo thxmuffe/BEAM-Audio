@@ -18,10 +18,6 @@ extern void *prim_buffer_nif_init(void), *prim_file_nif_init(void);
 extern void *zlib_nif_init(void), *zstd_nif_init(void);
 extern void *prim_socket_nif_init(void), *prim_net_nif_init(void);
 extern void *asn1rt_nif_nif_init(void), *crypto_nif_init(void);
-#ifdef BA_NATIVE_TRANSPORT
-extern void *ba_dtls_nif_init(void), *ba_srtp_nif_init(void);
-extern void *ba_crc_nif_init(void), *ex_sctp_nif_init(void);
-#endif
 
 StaticDriver driver_tab[] = {{&inet_driver_entry, 0}, {&ram_file_driver_entry, 0}, {NULL, 0}};
 void erts_init_static_drivers(void) {}
@@ -31,10 +27,6 @@ StaticNif erts_static_nif_tab[] = {
     {zlib_nif_init, 0, 0, NULL}, {zstd_nif_init, 0, 0, NULL},
     {prim_socket_nif_init, 0, 0, NULL}, {prim_net_nif_init, 0, 0, NULL},
     {asn1rt_nif_nif_init, 1, 0, NULL}, {crypto_nif_init, 1, 0, NULL},
-#ifdef BA_NATIVE_TRANSPORT
-    {ba_dtls_nif_init, 1, 0, NULL}, {ba_srtp_nif_init, 1, 0, NULL},
-    {ba_crc_nif_init, 1, 0, NULL}, {ex_sctp_nif_init, 1, 0, NULL},
-#endif
     {NULL, 0, 0, NULL}
 };
 /* Compatibility helper needed by the pinned device archive's errno object. */
@@ -78,7 +70,6 @@ void ba_beam_start(const char *root, const char *data_directory, uint16_t port) 
         "-sbwt", "none", "-MIscs", "128", "--", "-root", root,
         "-bindir", bindir, "-progname", "erl", "--", "-noshell", "-noinput",
         "-start_epmd", "false", "-boot", boot, "-pa", beams,
-        "-ba_core", "runtime_profile", "buffee_control",
         "-s", "ba_ios", "main", NULL};
     int count = 0;
     while (values[count]) count++;

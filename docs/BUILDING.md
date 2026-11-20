@@ -63,18 +63,14 @@ IDs, protocol names and Erlang module names are preserved.
 From BEAM-Audio:
 
 ```sh
-rebar3 compile
-python3 scripts/setup-host.py       # private Apple Silicon Elixir/Rust tools
-bash scripts/build-native.sh       # pinned WebRTC/SCTP dependencies + Erlang
-bash src/Tools/Inspector/build.sh
+./build.sh          # macOS, or Windows from Git Bash
 ```
 
-Requirements: OTP 29.1.2 / ERTS 17.1.1, rebar3, Xcode command-line tools, CMake,
-pkg-config and OpenSSL development libraries. Native preparation downloads pinned
-artifacts into ignored `builds/`; the Mac bootstrap does not install global tools.
-Core compile does not need OpenSound. Inspector packages core native dependencies
-with relocated SRTP/OpenSSL links into builds/Inspector/runtime/native_lib and
-uses a separately stored identity, independent of the product app bundle.
+On a Mac: OTP 29.1.2 / ERTS 17.1.1, rebar3 and Xcode command-line tools. On
+Windows the build fetches the pinned OTP/rebar3 itself. Pinned downloads go to the
+ignored `builds/`; nothing is installed globally. Core compile does not need
+OpenSound. There is no Elixir/Rust transport or legacy Inspector any more
+(removed 2026-11-20); use the CLI (`scripts/cli/beamaudio`) to inspect Devices.
 
 ## Mac and iPhone
 
@@ -137,14 +133,10 @@ these builds preserve adaptive playback and do not yet synchronize the speakers.
 The moved Render configuration is ready for the core repository layout; the live
 service's repository selection/deployment has not been changed.
 
-## Release analysis and packaged dependencies — 2026-11-05
+## Release analysis
 
-Desktop relx analysis runs before the native transport packager adds ExWebRTC,
-ExRTP, ExSDP and Elixir dependencies under `runtime/native_lib`. Thus its unresolved
-call warnings describe the thin intermediate release. They are not disabled.
 `scripts/check-runtime-calls.escript RUNTIME_ROOT` validates core BEAM imports
-against exports in both `lib` and `native_lib` without loading target NIFs. Mac
-product packaging and native iOS runtime preparation now fail on missing calls.
-This validates static exports, not native ABI compatibility or connection success.
-Desktop relx now includes SASL for OTP release-handler support, resolving the
-missing-SASL warning; this does not implement hot upgrades or appup files.
+against the exports under `lib` without loading target NIFs. Mac product
+packaging and iOS runtime preparation fail on missing calls. This validates static
+exports, not native ABI compatibility or connection success. Desktop relx
+includes SASL for OTP release-handler support; there are no hot upgrades.
