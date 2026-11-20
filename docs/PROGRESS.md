@@ -1,5 +1,17 @@
 # Current implementation and validation
 
+## Mac Web restart default — 2026-11-20
+
+- The Mac Web launcher now stops its existing named Web Device before starting
+  it with current code/assets, preserving saved identity, settings and remembered
+  Sessions. It uses the existing instance-checked CLI stop; native Mac/iPhone
+  apps are unaffected. Stale records still require verification and cleanup.
+- The reported failure was a stale `OpenSound/running.json`: its Unix socket
+  was absent and no process matched that Device's boot directory. Removed only
+  that verified record, then started the same saved Web Device successfully.
+  The local Web endpoint returned HTTP 200 and was opened in the browser.
+- Shell syntax and whitespace checks pass. No native app rebuild or deployment.
+
 ## Focused cleanup pass — 2026-11-20
 
 - Consolidated synchronous Session reads into one send/error/caller-bookkeeping

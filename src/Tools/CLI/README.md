@@ -48,9 +48,10 @@ it (time server or system clock) and how long ago, with the time server's error
 if it did not answer. Every Device reads UTC itself; see
 [Session time](../../../docs/SESSION_TIME.md).
 Run Both updates the native apps, not an already-running managed Web Device.
-To reload that Device's core code with its existing identity, stop its exact
-name (`scripts/cli/beamaudio stop device --devicename OpenSound`) and reopen the Web
-shortcut. Do not use `--next-instance` for an update.
+The Mac Web shortcut now stops the existing named Web Device and starts it again
+with its existing identity and newly built code. CLI users can do the same with
+`scripts/cli/beamaudio stop device --devicename OpenSound` followed by their
+original `new device` command. Do not use `--next-instance` for an update.
 
 One command exposes the declared public Device API, including commands that
 have no dedicated CLI switches:

@@ -1,5 +1,10 @@
 # Current plan
 
+Web startup (owner 2026-11-20): the Mac Web launcher now stops the existing
+named Web Device before starting it with rebuilt code and the same saved
+identity/settings. A verified stale record was cleared and the owner's Web
+Device restarted successfully; stale records still need explicit inspection.
+
 Focused cleanup pass (2026-11-20, after the listening test): shared Session-read
 bookkeeping, local/remote Inspect capability approval, log chunk-size definition
 and frontend Calibration grouping are consolidated. No native audio or policy
