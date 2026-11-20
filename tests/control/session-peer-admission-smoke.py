@@ -78,7 +78,9 @@ def main():
             c=runtime('c',c_seed);joined(c,link);meet(c,e,f)
             assert 'on_air' in member(c)['privileges']
             same_policy(c,e,f)
-            for r in (e,f):assert c.identity['id'] in member(r)['members']
+            # e and f adopted c's saved statement (directly or relayed by each
+            # other); `members` lists only Devices met in person, so not checked.
+            for r in (e,f):assert member(r)['revision']==member(c)['revision']>0
             print('PASS: v6 link; pairwise admission without a hub; vanished Device pruned; creator offline; delegated grant accepted by a newcomer; '
                   'empty Session keeps its ID and grants nothing; returning Device keeps on_air')
         finally:

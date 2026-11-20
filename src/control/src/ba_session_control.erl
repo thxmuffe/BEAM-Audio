@@ -4,6 +4,7 @@
 -export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1,read_capabilities/2]).
 -export([session_request/2,introduce/1,audio_message/3,chat_message/3,audio_context/1,time_message/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
+-define(BEHIND_MS,2000).
 
 chat_message(Peer,Id,Text) -> gen_server:call(ba_session_scope:ref(?MODULE),{chat_message,Peer,Id,Text}).
 time_message(Peer,Id,Payload) -> gen_server:call(ba_session_scope:ref(?MODULE),{time_message,Peer,Id,Payload}).
@@ -158,7 +159,7 @@ handle_info({desk_delivery,_,Peer,Sealed},S0) ->
         true ->
             case ba_session_control_protocol:receive_packet(Peer,Packet,now_ms(),maps:get(protocol,S)) of
                 {ok,Packets,Events,Protocol} ->
-                    Next = lists:foldl(fun(E,Acc) -> event(Peer,E,Acc) end,S#{protocol := Protocol},Events),
+                    Next = behind(Peer,lists:foldl(fun(E,Acc) -> event(Peer,E,Acc) end,S#{protocol := Protocol},Events)),
                     case lists:all(fun(P) -> send(Peer,P,Next) =:= ok end,Packets) of
                         true -> {noreply,Next};
                         false -> {noreply,rejected(transport_failed,Next)}
@@ -268,6 +269,20 @@ event(Peer,authorized,S) ->
     Revision = ba_session_control_protocol:peer_revision(Peer,maps:get(protocol,S)),
     gen_server:cast(ba_session_scope:ref(ba_session_membership),{encountered,Peer,Revision}),
     self() ! {discover_name,Peer},S.
+
+%% Every packet carries its sender's statement revision. A linked peer that is
+%% behind missed a change (sharing is a single send): share it again, at most
+%% every ?BEHIND_MS per peer, so a lost update heals on ordinary traffic.
+behind(Peer,#{protocol := P}=S) ->
+    Mine = maps:get(revision,maps:get(policy,P)),Now = now_ms(),
+    Told = maps:get(told_behind,S,#{}),
+    case ba_session_control_protocol:peer_revision(Peer,P) < Mine andalso
+         Now-maps:get(Peer,Told,Now-?BEHIND_MS) >= ?BEHIND_MS of
+        true ->
+            gen_server:cast(ba_session_scope:ref(ba_session_membership),{behind,Peer}),
+            S#{told_behind => (maps:filter(fun(_,T) -> Now-T < ?BEHIND_MS end,Told))#{Peer => Now}};
+        false -> S
+    end.
 
 discover_name(Peer,S) ->
     %% One asynchronous ordinary capability read when a peer's relationship

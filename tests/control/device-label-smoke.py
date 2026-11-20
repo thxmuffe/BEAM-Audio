@@ -36,7 +36,11 @@ def main():
         assert a.request('grant', peer=b.identity['id'], permissions=['capabilities_read', 'status_read'])['ok']
         revision = a.request('snapshot')['membership']['revision']
         control.wait(b, lambda s: s['membership']['revision'] >= revision)
-        assert a.request('connect', peer=b.identity['id'])['ok']
+        # A peer is routable only once both see each other present.
+        for local, peer in ((a, b), (b, a)):
+            control.wait(local, lambda s: peer.identity['id'] in s['membership']['participants'])
+        reply = a.request('connect', peer=b.identity['id'])
+        assert reply.get('ok'), reply
         names = []
         for local, peer in ((a, b), (b, a)):
             state = control.wait(local, lambda s: peer.identity['id'] in s.get('peer_names', {}))

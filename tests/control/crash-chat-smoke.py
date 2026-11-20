@@ -39,7 +39,10 @@ def main():
         link=a.request('invite')['value']
         assert b.request('join',invitation=link,desk=url)['ok']
         control.wait(b,lambda s:s['membership']['state']=='authorized')
-        assert a.request('connect',peer=b.identity['id'])['ok']
+        # A peer is routable only once both see each other present.
+        for node,peer in ((a,b),(b,a)):
+            control.wait(node,lambda s:peer.identity['id'] in s['membership']['participants'])
+        reply=a.request('connect',peer=b.identity['id']);assert reply.get('ok'),reply
         for node,peer in ((a,b),(b,a)):
             control.wait(node,lambda s:s['links'].get(peer.identity['id'],{}).get('stage')=='authorized')
         assert a.request('crash_test_worker')['ok']

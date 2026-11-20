@@ -206,6 +206,8 @@ handle_cast({encountered,Peer,Revision},#{state := authorized,policy := P}=S) ->
     %% Anti-entropy: every new contact gets this Device's board.
     send_board(Peer,ba_session_board:entries(maps:get(board,S))),
     {noreply,publish(S#{encountered := Seen})};
+%% A linked peer's packets show an older statement: it missed a change.
+handle_cast({behind,Peer},#{state := authorized}=S) -> tell(Peer,S),{noreply,S};
 handle_cast(_,S) -> {noreply,S}.
 
 handle_info(tick,S0) ->
