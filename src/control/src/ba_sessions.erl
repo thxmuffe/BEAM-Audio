@@ -17,7 +17,11 @@ forget(Session) ->
         end end)
     end,Scopes),ok.
 init([]) ->
-    Tabs=ba_settings:get(open_sessions,[#{id => <<"default">>,name => <<"Session">>,session => null}]),
+    Saved=ba_settings:get(open_sessions,[#{id => <<"default">>,name => <<"Session">>,session => null}]),
+    %% Tab metadata is a view, not return authority. Normalize older settings;
+    %% the restored worker's snapshot supplies the current Session identity.
+    Tabs=[(maps:with([id,name],Tab))#{session => maps:get(session,Tab,null)} || Tab <- Saved],
+    case Tabs=:=Saved of true -> ok;false -> ok=ba_settings:put(open_sessions,Tabs) end,
     self() ! restore,{ok,#{tabs => Tabs}}.
 handle_info(restore,#{tabs := Tabs}=S) ->
     [start(Id) || #{id := Id} <- Tabs,Id=/=<<"default">>],{noreply,S};

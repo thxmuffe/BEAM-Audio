@@ -2,6 +2,9 @@
 -module(ba_cli).
 -export([main/2,spec/1,new_device/2,request/2,timeout/1]).
 main(Args,Root) ->
+    %% Compact invitations omit the default Reception; parsing needs app defaults
+    %% before a Device has been started (notably the monitor invitation file).
+    _=application:load(ba_core),
     try case lists:member("--help",Args) of
         true -> io:put_chars(argparse:help(spec(Root),#{progname => "beamaudio",command => [A || A <- Args,A=/="--help"]}));
         false -> case argparse:parse(Args,spec(Root),#{progname => "beamaudio"}) of

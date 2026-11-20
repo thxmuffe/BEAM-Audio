@@ -266,3 +266,12 @@ online. This is software timing evidence, not audio hardware or physical
 alignment qualification. The creator-return unit test also exercises
 restoration with no other running Device. This replaces the superseded tests for
 surviving-peer-only recovery and implicit ownership of an empty invitation.
+
+## Windows web return through the real runtime
+
+`python tests/Windows/web-session-rejoin-smoke.py` starts disposable Windows
+Devices with the compiled core and built web assets, then opens headless Chromium.
+It checks old saved-tab settings, cold restart with the previous Session current,
+return using only the settings invitation, and compact-link Join. Build core,
+DeviceWeb and web assets first; the packaged Windows host/runtime and Chromium
+must be available. No public Reception or audio hardware is needed.

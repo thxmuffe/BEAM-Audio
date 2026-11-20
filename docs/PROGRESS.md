@@ -1,5 +1,84 @@
 # Current implementation and validation
 
+## Public Session discovery blocked by deployed protocol mismatch — 2026-11-20
+
+Both owner's local apps reported the same Session ID and local admission, but
+Reception was connected with `invalid_message` and no reachable peers. A separate
+CLI Inspector reproduced the same result with audio consent entirely OFF.
+Compact v6 invitations contain creator/nonce/secret, not the Session name; signed
+policy from another Device supplies that name. Without discovery, the apps remain
+at revision 0 with the generic name and only their own Device.
+
+An authenticated, disposable WebSocket probe on a random unused scope confirmed
+that public Reception rejects `lookup` with the new `session` field, but accepts
+the pre-rename field and returns `found`. It did not join or alter the owner's
+Session. GitHub main is still add951e, preceding the local cleanup/rename commits;
+the deployed service demonstrably still uses the previous transport contract.
+The current Reception source already implements the renamed contract. Resolution
+requires publishing/deploying the matching Reception revision, then verifying
+discovery and signed name propagation; no public deployment was performed here.
+The source service must not be treated as matching the deployed instance.
+
+Also fixed the CLI entry point to load ba_core defaults before dispatch. Without
+that, compact invitation files with the default Reception were silently treated
+as invalid because parsing called default_desk before application:load. The exact
+owner-supplied invitation now starts the public CLI Inspector successfully.
+The Inspector reproduced the service mismatch and was stopped afterward; owner's
+Devices were not stopped, reconfigured or hot-patched. No invitation or seed is
+included in this report.
+
+## Web runtime failure on pre-rename tab settings — 2026-11-20
+
+Read-only HTTP inspection of the owner's running Windows app found that
+`list_sessions` returned a tab with the retired `buffee` field, while `snapshot`
+returned HTTP 503. `ba_sessions` updated an absent `session` field with `:=`,
+crashing the coordinator and producing DeviceWeb's generic runtime-unavailable
+message. This was not established by the earlier stubbed frontend tests or the
+CLI test with fresh settings. The earlier explanation about invalidated old
+return checkpoints did not account for this settings-schema failure.
+
+`ba_sessions:init/1` now normalizes tab metadata to id/name/session and persists
+that canonical shape. A worker snapshot supplies the actual Session identity;
+return authority and invitations are preserved separately. No old-schema runtime
+branch or user-state deletion is added.
+
+Added registered `tests/Windows/web-session-rejoin-smoke.py`, using the Windows
+host with the current compiled core and built frontend, actual DeviceWeb HTTP
+and headless Chromium. It reproduces pre-rename settings and checks that Gossip 1
+is current after restart. It additionally removes the return checkpoint and
+verifies that the invitation in user settings alone rejoins and becomes current,
+then checks compact-link Join from an idle pre-rename tab. Failed with HTTP 503
+before the backend fix; all scenarios pass afterward. The existing browser
+harness accepts a real Device URL for these checks rather than stubbing commands.
+Only disposable identities and state are used; no public Reception or audio.
+
+The owner's supplied compact invitation was separately accepted through real
+HTTP on a disposable Device with Reception redirected to loopback and audio OFF.
+This verifies parsing/local admission, not reaching the owner's live peers.
+Rechecked: core EUnit 182/182, DeviceWeb 6/6, Node 35/35, eight existing browser
+scenarios and Python runner tests 2/2 pass. The complete cross-platform inventory
+has not been run; Reception integration remains unavailable without its compiled
+dependencies. The running owner's app was not stopped or hot-patched. Current
+core artifacts are compiled; the packaged Windows app must be rebuilt and its
+runtime restarted to load the fix.
+
+## Web saved-invitation startup fix — 2026-11-20
+
+The web startup's auto-rejoin read `state.contacts`, a view assigned only by the
+scheduled redraw. Loaded settings were already in the store, but startup could
+reach auto-rejoin before that redraw and offer Create instead. It now selects
+the remembered invitation directly from loaded snapshots. The already-joined
+check likewise reads each live snapshot's contacts rather than the rendered view.
+The invitation continues to be stored by `ba_contacts` in `settings.config`.
+
+Reproduced in the existing Chromium harness with a saved Gossip 1 invitation,
+clipboard access denied and the first redraw delayed. The regression failed
+before the fix and passes afterward; all eight browser scenarios and 35 Node
+unit tests pass. Static web assets rebuilt. No running Device was changed or
+restarted; the owner's actual Gossip 1 state was unavailable through the local
+CLI, so its saved link and live reconnection were not inspected. This is a
+confirmed startup race, not evidence that old-format state was the only cause.
+
 ## Cleanup pass 3 follow-up — 2026-11-20
 
 - Removed unused per-subscription gain from intent, receiver startup, the OTP

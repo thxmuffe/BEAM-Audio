@@ -12,7 +12,7 @@ APP = PRODUCT / "builds/Windows/OpenSound"
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 class Device:
-    def __init__(self, directory, seed):
+    def __init__(self, directory, seed, *, core_ebin=None, assets=None):
         self.directory, self.seed = directory, seed
         directory.mkdir(parents=True, exist_ok=True)
         settings = directory / "settings.config"
@@ -21,8 +21,9 @@ class Device:
         self.lines = queue.Queue()
         self.process = subprocess.Popen([
             str(APP / "runtime/bin/erl.exe"), "+S", "2", "-noshell", "-noinput",
-            "-pa", str(APP / "ebin"), "-s", "os_windows_host", "boot", "-extra",
-            "--assets", str(APP / "assets"), "--port", "0", "--local-device"
+            "-pa", str(APP / "ebin"), *(["-pa", str(core_ebin)] if core_ebin else []),
+            "-s", "os_windows_host", "boot", "-extra",
+            "--assets", str(assets or APP / "assets"), "--port", "0", "--local-device"
         ], cwd=APP, env=dict(os.environ, BA_STATE_DIR=str(directory), BA_IDENTITY_SEED=seed,
                            ERL_LIBS=str(APP / "lib")),
            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")

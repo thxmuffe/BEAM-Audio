@@ -11,6 +11,18 @@ previous plan. **Goal: audio works on every platform.**
 iPhone background playback works (owner confirmed). Native microphone capture
 is deferred.
 
+Web rejoin (2026-11-20): fixed both the frontend redraw race and the backend
+crash on old saved-tab metadata. Real HTTP + Chromium checks now verify that
+Gossip 1 is current after restart, including from the user-settings invitation
+alone. Current compiled core passes; the owner's running packaged app still
+needs rebuild/restart. See PROGRESS.md for exact checks and remaining limits.
+
+Public discovery blocker confirmed (2026-11-20): deployed Reception rejects the
+renamed scope field; both apps and an independent CLI Inspector discover no peers.
+Publish/deploy the matching Reception source before testing name/peer propagation.
+GitHub main remains at add951e, before the cleanup. Compact-link CLI parsing now
+loads application defaults first. See PROGRESS.md for live evidence.
+
 ## Decisions in force
 
 - **Cleanup first; one default way (owner 2026-11-20).** Clean architecture and
