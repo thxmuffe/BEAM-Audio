@@ -21,10 +21,6 @@ $paths = @()
 foreach ($project in @('control', 'DeviceWeb')) {
     $paths += Get-ChildItem "$root/builds/intermediates/$project/default/lib/*/ebin" -Directory | ForEach-Object { $_.FullName }
 }
-# Use the same compiled Windows transport/native libraries as the app bundle.
-foreach ($libraries in @('builds/intermediates/Windows/transport/beam/dev/lib', 'builds/intermediates/tools/elixir/lib')) {
-    $paths += Get-ChildItem "$root/$libraries/*/ebin" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-}
 $entryFunction = if ($args -contains '--local-device') { 'windows_main' } else { 'main' }
 # A local Device plays and sends audio through the core's native AAC host when built
 # (scripts/platforms/Windows/build-native-stream.py).

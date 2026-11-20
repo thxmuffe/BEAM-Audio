@@ -27,8 +27,9 @@ From either repository on Windows:
 .uild.ps1 -Help
 ```
 
-In BEAM-Audio these prepare/compile the core runtime, transport and audio
-libraries needed for the chosen targets; they do not build commercial UIs,
+In BEAM-Audio these prepare/compile the core runtime and the native AAC audio
+host for the chosen targets (on Windows: pinned OTP and rebar3, the core and
+`ba_native_stream.exe`; no legacy transport or Python GStreamer runtime); they do not build commercial UIs,
 Inspector or independently deployed services. In OpenSound they then build the
 products: `builds/macOS/OpenSound.app`, `builds/iOS/Debug-iphoneos/OpenSound.app` or
 `builds/Windows/OpenSound/OpenSound.exe`. Existing component builders may recheck core

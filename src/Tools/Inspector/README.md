@@ -43,7 +43,9 @@ prepared bundle without creating an identity or attempting admission:
 Then run with the same `-NativeLibRoot` and `-JoinFile invitation.txt` once;
 omit `-JoinFile` on later runs. `-OtpRoot` defaults to `BA_OTP_ROOT`, or the
 private runtime from Windows setup. `-NativeLibRoot` defaults to
-`BA_WINDOWS_NATIVE_LIB`, or `builds/intermediates/Windows/transport/beam/dev/lib`. The inspector
+`BA_WINDOWS_NATIVE_LIB`, or `builds/intermediates/Windows/transport/beam/dev/lib`; the
+core build no longer produces those legacy transport libraries (2026-11-20), so
+local mode needs them supplied, otherwise use `-Remote`. The inspector
 stores its own encrypted seed and membership under
 `%LOCALAPPDATA%\org.opensound.beamaudio\inspector`; `-StateDirectory` chooses another
 identity/state directory. Windows user DPAPI protects `identity.dpapi`; it is

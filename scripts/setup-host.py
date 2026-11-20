@@ -13,7 +13,7 @@ TOOLS = ROOT / 'builds/intermediates/tools'
 DOWNLOADS = TOOLS / 'downloads'
 DOWNLOADS.mkdir(parents=True, exist_ok=True)
 if platform.system() != 'Darwin' or platform.machine() != 'arm64':
-    raise SystemExit('This host bootstrap supports Apple Silicon; Windows uses scripts/platforms/Windows/setup-native.py.')
+    raise SystemExit('This host bootstrap supports Apple Silicon; Windows uses build.ps1.')
 
 def fetch(name, url, checksum):
     path = DOWNLOADS / name
