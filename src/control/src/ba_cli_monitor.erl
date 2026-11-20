@@ -251,7 +251,7 @@ transport_lines(D) ->
         Stages ->
             None=fun([]) -> "none";(L) -> L end,
             ["  Transport setup: ",Stages,"  (",number(maps:get(<<"transport.open">>,D,0)),"/",
-             number(maps:get(<<"transport.sessions">>,D,0))," open)\n",
+             number(maps:get(<<"transport.media">>,D,0))," open)\n",
              "    candidates local: ",None(Group(<<"transport.local_candidates.">>)),
              "  remote: ",None(Group(<<"transport.remote_candidates.">>)),
              "  ICE servers: ",number(maps:get(<<"transport.ice.stun_urls">>,D,0))," STUN / ",

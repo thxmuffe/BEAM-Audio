@@ -195,9 +195,9 @@ handle_info(tick,S0) ->
     {noreply,save(correct(S3))};
 handle_info({buffee_time,Context,Id,P},S) ->
     try
-        #{peer := Peer,session := Session,buffee := Buffee,deadline := Deadline} = Context,
+        #{peer := Peer,link := Link,buffee := Buffee,deadline := Deadline} = Context,
         {Buffee,_} = maps:get(scope,S),
-        true = now_ms()<Deadline,{ok,#{session := Session}} = context(Peer),
+        true = now_ms()<Deadline,{ok,#{link := Link}} = context(Peer),
         incoming(Context,Id,P,S)
     of Next -> {noreply,save(Next)}
     catch exit:{time_storage_failed,_}=Reason -> exit(Reason);
@@ -205,8 +205,8 @@ handle_info({buffee_time,Context,Id,P},S) ->
             D = maps:get(clock,S),{noreply,save(S#{clock := D#{offset_until := undefined,offset_error := conflicting_revision}})};
         _:_ -> D = maps:get(clock,S),{noreply,save(S#{clock := D#{rejected := maps:get(rejected,D)+1}})}
     end;
-handle_info({time_session_down,Peer,Session},#{scope := {_,Peer}} = S) ->
-    _ = Session,{noreply,save(invalidate(S))};
+handle_info({time_link_down,Peer,Link},#{scope := {_,Peer}} = S) ->
+    _ = Link,{noreply,save(invalidate(S))};
 handle_info({upstream_result,Pid,Result},#{upstream := #{pid := Pid,monitor := Ref}} = S) ->
     demonitor(Ref,[flush]),{noreply,save(apply_upstream(Result,S#{upstream := undefined}))};
 handle_info({'DOWN',Ref,process,_,_},#{upstream := #{monitor := Ref}} = S) ->
@@ -292,7 +292,7 @@ request(P,Extra,#{scope := {_,Authority},pending := Pending} = S) when map_size(
                     {ok,S#{pending := Pending#{Id => R}}};
                 _ -> {error,transport_unavailable}
             end;
-        _ -> {error,no_authorized_session}
+        _ -> {error,no_authorized_link}
     end;
 request(_,_,_) -> {error,request_limit}.
 
@@ -322,8 +322,8 @@ incoming(Context,Id,#{<<"kind">> := <<"offset.required">>,<<"revision">> := Revi
     Next=required(Value,S),reply(Context,Id,offset_payload(<<"offset.state">>,Next)),Next;
 incoming(#{peer := Authority}=Context,_,#{<<"kind">> := <<"offset.changed">>}=P,#{role := member,scope := {_,Authority}}=S) ->
     adopt(P,min(maps:get(deadline,Context),now_ms()+freshness(S)),S);
-incoming(#{peer := Authority,session := Session}=Context,Id,P,#{role := member,scope := {_,Authority},pending := Pending}=S) ->
-    #{context := #{session := Session},deadline := Deadline,kind := Kind}=R = maps:get(Id,Pending),true = now_ms()<Deadline,
+incoming(#{peer := Authority,link := Link}=Context,Id,P,#{role := member,scope := {_,Authority},pending := Pending}=S) ->
+    #{context := #{link := Link},deadline := Deadline,kind := Kind}=R = maps:get(Id,Pending),true = now_ms()<Deadline,
     Clean = S#{pending := maps:remove(Id,Pending)},Until = min(maps:get(deadline,Context),mono_ms(maps:get(sent,R))+freshness(S)),
     case maps:get(<<"kind">>,P) of
         <<"sample.reply">> ->
@@ -499,7 +499,7 @@ checkpoint(Name,{Buffee,Authority},P) ->
 reply(#{peer := Peer},Id,P) -> send(Peer,Id,P).
 reply_error(C,Id,Operation,Reason) -> reply(C,Id,#{<<"kind">> => <<"error">>,<<"operation">> => Operation,<<"reason">> => Reason}).
 %% Deliberately uncaught: if control is replaced or stuck, this clock crashes and
-%% its supervisor restarts it with fresh authenticated sessions (recovery path).
+%% its supervisor restarts it with fresh authenticated links (recovery path).
 send(Peer,Id,P) -> ba_buffee_control:time_message(Peer,Id,P).
 context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
 answer(#{caller := From},Result) -> gen_server:reply(From,Result);

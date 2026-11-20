@@ -32,7 +32,7 @@ init([]) ->
     {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
           providers => #{},catalogs => #{},contracts => #{},control => Control,
           suspended => false,resume_after => undefined,rejected => 0,poll_at => now_ms()+5000}}.
-waiting(I) -> #{intent => I,state => waiting_for_source,session => undefined,retry_at => now_ms()}.
+waiting(I) -> #{intent => I,state => waiting_for_source,media => undefined,retry_at => now_ms()}.
 handle_call(snapshot,_,S) ->
     View = maps:map(fun(_,R) ->
         I = maps:get(intent,R),(maps:merge(I,maps:with([state,source_paused,error,mix_ready],R)))#{transport => transport_status(R)}
@@ -83,7 +83,7 @@ handle_call({subscribe,Peer,Key,channel},_,#{subscriptions := Items,offers := Of
             Next = persist(S#{subscriptions := Items#{Id => waiting(I)}}),
             {reply,{ok,Id},restore_one(Id,false,Next)};
         {true,_,_} -> {reply,{error,already_subscribed},S};
-        _ -> {reply,{error,source_or_session_unavailable},S}
+        _ -> {reply,{error,source_or_link_unavailable},S}
     end;
 handle_call({stop,Id},_,S) -> {reply,ok,unsubscribe(Id,S)};
 handle_call(stop,_,S) ->
@@ -127,13 +127,13 @@ handle_info({on_air_announced,Peer},#{offers := Offers}=S) ->
             Wanted = (maps:get(wanted,S,#{}))#{Peer => now_ms()+60000},
             {_,Next} = catalog(Peer,S#{wanted => Wanted}),{noreply,Next}
     end;
-handle_info({audio_session_up,#{peer := Peer,session := Session}},S) ->
+handle_info({audio_link_up,#{peer := Peer,link := Link}},S) ->
     %% Only a source this Device already knows is re-read; others announce.
     case {lists:member(Peer,known_sources(S)),context(Peer)} of
-        {true,{ok,#{session := Session}}} ->
+        {true,{ok,#{link := Link}}} ->
             Cs=maps:get(catalogs,S),
             Pending=case maps:find(Peer,Cs) of
-                {ok,#{session := Session}} -> Cs;
+                {ok,#{link := Link}} -> Cs;
                 _ -> maps:remove(Peer,Cs)
             end,
             {_,Next}=catalog(Peer,S#{catalogs := Pending}),{noreply,Next};
@@ -161,9 +161,9 @@ handle_info(tick,S) ->
     {noreply,Recovered};
 handle_info({buffee_audio,Context,Id,P},S) ->
     try
-        #{peer := Peer,session := Session,buffee := Buffee,deadline := Deadline} = Context,
+        #{peer := Peer,link := Link,buffee := Buffee,deadline := Deadline} = Context,
         true = now_ms()<Deadline,
-        {ok,#{session := Session,buffee := Buffee}} = context(Peer),
+        {ok,#{link := Link,buffee := Buffee}} = context(Peer),
         incoming(Context,Id,P,S)
     of Next -> {noreply,Next}
     catch _:_ ->
@@ -177,18 +177,18 @@ handle_info({buffee_audio,Context,Id,P},S) ->
             _ -> {noreply,reject(S)}
         end
     end;
-handle_info({audio_session_renewed,#{peer := Peer,session := Session,deadline := Until}},S) ->
+handle_info({audio_link_renewed,#{peer := Peer,link := Link,deadline := Until}},S) ->
     %% The owner emits this while the peer's authenticated packets keep
     %% arriving; a later packet may already have moved the deadline further.
     case context(Peer) of
-        {ok,#{session := Session,deadline := Current}} when Current>=Until ->
-            Subs = maps:map(fun(Id,R) -> renew_media(Id,Peer,Session,Until,R) end,maps:get(subscriptions,S)),
-            Providers = maps:map(fun(_,R) -> renew_media(undefined,Peer,Session,Until,R) end,maps:get(providers,S)),
+        {ok,#{link := Link,deadline := Current}} when Current>=Until ->
+            Subs = maps:map(fun(Id,R) -> renew_media(Id,Peer,Link,Until,R) end,maps:get(subscriptions,S)),
+            Providers = maps:map(fun(_,R) -> renew_media(undefined,Peer,Link,Until,R) end,maps:get(providers,S)),
             {noreply,S#{subscriptions := Subs,providers := Providers}};
         _ -> {noreply,reject(S)}
     end;
-handle_info({audio_session_down,Peer,Session},S) ->
-    Next = stop_matching(fun(R) -> scoped(Peer,Session,R) end,S),
+handle_info({audio_link_down,Peer,Link},S) ->
+    Next = stop_matching(fun(R) -> scoped(Peer,Link,R) end,S),
     Offers = maps:filter(fun({P,_},_) -> P=/=Peer end,maps:get(offers,Next)),
     {noreply,Next#{offers := Offers,catalogs := maps:remove(Peer,maps:get(catalogs,Next))}};
 handle_info({audio_signal,Pid,P},S) ->
@@ -272,8 +272,8 @@ incoming(#{peer := Peer} = Context,Id,#{<<"kind">> := <<"catalog.read">>},S) ->
     maps:foreach(fun(Key,#{offer := Offer}) ->
         send(Peer,Id,ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer))
     end,maps:get(sources,S)),send(Peer,Id,#{<<"kind">> => <<"catalog.end">>}),_ = Context,S;
-incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.offer">>} = P,#{catalogs := Cs} = S) ->
-    #{id := Id,session := Session,deadline := Deadline,offers := Offers} = C = maps:get(Peer,Cs),
+incoming(#{peer := Peer,link := Link},Id,#{<<"kind">> := <<"catalog.offer">>} = P,#{catalogs := Cs} = S) ->
+    #{id := Id,link := Link,deadline := Deadline,offers := Offers} = C = maps:get(Peer,Cs),
     true = now_ms()<Deadline,true = map_size(Offers)<16,
     Key = maps:get(<<"source">>,P),false = maps:is_key(Key,Offers),
     true=publication_allowed(Peer,Key),
@@ -281,8 +281,8 @@ incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.offer"
     O = #{name => maps:get(<<"name">>,P),source_key => Key,incarnation => maps:get(<<"incarnation">>,P),
           paused => maps:get(<<"paused">>,P),profiles => #{channel => D}},
     S#{catalogs := Cs#{Peer := C#{offers := Offers#{Key => O}}}};
-incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.end">>},#{catalogs := Cs,offers := Old} = S) ->
-    #{id := Id,session := Session,deadline := Deadline,offers := Offers}=C = maps:get(Peer,Cs),true = now_ms()<Deadline,
+incoming(#{peer := Peer,link := Link},Id,#{<<"kind">> := <<"catalog.end">>},#{catalogs := Cs,offers := Old} = S) ->
+    #{id := Id,link := Link,deadline := Deadline,offers := Offers}=C = maps:get(Peer,Cs),true = now_ms()<Deadline,
     Kept = maps:filter(fun({P,_},_) -> P=/=Peer end,Old),
     Added = maps:from_list([{{Peer,K},O} || {K,O} <- maps:to_list(Offers)]),
     Next=S#{catalogs := maps:remove(Peer,Cs),offers := maps:merge(Kept,Added)},
@@ -293,11 +293,11 @@ incoming(#{peer := Peer,session := Session},Id,#{<<"kind">> := <<"catalog.end">>
 incoming(Context,Id,#{<<"kind">> := <<"subscribe">>} = P,S) -> admit(Context,Id,P,S);
 incoming(Context,Id,#{<<"kind">> := <<"accepted">>} = P,S) ->
     R = maps:get(Id,maps:get(subscriptions,S)),matches(Context,P,R),opening = maps:get(state,R),
-    undefined = maps:get(session,R),
-    case ba_audio_sup:start_session(worker(receiver,Context,Id,R)) of
+    undefined = maps:get(media,R),
+    case ba_audio_sup:start_media(worker(receiver,Context,Id,R)) of
         {ok,Pid} ->
             Ref = monitor(process,Pid),
-            put_sub(Id,R#{session := Pid,monitor => Ref,source_paused => maps:get(<<"paused">>,P)},S);
+            put_sub(Id,R#{media := Pid,monitor => Ref,source_paused => maps:get(<<"paused">>,P)},S);
         _ ->
             wire(R,Id,(binding(R))#{<<"kind">> => <<"close">>}),
             put_sub(Id,(closed(Id,R))#{error => transport_unavailable},S)
@@ -318,12 +318,12 @@ incoming(Context,Id,#{<<"kind">> := Kind} = P,S) ->
             _ = disable_output(Key,R),
             put_sub(Key,start_playback(Key,R#{source_paused => B,mix_ready => false}),S);
         _ when Kind=:= <<"signal.offer">>;Kind=:= <<"signal.answer">>;Kind=:= <<"signal.candidate">> ->
-            gen_server:cast(maps:get(session,R),{signal,P}),S
+            gen_server:cast(maps:get(media,R),{signal,P}),S
     end.
 
-admit(#{peer := Peer,session := Session} = Context,Id,P,#{sources := Sources,providers := Providers} = S) ->
+admit(#{peer := Peer,link := Link} = Context,Id,P,#{sources := Sources,providers := Providers} = S) ->
     Key = maps:get(<<"source">>,P),Inc = maps:get(<<"incarnation">>,P),Attempt = maps:get(<<"attempt">>,P),
-    ProviderKey = {Peer,Session,Id},
+    ProviderKey = {Peer,Link,Id},
     case maps:find(ProviderKey,Providers) of
         {ok,R} -> matches(Context,P,R),wire(R,Id,(binding(R))#{<<"kind">> => <<"accepted">>,<<"paused">> => maps:get(paused,R)}),S;
         error ->
@@ -339,14 +339,14 @@ admit(#{peer := Peer,session := Session} = Context,Id,P,#{sources := Sources,pro
                 ok ->
                     #{pid := Source,offer := #{paused := Paused,profiles := #{channel := D}}} = maps:get(Key,Sources),
                     R = R0#{descriptor => D,paused => Paused},
-                    case ba_audio_sup:start_session((worker(provider,Context,Id,R))#{source_pid => Source}) of
+                    case ba_audio_sup:start_media((worker(provider,Context,Id,R))#{source_pid => Source}) of
                         {ok,Pid} ->
                             Attached = try gen_server:call(Source,{attach,Pid},100) catch exit:_ -> unavailable end,
                             case Attached of
                                 ok ->
                                     Ref = monitor(process,Pid),
                                     wire(R,Id,(binding(R))#{<<"kind">> => <<"accepted">>,<<"paused">> => Paused}),
-                                    S#{providers := Providers#{ProviderKey => R#{session => Pid,monitor => Ref}}};
+                                    S#{providers := Providers#{ProviderKey => R#{media => Pid,monitor => Ref}}};
                                 _ ->
                                     logger:warning("Native provider attach failed: ~p",[Attached]),
                                     stop_worker(Pid),
@@ -361,9 +361,9 @@ worker(Role,Context,Id,R) -> #{role => Role,owner => self(),context => Context,s
     attempt => maps:get(attempt,R),descriptor => maps:get(descriptor,R)}.
 restore_one(_,_,#{suspended := true} = S) -> S;
 restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := Contracts} = S) ->
-    #{intent := I,session := Session,state := State,retry_at := Retry} = R = maps:get(Id,Items),
+    #{intent := I,media := Media,state := State,retry_at := Retry} = R = maps:get(Id,Items),
     Peer = maps:get(device,I),Key = maps:get(source_key,I),
-    Ready = Session=:=undefined andalso State=/=opening andalso now_ms()>=Retry andalso
+    Ready = Media=:=undefined andalso State=/=opening andalso now_ms()>=Retry andalso
         (not Automatic orelse clock_ready(S)),
     case {Ready,maps:find({Peer,Key},Offers),maps:find({receive_audio,Peer,Key},Contracts),context(Peer)} of
         {true,{ok,#{incarnation := Inc,profiles := #{channel := D}}},{ok,Contract},{ok,#{buffee := Buffee} = Context}}
@@ -388,22 +388,22 @@ clock_ready(S) ->
 start_playback(Id,#{intent := #{playing := true},source_paused := false} = R) ->
     case enable_output(Id,R) of {ok,Next} -> Next;{error,E} -> R#{error => E,mix_ready => false} end;
 start_playback(_,R) -> R.
-enable_output(_,#{session := P,intent := I}=R) ->
+enable_output(_,#{media := P,intent := I}=R) ->
     case native_output(P,{gain,maps:get(gain,I)}) of
         ok -> case native_output(P,{output,play}) of ok -> {ok,maps:remove(error,R#{mix_ready => true})};E -> E end;
         E -> E
     end.
 catalog(Peer,#{catalogs := Cs} = S) ->
     case {maps:is_key(Peer,Cs),context(Peer)} of
-        {false,{ok,#{session := Session}}} ->
+        {false,{ok,#{link := Link}}} ->
             Id = fresh(),
             case send(Peer,Id,#{<<"kind">> => <<"catalog.read">>}) of
-                ok -> {ok,S#{catalogs := Cs#{Peer => #{id => Id,session => Session,deadline => now_ms()+5000,offers => #{}}}}};
+                ok -> {ok,S#{catalogs := Cs#{Peer => #{id => Id,link => Link,deadline => now_ms()+5000,offers => #{}}}}};
                 Error -> {Error,S}
             end;
         %% A known source whose relationship lapsed: say hello; its start
-        %% (audio_session_up) triggers the read.
-        {false,_} -> ba_buffee_control:introduce(Peer),{{error,no_session},S};
+        %% (audio_link_up) triggers the read.
+        {false,_} -> ba_buffee_control:introduce(Peer),{{error,no_link},S};
         _ -> {{error,pending},S}
     end.
 %% Dark Sessions: an ON AIR Device tells the Devices it can reach that it has
@@ -444,38 +444,38 @@ refresh_all(S) -> lists:foldl(fun(Peer,Acc) -> {_,Next}=catalog(Peer,Acc),Next e
 membership() -> try ba_buffee_membership:current() catch exit:_ -> {error,unavailable} end.
 context(Peer) -> try ba_buffee_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
 send(Peer,Id,P) -> ba_buffee_control:audio_message(Peer,Id,P).
-wire(#{context := #{peer := Peer,session := Session,deadline := Deadline}},Id,P) ->
+wire(#{context := #{peer := Peer,link := Link,deadline := Deadline}},Id,P) ->
     Now = now_ms(),
     case context(Peer) of
-        {ok,#{session := Session}} when Deadline>Now -> send(Peer,Id,P);
-        _ -> {error,session_lost}
+        {ok,#{link := Link}} when Deadline>Now -> send(Peer,Id,P);
+        _ -> {error,link_lost}
     end.
 binding(R) -> #{<<"source">> => maps:get(source,R),<<"incarnation">> => maps:get(incarnation,R),<<"attempt">> => maps:get(attempt,R)}.
-matches(#{peer := Peer,session := Session,buffee := Buffee},P,#{context := #{peer := Peer,session := Session,buffee := Buffee,deadline := Deadline}} = R) ->
+matches(#{peer := Peer,link := Link,buffee := Buffee},P,#{context := #{peer := Peer,link := Link,buffee := Buffee,deadline := Deadline}} = R) ->
     true = now_ms()<Deadline,true = maps:with([<<"source">>,<<"incarnation">>,<<"attempt">>],P)=:=binding(R),ok.
 bound_transport(Context,Id,P,S) ->
-    #{peer := Peer,session := Session} = Context,
+    #{peer := Peer,link := Link} = Context,
     case maps:find(Id,maps:get(subscriptions,S)) of
-        {ok,R} -> matches(Context,P,R),true = is_pid(maps:get(session,R)),{receiver,Id,R};
-        error -> K = {Peer,Session,Id},R = maps:get(K,maps:get(providers,S)),matches(Context,P,R),{provider,K,R}
+        {ok,R} -> matches(Context,P,R),true = is_pid(maps:get(media,R)),{receiver,Id,R};
+        error -> K = {Peer,Link,Id},R = maps:get(K,maps:get(providers,S)),matches(Context,P,R),{provider,K,R}
     end.
 transport(Pid,S) ->
-    Receivers = [{receiver,Id,R} || {Id,#{session := P}=R} <- maps:to_list(maps:get(subscriptions,S)),P=:=Pid],
-    Providers = [{provider,K,R} || {K,#{session := P}=R} <- maps:to_list(maps:get(providers,S)),P=:=Pid],
+    Receivers = [{receiver,Id,R} || {Id,#{media := P}=R} <- maps:to_list(maps:get(subscriptions,S)),P=:=Pid],
+    Providers = [{provider,K,R} || {K,#{media := P}=R} <- maps:to_list(maps:get(providers,S)),P=:=Pid],
     case Receivers++Providers of [Match] -> Match;_ -> none end.
 put_sub(Id,R,S) -> S#{subscriptions := (maps:get(subscriptions,S))#{Id := R}}.
 closed(_,R) ->
     case maps:find(monitor,R) of {ok,Ref} -> demonitor(Ref,[flush]);error -> ok end,
     (maps:without([monitor,context,attempt,incarnation,descriptor,source_paused,mix_ready],R))#{
-        session := undefined,state := waiting_for_source,retry_at := now_ms()+1000}.
+        media := undefined,state := waiting_for_source,retry_at := now_ms()+1000}.
 close_receiver(Id,R) ->
-    case maps:get(session,R) of
+    case maps:get(media,R) of
         Pid when is_pid(Pid) -> _ = wire(R,Id,(binding(R))#{<<"kind">> => <<"close">>}),stop_worker(Pid);
         _ -> ok
     end,closed(Id,R).
 close_provider(Key,R,Reason,S) ->
     logger:notice("Native provider closed: ~p",[Reason]),
-    demonitor(maps:get(monitor,R),[flush]),stop_worker(maps:get(session,R)),
+    demonitor(maps:get(monitor,R),[flush]),stop_worker(maps:get(media,R)),
     S#{providers := maps:remove(Key,maps:get(providers,S))}.
 stop_worker(Pid) -> try gen_server:stop(Pid,normal,1000) catch exit:_ -> exit(Pid,kill) end.
 unsubscribe(Id,S) ->
@@ -483,11 +483,11 @@ unsubscribe(Id,S) ->
         {ok,R} -> _ = close_receiver(Id,R),persist(S#{subscriptions := maps:remove(Id,maps:get(subscriptions,S))});
         error -> S
     end.
-scoped(Peer,Session,#{context := #{peer := Peer,session := Session}}) -> true;
+scoped(Peer,Link,#{context := #{peer := Peer,link := Link}}) -> true;
 scoped(_,_,_) -> false.
 stop_matching(Predicate,S) ->
     Subs = maps:map(fun(Id,R) -> case Predicate(R) of true -> close_receiver(Id,R);false -> R end end,maps:get(subscriptions,S)),
-    lists:foldl(fun({K,R},Acc) -> case Predicate(R) of true -> close_provider(K,R,session_closed,Acc);false -> Acc end end,
+    lists:foldl(fun({K,R},Acc) -> case Predicate(R) of true -> close_provider(K,R,link_closed,Acc);false -> Acc end end,
         S#{subscriptions := Subs},maps:to_list(maps:get(providers,S))).
 stop_contract({Direction,Peer,Key},S) ->
     case Direction of
@@ -517,17 +517,17 @@ explain(Context,Id,P,S) ->
         true ->
             put(last_explained,Now),
             Kind = maps:get(<<"kind">>,P,<<"?">>),
-            Peer = maps:get(peer,Context,<<"?">>),Session = maps:get(session,Context,undefined),
+            Peer = maps:get(peer,Context,<<"?">>),Link = maps:get(link,Context,undefined),
             Reason = try
                 case context(Peer) of
-                    {ok,#{session := Session}} -> ok;
+                    {ok,#{link := Link}} -> ok;
                     {ok,_} -> throw(relationship_changed);
                     _ -> throw(no_relationship)
                 end,
                 case now_ms() < maps:get(deadline,Context,0) of true -> ok;false -> throw(context_expired) end,
                 {Side,R} = case maps:find(Id,maps:get(subscriptions,S)) of
                     {ok,Sub} -> {receiver,Sub};
-                    error -> case maps:find({Peer,Session,Id},maps:get(providers,S)) of
+                    error -> case maps:find({Peer,Link,Id},maps:get(providers,S)) of
                         {ok,Prov} -> {provider,Prov};
                         error -> throw({unknown_attempt,map_size(maps:get(providers,S)),map_size(maps:get(subscriptions,S))})
                     end
@@ -535,11 +535,11 @@ explain(Context,Id,P,S) ->
                 Bound = maps:with([<<"source">>,<<"incarnation">>,<<"attempt">>],P),
                 case (try binding(R) catch _:_ -> none end) of Bound -> ok;_ -> throw({old_attempt,Side}) end,
                 case maps:find(context,R) of
-                    {ok,#{session := Session}} -> ok;
+                    {ok,#{link := Link}} -> ok;
                     {ok,_} -> throw({attempt_from_other_relationship,Side});
                     error -> throw({no_context,Side})
                 end,
-                case Side=:=provider orelse is_pid(maps:get(session,R,undefined)) of true -> ok;false -> throw({not_open,maps:get(state,R,undefined)}) end,
+                case Side=:=provider orelse is_pid(maps:get(media,R,undefined)) of true -> ok;false -> throw({not_open,maps:get(state,R,undefined)}) end,
                 handler_failed
             catch throw:Why -> Why;_:Error -> {check_failed,Error} end,
             logger:warning("Discarded ~ts from ~ts (~ts): ~p",[Kind,binary:part(Peer,0,min(8,byte_size(Peer))),Id,Reason])
@@ -547,8 +547,8 @@ explain(Context,Id,P,S) ->
 fresh() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
 now_ms() -> erlang:monotonic_time(millisecond).
 terminate(_,S) ->
-    [stop_worker(P) || #{session := P} <- maps:values(maps:get(subscriptions,S)),is_pid(P)],
-    [stop_worker(maps:get(session,R)) || R <- maps:values(maps:get(providers,S))],ok.
+    [stop_worker(P) || #{media := P} <- maps:values(maps:get(subscriptions,S)),is_pid(P)],
+    [stop_worker(maps:get(media,R)) || R <- maps:values(maps:get(providers,S))],ok.
 
 format_status(Status) -> maps:map(fun(state,S) -> maps:with([suspended,rejected],S);(log,_) -> [];(_,_) -> redacted end,Status).
 
@@ -558,14 +558,14 @@ resync_clock(Reason) ->
         true -> Module:resync(Reason);false -> Module:resync()
     end catch _:_ -> unavailable end.
 
-renew_media(Id,Peer,Session,Until,#{context := #{peer := Peer,session := Session,deadline := Old}=C,session := P}=R)
+renew_media(Id,Peer,Link,Until,#{context := #{peer := Peer,link := Link,deadline := Old}=C,media := P}=R)
         when Until>Old ->
     gen_server:cast(P,{renew,self(),Until}),
     Updated = R#{context := C#{deadline := Until}},
     _ = Id,Updated;
 renew_media(_,_,_,_,R) -> R.
 
-transport_status(#{session := P}) when is_pid(P) ->
+transport_status(#{media := P}) when is_pid(P) ->
     try gen_server:call(P,status,100) catch exit:_ -> #{error => unavailable} end;
 transport_status(_) -> #{}.
 
@@ -581,7 +581,7 @@ publication_allowed(Peer,Key) ->
 
 %% Native output is the only output: this Device needs its native stream host.
 backend_missing(_) -> not ba_native_media_session:available().
-disable_output(_,#{session := P}) when is_pid(P) -> native_output(P,{output,pause});
+disable_output(_,#{media := P}) when is_pid(P) -> native_output(P,{output,pause});
 disable_output(_,_) -> ok.
 
 native_output(P,Command) ->

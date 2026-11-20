@@ -14,7 +14,7 @@ collection_persistence_and_scoped_unsubscribe_test() -> with_store(fun() ->
     ok = ba_subscription:save(Items),?assertEqual(Items,ba_subscription:load()),
     ok = ba_subscription:save(maps:remove(X,Items)),
     ?assertEqual(#{Y => B#{playing := true}},ba_subscription:load()),
-    ?assertException(error,_,ba_subscription:save(#{X => A#{session => self()}}))
+    ?assertException(error,_,ba_subscription:save(#{X => A#{media => self()}}))
 end).
 old_single_subscription_is_not_imported_test() -> with_store(fun() ->
     ok = ba_device_store:save(audio_subscription,#{node => <<"old-node">>,playing => true}),

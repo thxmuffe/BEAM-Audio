@@ -11,28 +11,28 @@ validate(#{<<"kind">> := K} = P) ->
             identity(P),text(maps:get(<<"name">>,P),128),
             true = is_boolean(maps:get(<<"paused">>,P)),_ = descriptor(P);
         <<"subscribe">> ->
-            exact(P,base()++[<<"contract">>,<<"revision">>]),session(P),
+            exact(P,base()++[<<"contract">>,<<"revision">>]),media(P),
             true = ba_hex:valid(maps:get(<<"contract">>,P),32),
             N = maps:get(<<"revision">>,P),true = is_integer(N) andalso N>0 andalso N=<9007199254740991;
-        <<"accepted">> -> exact(P,base()++[<<"paused">>]),session(P),true = is_boolean(maps:get(<<"paused">>,P));
-        <<"state">> -> exact(P,base()++[<<"paused">>]),session(P),true = is_boolean(maps:get(<<"paused">>,P));
+        <<"accepted">> -> exact(P,base()++[<<"paused">>]),media(P),true = is_boolean(maps:get(<<"paused">>,P));
+        <<"state">> -> exact(P,base()++[<<"paused">>]),media(P),true = is_boolean(maps:get(<<"paused">>,P));
         <<"rejected">> ->
-            exact(P,base()++[<<"reason">>]),session(P),
+            exact(P,base()++[<<"reason">>]),media(P),
             true = lists:member(maps:get(<<"reason">>,P),[<<"contract">>,<<"unavailable">>,<<"capacity">>,<<"transport">>]);
-        <<"close">> -> exact(P,base()),session(P);
+        <<"close">> -> exact(P,base()),media(P);
         _ when K =:= <<"signal.offer">>; K =:= <<"signal.answer">> ->
-            exact(P,base()++[<<"sdp">>]),session(P),text(maps:get(<<"sdp">>,P),12000),
+            exact(P,base()++[<<"sdp">>]),media(P),text(maps:get(<<"sdp">>,P),12000),
             %% DTLS certificate fingerprint travels inside the authenticated SDP.
             true = binary:match(maps:get(<<"sdp">>,P),<<"a=fingerprint:sha-256 ">>) =/= nomatch;
         <<"signal.candidate">> ->
-            exact(P,base()++[<<"candidate">>,<<"mid">>,<<"line">>]),session(P),
+            exact(P,base()++[<<"candidate">>,<<"mid">>,<<"line">>]),media(P),
             %% Empty is the standard end-of-candidates marker, not an error.
             Candidate=maps:get(<<"candidate">>,P),true=is_binary(Candidate) andalso byte_size(Candidate)=<1024,
             text(maps:get(<<"mid">>,P),64),
             N = maps:get(<<"line">>,P),true = is_integer(N) andalso N>=0 andalso N=<16
     end,ok.
 base() -> [<<"kind">>,<<"source">>,<<"incarnation">>,<<"attempt">>].
-session(P) -> identity(P),true = ba_hex:valid(maps:get(<<"attempt">>,P),32).
+media(P) -> identity(P),true = ba_hex:valid(maps:get(<<"attempt">>,P),32).
 identity(P) -> text(maps:get(<<"source">>,P),128),true = ba_hex:valid(maps:get(<<"incarnation">>,P),32),ok.
 exact(P,K) -> ba_buffee_passport:exact(P,K).
 text(B,N) -> true = is_binary(B) andalso byte_size(B)>0 andalso byte_size(B)=<N,ok.

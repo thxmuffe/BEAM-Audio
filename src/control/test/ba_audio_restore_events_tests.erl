@@ -30,7 +30,7 @@ network_hints_preserve_clock_acquisition_and_live_media_test() ->
             lists:foreach(fun(State) ->
                 Clock=#{state => State,filter_ready => State=:=synchronized,filter_sample_count => 14,last_sync => 101,age_ns => 0},
                 put(test_clock,Clock),erase(test_resync),
-                Live=R#{session := Media,state := active,mix_ready => true},
+                Live=R#{media := Media,state := active,mix_ready => true},
                 Before=S#{subscriptions := #{Id => Live},providers => #{}},
                 After=lists:foldl(fun(_,Acc) ->
                     {noreply,Next}=ba_audio_receiver:handle_cast(network_changed,Acc),Next
@@ -51,13 +51,13 @@ network_hints_preserve_clock_acquisition_and_live_media_test() ->
 
 fixture(Fun) ->
     I = ba_subscription_tests:intent(<<"music">>),Id = maps:get(id,I),Peer = maps:get(device,I),
-    Context = #{peer => Peer,session => binary:copy(<<"D">>,32),buffee => maps:get(buffee,I),deadline => erlang:monotonic_time(millisecond)+10000},
+    Context = #{peer => Peer,link => binary:copy(<<"D">>,32),buffee => maps:get(buffee,I),deadline => erlang:monotonic_time(millisecond)+10000},
     Parent = self(),Control = spawn(fun Loop() -> receive
         {'$gen_call',From,{audio_context,_}} -> gen_server:reply(From,{ok,Context}),Loop();
         {'$gen_call',From,{audio_message,_,Request,P}} -> Parent ! {attempt,Request,P},gen_server:reply(From,ok),Loop()
     end end),true = register(ba_buffee_control,Control),
     Old = application:get_env(ba_core,audio_clock_adapter),application:set_env(ba_core,audio_clock_adapter,?MODULE),
-    R = #{intent => I,state => waiting_for_source,session => undefined,retry_at => erlang:monotonic_time(millisecond)-1,packets => 0},
+    R = #{intent => I,state => waiting_for_source,media => undefined,retry_at => erlang:monotonic_time(millisecond)-1,packets => 0},
     D = #{encoding => pcm,sample_rate => 48000,sample_format => float32_le,channel_count => 2,clock => <<"test">>,stream_handler => native_gst_aac},
     OldPort = os:getenv("BA_NATIVE_STREAM_PORT"),os:putenv("BA_NATIVE_STREAM_PORT","1"),
     S = #{subscriptions => #{Id => R},offers => #{{Peer,<<"music">>} => #{incarnation => binary:copy(<<"E">>,32),profiles => #{channel => D}}},

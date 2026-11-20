@@ -1,4 +1,4 @@
-%% Desk adapter. Owns application sessions, never OTP distribution or audio.
+%% Desk adapter. Owns the authenticated links to peers, never OTP distribution or audio.
 -module(ba_buffee_control).
 -behaviour(gen_server).
 -export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1,read_capabilities/2]).
@@ -43,17 +43,17 @@ init([]) ->
     end,
     Config = maps:with([policy,routes,envelope],View),
     Protocol = (ba_buffee_control_protocol:new(Identity,maps:get(policy,View),now_ms()))#{
-        membership_deadline => maps:get(until,View),lease_ms => ba_settings:app(control_session_lease_ms,60000)},
+        membership_deadline => maps:get(until,View),lease_ms => ba_settings:app(control_link_lease_ms,60000)},
     erlang:send_after(250,self(),expire),
     {ok,#{protocol => Protocol,config => Config,callers => #{},peer_names => #{},
           rejected => 0,last_rejection => null}}.
 
 handle_call(snapshot,_,S) ->
     Public = ba_buffee_control_protocol:snapshot(maps:get(protocol,S)),
-    {reply,Public#{peer_errors => maps:with(maps:keys(maps:get(sessions,Public)),maps:get(peer_errors,S,#{})),peer_names => maps:with(maps:keys(maps:get(sessions,Public)),maps:get(peer_names,S)),relay => ba_buffee_desks:status(),membership => ba_buffee_membership:status(),rejected => maps:get(rejected,S),
+    {reply,Public#{peer_errors => maps:with(maps:keys(maps:get(links,Public)),maps:get(peer_errors,S,#{})),peer_names => maps:with(maps:keys(maps:get(links,Public)),maps:get(peer_names,S)),relay => ba_buffee_desks:status(),membership => ba_buffee_membership:status(),rejected => maps:get(rejected,S),
         last_rejection => maps:get(last_rejection,S),diagnostics => ba_diagnostics:view(S)},S};
 handle_call({exclude,Peer},_,#{protocol := P}=S) ->
-    case maps:find(Peer,live(P)) of {ok,Session} -> drop_session(Peer,maps:get(id,Session));error -> ok end,
+    case maps:find(Peer,live(P)) of {ok,Link} -> drop_link(Peer,maps:get(id,Link));error -> ok end,
     Next=reply(Peer,{error,peer_excluded},S),
     {reply,ok,Next#{protocol := ba_buffee_control_protocol:close(Peer,now_ms(),P)}};
 handle_call({chat_message,Peer,Id,Text},{Owner,_},S) ->
@@ -67,7 +67,7 @@ handle_call({chat_message,Peer,Id,Text},{Owner,_},S) ->
     end;
 handle_call({audio_context,Peer},_,S) ->
     Result = try {ok,ba_buffee_control_protocol:context(Peer,now_ms(),maps:get(protocol,S))}
-        catch _:_ -> {error,no_authorized_session} end,
+        catch _:_ -> {error,no_authorized_link} end,
     {reply,Result,S};
 handle_call({time_message,Peer,Id,Payload},{Owner,_},S) ->
     case Owner=:=ba_session_scope:whereis(ba_buffee_clock) of
@@ -144,7 +144,7 @@ handle_info({membership_authorized,View},S) ->
                 ba_device_store:identity(),New,now_ms())}
     end,
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => maps:get(until,View),
-        lease_ms => ba_settings:app(control_session_lease_ms,60000)}}};
+        lease_ms => ba_settings:app(control_link_lease_ms,60000)}}};
 handle_info(membership_invalidated,S) ->
     Next = reset(membership_invalidated,S),
     {noreply,Next#{protocol := (maps:get(protocol,Next))#{membership_deadline => now_ms()}}};
@@ -174,9 +174,9 @@ handle_info(expire,S) ->
     {Events,Protocol} = ba_buffee_control_protocol:expire(now_ms(),maps:get(protocol,S)),
     Next = lists:foldl(fun({Peer,Reason},Acc) ->
         case Reason of
-            session_expired ->
-                Old = maps:get(Peer,maps:get(sessions,maps:get(protocol,S))),
-                drop_session(Peer,maps:get(id,Old)),
+            link_expired ->
+                Old = maps:get(Peer,maps:get(links,maps:get(protocol,S))),
+                drop_link(Peer,maps:get(id,Old)),
                 reply(Peer,{error,Reason},Acc);
             _ -> reply(Peer,{error,Reason},Acc)
         end
@@ -197,7 +197,7 @@ read_capabilities_call(Peer,Metrics,From,#{callers := Callers}=S) ->
 %% Every Session message is sealed end to end; Reception routes opaque bytes.
 send(Peer,Packet,#{config := #{envelope := Key,policy := #{buffee := Buffee}}}) ->
     ba_buffee_desks:send(Peer,<<"buffee_control">>,ba_buffee_passport:seal_envelope(Key,Buffee,Packet));
-send(_,_,_) -> {error,no_session}.
+send(_,_,_) -> {error,no_link}.
 event(Peer,{reply,<<"status.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
 event(Peer,{reply,<<"status.error">>,_},S) -> reply(Peer,{error,forbidden},S);
 event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->
@@ -258,13 +258,13 @@ event(_,{audio,Id,Payload,Context},S) ->
     end;
 event(Peer,{session,_,Payload,_},S) ->
     gen_server:cast(ba_session_scope:ref(ba_buffee_membership),{session_request,Peer,Payload}),S;
-event(Peer,{session_replaced,Old},S) ->
-    drop_session(Peer,Old),reply(Peer,{error,session_replaced},S);
-event(_,{session_renewed,Context},S) ->
-    audio_notify({audio_session_renewed,Context}),S;
+event(Peer,{link_replaced,Old},S) ->
+    drop_link(Peer,Old),reply(Peer,{error,link_replaced},S);
+event(_,{link_renewed,Context},S) ->
+    audio_notify({audio_link_renewed,Context}),S;
 event(Peer,authorized,S) ->
     Context=ba_buffee_control_protocol:context(Peer,now_ms(),maps:get(protocol,S)),
-    critical_audio_notify({audio_session_up,Context}),
+    critical_audio_notify({audio_link_up,Context}),
     Revision = ba_buffee_control_protocol:peer_revision(Peer,maps:get(protocol,S)),
     gen_server:cast(ba_session_scope:ref(ba_buffee_membership),{encountered,Peer,Revision}),
     self() ! {discover_name,Peer},S.
@@ -284,7 +284,7 @@ reply(Peer,Result,#{callers := Callers} = S) ->
     end.
 reset(Reason,#{callers := Callers,protocol := Protocol} = S) ->
     maps:foreach(fun(_,From) -> gen_server:reply(From,{error,Reason}) end,Callers),
-    maps:foreach(fun(Peer,Session) -> drop_session(Peer,maps:get(id,Session)) end,live(Protocol)),
+    maps:foreach(fun(Peer,Link) -> drop_link(Peer,maps:get(id,Link)) end,live(Protocol)),
     S#{callers := #{},peer_names := #{},peer_errors => #{},protocol := ba_buffee_control_protocol:reset(Protocol,now_ms())}.
 rejected(Reason,S) -> ba_diagnostics:count(Reason,S#{rejected := maps:get(rejected,S)+1,last_rejection := Reason}).
 now_ms() -> erlang:monotonic_time(millisecond).
@@ -296,11 +296,11 @@ format_status(Status) ->
     maps:map(fun(state,S) -> ba_buffee_control_protocol:snapshot(maps:get(protocol,S));
                 (log,_) -> []; (_,_) -> redacted end,Status).
 
-drop_session(Peer,Session) ->
-    time_notify({time_session_down,Peer,Session}),
-    audio_notify({audio_session_down,Peer,Session}),ok.
-audio_notify({audio_session_down,_,_}=Event) -> critical_audio_notify(Event);
-audio_notify({audio_session_renewed,_}=Event) -> critical_audio_notify(Event);
+drop_link(Peer,Link) ->
+    time_notify({time_link_down,Peer,Link}),
+    audio_notify({audio_link_down,Peer,Link}),ok.
+audio_notify({audio_link_down,_,_}=Event) -> critical_audio_notify(Event);
+audio_notify({audio_link_renewed,_}=Event) -> critical_audio_notify(Event);
 audio_notify(Event) ->
     case ba_session_scope:whereis(ba_audio_receiver) of
         undefined -> ok;
@@ -315,7 +315,7 @@ time_notify(Event) ->
         undefined -> ok;
         Pid ->
             case Event of
-                {time_session_down,_,_} -> Pid ! Event;
+                {time_link_down,_,_} -> Pid ! Event;
                 _ -> case process_info(Pid,message_queue_len) of
                     {message_queue_len,N} when N<64 -> Pid ! Event,ok;
                     _ -> {error,overloaded}
@@ -337,4 +337,4 @@ connect_peer(Peer,S) ->
     end.
 
 %% Relationships whose lapse has already been reported are closed.
-live(Protocol) -> maps:filter(fun(_,R) -> not maps:get(lapsed,R,false) end,maps:get(sessions,Protocol)).
+live(Protocol) -> maps:filter(fun(_,R) -> not maps:get(lapsed,R,false) end,maps:get(links,Protocol)).

@@ -65,7 +65,7 @@ snapshot() ->
                 requests => maps:get(D,maps:get(requests,Buffee,#{}),[]),
                 %% Only Devices this one has encountered are listed; connected
                 %% while their requests are flowing.
-                state => case D=:=Id orelse maps:get(stage,maps:get(D,maps:get(sessions,Control,#{}),#{}),lapsed)=:=authorized of
+                state => case D=:=Id orelse maps:get(stage,maps:get(D,maps:get(links,Control,#{}),#{}),lapsed)=:=authorized of
                     true -> authorized;false -> disconnected end}
                 || D <- maps:get(members,Buffee,[])],
             Base#{device_name := LocalName,handler => Handler,devices := Devices,audio := Audio,clock := Clock,

@@ -37,7 +37,7 @@ project(Audio,Clock) ->
         T <- [maps:get(transport,R,#{})],map_size(T)>0],
     Mixer=maps:get(mixer,Audio,#{}),
     Base=#{<<"sampled_at_ms">> => erlang:system_time(millisecond),
-        <<"receiver.subscriptions">> => length(Subs),<<"transport.sessions">> => length(Transports),
+        <<"receiver.subscriptions">> => length(Subs),<<"transport.media">> => length(Transports),
         <<"transport.open">> => length([ok || #{open := true} <- Transports]),
         <<"receiver.active_subscriptions">> => length([ok || #{state := active} <- Subs]),
         <<"receiver.mix_ready_subscriptions">> => length([ok || #{mix_ready := true} <- Subs])},

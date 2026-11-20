@@ -34,7 +34,7 @@ subscription_intent_does_not_imply_open_media_test() ->
     D=ba_audio_diagnostics:snapshot(#{subscriptions => Subs,suspended => false},#{}),
     ?assertEqual(ok,ba_audio_diagnostics:validate(D)),
     ?assertEqual(4,maps:get(<<"receiver.subscriptions">>,D)),
-    ?assertEqual(3,maps:get(<<"transport.sessions">>,D)),
+    ?assertEqual(3,maps:get(<<"transport.media">>,D)),
     ?assertEqual(1,maps:get(<<"transport.open">>,D)),
     ?assertEqual(2,maps:get(<<"receiver.active_subscriptions">>,D)),
     ?assertEqual(1,maps:get(<<"receiver.mix_ready_subscriptions">>,D)),

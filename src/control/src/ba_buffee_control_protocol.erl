@@ -1,10 +1,10 @@
 %% Pure, bounded control messages. No OTP distribution, processes or device I/O.
 %%
 %% Every packet authenticates itself: the sender signs the exact body, which
-%% names the recipient and Session, carries the sender's join certificate (signed
+%% names the recipient and Link, carries the sender's join certificate (signed
 %% by the invitation key), the sender's instance (one per protocol state), a
 %% rising sequence number and the sender's wall-clock time. Nobody keeps a list
-%% of who is in the Session; any Device with a valid join certificate that has
+%% of who is in the Link; any Device with a valid join certificate that has
 %% not been removed may ask, and its rights come from the signed statement. There is no handshake and no background renewal: a Device verifies each
 %% request when it arrives, and ba_device_request decides it. A relationship
 %% with a peer exists while its packets keep arriving and lapses when idle.
@@ -53,13 +53,13 @@ rights(Rights) ->
         time_read,offset_write,owner,stream_publish,end_session]) end,Rights).
 held(Peer,S) -> #{members := Members,defaults := Defaults} = maps:get(policy,S),maps:get(Peer,Members,Defaults).
 %% The rights-statement revision the peer last sent, so the newer side can share.
-peer_revision(Peer,S) -> maps:get(revision,maps:get(Peer,maps:get(sessions,S),#{}),0).
+peer_revision(Peer,S) -> maps:get(revision,maps:get(Peer,maps:get(links,S),#{}),0).
 
 %% A fresh instance: peers see it as a new relationship and close the old one.
 %% Packets from before this moment are not accepted from unknown instances, so
 %% a restarted receiver cannot be fed recorded traffic.
 reset(S,Now) ->
-    S#{instance => fresh(16),seq => 0,started => wall(Now),sessions => #{},retired => #{},
+    S#{instance => fresh(16),seq => 0,started => wall(Now),links => #{},retired => #{},
        pending => #{},answering => #{}}.
 
 %% Introduces this Device to a peer that has not heard from it; the peer answers
@@ -116,13 +116,13 @@ receive_packet(From, Packet, Now, S) ->
         Body = verify(Packet,From),
         #{<<"v">> := ?VERSION, <<"from">> := From, <<"to">> := To, <<"buffee">> := Buffee,
           <<"join">> := Join,<<"revision">> := Revision,
-          <<"session">> := Instance,<<"seq">> := Sequence,<<"sent">> := Sent} = Body,
+          <<"link">> := Instance,<<"seq">> := Sequence,<<"sent">> := Sent} = Body,
         To = maps:get(id,S),
         true = abs(wall(Now)-Sent) =< ?SKEW,
         true = ba_buffee_passport:joined(Buffee,From,Join,Invitation),
         {Admitted,Next} = admit(From,Instance,Sequence,Sent,Now,S),
-        Known = maps:get(sessions,Next),
-        Noted = Next#{sessions := Known#{From := (maps:get(From,Known))#{revision => Revision}}},
+        Known = maps:get(links,Next),
+        Noted = Next#{links := Known#{From := (maps:get(From,Known))#{revision => Revision}}},
         {ok,Packets,Events,Final} = dispatch(From,Body,Now,Noted),
         {ok,Packets,Admitted++Events,Final}
     end,S).
@@ -134,8 +134,8 @@ receive_packet(From, Packet, Now, S) ->
 admit(Peer,Instance,Sequence,Sent,Now,S) ->
     Retired = [R || {_,Until}=R <- maps:get(Peer,maps:get(retired,S),[]),Until > Now],
     false = lists:keymember(Instance,1,Retired),
-    Sessions = maps:get(sessions,S),
-    case maps:find(Peer,Sessions) of
+    Links = maps:get(links,S),
+    case maps:find(Peer,Links) of
         {ok,#{id := Instance,received := Last}=R} ->
             true = Sequence > Last,
             Live = R#{received := Sequence},
@@ -147,17 +147,17 @@ admit(Peer,Instance,Sequence,Sent,Now,S) ->
                         true ->
                             Renewed = put(Peer,(extend(Live,Now,S))#{renew_after := Now+lease_ms(S) div 3,
                                 renewals := maps:get(renewals,R)+1},S),
-                            {[{session_renewed,context(Peer,Now,Renewed)}],Renewed}
+                            {[{link_renewed,context(Peer,Now,Renewed)}],Renewed}
                     end;
                 %% Lapsed and already reported: the same instance resumes.
                 {false,true} -> {[authorized],put(Peer,start(Live,Now,S),S)};
                 %% Lapsed but not yet reported: close it like a replaced one.
-                {false,false} -> {[{session_replaced,Instance},authorized],put(Peer,start(Live,Now,S),S)}
+                {false,false} -> {[{link_replaced,Instance},authorized],put(Peer,start(Live,Now,S),S)}
             end;
         Found ->
             true = Sent >= maps:get(started,S)-?START_SLACK,
             {Replaced,NowRetired} = case Found of
-                {ok,#{id := Old}} -> {[{session_replaced,Old}],lists:sublist([{Old,Now+2*?SKEW}|Retired],?RETIRED)};
+                {ok,#{id := Old}} -> {[{link_replaced,Old}],lists:sublist([{Old,Now+2*?SKEW}|Retired],?RETIRED)};
                 error -> {[],Retired}
             end,
             New = start(#{id => Instance,received => Sequence},Now,S),
@@ -168,9 +168,9 @@ start(R,Now,S) -> (extend(maps:remove(lapsed,R),Now,S))#{renew_after => Now+leas
 extend(R,Now,S) -> R#{deadline => min(Now+lease_ms(S),maps:get(membership_deadline,S,infinity))}.
 
 context(Peer,Now,S) ->
-    Session = active(Peer,Now,S),
+    Link = active(Peer,Now,S),
     #{buffee := Buffee,manager := Manager} = maps:get(policy,S),
-    #{peer => Peer,session => maps:get(id,Session),deadline => maps:get(deadline,Session),
+    #{peer => Peer,link => maps:get(id,Link),deadline => maps:get(deadline,Link),
       buffee => Buffee,manager => Manager}.
 chat_message(Peer,Id,Text,Now,S) ->
     attempt(fun() ->
@@ -195,7 +195,7 @@ time_message(Peer,Id,Payload,Now,S) ->
         {ok,Packet,Next}
     end,S).
 
-%% Requests about the Session itself (rights, name, removal, End).
+%% Requests about the Link itself (rights, name, removal, End).
 session_message(Peer,Id,Payload,Now,S) ->
     attempt(fun() ->
         true = ba_hex:valid(Id,32),payload(<<"session.request">>,Payload),
@@ -238,7 +238,7 @@ authorized(Peer,Op,Request,Payload,Now,S) ->
         <<"stream.message">> ->
             {ok,[],[{audio,Request,Payload,context(Peer,Now,S)}],S};
         <<"status.read">> ->
-            Value = #{<<"protocol">> => 1,<<"session">> => <<"authorized">>},
+            Value = #{<<"protocol">> => 1,<<"link">> => <<"authorized">>},
             {Packet,Next} = outgoing(Peer,<<"status.reply">>,Request,Value,Now,S),
             {ok,[Packet],[],Next};
         <<"capabilities.read">> ->
@@ -262,8 +262,8 @@ authorized(Peer,Op,Request,Payload,Now,S) ->
     end.
 
 active(Peer, Now, S) ->
-    #{deadline := Deadline} = Session = maps:get(Peer,maps:get(sessions,S)),
-    true = Now < Deadline,true = Now < maps:get(membership_deadline,S,infinity), Session.
+    #{deadline := Deadline} = Link = maps:get(Peer,maps:get(links,S)),
+    true = Now < Deadline,true = Now < maps:get(membership_deadline,S,infinity), Link.
 sendable(Peer,Now,S) ->
     true = Now < maps:get(membership_deadline,S,infinity),
     true = ba_hex:valid(Peer,64) andalso Peer =/= maps:get(id,S),
@@ -271,18 +271,18 @@ sendable(Peer,Now,S) ->
 
 %% Expiry is also checked synchronously on every receive/request, never just by a timer.
 %% A lapsed relationship keeps its replay state until its packets are too old.
-expire(Now, #{sessions := Sessions,pending := Pending} = S) ->
+expire(Now, #{links := Links,pending := Pending} = S) ->
     {Kept,Events} = maps:fold(fun(Peer,R,{Acc,Es}) ->
         case {Now >= maps:get(deadline,R),maps:get(lapsed,R,false)} of
             {false,_} -> {Acc#{Peer => R},Es};
-            {true,false} -> {Acc#{Peer => R#{lapsed => true}},[{Peer,session_expired}|Es]};
+            {true,false} -> {Acc#{Peer => R#{lapsed => true}},[{Peer,link_expired}|Es]};
             {true,true} ->
                 case Now >= maps:get(deadline,R)+2*?SKEW of
                     true -> {Acc,Es};
                     false -> {Acc#{Peer => R},Es}
                 end
         end
-    end,{#{},[]},Sessions),
+    end,{#{},[]},Links),
     {Waiting,Timeouts} = maps:fold(fun(Peer,#{deadline := Due}=P,{Acc,Es}) ->
         case Due =< Now of
             true -> {Acc,[{Peer,request_timeout}|Es]};
@@ -291,19 +291,19 @@ expire(Now, #{sessions := Sessions,pending := Pending} = S) ->
     end,{#{},[]},Pending),
     Retired = maps:filter(fun(_,L) -> L=/=[] end,
         maps:map(fun(_,L) -> [R || {_,Until}=R <- L,Until > Now] end,maps:get(retired,S))),
-    {Events++Timeouts,S#{sessions := Kept,pending := Waiting,retired := Retired}}.
+    {Events++Timeouts,S#{links := Kept,pending := Waiting,retired := Retired}}.
 %% The owner closed a relationship (peer offline, excluded). Replay state stays
 %% until expiry forgets it, so recorded packets cannot reopen it.
-close(Peer,Now,#{sessions := Sessions}=S) ->
-    case maps:find(Peer,Sessions) of
-        {ok,R} -> S#{sessions := Sessions#{Peer := R#{lapsed => true,deadline := min(Now,maps:get(deadline,R))}},
+close(Peer,Now,#{links := Links}=S) ->
+    case maps:find(Peer,Links) of
+        {ok,R} -> S#{links := Links#{Peer := R#{lapsed => true,deadline := min(Now,maps:get(deadline,R))}},
                      pending := maps:remove(Peer,maps:get(pending,S)),answering := maps:remove(Peer,maps:get(answering,S))};
         error -> S
     end.
 snapshot(S) ->
-    #{id => maps:get(id,S),sessions => maps:map(fun(_,V) ->
+    #{id => maps:get(id,S),links => maps:map(fun(_,V) ->
         (maps:with([deadline,renewals],V))#{stage => case maps:get(lapsed,V,false) of true -> lapsed;false -> authorized end}
-    end,maps:get(sessions,S))}.
+    end,maps:get(links,S))}.
 
 outgoing(Peer, Op, Request, Payload, Now, S) ->
     #{buffee := Buffee,join := Join,revision := Revision} = maps:get(policy,S),
@@ -311,7 +311,7 @@ outgoing(Peer, Op, Request, Payload, Now, S) ->
     true = uint(Sequence),
     Body = #{<<"v">> => ?VERSION,<<"from">> => maps:get(id,S),<<"to">> => Peer,
         <<"buffee">> => Buffee,<<"join">> => Join,<<"revision">> => Revision,
-        <<"session">> => maps:get(instance,S),<<"seq">> => Sequence,<<"sent">> => wall(Now),
+        <<"link">> => maps:get(instance,S),<<"seq">> => Sequence,<<"sent">> => wall(Now),
         <<"op">> => Op,<<"request">> => Request,<<"payload">> => Payload},
     {seal(Body,maps:get(private,S)),S#{seq := Sequence}}.
 %% Callers pass monotonic milliseconds; the wire carries wall-clock time.
@@ -333,10 +333,10 @@ verify(Packet, From) when is_binary(Packet), byte_size(Packet) =< ?MAX ->
                          [binary:decode_hex(From),ed25519]),
     Body = decode(Data),
     exact(Body,[<<"v">>,<<"from">>,<<"to">>,<<"buffee">>,<<"join">>,<<"revision">>,
-                <<"session">>,<<"seq">>,<<"sent">>,<<"op">>,<<"request">>,<<"payload">>]),
+                <<"link">>,<<"seq">>,<<"sent">>,<<"op">>,<<"request">>,<<"payload">>]),
     [true = ba_hex:valid(maps:get(K,Body),N) || {K,N} <-
         [{<<"from">>,64},{<<"to">>,64},{<<"buffee">>,32},{<<"join">>,128},
-         {<<"session">>,32},{<<"request">>,32}]],
+         {<<"link">>,32},{<<"request">>,32}]],
     [true = uint(maps:get(K,Body)) || K <- [<<"seq">>,<<"revision">>,<<"sent">>]],
     payload(maps:get(<<"op">>,Body),maps:get(<<"payload">>,Body)), Body.
 
@@ -371,8 +371,8 @@ payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
     end;
 payload(<<"status.read">>,P) -> exact(P,[]);
 payload(<<"status.reply">>,P) ->
-    exact(P,[<<"protocol">>,<<"session">>]),
-    #{<<"protocol">> := 1,<<"session">> := <<"authorized">>} = P;
+    exact(P,[<<"protocol">>,<<"link">>]),
+    #{<<"protocol">> := 1,<<"link">> := <<"authorized">>} = P;
 payload(<<"status.error">>,P) ->
     exact(P,[<<"reason">>]), #{<<"reason">> := <<"forbidden">>} = P;
 payload(<<"capabilities.read">>,#{<<"metrics">> := true,<<"diagnostics">> := Options}=P) ->
@@ -430,7 +430,7 @@ decode(Data) ->
 exact(M,Keys) -> true = is_map(M), true = lists:sort(maps:keys(M)) =:= lists:sort(Keys).
 uint(N) -> is_integer(N) andalso N >= 0 andalso N =< ?INT.
 fresh(N) -> binary:encode_hex(crypto:strong_rand_bytes(N)).
-put(Peer,Session,#{sessions := Sessions} = S) -> S#{sessions := Sessions#{Peer => Session}}.
+put(Peer,Link,#{links := Links} = S) -> S#{links := Links#{Peer => Link}}.
 attempt(Fun,S) ->
     try Fun() catch
         throw:forbidden_operation -> {error,forbidden_operation,S};

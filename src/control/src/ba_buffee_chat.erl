@@ -41,9 +41,9 @@ handle_info({audio_lateness,Report},S) ->
             M=try publish(Text,maps:get(messages,S)) of {_,Messages} -> Messages catch _:_ -> maps:get(messages,S) end,
             {noreply,S#{messages := M,last_audio_warning => Now}}
     end;
-handle_info({buffee_chat,#{peer := Peer,session := Session},Id,Text},S) ->
+handle_info({buffee_chat,#{peer := Peer,link := Link},Id,Text},S) ->
     case ba_buffee_control:audio_context(Peer) of
-        {ok,#{session := Session}} -> {noreply,S#{messages := add(Id,Peer,Text,maps:get(messages,S))}};
+        {ok,#{link := Link}} -> {noreply,S#{messages := add(Id,Peer,Text,maps:get(messages,S))}};
         _ -> {noreply,S}
     end;
 %% Presence follows links, which drop and return with networks and restarts.

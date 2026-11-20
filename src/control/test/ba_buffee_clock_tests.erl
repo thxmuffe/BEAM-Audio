@@ -220,7 +220,7 @@ session_renewal_retains_filter_but_invalidates_readiness_test() ->
             D = maps:get(clock,S),
             Ready = S#{filter := Filter,filter_reference := reference,
                 clock := D#{confirmed := true,filter_ready := true,filter_sample_count := 20}},
-            {noreply,Next} = ba_buffee_clock:handle_info({time_session_down,Authority,old_session},Ready),
+            {noreply,Next} = ba_buffee_clock:handle_info({time_link_down,Authority,old_session},Ready),
             ?assertEqual(Filter,maps:get(filter,Next)),
             ?assertEqual(reference,maps:get(filter_reference,Next)),
             ?assertEqual(20,maps:get(filter_sample_count,maps:get(clock,Next))),

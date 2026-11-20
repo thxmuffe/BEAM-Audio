@@ -1,7 +1,7 @@
 %% On demand after the clock in the dependency-ordered runtime branch.
 -module(ba_audio_sup).
 -behaviour(supervisor).
--export([start_link/0, ensure_started/0, start_source/1, start_session/1, sessions/0, init/1]).
+-export([start_link/0, ensure_started/0, start_source/1, start_media/1, media/0, init/1]).
 
 start_link() -> supervisor:start_link(ba_session_scope:registration(?MODULE), ?MODULE, []).
 
@@ -19,7 +19,7 @@ ensure_started() ->
     end.
 
 start_source(Offer) -> start_child(source, ba_audio_source, [Offer]).
-start_session(#{descriptor := D}=Args) ->
+start_media(#{descriptor := D}=Args) ->
     Handler=ba_stream_handler:for_descriptor(D),
     start_child(subscription,Handler:session_module(),[Args]).
 
@@ -27,7 +27,7 @@ start_child(Kind, Module, Args) ->
     supervisor:start_child(ba_session_scope:ref(?MODULE), #{id => {Kind, make_ref()},
         start => {Module, start_link, Args}, restart => temporary}).
 
-sessions() ->
+media() ->
     case ba_session_scope:whereis(?MODULE) of
         undefined -> [];
         _ -> [Pid || {{subscription, _}, Pid, _, _} <- supervisor:which_children(ba_session_scope:ref(?MODULE)), is_pid(Pid)]

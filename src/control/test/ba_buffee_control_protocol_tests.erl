@@ -67,7 +67,7 @@ capability_permissions_and_reply_test() ->
     Caps = #{<<"instance">> => binary:copy(<<"A">>,32),<<"revision">> => 0},
     {ok,Reply,B2} = p(reply_capabilities,[A,Request,Caps,7,B1]),
     WrongKind = resign(Reply,KB,fun(M) -> M#{<<"op">> := <<"status.reply">>,
-        <<"payload">> := #{<<"protocol">> => 1,<<"session">> => <<"authorized">>}} end),
+        <<"payload">> := #{<<"protocol">> => 1,<<"link">> => <<"authorized">>}} end),
     ?assertMatch({error,_,A1},p(receive_packet,[B,WrongKind,8,A1])),
     BadCaps = resign(Reply,KB,fun(M) -> M#{<<"payload">> := Caps#{<<"module">> => <<"os">>}} end),
     ?assertMatch({error,_,A1},p(receive_packet,[B,BadCaps,8,A1])),
@@ -324,9 +324,9 @@ freshness_and_replay_test() ->
     %% A restarted receiver does not accept traffic recorded before it started.
     ?assertMatch({error,_,_},p(receive_packet,[A,First,5001,p(reset,[SB,5000])])),
     %% A sender restart replaces the relationship; the old instance never returns.
-    Old = maps:get(id,maps:get(A,maps:get(sessions,B1))),
+    Old = maps:get(id,maps:get(A,maps:get(links,B1))),
     {ok,Again,_} = chat(B,3,20,p(reset,[A2,20])),
-    {ok,[],[{session_replaced,Old},authorized,{chat,_,_,_}],B2} = p(receive_packet,[A,Again,21,B1]),
+    {ok,[],[{link_replaced,Old},authorized,{chat,_,_,_}],B2} = p(receive_packet,[A,Again,21,B1]),
     {ok,Stale,_} = chat(B,4,22,A2),
     ?assertMatch({error,_,B2},p(receive_packet,[A,Stale,23,B2])).
 
@@ -336,15 +336,15 @@ idle_relationship_lapses_and_resumes_test() ->
     {A,B,_,_,SA,SB} = connected(),
     {ok,Request,A1} = p(request_status,[B,5,SA]),
     ?assertMatch({[{B,request_timeout}],_},p(expire,[5005,A1])),
-    Session = maps:get(session,p(context,[A,100,SB])),
-    {[{A,session_expired}],B1} = p(expire,[60004,SB]),
+    Link = maps:get(link,p(context,[A,100,SB])),
+    {[{A,link_expired}],B1} = p(expire,[60004,SB]),
     ?assertError(_,p(context,[A,60004,B1])),
     ?assertMatch({[],_},p(expire,[60005,B1])),
     {ok,[_],[authorized],B2} = p(receive_packet,[A,Request,60005,B1]),
-    ?assertEqual(Session,maps:get(session,p(context,[A,60005,B2]))),
+    ?assertEqual(Link,maps:get(link,p(context,[A,60005,B2]))),
     %% Not yet reported as lapsed: closed like a replaced one, then resumed.
-    {ok,[_],[{session_replaced,Session},authorized],_} = p(receive_packet,[A,Request,60005,SB]),
-    ?assertEqual(#{},maps:get(sessions,p(snapshot,[p(reset,[SA,0])]))).
+    {ok,[_],[{link_replaced,Link},authorized],_} = p(receive_packet,[A,Request,60005,SB]),
+    ?assertEqual(#{},maps:get(links,p(snapshot,[p(reset,[SA,0])]))).
 
 closed_relationship_keeps_replay_state_test() ->
     {A,B,_,_,SA,SB} = connected(),
@@ -360,12 +360,12 @@ traffic_extends_relationship_and_reports_renewal_test() ->
     {ok,Early,A1} = chat(B,1,10000,SA),
     {ok,[],[{chat,_,_,_}],B1} = p(receive_packet,[A,Early,10001,SB]),
     {ok,Later,A2} = chat(B,2,25000,A1),
-    {ok,[],[{session_renewed,C},{chat,_,_,_}],B2} = p(receive_packet,[A,Later,25001,B1]),
-    ?assertEqual(maps:get(session,Old),maps:get(session,C)),
+    {ok,[],[{link_renewed,C},{chat,_,_,_}],B2} = p(receive_packet,[A,Later,25001,B1]),
+    ?assertEqual(maps:get(link,Old),maps:get(link,C)),
     ?assertEqual(85001,maps:get(deadline,C)),
     %% Capped by the installed membership.
     {ok,Capped,_} = chat(B,3,50000,A2),
-    ?assertMatch({ok,[],[{session_renewed,#{deadline := 65000}},_],_},
+    ?assertMatch({ok,[],[{link_renewed,#{deadline := 65000}},_],_},
         p(receive_packet,[A,Capped,50001,B2#{membership_deadline => 65000}])).
 
 simultaneous_hellos_both_complete_test() ->

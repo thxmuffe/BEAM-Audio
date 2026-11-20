@@ -14,7 +14,7 @@ idle_ticks_do_not_query_peers_test() ->
 listener_reads_only_announced_or_known_sources_test() ->
     fixture(fun(S,[A,B],Contexts) ->
         {noreply,Started}=ba_audio_receiver:handle_info(catalog_bootstrap,S),no_message(),
-        {noreply,_}=ba_audio_receiver:handle_info({audio_session_up,maps:get(A,Contexts)},Started),no_message(),
+        {noreply,_}=ba_audio_receiver:handle_info({audio_link_up,maps:get(A,Contexts)},Started),no_message(),
         Announced=deliver(A,id(),#{<<"kind">> => <<"catalog.changed">>},Contexts,Started),
         [{A,Read,#{<<"kind">> := <<"catalog.read">>}}]=messages(1),
         Done=deliver(A,Read,#{<<"kind">> => <<"catalog.end">>},Contexts,Announced),no_message(),
@@ -70,7 +70,7 @@ no_message() -> receive {sent,_,_,_}=M -> error({unexpected_network_message,M}) 
 id() -> binary:encode_hex(crypto:strong_rand_bytes(16)).
 fixture(F) ->
     A=binary:copy(<<"A">>,64),B=binary:copy(<<"B">>,64),Peers=[A,B],Parent=self(),
-    Contexts=maps:from_list([{P,#{peer => P,session => id(),buffee => id(),deadline => erlang:monotonic_time(millisecond)+30000}} || P <- Peers]),
+    Contexts=maps:from_list([{P,#{peer => P,link => id(),buffee => id(),deadline => erlang:monotonic_time(millisecond)+30000}} || P <- Peers]),
     %% This Device holds on_air, the privilege a publication needs.
     Seed=lists:duplicate(64,$E),{Pub,_}=crypto:generate_key(eddsa,ed25519,binary:decode_hex(list_to_binary(Seed))),
     View=#{policy => #{peers => maps:from_list([{P,[stream_read]} || P <- Peers])},
