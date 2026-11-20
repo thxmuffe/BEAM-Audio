@@ -60,13 +60,17 @@ unavailable_capabilities_from_capture_adapter_test() ->
     Old=application:get_env(ba_core,audio_capture_adapter),
     try
         %% Without its helper, Windows capture is reported unavailable up front.
-        OldHelper=os:getenv("BA_WINDOWS_AUDIO_CAPTURE_HELPER"),os:unsetenv("BA_WINDOWS_AUDIO_CAPTURE_HELPER"),
-        application:set_env(ba_core,audio_capture_adapter,ba_windows_input),
+        OldHelper=os:getenv("BA_WINDOWS_NATIVE_STREAM_HELPER"),os:unsetenv("BA_WINDOWS_NATIVE_STREAM_HELPER"),
+        application:set_env(ba_core,audio_capture_adapter,ba_windows_native_audio),
         U=ba_app_session:unavailable_capabilities(),
-        case OldHelper of false -> ok;_ -> os:putenv("BA_WINDOWS_AUDIO_CAPTURE_HELPER",OldHelper) end,
+        %% With the helper only native microphone capture is missing, as on a Mac.
+        os:putenv("BA_WINDOWS_NATIVE_STREAM_HELPER",code:which(?MODULE)),
+        WithHelper=ba_app_session:unavailable_capabilities(),
+        case OldHelper of false -> os:unsetenv("BA_WINDOWS_NATIVE_STREAM_HELPER");_ -> os:putenv("BA_WINDOWS_NATIVE_STREAM_HELPER",OldHelper) end,
         ?assertEqual([<<"broadcast">>,<<"microphone">>],lists:sort(maps:keys(U))),
-        application:set_env(ba_core,audio_capture_adapter,ba_mac_audio),
-        ?assertEqual(#{},ba_app_session:unavailable_capabilities()),
+        ?assertEqual([<<"microphone">>],maps:keys(WithHelper)),
+        application:set_env(ba_core,audio_capture_adapter,ba_mac_native_audio),
+        ?assertEqual([<<"microphone">>],maps:keys(ba_app_session:unavailable_capabilities())),
         application:unset_env(ba_core,audio_capture_adapter),
         ?assertEqual(#{},ba_app_session:unavailable_capabilities())
     after case Old of undefined -> application:unset_env(ba_core,audio_capture_adapter);{ok,V} -> application:set_env(ba_core,audio_capture_adapter,V) end end.

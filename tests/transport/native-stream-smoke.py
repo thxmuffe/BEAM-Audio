@@ -11,9 +11,14 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
+WINDOWS = os.name == 'nt'
 # The same variables the apps use, so a packaged bundle can be checked too.
 RUNTIME = Path(os.environ.get('BA_GSTREAMER_RUNTIME', ROOT / 'builds/intermediates/gstreamer/runtime'))
-HELPER = Path(os.environ.get('BA_MAC_NATIVE_STREAM_HELPER', ROOT / 'builds/CLI/ba_native_stream'))
+if WINDOWS:
+    # build-native-stream.py: DLLs beside the helper, plugins in its plugins folder.
+    HELPER = Path(os.environ.get('BA_WINDOWS_NATIVE_STREAM_HELPER', ROOT / 'builds/CLI/native-stream/ba_native_stream.exe'))
+else:
+    HELPER = Path(os.environ.get('BA_MAC_NATIVE_STREAM_HELPER', ROOT / 'builds/CLI/ba_native_stream'))
 
 
 def frame(value):
@@ -30,10 +35,13 @@ def read_file(stream, count):
 
 def start_host():
     env = dict(os.environ)
-    env.update(DYLD_LIBRARY_PATH=str(RUNTIME / 'lib'),
-               GST_PLUGIN_SYSTEM_PATH_1_0=str(RUNTIME.parent / 'plugins'),
-               GST_REGISTRY_1_0=str(ROOT / 'builds/intermediates/gstreamer/smoke-registry.bin'),
-               GST_REGISTRY_FORK='no')
+    env.update(GST_REGISTRY_1_0=str(ROOT / 'builds/intermediates/gstreamer/smoke-registry.bin'), GST_REGISTRY_FORK='no')
+    if WINDOWS:
+        for name in ('GST_PLUGIN_PATH', 'GST_PLUGIN_PATH_1_0', 'GST_PLUGIN_SYSTEM_PATH'):
+            env.pop(name, None)
+        env['GST_PLUGIN_SYSTEM_PATH_1_0'] = str(HELPER.parent / 'plugins')
+    else:
+        env.update(DYLD_LIBRARY_PATH=str(RUNTIME / 'lib'), GST_PLUGIN_SYSTEM_PATH_1_0=str(RUNTIME.parent / 'plugins'))
     proc = subprocess.Popen([str(HELPER), '--protocol-test'],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     size, = struct.unpack('!I', read_file(proc.stdout, 4))

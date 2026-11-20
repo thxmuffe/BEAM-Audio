@@ -1,5 +1,50 @@
 # Current implementation and validation
 
+## Windows native AAC host — 2026-11-20
+
+Windows had no audio after PCM/Opus were deleted. It now has the native AAC
+path. Owner choices: a C++ helper built against the official GStreamer MSVC
+package, and FFmpeg `avenc_aac` to keep 320 kb/s (Media Foundation stops at
+192 kb/s).
+- `src/Audio/adapters/Windows/native_stream.cpp` (`ba_native_stream.exe`) ports
+  `GStreamerStreamHost.mm` 1:1 (control protocol, clock mapping, RTCP mapping,
+  sink scheduling, watchdogs, stop ACK) with json-glib and Winsock. `atenc`/
+  `atdec`/`osxaudiosink` become `avenc_aac`+`aacparse`/`avdec_aac`/`wasapi2sink`.
+  ON AIR is one `wasapi2src` loopback (`exclude-process-tree` of BEAM's PID)
+  resampled to 48 kHz stereo F32 and fanned out to provider peers, with
+  sample-count positions and GstSystemClock host times.
+- `ba_windows_native_audio` (capture adapter, same port protocol as the Mac,
+  simple `<<1,Rate:32,Channels:32>>` format) and `ba_windows_native_host` (keeps
+  one `--host` helper and sets `BA_NATIVE_STREAM_PORT`, restarts with backoff).
+  `ba_app_session` selects both for `BA_PLATFORM=windows` when
+  `BA_WINDOWS_NATIVE_STREAM_HELPER` names an existing helper. Without it, Windows
+  reports sending unavailable and has no output, as before.
+- `scripts/platforms/Windows/build-native-stream.py` pins the 1.28.8 MSVC
+  installer (SHA-256), installs it once per user into
+  `builds/intermediates/Windows/gstreamer-sdk` (no user env var or system
+  install observed), compiles with `/W4 /WX`, and packages 34 DLLs + 16 plugins +
+  app-local VC++ runtime + licence texts (~43 MB) into `builds/CLI/native-stream/`.
+- OpenSound `build.py` copies that to `builds/Windows/OpenSound/audio/`;
+  `os_windows_host` sets the helper variable. DeviceWeb `run.ps1 --local-device`
+  uses the core build when present.
+
+Validation (this Windows PC): `native-stream-smoke.py` passes against the
+Windows helper (244,736 decoded frames, 264 RTCP-mapped packets, mapping in
+617 ms, max software schedule error 17.3 ms vs ~5 ms on the Mac, 580 ms jitter
+budget; all five lifetime checks pass). A scratch probe with real devices:
+WASAPI loopback capture → AAC → silent receiver decoded 239,616 frames, 0 drops;
+synthetic → muted `wasapi2sink` rendered 284 buffers, 0 drops, 758 ms jitter
+budget after the device's reported latency. eunit: `ba_windows_native_tests`
+(real `--host` handshake, port withdrawn on stop), `ba_app_session_tests`
+(capability test updated from deleted modules), `ba_native_stream_tests`,
+`ba_audio_restore_events_tests`: 16 tests, 0 failures. Packaged app booted
+headless with a throwaway identity: `audio/ba_native_stream.exe --host` runs as
+BEAM's child on loopback and exits when BEAM is killed.
+Not done: no Session-level Windows↔Mac/iPhone stream, no listening test, no
+check that the loopback exclusion actually removes local playback, no
+microphone, CLI (`ba_cli_device`) still Mac-only. Stale `.beam` files of deleted
+modules remain in `builds/intermediates/control` and are copied into app builds.
+
 ## Native output latency budget — 2026-11-19
 
 The native jitterbuffer used the entire Session Response time, while the sink

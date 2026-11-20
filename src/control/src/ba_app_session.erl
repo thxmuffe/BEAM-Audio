@@ -8,13 +8,13 @@ configure() ->
     case ba_settings:env("BA_PLATFORM") of
         "mac" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => mac}),forget_snapshots();
         "ios" -> application:set_env(ba_core,restore_buffee_on_start,true),configure(#{platform => ios}),forget_snapshots();
-        %% No native audio host on Windows yet: nothing plays or captures.
-        "windows" -> configure(#{platform => windows});
+        %% Native AAC through ba_native_stream.exe when the host app ships it.
+        "windows" -> configure(#{platform => windows}),ok=ba_windows_native_host:start();
         _ -> ok
     end.
 configure(#{platform := Platform}=Options) ->
     %% Native AAC is the only audio path; output is the native stream host.
-    Capture=case Platform of mac -> ba_mac_native_audio;_ -> ba_no_capture end,
+    Capture=case Platform of mac -> ba_mac_native_audio;windows -> ba_windows_native_audio;_ -> ba_no_capture end,
     application:set_env(ba_core,audio_automation,true),
     application:set_env(ba_core,audio_capture_adapter,Capture),
     application:set_env(ba_core,buffee_default_permissions,permissions()),

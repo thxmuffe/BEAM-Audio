@@ -147,7 +147,7 @@ everything not listed has no audio until a native host exists.
 
 | Platform | Playback | Microphone | ON AIR (system audio) | Verified |
 |---|---|---|---|---|
-| Windows | none | none | none | — |
+| Windows | native host (app/Web Device) | none | WASAPI loopback → AAC | helper smoke + real loopback/WASAPI probes pass; no Session listening test |
 | macOS | none in the app (GStreamer not packaged); none in CLI | none | CLI helper (Core Audio tap → AAC) | headless native smoke passes; not listened to |
 | iOS | native host (always started) | none | none | Mac→iPhone audible at 800 ms / 2 s, wavering; 150 ms silent |
 

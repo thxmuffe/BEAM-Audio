@@ -26,6 +26,12 @@ foreach ($libraries in @('builds/intermediates/Windows/transport/beam/dev/lib', 
     $paths += Get-ChildItem "$root/$libraries/*/ebin" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
 }
 $entryFunction = if ($args -contains '--local-device') { 'windows_main' } else { 'main' }
+# A local Device plays and sends audio through the core's native AAC host when built
+# (scripts/platforms/Windows/build-native-stream.py).
+$nativeHelper = Join-Path $root 'builds/CLI/native-stream/ba_native_stream.exe'
+if (($args -contains '--local-device') -and !$env:BA_WINDOWS_NATIVE_STREAM_HELPER -and (Test-Path -LiteralPath $nativeHelper)) {
+    $env:BA_WINDOWS_NATIVE_STREAM_HELPER = $nativeHelper
+}
 $env:BA_WEB_BROWSER_SCRIPT = Join-Path $PSScriptRoot 'open-browser.ps1'
 $env:BA_WEB_POWERSHELL = (Get-Command powershell.exe).Source
 # A stable Device slot keeps ownership across launches. DPAPI protects its seed

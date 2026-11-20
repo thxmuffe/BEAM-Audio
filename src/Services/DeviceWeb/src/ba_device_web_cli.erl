@@ -1,7 +1,7 @@
 -module(ba_device_web_cli).
 -export([main/0,windows_main/0]).
 
-%% Windows has no native audio host yet: the Device runs without audio.
+%% Windows audio uses ba_native_stream.exe when BA_WINDOWS_NATIVE_STREAM_HELPER names it.
 windows_main() ->
     os:putenv("BA_PLATFORM","windows"),
     main().

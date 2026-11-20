@@ -6,7 +6,8 @@ code. The PCM-through-Erlang path (Mixer, PCM data channel, packet handlers,
 platform PCM adapters) and the Opus path were deleted. Consequences until native
 coverage grows: Mac sends system audio (ON AIR) from the CLI helper only, the
 Mac app has no audio (GStreamer and the native host are not packaged into it),
-the iPhone app receives, and microphones and Windows have no audio. Packet
+the iPhone app receives, Windows sends and receives through its own native
+host (2026-11-20, below), and microphones have no audio. Packet
 recovery (RTP retransmission within the buffer, then redundancy for bursts) is
 the next audio work.
 
@@ -138,6 +139,31 @@ loss, revocation acknowledgement and clock-policy mapping. These are software li
 not music-quality, hardware-tail or acoustic-synchronization evidence. The iOS
 native source and Swift session/bridge API pass targeted compile checks; the
 full app was not built or installed.
+
+## Windows native host
+
+`adapters/Windows/native_stream.cpp` is the Windows port of
+`GStreamerStreamHost.mm`, with the same `gst_aac_rtp_v2` control protocol and
+lifetime rules. AAC uses FFmpeg's LGPL `avenc_aac` (320 kb/s) / `avdec_aac`; output is
+`wasapi2sink` with native resampling; ON AIR is one `wasapi2src` loopback
+capture (48 kHz stereo float) feeding every provider peer, excluding BEAM's
+process tree so the Device's own playback is not sent back. Modes: default
+(capture + host, `ba_windows_native_audio`), `--host` (receiving host owned by
+`ba_windows_native_host`, which sets `BA_NATIVE_STREAM_PORT`) and
+`--protocol-test`.
+
+```sh
+python scripts/platforms/Windows/build-native-stream.py
+python tests/transport/native-stream-smoke.py
+```
+
+The build installs the pinned official GStreamer 1.28.8 MSVC package
+(`scripts/platforms/Windows/gstreamer-sdk.json`) per user into
+`builds/intermediates/Windows/gstreamer-sdk`, or uses `BA_GSTREAMER_SDK`. Its
+output `builds/CLI/native-stream/` holds the helper, only the DLLs it and the
+selected plugins import, `plugins/`, licence texts and the app-local Visual C++
+runtime. The smoke test selects it on Windows (`BA_WINDOWS_NATIVE_STREAM_HELPER`
+overrides). The CLI (`ba_cli_device`) still configures the Mac helper only.
 
 ## Links
 
