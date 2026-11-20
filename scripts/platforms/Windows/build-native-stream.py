@@ -10,14 +10,14 @@ import libraries and runtime. It ships only as an Inno Setup installer, so it is
 installed once per user into builds/intermediates/Windows/gstreamer-sdk; set
 BA_GSTREAMER_SDK to use an existing installation's msvc_x86_64 folder instead.
 """
-import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import struct
 import subprocess
-import urllib.request
+
+from setup import fetch  # sibling scripts/platforms/Windows/setup.py
 
 ROOT = Path(__file__).resolve().parents[3]
 WORK = ROOT / 'builds/intermediates/Windows'
@@ -42,17 +42,7 @@ def sdk():
     if explicit:
         raise RuntimeError('BA_GSTREAMER_SDK has no include/gstreamer-1.0/gst/gst.h')
     pinned = json.loads((Path(__file__).with_name('gstreamer-sdk.json')).read_text(encoding='utf-8'))
-    downloads = WORK / 'gstreamer-sdk-download'
-    downloads.mkdir(parents=True, exist_ok=True)
-    installer = downloads / pinned['name']
-    if not installer.exists():
-        urllib.request.urlretrieve(pinned['url'], installer)
-    digest = hashlib.sha256()
-    with installer.open('rb') as data:
-        for block in iter(lambda: data.read(1 << 20), b''):
-            digest.update(block)
-    if digest.hexdigest() != pinned['sha256']:
-        raise RuntimeError('Checksum mismatch: ' + installer.name)
+    installer = fetch(pinned, WORK / 'gstreamer-sdk-download' / pinned['name'])
     # Per-user, repository-private installation; nothing is installed for all users.
     subprocess.run([str(installer), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER',
                     '/NOICONS', '/TYPE=full', f'/DIR={WORK / "gstreamer-sdk"}',

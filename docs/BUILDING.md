@@ -6,7 +6,8 @@ artifacts live under each repository's `builds/` directory.
 
 ## Root build commands
 
-Both repositories now have `build.sh` (macOS host) and `build.ps1` (Windows host).
+Both repositories have one `build.sh` for macOS and Windows (Git Bash); OpenSound
+also has **Build.cmd** for double-clicking on Windows. There are no PowerShell scripts.
 They work from any current directory; run the script belonging to the repository
 you want to build. **OpenSound always invokes the matching BEAM-Audio root build
 first and stops if it fails.** Core builders never require product sources.
@@ -20,11 +21,10 @@ From either repository on macOS:
 ./build.sh --help
 ```
 
-From either repository on Windows:
+From either repository on Windows (Git Bash, e.g. the VS Code terminal):
 
-```powershell
-.uild.ps1
-.uild.ps1 -Help
+```sh
+./build.sh
 ```
 
 In BEAM-Audio these prepare/compile the core runtime and the native AAC audio
@@ -48,12 +48,12 @@ location for product scripts. Windows root commands currently use the pinned
 private OTP/native runtime prepared in BEAM-Audio/builds.
 
 Validation of these wrappers: Bash syntax/help and fail-fast orchestration
-review on Mac. PowerShell scripts are source-reviewed only here; no Windows
-execution or full dependency/app rebuild is claimed for the wrapper change.
+review on Mac. Windows builds run through `build.sh` (Git Bash) or Build.cmd,
+both delegating to Python.
 
 
 Use sibling `BEAM-Audio/` and `OpenSound/` checkouts. `BEAM_AUDIO_ROOT` selects a
-different core checkout for app shell/PowerShell builders; pass the same setting
+different core checkout for app shell/Python builders; pass the same setting
 to Xcode when using a different layout. `OPENSOUND_ROOT` locates product sources
 for core-owned UI/integration checks. Existing keychain/DPAPI identifiers, bundle
 IDs, protocol names and Erlang module names are preserved.
@@ -93,14 +93,13 @@ Unsigned compilation does not install the app or prove playback.
 
 ## Windows
 
-Prepare Windows OTP/rebar3 with `scripts/platforms/Windows/setup.ps1` in
-BEAM-Audio. From the OpenSound checkout, double-click **Build.cmd**. The build
+The build fetches the pinned OTP/rebar3 itself (BEAM-Audio
+`scripts/platforms/Windows/setup.py`). From the OpenSound checkout, double-click **Build.cmd**. The build
 window reports success/failure and waits for a key. Open the output at
 `builds/Windows/OpenSound/OpenSound.exe`.
 
 `build.py` is the single Python backend. Optional terminal usage:
-`python build.py --test` or Git Bash `./build.sh windows --test`. PowerShell
-entry points delegate to the same backend. The build and a fresh MSVC launcher/
+`python build.py --test` or Git Bash `./build.sh windows --test`. The build and a fresh MSVC launcher/
 identity-helper compilation were validated on Windows.
 
 Windows packages the shared frontend and `buffee_control` through DeviceWeb in

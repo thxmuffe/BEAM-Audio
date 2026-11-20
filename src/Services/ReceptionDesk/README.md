@@ -44,14 +44,14 @@ frontend lives in the sibling OpenSound checkout; `/` here is only a small Recep
 
 ## Run locally on Windows
 
-With the Windows app already built:
+From Git Bash:
 
-```powershell
-.\src\Services\ReceptionDesk\run.ps1
+```sh
+src/Services/ReceptionDesk/run.sh
 ```
 
-The launcher prepares a private Elixir 1.19.5 build tool, uses the existing OTP
-runtime and resolves locked dependencies. Nothing is installed system-wide.
+On Windows it delegates to `run-windows.py`, which prepares a private Elixir 1.19.5
+build tool with the core's pinned OTP/rebar3 and resolves locked dependencies. Nothing is installed system-wide.
 Override `BA_OTP_ROOT` if needed. Subsequent runs reuse ignored build caches.
 The default Reception is `ws://127.0.0.1:8765/relay/v1` and its landing page is
 `http://127.0.0.1:8765/`. `BA_DESK_PORT` changes the development port.
@@ -103,7 +103,7 @@ https://beamaudio.onrender.com. Enter
 The service ID is `srv-dbq59cmgekts73anho5g`; automatic deploys are disabled.
 Deploy a committed/pushed revision with the authorized Render CLI:
 
-```powershell
+```sh
 render deploys create srv-dbq59cmgekts73anho5g --wait
 ```
 
@@ -151,10 +151,10 @@ app are outside this milestone.
 
 ## Verification
 
-```powershell
-# Build the native client and shared protocol tests.
-.\src\Apps\Windows\build.ps1 -Test
-# In the environment prepared by setup.ps1:
+```sh
+# Build the native client and shared protocol tests (OpenSound checkout).
+python build.py --test
+# With the private Elixir from run-windows.py --setup-only on PATH:
 cd src/Services/ReceptionDesk
 mix test
 cd ../..
@@ -178,7 +178,7 @@ verified here because the Docker engine is not running; the image still needs
 its Linux/Render deployment check.
 
 The original `inets` node-name directory is retained separately for legacy
-regression tests: `run-legacy.ps1` / `run-legacy.sh`. It is unauthenticated local
+regression tests: `run-legacy.sh`. It is unauthenticated local
 discovery, not this relay and not suitable for public hosting. The old directory
 smoke test now launches that explicit legacy service.
 

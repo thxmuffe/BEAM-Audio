@@ -90,19 +90,38 @@ open_browser(URL,App) ->
     %% URL is generated from our numeric loopback port, never user shell input.
     case os:type() of
         {unix,darwin} -> os:cmd("open "++URL);
-        {win32,_} ->
-            Script=ba_settings:env("BA_WEB_BROWSER_SCRIPT"),
-            case Script of
-                false -> os:cmd("cmd /c start \"\" "++URL);
-                _ ->
-                    Extra=case App of true -> ["-App"];false -> [] end,
-                    Port=open_port({spawn_executable,ba_settings:env("BA_WEB_POWERSHELL")},
-                        [{args,["-NoLogo","-NoProfile","-ExecutionPolicy","Bypass","-File",Script,URL]++Extra},
-                         {env,ba_native_env:without_secrets()},exit_status,hide]),
-                    case App of
-                        true -> Port;
-                        false -> receive {Port,{exit_status,_}} -> ok after 10000 -> port_close(Port) end
-                    end
-            end;
+        {win32,_} -> windows_browser(URL,App);
         {unix,_} -> os:cmd("xdg-open "++URL)
+    end.
+
+%% Windows app window: a private Chrome/Edge process for this Device, so the
+%% window's exit ends the Device. BA_WEB_BROWSER names another executable (or a
+%% test stand-in). The browser never inherits the identity seed.
+windows_browser(URL,true) ->
+    Chrome="Google\\Chrome\\Application\\chrome.exe",Edge="Microsoft\\Edge\\Application\\msedge.exe",
+    case browser([Chrome,Edge]) of
+        false -> io:put_chars(standard_error,"Install Microsoft Edge or Google Chrome to open the Windows app.\n"),error(no_browser);
+        Browser ->
+            State=ba_settings:env("BA_STATE_DIR"),true=is_list(State),
+            Profile=filename:nativename(filename:join(State,"browser")),
+            %% OTP refuses to spawn .cmd/.bat files; a .py stand-in runs under Python.
+            {Executable,Prefix}=case string:lowercase(filename:extension(Browser)) of
+                ".py" -> {os:find_executable("python"),[Browser]};
+                _ -> {Browser,[]}
+            end,
+            open_port({spawn_executable,Executable},[{args,Prefix++["--app="++URL,"--user-data-dir="++Profile,"--no-first-run",
+                "--no-default-browser-check","--disable-background-mode"]},{env,ba_native_env:without_secrets()},exit_status])
+    end;
+windows_browser(URL,false) ->
+    case browser(["Google\\Chrome\\Application\\chrome.exe"]) of
+        false -> os:cmd("cmd /c start \"\" "++URL);
+        Chrome -> open_port({spawn_executable,Chrome},[{args,[URL]},{env,ba_native_env:without_secrets()}]),ok
+    end.
+browser(Relative) ->
+    case ba_settings:env("BA_WEB_BROWSER") of
+        false ->
+            Found=[Path || R <- Relative,Var <- ["ProgramFiles","ProgramFiles(x86)","LOCALAPPDATA"],
+                Base <- [os:getenv(Var)],is_list(Base),Path <- [filename:join(Base,R)],filelib:is_regular(Path)],
+            case Found of [First|_] -> First;[] -> false end;
+        Path -> Path
     end.

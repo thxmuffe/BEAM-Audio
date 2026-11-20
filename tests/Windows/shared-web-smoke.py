@@ -1,5 +1,5 @@
 """Exercise the packaged Windows host, shared HTTP API and local Reception.
-Build OpenSound/src/Apps/Windows/build.ps1 first. All identities/state disposable.
+Build OpenSound (build.sh or Build.cmd) first. All identities/state disposable.
 Optional --invitation-file checks admission to a supplied Session without chat.
 """
 from pathlib import Path
@@ -88,17 +88,17 @@ def connected(state):
 def browser_lifetime(directory):
     # A deterministic app process exercises the real CLI lifetime contract
     # without moving the user's mouse or opening a browser during this test.
-    script = directory / "browser-lifetime.ps1"
-    script.write_text("param([string]$Url, [switch]$App)\n"
-        "if (!$App -or $env:BA_IDENTITY_SEED) { exit 9 }\n"
-        "Start-Sleep -Milliseconds 600\nexit 0\n")
+    # BA_WEB_BROWSER replaces Chrome/Edge; a .py stand-in runs under Python.
+    script = directory / "browser-lifetime.py"
+    script.write_text("import os, sys, time\n"
+        "if not sys.argv[1].startswith('--app=') or os.environ.get('BA_IDENTITY_SEED'): sys.exit(9)\n"
+        "time.sleep(0.6)\n")
     state = directory / "lifetime"
     completed = subprocess.run([str(APP/"runtime/bin/erl.exe"), "+S", "2", "-noshell", "-noinput",
         "-pa", str(APP/"ebin"), "-s", "ba_device_web_cli", "main", "-extra", "--assets",
         str(APP/"assets"), "--port", "0", "--local-device", "--app"],
         cwd=APP, env=dict(os.environ, BA_STATE_DIR=str(state), BA_IDENTITY_SEED=secrets.token_hex(32),
-            ERL_LIBS=str(APP/"lib"), BA_WEB_BROWSER_SCRIPT=str(script),
-            BA_WEB_POWERSHELL=str(Path(os.environ["SYSTEMROOT"])/"System32/WindowsPowerShell/v1.0/powershell.exe")),
+            ERL_LIBS=str(APP/"lib"), BA_WEB_BROWSER=str(script)),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=25)
     assert completed.returncode == 0, "App lifetime did not shut down cleanly"
     assert (state/"settings.config").exists(), "App close did not flush Device settings"

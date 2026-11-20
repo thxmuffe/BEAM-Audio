@@ -17,11 +17,8 @@ build is required. From the BEAM Audio checkout:
 bash src/Services/DeviceWeb/run.sh --assets /absolute/path/to/frontend --preview --open
 ```
 
-On Windows with OTP and rebar3 on PATH:
-
-```powershell
-.\src\Services\DeviceWeb\run.ps1 --assets C:\path\to\frontend --preview --open
-```
+On Windows the same `run.sh` works from Git Bash. It delegates to `run-windows.py`,
+which uses the pinned OTP/rebar3 (fetched if missing) instead of PATH tools.
 
 The launcher compiles Erlang sources, starts an unnamed BEAM VM and serves
 http://127.0.0.1:8766. `--port` selects another port. `--open` opens the default
@@ -133,7 +130,7 @@ existing managed Device. Do not put a seed in command arguments or share it.
 
 The standalone Windows Web launcher starts through
 `ba_device_web_cli:windows_main/0` (`BA_PLATFORM=windows`). With
-`--local-device`, `run.ps1` sets `BA_WINDOWS_NATIVE_STREAM_HELPER` to the core's
+`--local-device`, `run-windows.py` sets `BA_WINDOWS_NATIVE_STREAM_HELPER` to the core's
 `builds/CLI/native-stream/ba_native_stream.exe` when it has been built
 (`scripts/platforms/Windows/build-native-stream.py`); without it the Device has
 no audio. Capture and playback still follow Device consent. Web startup stays in this
@@ -153,7 +150,8 @@ connection per URL; the service still owns no audio/membership policy.
 
 OpenSound Windows packages this service and the shared web assets, starting an
 unnamed `buffee_control` VM. `--app` implies `--open` and uses
-`open-browser.ps1 -App`: an isolated installed Chrome/Edge process. Its exit
+an isolated installed Chrome/Edge process started by `ba_device_web_cli`
+(`BA_WEB_BROWSER` names another executable). Its exit
 stops the local Device and flushes settings. It cannot combine with `--monitor`.
 The browser does not inherit `BA_IDENTITY_SEED`. The Windows host keeps existing
 Credential Manager keys/leases/state; Web development DPAPI slots stay separate.

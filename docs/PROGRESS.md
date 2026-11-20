@@ -1,5 +1,33 @@
 # Current implementation and validation
 
+## No PowerShell; Windows builds without legacy steps — 2026-11-20
+
+Owner direction: no PowerShell, and nothing builds legacy transports. Every
+`.ps1` is gone from both repositories. Windows runs `build.sh` from Git Bash
+(or OpenSound's Build.cmd); logic is Python, `.cmd` files call Python directly.
+- `scripts/platforms/Windows/setup.py` replaces `setup.ps1` + `erlang-deps.ps1`:
+  pinned OTP 29.1.2 and rebar3 3.28.0 (versioned URL), downloaded with Windows'
+  `curl.exe` (Python's OpenSSL rejected this PC's certificate chain), verified
+  before taking their final name so an interrupted download is retried. Its
+  `fetch` is shared by the GStreamer SDK and Reception Elixir downloads.
+- Core `build.sh` has a Windows branch: tools, core compile, native AAC host.
+  The legacy transport, Python GStreamer runtime, Elixir/Rust/Perl tool setup and
+  the unused `windows` rebar profile (`fs`) are no longer built; their scripts
+  are deleted. Reception keeps its own Elixir (`ReceptionDesk/run-windows.py`).
+- The app window is launched by `ba_device_web_cli` itself (Chrome, then Edge;
+  `BA_WEB_BROWSER` overrides, a `.py` stand-in runs under Python because OTP
+  refuses to spawn `.cmd`). `open-browser.ps1` is gone.
+- `DeviceWeb/run-windows.py` replaces `run.ps1`, keeping the DPAPI
+  `identity.dpapi` Web Device seeds; `Start Web UI.cmd` calls it.
+- Legacy Inspector Windows scripts removed; use the CLI on Windows.
+
+Validation: both `build.sh` runs from a clean tool state (rebar3 and the
+GStreamer SDK downloaded and verified), the app-window lifetime check from
+`tests/Windows/shared-web-smoke.py`, DPAPI round trip plus reading the two
+existing Web Device identities, DeviceWeb `run.sh --build-only`, Reception
+`run.sh --setup-only`. Start Web UI.cmd itself and the full Windows smoke tests
+were not run.
+
 ## Windows native AAC host — 2026-11-20
 
 Windows had no audio after PCM/Opus were deleted. It now has the native AAC

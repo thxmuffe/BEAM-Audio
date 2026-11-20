@@ -11,76 +11,15 @@ transport and `erpc`, without UI automation or an HTTP server.
 The command loop, node naming, session cookie, admission, rejoin and remote
 queries live in platform-independent Erlang (`ba_inspector` and
 `ba_node_api`). The platform hosts only provide runtime/library paths,
-protected identity storage and process/stdin handling: Swift/Keychain on macOS,
-PowerShell/user DPAPI on Windows. Both call `ba_inspector:boot/0` with the same
-JSON command interface. The Mac host must be rebuilt to pick up this entry point.
+protected identity storage and process/stdin handling: Swift/Keychain on macOS.
+It calls `ba_inspector:boot/0` with the JSON command interface. The Mac host must be rebuilt to pick up this entry point.
 
 ## Windows
 
-November 4 verification: Windows native transport preparation and inspector
-preflight now pass. An actual CLI join using the user's invitation authenticates
-with the public Reception, but six attempts return peer_unavailable and add no
-membership. The app later reconnects after recovering its existing state from
-redirected AppData; the CLI failures did not establish a transport defect.
-Older missing-NIF/untested notes below describe earlier checkpoints.
-
-Build the shared Erlang modules separately from the running Windows app:
-
-```powershell
-.\src\Tools\Inspector\build.ps1
-.\src\Tools\Inspector\run.ps1 -Help
-```
-
-Local native-cluster access requires a Windows-built transport bundle, exactly
-as the Windows app does. This change does not port DTLS/SRTP/SCTP or make the
-legacy Windows relay compatible with the native Mac/iPhone cluster. Validate a
-prepared bundle without creating an identity or attempting admission:
-
-```powershell
-.\src\Tools\Inspector\run.ps1 -NativeLibRoot C:\path\to\windows-native-lib -Check
-```
-
-Then run with the same `-NativeLibRoot` and `-JoinFile invitation.txt` once;
-omit `-JoinFile` on later runs. `-OtpRoot` defaults to `BA_OTP_ROOT`, or the
-private runtime from Windows setup. `-NativeLibRoot` defaults to
-`BA_WINDOWS_NATIVE_LIB`, or `builds/intermediates/Windows/transport/beam/dev/lib`; the
-core build no longer produces those legacy transport libraries (2026-11-20), so
-local mode needs them supplied, otherwise use `-Remote`. The inspector
-stores its own encrypted seed and membership under
-`%LOCALAPPDATA%\org.opensound.beamaudio\inspector`; `-StateDirectory` chooses another
-identity/state directory. Windows user DPAPI protects `identity.dpapi`; it is
-separate from any app identity and is not a portable identity backup. Run only
-one inspector per identity. Missing/incompatible native libraries fail before
-identity creation or a cluster connection.
-
-For access from Windows now, use the existing admitted **Mac** inspector over
-OpenSSH. This needs the Mac's SSH address, repository path and working SSH key
-authentication; no Windows transport NIFs are needed:
-
-```powershell
-'{"op":"nodes"}' | .\src\Tools\Inspector\run.ps1 -Remote user@mac -RemoteRoot /path/to/BEAM-Audio
-```
-
-Use `-InputFile commands.jsonl` for a sequence of commands, or omit input to
-enter JSON lines interactively. Remote mode forwards stdin/stdout/stderr to
-`run.sh` on that Mac and uses its saved Keychain inspector identity. Do not run
-a second inspector with that identity if one is already active. The Mac must
-already have a built inspector and its first admission completed. SSH does not
-request a terminal or interactive password; connection/authentication failures
-are returned without changing the cluster. Closing stdin exits the inspector,
-not the Mac app or iPhone playback. Remote mode is an SSH host option, not a
-native Windows cluster connection.
-
-For passive inspection, send only `status`, `wait`, `nodes`, `inspect`, `clock`,
-`capture` and `sources`. Playback changes require explicit command verbs such as
-`play`, `pause` or `broadcast_stop`; hosts do not send those automatically.
-
-Windows validation: shared Erlang warnings-as-errors compilation, local
-missing-transport rejection, isolated node/carrier startup without peers,
-DPAPI roundtrip and PowerShell parsing/stdin forwarding were checked.
-The remote command/quoting was checked with a simulated SSH host; no live SSH
-or Windows native-cluster connection has been verified. Mac host changes were
-source-reviewed, not compiled on Windows. No playing node was stopped or changed.
+The Windows host scripts (PowerShell) were removed on 2026-11-20 together
+with the legacy Windows transport build they needed. On Windows use the public
+CLI instead (`scripts\cli\beamaudio.cmd monitor` / `inspect device`; see
+[CLI usage](../CLI/README.md)).
 
 ## Build and start on macOS
 

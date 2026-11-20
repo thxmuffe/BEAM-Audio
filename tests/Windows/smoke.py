@@ -66,7 +66,7 @@ def await_snapshot(node, predicate):
 
 def main():
     if not BROKER.exists():
-        raise SystemExit('Run src/Services/ReceptionDesk/run-legacy.ps1 once to compile the Reception desk first.')
+        raise SystemExit('Run src/Services/ReceptionDesk/run-legacy.sh once to compile the Reception desk first.')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]

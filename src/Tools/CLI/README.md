@@ -26,11 +26,11 @@ building. Standalone release distribution and Windows launch support are later.
 ## Windows
 
 The same escript runs on Windows; only the launcher differs. `scripts\cli\beamaudio.cmd`
-(alias `scripts\cli\beam-audio.cmd`) prefers the pinned OTP from `.\build.ps1`
+(alias `scripts\cli\beam-audio.cmd`) prefers the pinned OTP from `./build.sh`
 (`builds\intermediates\Windows\otp`) and passes all arguments through:
 
-```powershell
-.\scripts\cli\beamaudio.cmd monitor --all --metrics --invitation-file C:\private\session-link.txt
+```bat
+scripts\cli\beamaudio.cmd monitor --all --metrics --invitation-file C:\private\session-link.txt
 ```
 
 Monitor, inspect, call, wait, get, history, stop and kill work as on macOS
