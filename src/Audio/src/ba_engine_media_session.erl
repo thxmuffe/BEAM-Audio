@@ -120,12 +120,13 @@ start_speaker(#{engine := Engine}=S) ->
         _ -> erlang:send_after(?HEARTBEAT,self(),retry_speaker),S
     end.
 
-%% The Response time can change while playing: restart the speaker at the new delay.
+%% The Response time can change while playing: the speaker moves in place, so
+%% the output device and the OS audio session stay open.
 follow_delay(#{role := receiver,open := true,delay := Old,engine := Engine,ssrc := Ssrc}=S) ->
     case ba_session_clock:presentation([]) of
         {ok,#{offset_ms := New}} when New=/=Old ->
-            {ok,_}=ba_audio_engine:command(Engine,#{op => stop_speaker,ssrc => Ssrc}),
-            start_speaker(S#{open := false});
+            {ok,_}=ba_audio_engine:command(Engine,#{op => delay,ssrc => Ssrc,delay_ms => New}),
+            S#{delay := New};
         _ -> S
     end;
 follow_delay(S) -> S.

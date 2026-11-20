@@ -57,7 +57,7 @@ std::vector<uint8_t> flac_header(uint32_t rate) {
 Speaker::Speaker(const json &c, const Clock &clock) {
     ssrc_ = c.at("ssrc"), rate_ = c.at("rate");
     anchor_ = c.at("anchor_ns").get<int64_t>();
-    delay_ = c.at("delay_ms").get<int64_t>() * 1000000;
+    delay_.store(c.at("delay_ms").get<int64_t>() * 1000000);
     gain_.store(c.value("gain", 1.0f));
     if (rate_ != 44100 && rate_ != 48000) fail("unsupported stream rate");
     for (uint32_t i = 0; i < Blocks; ++i) marks_[i].store(-1);
@@ -74,7 +74,7 @@ Speaker::Speaker(const json &c, const Clock &clock) {
     if (!FLAC__stream_decoder_process_until_end_of_metadata(decoder_)) fail("FLAC header rejected");
     int64_t now = 0;
     if (!clock.map(host_now_ns(), now)) fail("clock mapping required before start_speaker");
-    read_pos_.store(int64_t(std::floor(double(now - anchor_ - delay_) * rate_ / 1e9)));
+    read_pos_.store(int64_t(std::floor(double(now - anchor_ - delay_.load()) * rate_ / 1e9)));
 }
 
 Speaker::~Speaker() {
@@ -123,7 +123,7 @@ void Speaker::read_ring(int64_t pos, long n, float *dest) {
 
 void Speaker::render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate) {
     // Stream sample n plays at anchor + delay + n / rate.
-    const double desired = double(present - anchor_ - delay_) * rate_ / 1e9;
+    const double desired = double(present - anchor_ - delay_.load(std::memory_order_relaxed)) * rate_ / 1e9;
     const double base = double(out_rate) / double(rate_);
     double error = play_pos_ - desired;
     if (!started_ || std::fabs(error) > JumpSeconds * rate_) {

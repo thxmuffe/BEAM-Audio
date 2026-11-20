@@ -13,6 +13,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#if defined(__APPLE__)
+#include <pthread/qos.h>
+#endif
+
 #include <array>
 #include <chrono>
 #include <cstring>
@@ -32,6 +36,14 @@
 namespace ba {
 namespace {
 constexpr int MaxSpeakers = 8;
+
+// Engine threads outrank UI work: on iPhone the UI shares the CPU with the
+// in-process engine. The render callback itself is Core Audio's real-time thread.
+void audio_priority() {
+#if defined(__APPLE__)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
+}
 
 // OTP {packet,4} with raw read(2)/write(2) on the control connection: stdin/
 // stdout of a port program, or an in-process loopback socket on iOS. C stdio
@@ -144,6 +156,7 @@ struct Engine {
         if (op == "stop_capture") return stop_capture();
         if (op == "route") return route(c.at("ssrc"), parse_peers(c.at("peers")));
         if (op == "volume") return volume(c.at("ssrc"), c.at("gain"));
+        if (op == "delay") return delay(c.at("ssrc"), c.at("delay_ms"));
         if (op == "status") return status();
         if (op == "crash") crash(c.at("kind"));
         fail("unknown op " + op);
@@ -236,6 +249,13 @@ struct Engine {
         fail("no such speaker");
     }
 
+    json delay(uint32_t ssrc, int64_t delay_ms) {
+        if (delay_ms < 0 || delay_ms > 3000) fail("delay must be 0-3000 ms");
+        for (auto &slot : speakers)
+            if (Speaker *s = slot.load(); s && s->ssrc() == ssrc) return s->set_delay(delay_ms), json::object();
+        fail("no such speaker");
+    }
+
     json status() {
         json out = {{"clock_ready", clock.ready()}, {"output_rate", out_rate.load()}, {"callbacks", callbacks.load()},
                     {"oversized_callbacks", oversized.load()}, {"speakers", json::array()}};
@@ -287,12 +307,16 @@ Engine &start_engine(Shell &shell, const char *crash_file) {
     term_init();
     static Engine instance(shell);
     engine = &instance;
-    instance.packet_thread = std::thread([] { engine->packet_loop(); });
+    instance.packet_thread = std::thread([] {
+        audio_priority();
+        engine->packet_loop();
+    });
     return instance;
 }
 
 // One owner's control connection, until it closes; then everything is released.
 void serve(Engine &instance, int in, int out) {
+    audio_priority();
     {
         std::lock_guard<std::mutex> lock(out_mutex);
         out_fd = out;

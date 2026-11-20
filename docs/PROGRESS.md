@@ -1,5 +1,22 @@
 # Current implementation and validation
 
+## First iPhone playback on the engine — 2026-11-20
+
+- Owner heard Mac → iPhone over the engine: 150 ms with gaps, 300 ms "sounds
+  perfect" with about one glitch per minute. Opening Chat / focusing its text
+  field on the iPhone made the audio stagger.
+- Fixed: the iPhone loopback control failed (`einval`) because a TCP socket is
+  an Erlang port too and `send/2` chose by `is_port/1`; reproduced on the Mac
+  with the same engine code before and after.
+- Fixed: changing the Response time stopped and restarted the speaker, which
+  released the iOS audio session; iOS refused to reactivate it ("audio session
+  could not be activated"). The engine now has a `delay` command that moves a
+  running speaker in place (one re-position; checked on the Mac).
+- For the UI stagger (not yet re-tested on the phone): engine packet and
+  control threads use `QOS_CLASS_USER_INTERACTIVE`; clock probes slower than
+  5 ms (a busy in-process VM) are discarded instead of skewing the mapping.
+- Engine counters (late, missing, jumps) are not yet in remote diagnostics.
+
 ## iPhone engine shell; GStreamer removed — 2026-11-20
 
 - iOS runs the engine in-process (`ba_audio_engine_start` → 127.0.0.1 control

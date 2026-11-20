@@ -11,6 +11,9 @@
 
 -define(CLOCK_INTERVAL,5000).
 -define(MAX_PPM,500).
+%% A probe slower than this was delayed by a busy VM (on iPhone the VM shares the
+%% app's CPU with the UI): its midpoint is not the engine's time; skip it.
+-define(MAX_PROBE_NS,5000000).
 -define(CHAT_LIMIT,4000).
 
 %% One engine per Device, in its Session runtime: it owns one UDP socket and
@@ -129,9 +132,10 @@ event(E,S) ->
 
 replied({caller,From},Reply,S) -> gen_server:reply(From,Reply),S;
 replied({clock_probe,Sent},{ok,#{internal_ns := Internal,session_ns := Native}},S) ->
-    case (maps:get(clock,S))((Sent+erlang:monotonic_time(nanosecond)) div 2) of
+    Received=erlang:monotonic_time(nanosecond),
+    case Received-Sent=<?MAX_PROBE_NS andalso (maps:get(clock,S))((Sent+Received) div 2) of
         Global when is_integer(Global) -> async(clock_map(Internal,Global,Native,S),clock_mapped,S#{revision := maps:get(revision,S)+1});
-        unavailable -> S
+        _ -> S
     end;
 replied(clock_mapped,{ok,_},S) -> S.
 async(C,Pending,#{next := Id}=S) ->
