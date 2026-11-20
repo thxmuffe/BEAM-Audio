@@ -1,5 +1,9 @@
 # Audio Engine interface
 
+> **Being replaced (2026-11-20):** the owner chose an own C++ engine under
+> Erlang control; see [AUDIO_ENGINE.md](AUDIO_ENGINE.md). The GStreamer path
+> below stays in use until that engine's first milestone is measured.
+
 ## Native stream decision — 2026-11-18
 
 **Use GStreamer for the first complete native stream implementation.** Keep OTP

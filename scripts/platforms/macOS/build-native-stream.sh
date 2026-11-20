@@ -5,6 +5,10 @@ ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 RUNTIME="$ROOT/builds/intermediates/gstreamer/runtime"
 HEADERS=${BA_GSTREAMER_HEADERS:-"$ROOT/builds/intermediates/gstreamer/iOS/sdk-device/GStreamer.xcframework/ios-arm64/Headers"}
 OUTPUT="$ROOT/builds/CLI/ba_native_stream"
+# The default headers come from the pinned iOS SDK; fetch it on a clean checkout.
+if [ -z "${BA_GSTREAMER_HEADERS:-}" ] && [ ! -f "$HEADERS/gst/gst.h" ]; then
+  python3 "$ROOT/scripts/platforms/iOS/prepare-gstreamer.py" --target device
+fi
 if [ ! -f "$HEADERS/gst/gst.h" ]; then
   echo 'Set BA_GSTREAMER_HEADERS to the matching GStreamer SDK headers.' >&2
   exit 1

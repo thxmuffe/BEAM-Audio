@@ -24,7 +24,32 @@ run(A,Root) ->
             io:format(standard_error,"Monitoring through Device ~s. Audio disabled. Ctrl-C exits this view; Device stays connected.~n",[Observer]),
             Observer
     end,
+    follow_chat(Name,filename:join([Root,"builds/live/chat.log"])),
     loop(Name,A,maps:get(metrics,A,false),#{},#{},#{}).
+%% Live tests: every chat entry the monitored Device sees is appended to a file
+%% Claude can read while the owner tests. One line per entry, never rewritten.
+follow_chat(Name,Path) ->
+    ok=filelib:ensure_dir(Path),
+    io:format(standard_error,"Session chat is appended to ~ts~n",[Path]),
+    spawn_link(fun() -> chat_loop(Name,Path,sets:new([{version,2}])) end).
+chat_loop(Name,Path,Seen) ->
+    Next=try ba_cli:request(Name,#{<<"method">> => <<"snapshot">>}) of
+        R ->
+            Names=maps:from_list([{maps:get(<<"id">>,D),maps:get(<<"name">>,D,<<>>)} || D <- maps:get(<<"devices">>,R,[])]),
+            New=[M || M <- maps:get(<<"messages">>,R,[]),not sets:is_element(key(M),Seen)],
+            case New of
+                [] -> ok;
+                _ -> ok=file:write_file(Path,[chat_line(M,Names) || M <- New],[append])
+            end,
+            lists:foldl(fun(M,Acc) -> sets:add_element(key(M),Acc) end,Seen,New)
+    catch throw:{cli_error,_,_} -> Seen end,
+    receive after 1000 -> chat_loop(Name,Path,Next) end.
+key(M) -> {maps:get(<<"id">>,M),maps:get(<<"sender">>,M)}.
+chat_line(M,Names) ->
+    Time=calendar:system_time_to_rfc3339(maps:get(<<"time">>,M),[{unit,second},{offset,"Z"}]),
+    Sender=maps:get(<<"sender">>,M),
+    Who=case maps:get(Sender,Names,<<>>) of <<>> -> binary:part(Sender,0,min(12,byte_size(Sender)));N -> N end,
+    [Time," ",Who,": ",maps:get(<<"text">>,M),"\n"].
 choose(A,Root) ->
     Parsed=invitation(A,Root),
     case Parsed of

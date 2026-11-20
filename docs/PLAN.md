@@ -452,6 +452,51 @@ path. Dated recordings, counters and validation limits remain in PROGRESS.md.
   troubleshooting. An open transport does not prove sound or good timing;
   ice_checking alone does not establish that TURN is necessary.
 
+## Next: own audio engine
+
+Owner decision 2026-11-20; design in [AUDIO_ENGINE.md](AUDIO_ENGINE.md). Erlang
+sets up the network and decides; a C++ engine processes packets on Erlang's
+instructions; platform shells own OS audio. Build beside the GStreamer path;
+when milestone 1 is measured better, delete GStreamer and its SDK downloads
+(one way only). Each milestone ends with an owner listening test.
+
+0. **Debug loop first.** CLI Inspector writing Session chat to
+   `builds/live/chat.log`; native crash reports posted in full to chat.
+1. **macOS LAN pair.** Engine executable (port, `{packet,4}`), cpptrace crash
+   handler, UDP + libsrtp + libFLAC, timestamp ring buffer, clock mapping from
+   `ba_session_clock`, libsoxr drift correction, Core Audio output shell, Mac
+   process-tap capture. Commands: start/stop speaker and capture. Erlang owner
+   process replaces `ba_native_media_session`. Measure sync error between two
+   receivers against the GStreamer path.
+2. **Recovery and roaming.** NACK/RTX; Erlang probes and re-routes on interface
+   change; address-independent streams. Test Wi-Fi → mobile data on a phone
+   hotspot. Decide TURN from these results.
+3. **iOS.** In-process engine thread, AudioUnit shell, crash file posted on next
+   launch, background playback kept.
+4. **Windows.** WASAPI shell incl. loopback; replaces `native_stream.cpp`.
+5. **Microphone.** start/stop mic on each shell.
+6. **Android, Linux.** Oboe/AAudio and PipeWire shells.
+7. **Mixing and DSP.** Multiple streams per speaker; third-party DSP when a real
+   need exists.
+
+Status 2026-11-20 (details in PROGRESS.md):
+- Step 0 done: `beamaudio monitor` appends chat to `builds/live/chat.log`;
+  engine crash reports (trace, last commands) reach the Erlang owner, which
+  logs them and posts them to chat. Posting to a live Session chat is not yet
+  exercised, because no Session code starts the engine yet.
+- Step 1 engine done and measured standalone: `ba_audio_engine` port + C++
+  engine + macOS shell; tone sender and two receivers on one Mac pass
+  `tests/macOS/audio-engine-sync.escript` (scheduling error ~1–20 µs mean).
+- Step 1 remaining: Session integration (signed stream-setup messages with
+  X25519 keys replacing SDP, the engine owner replacing
+  `ba_native_media_session`, packaging the engine in the apps), the GStreamer
+  comparison, and the owner's listening test (`--audible`, `--source system`).
+
+Open: whether an existing NACK/RTX implementation is usable outside its
+framework (check libdatachannel's media handlers) before writing a small one.
+Packaged apps must link `ei` from the OTP runtime they ship (dev builds link
+Homebrew's, built for macOS 27).
+
 ## Open questions for the owner
 
 - TURN relay: only if actual cross-network connectivity checks show it is needed.

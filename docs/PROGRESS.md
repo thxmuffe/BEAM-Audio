@@ -1,5 +1,36 @@
 # Current implementation and validation
 
+## Own audio engine: debug loop and macOS engine — 2026-11-20
+
+Implemented steps 0 and 1 (engine part) of the plan in [AUDIO_ENGINE.md](AUDIO_ENGINE.md).
+
+- **Chat to file:** `beamaudio monitor` appends every chat entry its Device sees
+  to `builds/live/chat.log` (UTC time, Device name, text). Checked with a
+  disposable CLI Device: two sent lines appeared within a second.
+- **Engine:** C++17 in `src/Audio/engine/` (speaker, capture, net, timing,
+  term, crash), macOS shell `src/Audio/adapters/macOS/engine_shell.mm`, Erlang
+  owner `ba_audio_engine`. Libraries are pinned, checksummed sources built
+  under `builds/` (libFLAC 1.5.0, libsrtp 2.8.1, libsamplerate 0.2.2,
+  cpptrace 1.0.4, nlohmann/json 3.12.0) plus OTP's `ei`. FLAC 24-bit, 192-frame
+  packets, SRTP AES-CM-128/HMAC-SHA1-80, one dual-stack UDP socket.
+- **Crash reports:** checked a segfault and an uncaught exception on another
+  thread: reports carry the reason, file:line frames and the last commands
+  (keys redacted); the owner stops with `{native_engine_exit, 139 | 134}`.
+  Posting them into a live Session chat is implemented but not exercised.
+- **Measurement** (`tests/macOS/audio-engine-sync.escript`, 30 s, tone sender
+  and two silent receivers on one Mac, loopback, 200 ms delay): no late,
+  rejected or re-positioned packets; scheduling error converged from ~20 µs to
+  ~1–6 µs mean per receiver, sender ~0–4 µs. This is the engines' own
+  scheduling against Core Audio timestamps and reported device latency, on one
+  shared clock; not physical speaker timing, not cross-device, not a lossy
+  network. ~5–7k frames were missing only at start-up (packets sent before the
+  receivers existed).
+- **Not done:** Session integration (stream setup, X25519 key agreement,
+  replacing `ba_native_media_session`), app packaging, comparison with the
+  GStreamer path, owner listening test, iOS/Windows shells.
+- `scripts/cli/beamaudio` and `beam-audio` were committed without the executable
+  bit (mode 100644); restored locally, commit the mode change.
+
 ## Compact Session name investigation and Apple policy preservation — 2026-11-20
 
 Retried the owner's existing compact invitation with a separate, audio-disabled
