@@ -1,5 +1,17 @@
 # Current implementation and validation
 
+## Playback and Response time gossip — 2026-11-21
+
+- The native engine measures packet timing locally during playback. Signed
+  `response` notes carry the sample count and exact sum. Receivers count each
+  note once and calculate a sample-weighted Session average.
+- A new Subscription resets the reporting cadence. With samples available,
+  the target interval grows from 250 ms to at most two seconds. Playback
+  starts, stops and failures update the Device snapshot via signed notes.
+- The 32 targeted Erlang tests passed. The changed C++ files passed a Linux
+  syntax check with an Apple socket constant supplied for compilation.
+  Apple builds, live playback, and OpenSound UI presentation are unverified.
+
 ## Clock, media profile and DeviceWeb lifecycle — 2026-11-21
 
 - Session clock resync cancels the pending read or uses the in-flight query.

@@ -5,6 +5,12 @@ next playback check. Stream offers now advertise `engine_flac_srtp_v2` for
 setup messages carrying the sender's packet index. On-device validation of
 reconnection remains open.
 
+Use the same revision on all Devices when checking playback gossip. Confirm
+that the receiving Device announces start and stop once, that a new
+Subscription resets the reporting cadence, and that the measured Session
+average comes from the native timing batches. Confirm the timing and visible
+state on real Devices.
+
 Web startup (owner 2026-11-20): the Mac Web launcher now stops the existing
 named Web Device before starting it with rebuilt code and the same saved
 identity/settings. A verified stale record was cleared and the owner's Web

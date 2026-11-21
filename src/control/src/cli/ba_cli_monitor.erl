@@ -200,8 +200,12 @@ render(Data,Color) ->
         Ms when is_integer(Ms) -> [integer_to_list(Ms)," ms",case maps:get(<<"ready">>,Policy,false) of true -> [];false -> " (not ready)" end];
         _ -> "N/A"
     end,
-    Measured=case {maps:get(<<"measured_ms">>,Policy,null),maps:get(<<"measured">>,Policy,[])} of
-        {Avg,Values} when is_integer(Avg),is_list(Values) ->
+    Measured=case {maps:get(<<"measured_ms">>,Policy,null),maps:get(<<"measurement_count">>,Policy,undefined)} of
+        {Avg,Count} when is_integer(Avg),is_integer(Count),Count>0 ->
+            ["  measured: ",integer_to_list(Avg)," ms average of ",integer_to_list(Count)," sample",
+             case Count of 1 -> [];_ -> "s" end];
+        {Avg,undefined} when is_integer(Avg) ->
+            Values=maps:get(<<"measured">>,Policy,[]),
             ["  measured: ",integer_to_list(Avg)," ms average of ",integer_to_list(length(Values))," Device",
              case length(Values) of 1 -> [];_ -> "s" end];
         _ -> []

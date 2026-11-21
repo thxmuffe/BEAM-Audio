@@ -181,8 +181,10 @@ struct Engine {
         if (op == "status") return status();
         if (op == "response") {
             json out = {{"speakers", json::array()}};
-            for (auto &slot : speakers)
-                if (Speaker *s = slot.load()) out["speakers"].push_back(s->take_response());
+            on_packet_thread([&] {
+                for (auto &slot : speakers)
+                    if (Speaker *s = slot.load()) out["speakers"].push_back(s->take_response());
+            });
             return out;
         }
         if (op == "crash") crash(c.at("kind"));

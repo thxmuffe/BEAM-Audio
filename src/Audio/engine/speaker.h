@@ -37,8 +37,8 @@ class Speaker {
     // Audio thread: add this stream's frames for Session time `present` to mix.
     void render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate);
     json status();
-    // Control thread: the Response time this stream needed since the last call
-    // (count, mean_ms, p85_ms, p99_ms, max_ms), then a fresh window.
+    // Packet thread: the Response time this stream needed since the last call
+    // (count, sum_ns, mean_ms, p85_ms, p99_ms, max_ms), then a fresh window.
     json take_response();
     void set_gain(float gain) { gain_.store(gain, std::memory_order_relaxed); }
     // A new Response time: the next render re-positions once; devices stay open.

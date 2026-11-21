@@ -107,7 +107,7 @@ void Speaker::receive(uint8_t *packet, int size, ConnId from) {
     if (pos < 0 || pos % Block) return void(++rejected_);
     // The Response time this packet needed, late or not: its last sample was
     // captured at anchor + (pos + Block) / rate.
-    if (int64_t now = 0; clock_.map(host_now_ns(), now)) {
+    if (int64_t now = 0; gain_.load(std::memory_order_relaxed) > 0 && clock_.map(host_now_ns(), now)) {
         const int64_t need = now - anchor_ - (pos + Block) * int64_t(1000000000) / rate_ + render_lead_ns_.load(std::memory_order_relaxed);
         response_[std::clamp<int64_t>(need / 1000000, 0, ResponseBins - 1)].fetch_add(1, std::memory_order_relaxed);
         response_sum_ns_.fetch_add(std::max<int64_t>(need, 0), std::memory_order_relaxed);
@@ -203,7 +203,7 @@ json Speaker::take_response() {
     for (int i = 0; i < ResponseBins; ++i)
         if ((bins[size_t(i)] = response_[i].exchange(0, std::memory_order_relaxed))) count += bins[size_t(i)], max = i;
     const int64_t sum = response_sum_ns_.exchange(0, std::memory_order_relaxed);
-    json out = {{"ssrc", ssrc_}, {"count", count}};
+    json out = {{"ssrc", ssrc_}, {"count", count}, {"sum_ns", sum}};
     if (!count) return out;
     // The smallest Response time that would have played this share of packets in time.
     const auto percentile = [&](uint64_t share) {

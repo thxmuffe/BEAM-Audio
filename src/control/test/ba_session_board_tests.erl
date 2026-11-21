@@ -64,6 +64,18 @@ gossip_note_test() ->
     {Bad,BadPacket}=ba_session_gossip:note(Session,Asker,binary:copy(<<"0">>,128),<<"on_air">>,#{},AK),
     ?assertEqual(error,ba_session_gossip:check(Bad,BadPacket,Ctx)).
 
+playback_and_response_gossip_are_signed_and_validated_test() ->
+    {Session,InvKey,Ctx,_,_,{Asker,AK}}=setup(),
+    Join=ba_session_passport:join(Session,Asker,InvKey),
+    Batch=#{<<"count">> => 5,<<"sum_ns">> => 123456789},
+    {Id,Packet}=ba_session_gossip:note(Session,Asker,Join,<<"response">>,Batch,AK),
+    ?assertMatch({ok,#{<<"count">> := 5,<<"sum_ns">> := 123456789}},ba_session_gossip:check(Id,Packet,Ctx)),
+    ?assertError(function_clause,ba_session_gossip:note(Session,Asker,Join,<<"response">>,Batch#{<<"count">> := 0},AK)),
+    Playback=#{<<"playing">> => true,<<"failed">> => false,<<"started">> => true,<<"revision">> => 1},
+    {PId,PlaybackPacket}=ba_session_gossip:note(Session,Asker,Join,<<"playback">>,Playback,AK),
+    ?assertMatch({ok,#{<<"playing">> := true,<<"started">> := true}},ba_session_gossip:check(PId,PlaybackPacket,Ctx)),
+    ?assertError(function_clause,ba_session_gossip:note(Session,Asker,Join,<<"playback">>,Playback#{<<"playing">> := false},AK)).
+
 %% A granted request stays answered even after the privilege is taken back.
 granted_request_stays_closed_test() ->
     {Session,InvKey,Ctx,P,{Holder,HK},{Asker,AK}}=setup(),

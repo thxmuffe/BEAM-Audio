@@ -159,6 +159,10 @@ handle_info(tick,S) ->
                 true -> start_playback(Id,R);false -> R
             end end,maps:get(subscriptions,Final))}
     end,
+    Subs = maps:get(subscriptions,Recovered),
+    Playing = lists:sort([Id || {Id,#{state := active,mix_ready := true,intent := #{playing := true}}} <- maps:to_list(Subs)]),
+    Failed = lists:any(fun(#{intent := I}=R) -> maps:get(playing,I,false) andalso maps:is_key(error,R) end,maps:values(Subs)),
+    ba_response_time:playback(maps:keys(Subs),Playing,Failed),
     {noreply,Recovered};
 handle_info({session_audio,Context,Id,P},S) ->
     try

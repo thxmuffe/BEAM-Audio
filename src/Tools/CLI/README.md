@@ -278,7 +278,8 @@ The console header shows the Session's shared Response time in milliseconds,
 marked "not ready" while the policy is not ready, or N/A when unavailable.
 JSON carries the same value under `clock.offset_policy.offset_ms`, readiness
 under `clock.offset_policy.ready` and the measured average under
-`clock.offset_policy.measured_ms` (the values in `measured`). New Sessions default to 150 ms; existing
+`clock.offset_policy.measured_ms`, with the Session sample count in
+`clock.offset_policy.measurement_count`. New Sessions default to 150 ms; existing
 Session values are retained. This display does not require `--metrics`.
 `stop device --devicename ba-monitor-SESSION_ID`
 leaves the gathering; `stop device --all` includes managed observers.

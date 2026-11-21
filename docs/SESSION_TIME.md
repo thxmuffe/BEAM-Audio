@@ -46,24 +46,24 @@ method is `offset` with `offset_ms`.
 
 **Measurement.** `ba_response_time` (one gen_server per Session scope):
 
-- Each speaker in the engine measures, per received packet, the Response time
-  that packet needed: arrival after the capture of its last sample, plus how
-  far ahead of the loudspeaker the output reads. Late packets count too: this
-  is what the Response time would have had to be. The engine op `response`
-  hands over the window (count, mean, p85, p99, max in ms) and starts a new one.
-- A Device's value is the largest p99 among its streams: the Response time that
-  would have played 99% of its packets in time.
-- Devices gossip their values as signed `response` notes: 2 s after a stream
-  starts, then at doubling intervals up to once a minute. Every Device keeps
-  the values it heard in the last two minutes (the distribution).
-- The monitor and Settings show the average as "measured". A slider over the
-  distribution (for example the 85th percentile of Devices) is a later step;
-  nothing changes the setting automatically.
+- The audio engine collects timing samples locally for speakers that are
+  enabled for playback. Its `response` command drains each speaker's sample
+  count and exact sum in nanoseconds, alongside its diagnostic percentiles.
+- Signed `response` notes carry a batch count and sum. The Session estimate
+  adds batches from the last two minutes, counting each signed note ID once
+  even if it arrived through several neighbours. The measured value is the
+  total sum divided by the total sample count.
+- Signed `playback` notes report playback starts, stops and changes in playback
+  failure state. A new playback start resets the reporting cadence throughout
+  the Session. With fresh samples available, the interval starts at 250 ms
+  and grows with the sample count to at most 2 seconds. The timing statistics
+  remain available across cadence resets. Packet-level diagnostics stay local.
+- The Device snapshot exposes the last known playback state for its listed
+  Devices. Measurements do not automatically change the signed timing setting.
 
 The earlier "Automatic" mode (lateness reports from the removed Erlang mixer
 raising the setting) is gone.
 
 ## Not yet verified
 
-The measurement and gossip are implemented and unit-tested, but not yet
-observed on real Devices; the iPhone needs a rebuild to carry them.
+The playback reporting changes have yet to be observed on real Devices.

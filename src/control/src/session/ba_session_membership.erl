@@ -18,7 +18,10 @@
 -define(REACHABLE,32).
 %% Gossip a signed note (e.g. on_air) to the whole Session through neighbours.
 announce(Kind) -> announce(Kind,#{}).
-announce(Kind,Fields) -> gen_server:cast(ba_session_scope:ref(?MODULE),{announce,Kind,Fields}).
+announce(Kind,Fields) ->
+    NoteId = fresh(16),
+    gen_server:cast(ba_session_scope:ref(?MODULE),{announce,NoteId,Kind,Fields}),
+    NoteId.
 %% The Session's Response time, a signed Session setting like the name.
 set_response_time(Ms) -> gen_server:call(ba_session_scope:ref(?MODULE),{response_time,Ms}).
 response_setting() -> gen_server:call(ba_session_scope:ref(?MODULE),response_setting).
@@ -203,9 +206,9 @@ handle_cast({session_request,Peer,Payload},#{state := authorized}=S) ->
     catch exit:{membership_storage_failed,_}=Reason -> exit(Reason);
           _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
     end;
-handle_cast({announce,Kind,Fields},#{state := authorized,id := Id}=S) ->
+handle_cast({announce,NoteId,Kind,Fields},#{state := authorized,id := Id}=S) ->
     %% A bad announcement must never take down the Session's rights process.
-    try ba_session_gossip:note(maps:get(session,S),Id,maps:get(join,S),Kind,Fields,maps:get(private,S)) of
+    try ba_session_gossip:note(NoteId,maps:get(session,S),Id,maps:get(join,S),Kind,Fields,maps:get(private,S)) of
         {NoteId,Packet} ->
             Note = #{<<"kind">> => <<"note">>,<<"id">> => NoteId,<<"packet">> => Packet},
             ba_session_control:session_request(contacts(S),Note),
@@ -276,9 +279,11 @@ session_request(Peer,#{<<"kind">> := <<"note">>,<<"id">> := NoteId,<<"packet">> 
         true -> S;
         false ->
             {ok,#{<<"kind">> := Kind,<<"author">> := Author}=Body} = ba_session_gossip:check(NoteId,Packet,board_context(S)),
+            false = lists:member(Author,removed(S)),
             case {Kind,Author=:=Id} of
                 {<<"on_air">>,false} -> notify_audio({on_air_announced,Author});
-                {<<"response">>,false} -> ba_response_time:reported(Author,maps:get(<<"response_ms">>,Body),maps:get(<<"at">>,Body));
+                {<<"response">>,false} -> ba_response_time:reported(NoteId,Body);
+                {<<"playback">>,false} -> ba_response_time:remote_playback(Author,Body);
                 _ -> ok
             end,
             [ba_session_control:session_request([D],Note) || D <- contacts(S),D=/=Peer,D=/=Author],
