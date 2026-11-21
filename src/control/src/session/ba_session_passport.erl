@@ -123,8 +123,10 @@ policy(P) ->
 statement(Packet,Signer) ->
     St = verify(Packet,Signer),
     %% The Response time is a Session setting like the name (absent: the default).
-    exact(St,[<<"name">>,<<"policy">>,<<"delegations">>]++[<<"response_ms">> || maps:is_key(<<"response_ms">>,St)]),
+    exact(St,[<<"name">>,<<"policy">>,<<"delegations">>]++
+        [K || K <- [<<"response_ms">>,<<"response_auto">>],maps:is_key(K,St)]),
     case maps:find(<<"response_ms">>,St) of {ok,Ms} -> ok = ba_response_time:valid(Ms);error -> ok end,
+    true = is_boolean(maps:get(<<"response_auto">>,St,true)),
     Name = maps:get(<<"name">>,St),true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
     ok = policy(maps:get(<<"policy">>,St)),
     D = maps:get(<<"delegations">>,St),true = is_map(D) andalso map_size(D) =< 16,St.

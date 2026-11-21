@@ -248,16 +248,16 @@ diagnostic_lines(R,Color) ->
         Error <- [maps:get(<<"error">>,Entry,<<>>)],Error=/=<<>>,maps:get(<<"state">>,Entry,undefined)=/=<<"unsupported">>],
     case maps:find(<<"audio_diagnostics">>,Caps) of
         error -> [Errors,case maps:is_key(<<"audio">>,Caps) of
-            true -> paint("90","  diagnostics unavailable (Device update required)\n",Color);
+            true -> paint("90","  diagnostics unavailable\n",Color);
             false -> [] end];
         {ok,D} ->
             Analysis=case maps:get(<<"diagnostics.analysis">>,D,true) of
                 false -> "  audio analysis off\n";
                 true -> [io_lib:format("  clock ~ts (~ts ns)  sample ~ts ms~n",[safe(maps:get(<<"clock.state">>,D,<<"unavailable">>)),
                             number(maps:get(<<"clock.remaining_correction_ns">>,D,null)),number(maps:get(<<"diagnostics.age_ms">>,D,null))]),
-                         mixer_line(D),engine_lines(D)]
+                         mixer_line(D),peak_gain_line(D),engine_lines(D)]
             end,
-            [Analysis,Errors,failure_line(D,maps:get(<<"audio_trace">>,Caps,#{}),Color)]
+            [Analysis,Errors,failure_history_line(D,maps:get(<<"audio_trace">>,Caps,#{}),Color)]
     end.
 mixer_line(D) ->
     case maps:is_key(<<"mixer.rendered">>,D) of
@@ -265,8 +265,11 @@ mixer_line(D) ->
         true -> io_lib:format("  mixer ~ts rendered  ~ts dropped  ~ts queued  ~ts clipped~n",[
             number(maps:get(K,D,null)) || K <- [<<"mixer.rendered">>,<<"mixer.dropped">>,<<"mixer.queued_blocks">>,<<"mixer.clipped_frames">>]])
     end.
-%% Every failure count on one line, with the most recent traced reason.
-failure_line(D,Trace,Color) ->
+peak_gain_line(#{<<"mixer.peak_gain_cdb">> := Gain}) when is_integer(Gain),Gain>= -9600,Gain=<0 ->
+    io_lib:format("  mix peak gain: ~.1f dB~n",[Gain/100]);
+peak_gain_line(_) -> [].
+%% These totals outlive individual media attempts and describe history.
+failure_history_line(D,Trace,Color) ->
     Failures=[io_lib:format("~ts: ~B",[safe(K),V]) ||
         {K,V} <- lists:sort(maps:to_list(D)),is_integer(V),V>0,binary:match(K,<<".failure.">>)=/=nomatch],
     Recent=case lists:sort(fun(A,B) -> maps:get(<<"age_ms">>,A)<maps:get(<<"age_ms">>,B) end,maps:values(Trace)) of
@@ -276,7 +279,7 @@ failure_line(D,Trace,Color) ->
     end,
     case Failures of
         [] -> [];
-        _ -> tint(<<"error">>,["  ! ",lists:join("  ",Failures),Recent,"\n"],Color)
+        _ -> paint("90",["  Failure history: ",lists:join("  ",Failures),Recent,"\n"],Color)
     end.
 %% The audio engine's own counters: receiving and/or sending streams.
 engine_lines(D) ->

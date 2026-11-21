@@ -6,7 +6,7 @@
 %% newer side sharing it. The highest revision wins.
 -module(ba_session_membership).
 -behaviour(gen_server).
--export([announce/1,announce/2,set_response_time/1,response_setting/0,start_link/0,status/0,current/0,invite/1,invite_devices/2,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1,resend_chat/0]).
+-export([announce/1,announce/2,set_response_time/1,adjust_response_time/1,response_setting/0,start_link/0,status/0,current/0,invite/1,invite_devices/2,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1,resend_chat/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 -ifdef(TEST).
 -export([order/3]).
@@ -23,7 +23,10 @@ announce(Kind,Fields) ->
     gen_server:cast(ba_session_scope:ref(?MODULE),{announce,NoteId,Kind,Fields}),
     NoteId.
 %% The Session's Response time, a signed Session setting like the name.
-set_response_time(Ms) -> gen_server:call(ba_session_scope:ref(?MODULE),{response_time,Ms}).
+set_response_time(Selection) ->
+    gen_server:call(ba_session_scope:ref(?MODULE),{response_time,#{<<"selection">> => Selection}}).
+adjust_response_time(Ms) ->
+    gen_server:cast(ba_session_scope:ref(?MODULE),{response_time,#{<<"response_ms">> => Ms}}).
 response_setting() -> gen_server:call(ba_session_scope:ref(?MODULE),response_setting).
 rename(Name) -> gen_server:call(ba_session_scope:ref(?MODULE),{rename,Name}).
 request_privilege(Wire) -> gen_server:call(ba_session_scope:ref(?MODULE),{request_privilege,Wire}).
@@ -68,7 +71,7 @@ start(Link,I,Primary,S) ->
     {Invitation,InvitationKey} = ba_session_passport:invitation_key(Secret),
     Base = S#{envelope => ba_session_passport:envelope_key(Secret),invitation => Invitation,join => ba_session_passport:join(Session,maps:get(id,S),InvitationKey),link => Link,session => Session,authority => maps:get(<<"authority">>,I),secret => Secret,
         cap => ba_session_passport:mailbox(Secret),name => maps:get(<<"name">>,I),urls => URLs,primary => Primary,
-        response_ms => ba_response_time:default(),
+        response_ms => ba_response_time:default(),response_auto => true,
         policy => ba_session_passport:genesis(I,defaults()),signed => undefined,signer => undefined,delegations => #{},
         reachable => #{},encountered => [],board => ba_session_board:new(),seen => #{},
         state => authorized,until => infinity,last_lookup => now_ms()-?LOOKUP_MS},
@@ -126,12 +129,15 @@ handle_call({rename,Name},_,#{state := authorized,policy := P,id := Id}=S) ->
         {true,false,true} -> {reply,ask_holders(#{<<"kind">> => <<"rename_request">>,<<"name">> => Name},S),S};
         {true,false,false} -> {reply,{error,forbidden},S}
     end;
-handle_call({response_time,Ms},_,#{state := authorized,policy := P,id := Id}=S) ->
-    case {ba_response_time:valid(Ms),grant_holder(S),ba_session_privileges:has(on_air,Id,P)} of
-        {{error,_}=E,_,_} -> {reply,E,S};
-        {ok,true,_} -> reply(update(fun(Q) -> {ok,Q} end,S#{response_ms := Ms}),S);
-        {ok,false,true} -> {reply,ask_holders(#{<<"kind">> => <<"response_request">>,<<"response_ms">> => Ms},S),S};
-        {ok,false,false} -> {reply,{error,forbidden},S}
+handle_call({response_time,Request},_,#{state := authorized,response_ms := Current,response_auto := Auto}=S) ->
+    case response_change(Request,S) of
+        {error,_}=Error -> {reply,Error,S};
+        {Current,Auto} -> {reply,ok,S};
+        {Ms,Automatic} ->
+            case grant_holder(S) of
+                true -> reply(update(fun(Q) -> {ok,Q} end,S#{response_ms := Ms,response_auto := Automatic}),S);
+                false -> {reply,ask_holders(Request#{<<"kind">> => <<"response_request">>},S),S}
+            end
     end;
 %% Every privilege is requested. A grant holder's own request needs no one else;
 %% anyone else posts a signed request on the board, which spreads by contact.
@@ -199,6 +205,8 @@ handle_call({revoke,Device},_,#{id := Id,policy := Policy}=S) ->
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 %% The chat starts after this process and may miss the first publish.
 handle_cast(resend_chat,#{state := authorized}=S) -> chat_view(S),{noreply,S};
+handle_cast({response_time,Request},S) ->
+    {reply,_,Next} = handle_call({response_time,Request},undefined,S),{noreply,Next};
 %% A Session request already authenticated and authorized per request by the
 %% control protocol (ba_device_request). This Device approves and executes it.
 handle_cast({session_request,Peer,Payload},#{state := authorized}=S) ->
@@ -304,9 +312,9 @@ session_request(Peer,#{<<"kind">> := <<"board">>,<<"entries">> := Packets},S) ->
 session_request(Peer,#{<<"kind">> := <<"privilege_release">>,<<"privilege">> := Wire},S) ->
     true = grant_holder(S),
     {reply,_,Next} = handle_call({change,take,Peer,Wire},undefined,S),Next;
-session_request(_,#{<<"kind">> := <<"response_request">>,<<"response_ms">> := Ms},S) ->
+session_request(_,#{<<"kind">> := <<"response_request">>}=Request,S) ->
     true = grant_holder(S),
-    {reply,_,Next} = handle_call({response_time,Ms},undefined,S),Next;
+    {reply,_,Next} = handle_call({response_time,maps:remove(<<"kind">>,Request)},undefined,S),Next;
 session_request(_,#{<<"kind">> := <<"rename_request">>,<<"name">> := Name},S) ->
     true = grant_holder(S),
     {reply,_,Next} = handle_call({rename,Name},undefined,S),Next;
@@ -352,10 +360,28 @@ order(Rev,Packet,#{policy := Cur,signed := Mine}) ->
 adopt(Signer,Packet,St,S) ->
     P = maps:get(<<"policy">>,St),Removed = maps:get(<<"removed">>,P),
     S#{policy := P,signed := Packet,signer := Signer,delegations := maps:get(<<"delegations">>,St),
-       name := maps:get(<<"name">>,St),response_ms := maps:get(<<"response_ms">>,St,ba_response_time:default()),encountered := maps:get(encountered,S)--Removed,
+       name := maps:get(<<"name">>,St),response_ms := maps:get(<<"response_ms">>,St,ba_response_time:default()),
+       response_auto := maps:get(<<"response_auto">>,St,true),encountered := maps:get(encountered,S)--Removed,
        reachable := maps:map(fun(_,L) -> L--Removed end,maps:get(reachable,S))}.
 response_setting(#{policy := P}=S) ->
-    {maps:get(response_ms,S),maps:get(<<"revision">>,P),maps:get(state,S)=:=authorized andalso maps:get(signed,S)=/=undefined}.
+    {maps:get(response_ms,S),maps:get(response_auto,S),maps:get(<<"revision">>,P),
+        maps:get(state,S)=:=authorized andalso maps:get(signed,S)=/=undefined}.
+
+response_change(#{<<"selection">> := Selection},#{policy := P,id := Id,response_ms := Current}=S) ->
+    case grant_holder(S) orelse ba_session_privileges:has(on_air,Id,P) of
+        false -> {error,forbidden};
+        true ->
+            case ba_response_time:valid_selection(Selection) of
+                ok when Selection=:= <<"automatic">> -> {Current,true};
+                ok -> {Selection,false};
+                Error -> Error
+            end
+    end;
+%% Recheck the signed mode here so an in-flight adjustment cannot unpin it.
+response_change(#{<<"response_ms">> := _},#{response_ms := Current,response_auto := false}) ->
+    {Current,false};
+response_change(#{<<"response_ms">> := Ms},#{response_auto := true}) ->
+    case ba_response_time:valid(Ms) of ok -> {Ms,true};Error -> Error end.
 tell(Peer,S) -> tell_all([Peer],S).
 tell_all(Peers,S) ->
     case policy_state(S) of
@@ -381,7 +407,8 @@ update(Change,#{policy := P0,id := Id,session := Session}=S) ->
                     {ok,Cert} -> Cert;
                     error -> sign(ba_session_passport:delegation(Session,Id,H,Rev),S)
                 end} || H <- holders(P),H=/=Creator])),
-            St = #{<<"name">> => maps:get(name,S),<<"response_ms">> => maps:get(response_ms,S),<<"policy">> => P,<<"delegations">> => D},
+            St = #{<<"name">> => maps:get(name,S),<<"response_ms">> => maps:get(response_ms,S),
+                <<"response_auto">> => maps:get(response_auto,S),<<"policy">> => P,<<"delegations">> => D},
             Next = checkpoint(adopt(Id,sign(St,S),St,S)),
             %% Tell the Devices the change concerns (rights holders before and
             %% after, the removed) and the ones this Device deals with; it
@@ -437,7 +464,7 @@ publish(#{state := authorized}=S) ->
     ba_contacts:observe(maps:get(session,S),maps:get(name,S),maps:get(encountered,S)),
     View = chat_view(S),
     notify({membership_authorized,View}),
-    {Ms,Revision,Ready}=response_setting(S),ba_response_time:setting(Ms,Revision,Ready),S;
+    ba_response_time:setting(response_setting(S)),S;
 publish(S) -> S.
 chat_view(S) ->
     chat({participants,reachable(S)}),

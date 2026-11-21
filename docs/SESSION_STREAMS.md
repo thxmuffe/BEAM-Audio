@@ -18,7 +18,10 @@ Response time.
 
 Pause, unsubscribe, consent withdrawal, Contract revocation and source incarnation
 changes fence affected media. Recovery negotiates a fresh eligible attempt instead
-of replaying stale buffers. Subscription intent is scoped to the live Session.
+of replaying stale buffers. The sender accepts a new attempt for the same
+authenticated Subscription and current Contract without waiting for the old ICE
+connection to fail. A failed signaling send can retry on the next audio tick
+when Reception reconnects. Subscription intent is scoped to the live Session.
 No PID, socket, device deadline or live buffer is durable membership evidence.
 
 The app Device Handler starts eligible audio Workers from desired settings.

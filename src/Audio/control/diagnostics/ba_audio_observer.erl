@@ -56,7 +56,7 @@ handle_info(sample,#{owner := Owner}=S) ->
         end,
         Observed=View#{levels => levels(S)},
         Clock=case ba_audio_diagnostics:enabled(analysis) of true -> ba_session_clock:status();false -> #{} end,
-        Owner ! {audio_observation,self(),Observed,ba_audio_diagnostics:snapshot(View,Clock),ba_audio_diagnostics:trace(View)}
+        Owner ! {audio_observation,self(),Observed,ba_audio_diagnostics:snapshot(Observed,Clock),ba_audio_diagnostics:trace(View)}
     catch exit:_ -> ok end,
     {noreply,read_levels(S)};
 handle_info(publish_levels,S) ->

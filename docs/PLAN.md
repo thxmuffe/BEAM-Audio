@@ -11,6 +11,22 @@ Subscription resets the reporting cadence, and that the measured Session
 average comes from the native timing batches. Confirm the timing and visible
 state on real Devices.
 
+Automatic Response time (2026-11-21): Devices publishing any unpaused input
+request 2.5 times the fresh Session average, checking at 0.5–5-second intervals.
+Next, rebuild the Devices and verify increases and decreases with system
+capture and microphone-only broadcasting, including a publisher without
+on_air and a reachable grant holder. Confirm that pausing/stopping all inputs
+stops adjustment and that a new input/playback start resets the cadence.
+Confirm that Settings shows the live value in Automatic, and that 250 ms and
+2 s stay pinned across Devices and rejoin until Automatic is selected again.
+Use matching core builds to verify the signed timing mode propagates.
+The owner reports that timing works well in initial testing. The Wi-Fi-off
+test exposed failed ICE signaling and a sender holding an obsolete attempt.
+Both recovery paths have been updated. On the next matching builds, repeat
+the Wi-Fi-off and Wi-Fi-on tests on the XR and measure the audible gap. Check
+when Reception reconnects, the sender replaces the attempt and ICE connects.
+See [PROGRESS.md](PROGRESS.md).
+
 Check the three native level readings on physical Devices: microphone input,
 encoded system capture and the mixed speaker output. Compare the local
 snapshot and consented Inspect for the same signal, including silence and stop.
@@ -24,7 +40,7 @@ Focused cleanup pass (2026-11-20, after the listening test): shared Session-read
 bookkeeping, local/remote Inspect capability approval, log chunk-size definition
 and frontend Calibration grouping are consolidated. No native audio or policy
 changes. Targeted checks pass; the owner still handles app rebuilds and testing.
-Resume automatic Response time/calibration planning and the deferred Chat/UI
+Resume calibration planning and the deferred Chat/UI
 investigation after the latest reconnect fix has been tested on phones.
 
 Reorganized 2026-11-18: dated narratives were collated; completed work and its

@@ -8,10 +8,14 @@ authorize_test() ->
     ?assertEqual({error,forbidden},A(<<"stream.message">>,#{<<"kind">> => <<"subscribe">>},[stream_read])),
     %% Stream kinds other than catalogue and subscribe need no Session right.
     ?assertEqual(ok,A(<<"stream.message">>,#{<<"kind">> => <<"other">>},[])),
-    %% The Response time is a Session setting: an on_air holder may ask for a change.
+    %% Any member can publish a microphone and ask a grant holder to adjust timing.
     Response = #{<<"kind">> => <<"response_request">>},
     ?assertEqual(ok,A(<<"session.request">>,Response,[stream_publish])),
-    ?assertEqual({error,forbidden},A(<<"session.request">>,Response,[status_read])),
+    ?assertEqual(ok,A(<<"session.request">>,Response,[status_read])),
+    ?assertEqual(ok,A(<<"session.request">>,Response,[])),
+    Selection=Response#{<<"selection">> => 250},
+    ?assertEqual({error,forbidden},A(<<"session.request">>,Selection,[])),
+    ?assertEqual(ok,A(<<"session.request">>,Selection,[stream_publish])),
     %% Chat and replies need no right.
     ?assertEqual(ok,A(<<"chat.message">>,#{},[])),
     ?assertEqual(ok,A(<<"status.reply">>,#{},[])).

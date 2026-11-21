@@ -60,7 +60,7 @@ have no dedicated CLI switches:
 beamaudio get methods
 beamaudio call device --devicename OpenSound --request '{"method":"snapshot"}'
 beamaudio call device --devicename OpenSound --request '{"method":"speaker_mute","muted":true}'
-beamaudio call device --devicename OpenSound --request '{"method":"offset","offset_ms":150,"session":"SESSION_SCOPE_ID"}'
+beamaudio call device --devicename OpenSound --request '{"method":"offset","offset_ms":250,"session":"SESSION_SCOPE_ID"}'
 beamaudio call device --devicename OpenSound < request.json
 ```
 
@@ -287,9 +287,10 @@ leaves the gathering; `stop device --all` includes managed observers.
 Updated diagnostic replies also include `audio_diagnostics`: a bounded flat map
 of cached receiver, aggregate transport, Mixer and local clock observations.
 The console shows channel error reasons, clock state/correction, Mixer rendered/
-dropped/queued/clipped counts and nonzero failure totals. JSON retains the full
-projected map. Totals are cumulative within the relevant running process; they
-are not per-second rates or proof of an active fault. Transport rejection counts
+dropped/queued/clipped counts and nonzero failure totals. Cumulative totals
+appear as muted Failure history with the last event's age when available.
+Current channel errors still show as alerts. Missing diagnostics appear as
+unavailable. JSON retains the full projected map. Transport rejection counts
 are not a measurement of RTP network loss, and these reports do not measure
 physical speaker underruns or speaker alignment.
 
@@ -298,8 +299,6 @@ A supervised audio observer projects the receiver snapshot and clock state every
 synchronous calls to the audio processes. Only opt-in extended replies carry it;
 ordinary capability replies keep their shape. Reports contain bounded counters
 and reason codes, never PCM, credentials, descriptors or arbitrary process state.
-Older app builds explicitly show playback diagnostics unavailable. Rebuild the
-apps and restart their observer to use the new signed report schema.
 
 Updated Devices expose opt-in, bounded authenticated peak/RMS levels in dBFS,
 age, stage and capture counters. Capture meters describe mic/default-output

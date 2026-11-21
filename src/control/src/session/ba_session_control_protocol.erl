@@ -373,7 +373,14 @@ payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
             true = is_binary(Name) andalso byte_size(Name)>0 andalso byte_size(Name)=<128,
             true = is_list(unicode:characters_to_list(Name));
         <<"response_request">> ->
-            ba_session_passport:exact(P,[<<"kind">>,<<"response_ms">>]),ok = ba_response_time:valid(maps:get(<<"response_ms">>,P));
+            case P of
+                #{<<"selection">> := Choice} ->
+                    ba_session_passport:exact(P,[<<"kind">>,<<"selection">>]),
+                    ok = ba_response_time:valid_selection(Choice);
+                #{<<"response_ms">> := Ms} ->
+                    ba_session_passport:exact(P,[<<"kind">>,<<"response_ms">>]),
+                    ok = ba_response_time:valid(Ms)
+            end;
         <<"remove_request">> -> ba_session_passport:exact(P,[<<"kind">>,<<"device">>]),true = ba_hex:valid(maps:get(<<"device">>,P),64);
         <<"ended">> -> ba_session_passport:exact(P,[<<"kind">>]);
         %% A signed rights statement; membership verifies its signer chain.

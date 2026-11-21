@@ -150,7 +150,7 @@ handle_info({desk_delivery,_,Peer,Sealed},S) ->
         false -> {noreply,rejected(case Packet of envelope_rejected -> envelope_rejected;_ -> membership_expired end,S)}
     end;
 handle_info({discover_name,Peer},S) -> {noreply,discover_name(Peer,S)};
-handle_info({desk_event,_,disconnected},S) -> {noreply,S};
+handle_info({desk_event,_,connected},S) -> audio_notify(audio_signaling_ready),{noreply,S};
 handle_info({desk_event,_,_},S) -> {noreply,S};
 handle_info(expire,S) ->
     {Events,Protocol} = ba_session_control_protocol:expire(now_ms(),maps:get(protocol,S)),

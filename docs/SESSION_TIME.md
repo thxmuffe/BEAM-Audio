@@ -38,11 +38,17 @@ between two Devices on different networks has not been measured.
 The delay between capture and playback that every speaker in the Session uses:
 sample n plays at `anchor + Response time + n / rate`.
 
-**Setting.** A signed Session setting held in the membership statement next to
-the Session name (`response_ms`, 0–3000 ms, default 150). Grant holders change
-it directly; on_air holders ask a grant holder (`response_request`), as with
-rename. It spreads with the statement (highest revision wins). The device API
-method is `offset` with `offset_ms`.
+**Setting.** The signed membership statement carries the effective delay
+(`response_ms`, 0–3000 ms) and whether adjustment is automatic
+(`response_auto`). New Sessions start in Automatic at 150 ms. Saved statements
+without a mode start in Automatic at their saved value. OpenSound offers
+Automatic, 250 ms and 2 s. Selecting a fixed value pins the shared delay.
+Returning to Automatic starts at the current value and resumes adjustment.
+Grant holders sign selections directly and on_air holders can request them.
+Any member can submit a measured adjustment because microphone publication
+needs no on_air privilege. The Device API accepts a whole number of
+milliseconds or the string `"automatic"` in the `offset` command's
+`offset_ms` field.
 
 **Measurement.** `ba_response_time` (one gen_server per Session scope):
 
@@ -59,11 +65,32 @@ method is `offset` with `offset_ms`.
   and grows with the sample count to at most 2 seconds. The timing statistics
   remain available across cadence resets. Packet-level diagnostics stay local.
 - The Device snapshot exposes the last known playback state for its listed
-  Devices. Measurements do not automatically change the signed timing setting.
+  Devices.
 
-The earlier "Automatic" mode (lateness reports from the removed Erlang mixer
-raising the setting) is gone.
+**Automatic adjustment.** In Automatic, a Device with at least one unpaused published input
+(system capture, microphone or any other source) checks whether the setting
+should rise or fall to **2.5 times the measured Session mean**. It uses the exact
+sample count and sum, rounds once to integer milliseconds and caps the result
+at 3000 ms. For example, 45 ms gives 113 ms. Without fresh samples or a ready
+signed setting, it leaves the value unchanged.
+
+Checks start after 500 ms, then use intervals of 1, 2, 4 and at most 5 seconds.
+Starting/resuming an input or starting new playback resets the cadence.
+Stopping/pausing every input or losing the local audio controller stops changes.
+The existing authenticated request/approval path applies: a grant holder signs
+the setting, while another Device requests that change from a grant holder.
+Without a reachable grant holder, requests cannot change the shared setting.
+Identical settings do not create new signed revisions. Grant holders check
+the signed mode when processing a measurement, so an adjustment already in
+flight cannot change a fixed delay.
+
+`ba_cadence` is a shared helper for starting with frequent observations and
+spacing them out as they accumulate. Each reporting process owns its cadence
+state and timer. Delay gossip advances using packet sample counts. Automatic
+adjustment advances using completed checks with measurements. Both use the
+same scheduling logic and choose their own intervals and reset events.
 
 ## Not yet verified
 
-The playback reporting changes have yet to be observed on real Devices.
+Playback reporting and automatic adjustment have yet to be observed on real
+Devices.

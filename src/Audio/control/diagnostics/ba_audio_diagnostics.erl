@@ -40,8 +40,13 @@ project(Audio,Clock) ->
         <<"receiver.active_subscriptions">> => length([ok || #{state := active} <- Subs]),
         <<"receiver.mix_ready_subscriptions">> => length([ok || #{mix_ready := true} <- Subs])},
     R=fields(<<"receiver">>,[rejected,publications,suspended],Audio,Base),
-    M=fields(<<"mixer">>,[dropped,rendered,queued_blocks,queued_bytes,clipped_frames,streams,output_stop_pending,submitted_frames,handoff_lead_ns,
+    M0=fields(<<"mixer">>,[dropped,rendered,queued_blocks,queued_bytes,clipped_frames,streams,output_stop_pending,submitted_frames,handoff_lead_ns,
         max_wakeup_gap_ms,long_wakeup_gaps],Mixer,R),
+    M=case maps:get(speaker,maps:get(levels,Audio,#{}),#{}) of
+        #{peak_gain_cdb := Gain,meter_age_ms := Age} when Age=<1000 ->
+            M0#{<<"mixer.peak_gain_cdb">> => Gain};
+        _ -> M0
+    end,
     N=fields(<<"output">>,[supported,engine_running,player_running,scheduled_frames,completed_frames,queued_buffers,rejected_buffers,completion_age_ms,lead_min_ns,lead_max_ns,sample_rate,channels,latency_ns,volume_milli,route,backend,stats_age_ms,mapping_round_trip_ns,
         silence_frames,clock_reanchors],maps:get(output,Mixer,#{}),M),
     C=fields(<<"clock">>,[state,source,last_error,age_ns,round_trip_ns,remaining_correction_ns,steps,corrections],Clock,N),
@@ -158,6 +163,7 @@ scalar(V) when is_boolean(V) -> true;
 scalar(V) when is_binary(V),byte_size(V)>0,byte_size(V)=<64 ->
     re:run(V,<<"^[a-z][a-z0-9_]*$">>,[{capture,none}])=:=match;
 scalar(_) -> false.
+field_scalar(<<"mixer.peak_gain_cdb">>,V) -> is_integer(V) andalso V>= -9600 andalso V=<0;
 field_scalar(_,V) -> scalar(V).
 validate(D) ->
     true=is_map(D) andalso map_size(D)=<128,

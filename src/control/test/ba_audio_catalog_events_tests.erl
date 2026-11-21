@@ -61,6 +61,53 @@ changed_notification_has_exact_wire_shape_test() ->
     ?assertEqual(ok,ba_audio_stream_protocol:validate(#{<<"kind">> => <<"catalog.changed">>})),
     ?assertException(error,_,ba_audio_stream_protocol:validate(#{<<"kind">> => <<"catalog.changed">>,<<"extra">> => true})).
 
+new_attempt_replaces_only_the_same_authorized_subscription_test() ->
+    fixture(fun(S,[Peer|_],Contexts) ->
+        {ok,OldMedia}=gen_event:start(),
+        {ok,NewMedia}=gen_event:start(),
+        Source=spawn(fun Loop() ->
+            receive {'$gen_call',From,{attach,NewMedia}} -> gen_server:reply(From,ok),Loop() end
+        end),
+        Runtime=start_stub(ba_session_runtime_sup,NewMedia),
+        Audio=start_stub(ba_audio_sup,NewMedia),
+        try
+            Context=maps:get(Peer,Contexts),Id=id(),Key= <<"music">>,Inc=id(),Contract=id(),
+            ProviderKey={Peer,maps:get(link,Context),Id},
+            OldAttempt=id(),NewAttempt=id(),
+            Old=#{source => Key,incarnation => Inc,attempt => OldAttempt,context => Context,
+                  subscription => Id,paused => false,media => OldMedia,monitor => monitor(process,OldMedia)},
+            Descriptor=#{stream_handler => engine_flac},
+            Entry=#{pid => Source,offer => #{incarnation => Inc,paused => false,profiles => #{channel => Descriptor}}},
+            Before=S#{providers := #{ProviderKey => Old},sources := #{Key => Entry},
+                contracts := #{{publish,Peer,Key} => #{id => Contract,revision => 2}}},
+            Subscribe=#{<<"kind">> => <<"subscribe">>,<<"source">> => Key,<<"incarnation">> => Inc,
+                        <<"attempt">> => OldAttempt,<<"contract">> => Contract,<<"revision">> => 2},
+            ?assertEqual(Before,deliver(Peer,Id,Subscribe,Contexts,Before)),
+            ?assertMatch([{Peer,Id,#{<<"kind">> := <<"accepted">>,<<"attempt">> := OldAttempt}}],messages(1)),
+            Replacement=Subscribe#{<<"attempt">> := NewAttempt},
+            ?assertEqual(Before,deliver(Peer,Id,Replacement#{<<"revision">> := 1},Contexts,Before)),
+            ?assertMatch([{Peer,Id,#{<<"kind">> := <<"rejected">>,<<"reason">> := <<"contract">>}}],messages(1)),
+            ?assert(is_process_alive(OldMedia)),
+            After=deliver(Peer,Id,Replacement,Contexts,Before),
+            ?assertMatch(#{ProviderKey := #{attempt := NewAttempt,media := NewMedia}},maps:get(providers,After)),
+            ?assertNot(is_process_alive(OldMedia)),
+            ?assertMatch([{Peer,Id,#{<<"kind">> := <<"accepted">>,<<"attempt">> := NewAttempt}}],messages(1)),
+            Close=#{<<"kind">> => <<"close">>,<<"source">> => Key,<<"incarnation">> => Inc,<<"attempt">> => OldAttempt},
+            LateClose=deliver(Peer,Id,Close,Contexts,After),
+            ?assertEqual(maps:get(providers,After),maps:get(providers,LateClose)),
+            ?assert(is_process_alive(NewMedia)),no_message()
+        after
+            unregister(ba_session_runtime_sup),unregister(ba_audio_sup),
+            [exit(Pid,kill) || Pid <- [Runtime,Audio,Source,OldMedia,NewMedia]]
+        end
+    end).
+
+start_stub(Name,Media) ->
+    Pid=spawn(fun Loop() ->
+        receive {'$gen_call',From,{start_child,_}} -> gen_server:reply(From,{ok,Media}),Loop() end
+    end),
+    true=register(Name,Pid),Pid.
+
 deliver(Peer,Id,Payload,Contexts,S) ->
     {noreply,Next}=ba_audio_receiver:handle_info({session_audio,maps:get(Peer,Contexts),Id,Payload},S),Next.
 announcements(N) ->

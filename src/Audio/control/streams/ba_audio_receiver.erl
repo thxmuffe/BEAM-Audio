@@ -163,7 +163,8 @@ handle_info(tick,S) ->
     Subs = maps:get(subscriptions,Recovered),
     Playing = lists:sort([Id || {Id,#{state := active,mix_ready := true,intent := #{playing := true}}} <- maps:to_list(Subs)]),
     Failed = lists:any(fun(#{intent := I}=R) -> maps:get(playing,I,false) andalso maps:is_key(error,R) end,maps:values(Subs)),
-    ba_response_time:playback(maps:keys(Subs),Playing,Failed),
+    Published=lists:sort([Key || {Key,#{offer := #{paused := false}}} <- maps:to_list(maps:get(sources,Recovered))]),
+    ba_response_time:activity(maps:keys(Subs),Playing,Failed,Published),
     {noreply,Recovered};
 handle_info({session_audio,Context,Id,P},S) ->
     try
@@ -197,6 +198,13 @@ handle_info({audio_link_down,Peer,Link},S) ->
     Next = stop_matching(fun(R) -> scoped(Peer,Link,R) end,S),
     Offers = maps:filter(fun({P,_},_) -> P=/=Peer end,maps:get(offers,Next)),
     {noreply,Next#{offers := Offers,catalogs := maps:remove(Peer,maps:get(catalogs,Next))}};
+handle_info(audio_signaling_ready,#{subscriptions := Subs}=S) ->
+    Now = now_ms(),
+    Retry = maps:map(fun
+        (_,#{state := waiting_for_source,error := signaling_unavailable}=R) -> R#{retry_at := Now};
+        (_,R) -> R
+    end,Subs),
+    {noreply,S#{subscriptions := Retry}};
 handle_info({audio_signal,Pid,P},S) ->
     case transport(Pid,S) of
         {Side,Key,R} ->
@@ -205,7 +213,12 @@ handle_info({audio_signal,Pid,P},S) ->
                 ok -> {noreply,S};
                 Error ->
                     logger:warning("Native ~p ~ts send failed: ~p",[Side,maps:get(<<"kind">>,P),Error]),
-                    Next = case Side of receiver -> put_sub(Key,close_receiver(Key,R),S);provider -> close_provider(Key,R,signal_send_failed,S) end,
+                    Next = case {Side,Error} of
+                        {receiver,{error,unavailable}} ->
+                            put_sub(Key,(close_receiver(Key,R))#{error => signaling_unavailable},S);
+                        {receiver,_} -> put_sub(Key,close_receiver(Key,R),S);
+                        {provider,_} -> close_provider(Key,R,signal_send_failed,S)
+                    end,
                     {noreply,Next}
             end;
         none -> {noreply,reject(S)}
@@ -330,39 +343,51 @@ incoming(Context,Id,#{<<"kind">> := Kind} = P,S) ->
 admit(#{peer := Peer,link := Link} = Context,Id,P,#{sources := Sources,providers := Providers} = S) ->
     Key = maps:get(<<"source">>,P),Inc = maps:get(<<"incarnation">>,P),Attempt = maps:get(<<"attempt">>,P),
     ProviderKey = {Peer,Link,Id},
-    case maps:find(ProviderKey,Providers) of
-        {ok,R} -> matches(Context,P,R),wire(R,Id,(binding(R))#{<<"kind">> => <<"accepted">>,<<"paused">> => maps:get(paused,R)}),S;
-        error ->
-            Reason = case {maps:find(Key,Sources),maps:find({publish,Peer,Key},maps:get(contracts,S)),map_size(Providers)<16} of
-                {{ok,#{offer := #{incarnation := Inc}}},{ok,#{id := C,revision := V}},true}
-                    when C=:=map_get(<<"contract">>,P),V=:=map_get(<<"revision">>,P) -> ok;
-                {_,_,false} -> <<"capacity">>;
-                {{ok,_},_,_} -> <<"contract">>;
-                _ -> <<"unavailable">>
-            end,
-            R0 = #{source => Key,incarnation => Inc,attempt => Attempt,context => Context,subscription => Id},
-            case Reason of
-                ok ->
-                    #{pid := Source,offer := #{paused := Paused,profiles := #{channel := D}}} = maps:get(Key,Sources),
-                    R = R0#{descriptor => D,paused => Paused},
-                    case ba_audio_sup:start_media((worker(provider,Context,Id,R))#{source_pid => Source}) of
-                        {ok,Pid} ->
-                            Attached = try gen_server:call(Source,{attach,Pid},100) catch exit:_ -> unavailable end,
-                            case Attached of
-                                ok ->
-                                    Ref = monitor(process,Pid),
-                                    wire(R,Id,(binding(R))#{<<"kind">> => <<"accepted">>,<<"paused">> => Paused}),
-                                    S#{providers := Providers#{ProviderKey => R#{media => Pid,monitor => Ref}}};
-                                _ ->
-                                    logger:warning("Native provider attach failed: ~p",[Attached]),
-                                    stop_worker(Pid),
-                                    wire(R,Id,(binding(R))#{<<"kind">> => <<"rejected">>,<<"reason">> => <<"unavailable">>}),S
-                            end;
-                        _ -> wire(R,Id,(binding(R))#{<<"kind">> => <<"rejected">>,<<"reason">> => <<"transport">>}),S
-                    end;
-                _ -> wire(R0,Id,(binding(R0))#{<<"kind">> => <<"rejected">>,<<"reason">> => Reason}),S
-            end
+    Request = #{source => Key,incarnation => Inc,attempt => Attempt,context => Context,subscription => Id},
+    case {maps:find(Key,Sources),maps:find({publish,Peer,Key},maps:get(contracts,S))} of
+        {{ok,#{offer := #{incarnation := Inc}}=Source},{ok,#{id := C,revision := V}}}
+                when C=:=map_get(<<"contract">>,P),V=:=map_get(<<"revision">>,P) ->
+            case maps:find(ProviderKey,Providers) of
+                {ok,#{source := Key,incarnation := Inc,attempt := Attempt}=Old} ->
+                    accept_provider(Request,maps:get(paused,Old)),S;
+                {ok,#{source := Key,incarnation := Inc}=Old} ->
+                    %% The control link accepts only increasing signed sequences.
+                    %% A new attempt for this subscription supersedes the old one.
+                    Next = close_provider(ProviderKey,Old,replaced,S),
+                    start_provider(ProviderKey,Request,Source,Next);
+                {ok,_} -> reject_provider(Request,<<"contract">>),S;
+                error when map_size(Providers)<16 -> start_provider(ProviderKey,Request,Source,S);
+                error -> reject_provider(Request,<<"capacity">>),S
+            end;
+        {{ok,_},_} -> reject_provider(Request,<<"contract">>),S;
+        _ -> reject_provider(Request,<<"unavailable">>),S
     end.
+
+start_provider(ProviderKey,#{context := Context,subscription := Id}=Request,
+        #{pid := Source,offer := #{paused := Paused,profiles := #{channel := D}}},
+        #{providers := Providers}=S) ->
+    R = Request#{descriptor => D,paused => Paused},
+    case ba_audio_sup:start_media((worker(provider,Context,Id,R))#{source_pid => Source}) of
+        {ok,Pid} ->
+            Attached = try gen_server:call(Source,{attach,Pid},100) catch exit:_ -> unavailable end,
+            case Attached of
+                ok ->
+                    Ref = monitor(process,Pid),
+                    accept_provider(R,Paused),
+                    S#{providers := Providers#{ProviderKey => R#{media => Pid,monitor => Ref}}};
+                _ ->
+                    logger:warning("Native provider attach failed: ~p",[Attached]),
+                    stop_worker(Pid),
+                    reject_provider(R,<<"unavailable">>),S
+            end;
+        _ -> reject_provider(R,<<"transport">>),S
+    end.
+
+accept_provider(#{subscription := Id}=R,Paused) ->
+    wire(R,Id,(binding(R))#{<<"kind">> => <<"accepted">>,<<"paused">> => Paused}).
+reject_provider(#{subscription := Id}=R,Reason) ->
+    wire(R,Id,(binding(R))#{<<"kind">> => <<"rejected">>,<<"reason">> => Reason}).
+
 worker(Role,Context,Id,R) -> #{role => Role,owner => self(),context => Context,subscription => Id,
     attempt => maps:get(attempt,R),descriptor => maps:get(descriptor,R)}.
 restore_one(_,_,#{suspended := true} = S) -> S;
@@ -381,7 +406,11 @@ restore_one(Id,Automatic,#{subscriptions := Items,offers := Offers,contracts := 
                 incarnation => Inc,descriptor => D,retry_at := now_ms()+10000},
             P = (binding(Next))#{<<"kind">> => <<"subscribe">>,<<"contract">> => maps:get(id,Contract),
                                  <<"revision">> => maps:get(revision,Contract)},
-            case wire(Next,Id,P) of ok -> put_sub(Id,Next,S);_ -> S end
+            case wire(Next,Id,P) of
+                ok -> put_sub(Id,Next,S);
+                {error,unavailable} -> put_sub(Id,(closed(Id,R))#{error => signaling_unavailable},S);
+                _ -> S
+            end
             end;
         _ ->
             case State=:=opening andalso now_ms()>=Retry of

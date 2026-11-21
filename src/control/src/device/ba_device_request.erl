@@ -34,7 +34,10 @@ required(<<"stream.message">>,#{<<"kind">> := <<"catalog.read">>}) -> [stream_re
 required(<<"stream.message">>,#{<<"kind">> := <<"subscribe">>}) -> [stream_subscribe];
 %% Session requests, answered by the Device able to execute them (a grant holder,
 %% or the target of End). Anyone may ask for or give up a privilege.
-required(<<"session.request">>,#{<<"kind">> := Kind}) when Kind=:= <<"rename_request">>;Kind=:= <<"response_request">> -> [stream_publish];
+%% Microphone publishers need no on_air privilege, so all members may ask a
+%% grant holder to adjust timing. Only grant holders sign the shared setting.
+required(<<"session.request">>,#{<<"kind">> := <<"response_request">>,<<"selection">> := _}) -> [stream_publish];
+required(<<"session.request">>,#{<<"kind">> := <<"rename_request">>}) -> [stream_publish];
 required(<<"session.request">>,#{<<"kind">> := Kind}) when Kind=:= <<"remove_request">>;Kind=:= <<"ended">> -> [end_session];
 required(_,_) -> [].
 

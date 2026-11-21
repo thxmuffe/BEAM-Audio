@@ -1,5 +1,64 @@
 # Current implementation and validation
 
+## Faster reconnection after a network change
+
+- An authenticated replacement request on the same Subscription, source and
+  current Contract now retires the old sender attempt immediately. A late
+  close for that attempt cannot stop its replacement.
+- When Reception reconnects, receivers waiting after an unavailable signaling
+  send retry on the next audio tick. The retry still checks the live link,
+  Contract and clock.
+- 41 targeted Erlang tests passed. The audible handoff time still needs to be
+  measured on rebuilt Devices.
+
+## iPhone Wi-Fi-off handoff — 2026-11-21
+
+- The owner heard audio resume after about 15 seconds on Paavo's iPhone (2).
+  The handset’s log shows interface changes starting at 16:44:08 Helsinki
+  time and failed ICE setup sends at 16:44:15 and 16:44:26.
+- The sender rejected a replacement subscribe at 16:44:27 while it still held
+  the old provider attempt. That attempt ended at 16:44:33 when ICE failed.
+  The handset connected via NAT at 16:44:39, about 12 seconds after the
+  rejected subscribe and 31 seconds after the first interface change.
+  The logs time media connectivity and the owner timed audible recovery.
+
+## Monitor failure history
+
+- The terminal monitor shows cumulative failure counters and the last event's
+  age as muted history. Current channel errors still appear as alerts, and
+  missing diagnostics are marked unavailable.
+- All 10 monitor tests passed. The owner is testing Wi-Fi reconnect on the XR.
+
+## Response time choices and shared cadence
+
+- OpenSound Settings offers Automatic with the current delay, 250 ms and 2 s.
+  Fixed choices are signed Session settings. Automatic restarts from the
+  current delay. A fixed setting ignores adjustments already in flight.
+- Delay reporting and automatic checks use the same observation-based cadence
+  helper. Their intervals, observation counts and reset events remain local
+  to each loop.
+- 62 targeted Erlang tests and 28 frontend state tests passed, including
+  fixed-mode persistence on rejoin and re-enabling Automatic. Apps and live
+  multi-Device playback still need verification on matching builds.
+
+## Automatic Response time from Session gossip — 2026-11-21
+
+- Every Device publishing an unpaused input now requests a Response time of
+  2.5 times the fresh, sample-weighted Session delay mean, increasing or
+  decreasing the shared setting. It rounds once to integer milliseconds and
+  keeps the existing 3000 ms limit (45 ms becomes 113 ms).
+- Checks start at 500 ms and grow through 1, 2, 4 and 5 seconds. New inputs and
+  playback starts reset the cadence; pausing/stopping all inputs or losing the
+  local audio controller stops changes. Missing measurements retain the setting.
+- Microphone-only publishers may request measured adjustments without on_air.
+  Grant holders sign changes through the existing Session request path.
+  Duplicate settings do not create signed revisions.
+- Core compilation with warnings as errors and 23 focused EUnit tests passed,
+  covering adjustment in both directions, rounding/limits, cadence/reset,
+  readiness/freshness, controller loss, duplicate settings and request rights.
+  Whitespace checks passed. No app rebuild, deployment, live Session or physical
+  playback validation.
+
 ## On-demand level gossip — 2026-11-21
 
 - The metrics monitor and audio state changes send a signed level-interest

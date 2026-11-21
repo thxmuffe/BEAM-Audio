@@ -21,6 +21,7 @@ session_test_() ->
      end,
      [fun idle_and_lifecycle/0,
       fun leave_and_resume_owner/0,
+      fun response_time_selection_survives_rejoin_and_ignores_adjustments_when_fixed/0,
       fun ending_needs_its_own_privilege/0,
       fun bridge_json_protocol/0,
       fun owner_name_in_connection/0,
@@ -44,6 +45,27 @@ owner_name_in_connection() ->
         ?assertNotEqual(nomatch,binary:match(maps:get(message,Known),Name)),
         ?assertEqual(Name,maps:get(owner_name,ba_device_store:load(session_connection,#{})))
     after sys:replace_state(ba_session,fun(_) -> Original end) end.
+
+response_time_selection_survives_rejoin_and_ignores_adjustments_when_fixed() ->
+    ok=ba_session:create(<<"Response time">>,[<<"ws://127.0.0.1:4000/relay/v1">>],undefined),
+    {ok,Link}=ba_session_membership:invite(null),
+    try
+        ?assertMatch({150,true,_,true},ba_session_membership:response_setting()),
+        ok=ba_response_time:set(250),
+        ok=ba_response_time:set(2000),
+        ok=ba_session_membership:adjust_response_time(113),
+        ?assertMatch({2000,false,_,true},ba_session_membership:response_setting()),
+        ok=ba_session:leave(),
+        ok=ba_session:join(Link),
+        ?assertMatch({2000,false,_,true},ba_session_membership:response_setting()),
+        ?assertMatch(#{offset_ms := 2000,automatic := false},ba_response_time:view()),
+        ok=ba_response_time:set(<<"automatic">>),
+        ?assertMatch({2000,true,_,true},ba_session_membership:response_setting()),
+        ok=ba_session_membership:adjust_response_time(113),
+        ?assertMatch({113,true,_,true},ba_session_membership:response_setting())
+    after
+        ba_session:end_session()
+    end.
 
 crash_notice_does_not_block_supervision() ->
     ok=ba_session:create(<<"Crash notice test">>,[<<"ws://127.0.0.1:4000/relay/v1">>],undefined),

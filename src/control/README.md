@@ -19,6 +19,18 @@ module names do not depend on folders):
 
 Audio control (the Erlang side of audio) lives in `../Audio/control`.
 
+In Automatic, while any unpaused input is published (system capture, microphone or another
+source), the Device automatically requests a shared Response time of 2.5 times
+the fresh sample-weighted Session delay average. It checks after 0.5 seconds,
+then at 1, 2, 4 and finally 5-second intervals. A new input or playback start
+resets that cadence. The result rounds to whole milliseconds and is capped at
+3000 ms; a 45 ms mean gives 113 ms. Without fresh measurements the setting stays
+unchanged. Grant holders sign changes; other members request them through the
+authenticated Session request path, including microphone-only publishers.
+Passing a numeric `offset_ms` to `offset` pins that delay. Passing `"automatic"`
+resumes adjustment from the current value. The mode travels with signed Session
+settings. See [timing](../../docs/SESSION_TIME.md).
+
 Compile with `rebar3 compile` here. Run repository EUnit checks with `rebar3 eunit`
 from this directory; see [builds](../../docs/BUILDING.md). Use private persistent `BA_STATE_DIR` and
 `BA_IDENTITY_SEED` for a stable Device. Never print or share identity seeds.

@@ -26,6 +26,7 @@ render_missing_levels_is_not_silence_test() ->
     Text=iolist_to_binary(ba_cli_monitor:render(View)),
     %% Missing levels are left out, never shown as silence.
     ?assertEqual(nomatch,binary:match(Text,<<"-96.0">>)),
+    ?assertNotEqual(nomatch,binary:match(Text,<<"diagnostics unavailable\n">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"running">>)).
 
 
@@ -116,9 +117,9 @@ render_channel_error_and_missed_targets_test() ->
             <<"audio_diagnostics">> => #{<<"clock.state">> => <<"synchronized">>,<<"mixer.rendered">> => 10,
                 <<"mixer.dropped">> => 2,<<"mixer.queued_blocks">> => 5,<<"mixer.clipped_frames">> => 0,
                 <<"mixer.failure.missed_packet_target">> => 2}}}]},
-    Text=unicode:characters_to_binary(ba_cli_monitor:render(View)),
-    ?assertNotEqual(nomatch,binary:match(Text,<<"speaker: output_closed">>)),
-    ?assertNotEqual(nomatch,binary:match(Text,<<"mixer.failure.missed_packet_target: 2">>)),
+    Text=unicode:characters_to_binary(ba_cli_monitor:render(View,true)),
+    ?assertNotEqual(nomatch,binary:match(Text,<<27,"[31m  ! speaker: output_closed">>)),
+    ?assertNotEqual(nomatch,binary:match(Text,<<27,"[90m  Failure history: mixer.failure.missed_packet_target: 2">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"10 rendered  2 dropped  5 queued">>)).
 
 render_engine_counters_and_analysis_off_test() ->

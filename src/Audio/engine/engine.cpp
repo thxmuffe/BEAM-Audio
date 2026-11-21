@@ -33,6 +33,7 @@
 #include "speaker.h"
 #include "term.h"
 #include "timing.h"
+#include "peak_limiter.h"
 
 namespace ba {
 namespace {
@@ -78,6 +79,8 @@ struct Engine {
     std::array<std::atomic<Sender *>, MaxCaptures> senders{};  // slot i drains capture_rings[i]
     std::atomic<uint32_t> out_rate{0};
     LevelMeter output_level;
+    PeakLimiter output_limiter;
+    std::atomic<float> output_gain{1.0f};
     std::atomic<uint64_t> callbacks{0}, oversized{0};
     std::mutex task_mutex;
     std::deque<std::function<void()>> tasks;
@@ -217,6 +220,8 @@ struct Engine {
             if (slot.load()) first = false;
         if (first && !out_rate.load()) {
             output_level.clear();
+            output_limiter = PeakLimiter{};
+            output_gain.store(1.0f, std::memory_order_relaxed);
             out_rate.store(shell.start_output());
         }
         for (auto &slot : speakers)
@@ -325,7 +330,11 @@ struct Engine {
         json out = json::object();
         const uint64_t now = host_now_ns();
         if (out_rate.load()) {
-            if (auto level = output_level.read(now); !level.is_null()) out["speaker"] = level;
+            if (auto level = output_level.read(now); !level.is_null()) {
+                const float gain = output_gain.load(std::memory_order_relaxed);
+                level["peak_gain_cdb"] = std::lround(2000.0 * std::log10(std::max(gain, 0.000015848932f)));
+                out["speaker"] = std::move(level);
+            }
         }
         for (int i = 0; i < MaxCaptures; ++i) {
             if (Sender *s = senders[i].load()) {
@@ -480,6 +489,8 @@ extern "C" void ba_engine_render(float *out, uint32_t frames, uint64_t host_time
         for (auto &slot : e->speakers)
             if (ba::Speaker *s = slot.load(std::memory_order_acquire)) s->render(out, frames, present, rate);
     }
+    const float gain = e->output_limiter.apply(out, frames, ba::Channels, rate);
+    e->output_gain.store(gain, std::memory_order_relaxed);
     e->output_level.sample(out, frames * ba::Channels, ba::host_now_ns());
 }
 
