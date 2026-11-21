@@ -77,6 +77,7 @@ struct Engine {
     std::array<std::atomic<Speaker *>, MaxSpeakers> speakers{};
     std::array<std::atomic<Sender *>, MaxCaptures> senders{};  // slot i drains capture_rings[i]
     std::atomic<uint32_t> out_rate{0};
+    LevelMeter output_level;
     std::atomic<uint64_t> callbacks{0}, oversized{0};
     std::mutex task_mutex;
     std::deque<std::function<void()>> tasks;
@@ -179,6 +180,7 @@ struct Engine {
             return json::object();
         }
         if (op == "status") return status();
+        if (op == "levels") return levels();
         if (op == "response") {
             json out = {{"speakers", json::array()}};
             on_packet_thread([&] {
@@ -213,7 +215,10 @@ struct Engine {
         bool first = true;
         for (auto &slot : speakers)
             if (slot.load()) first = false;
-        if (first && !out_rate.load()) out_rate.store(shell.start_output());
+        if (first && !out_rate.load()) {
+            output_level.clear();
+            out_rate.store(shell.start_output());
+        }
         for (auto &slot : speakers)
             if (!slot.load()) {
                 slot.store(s.release());
@@ -263,6 +268,8 @@ struct Engine {
             capture_rings[slot].discard();
             senders[slot].store(s.release());
         });
+        capture_rings[slot].input_level.clear();
+        capture_rings[slot].meter_input.store(raw->microphone(), std::memory_order_relaxed);
         capture_rings[slot].active.store(true);
         try {
             raw->set_input_rate(shell.start_capture(slot, c.value("source", "system")));
@@ -312,6 +319,21 @@ struct Engine {
         for (auto &slot : speakers)
             if (Speaker *s = slot.load(); s && s->ssrc() == ssrc) return s->set_delay(delay_ms), json::object();
         fail("no such speaker");
+    }
+
+    json levels() {
+        json out = json::object();
+        const uint64_t now = host_now_ns();
+        if (out_rate.load()) {
+            if (auto level = output_level.read(now); !level.is_null()) out["speaker"] = level;
+        }
+        for (int i = 0; i < MaxCaptures; ++i) {
+            if (Sender *s = senders[i].load()) {
+                auto level = s->microphone() ? capture_rings[i].input_level.read(now) : s->capture_level(now);
+                if (!level.is_null()) out[s->microphone() ? "microphone" : "broadcast"] = level;
+            }
+        }
+        return out;
     }
 
     json status() {
@@ -451,16 +473,21 @@ extern "C" void ba_engine_render(float *out, uint32_t frames, uint64_t host_time
     if (!e) return;
     e->callbacks.fetch_add(1, std::memory_order_relaxed);
     if (frames > ba::MaxCallback) return void(e->oversized.fetch_add(1, std::memory_order_relaxed));
-    int64_t present = 0;
-    if (!e->clock.map(host_time_ns, present)) return;
     const uint32_t rate = e->out_rate.load(std::memory_order_relaxed);
     if (!rate) return;
-    for (auto &slot : e->speakers)
-        if (ba::Speaker *s = slot.load(std::memory_order_acquire)) s->render(out, frames, present, rate);
+    int64_t present = 0;
+    if (e->clock.map(host_time_ns, present)) {
+        for (auto &slot : e->speakers)
+            if (ba::Speaker *s = slot.load(std::memory_order_acquire)) s->render(out, frames, present, rate);
+    }
+    e->output_level.sample(out, frames * ba::Channels, ba::host_now_ns());
 }
 
 extern "C" void ba_engine_capture(int slot, const float *in, uint32_t frames, uint64_t host_time_ns) {
     if (slot < 0 || slot >= ba::MaxCaptures) return;
     auto &ring = ba::capture_rings[size_t(slot)];
-    if (ring.active.load(std::memory_order_acquire)) ring.push(in, frames, host_time_ns);
+    if (!ring.active.load(std::memory_order_acquire)) return;
+    if (ring.meter_input.load(std::memory_order_relaxed))
+        ring.input_level.sample(in, frames * ba::Channels, ba::host_now_ns());
+    ring.push(in, frames, host_time_ns);
 }

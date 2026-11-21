@@ -60,7 +60,7 @@ void Sender::retransmit(const uint8_t *seqs, int count, ConnId from) {
     }
 }
 
-Sender::Sender(const json &c, Ice &ice) : ice_(ice) {
+Sender::Sender(const json &c, Ice &ice) : microphone_(c.value("source", "system") == "mic"), ice_(ice) {
     ssrc_ = c.at("ssrc"), rate_ = c.at("rate");
     if (rate_ != 44100 && rate_ != 48000) fail("unsupported stream rate");
     srtp_ = make_srtp(ssrc_, c.at("key").get<std::string>());
@@ -152,9 +152,13 @@ void Sender::append(const float *data, long frames) {
         if (++filled_ == Block) {
             FLAC__int32 pcm[Block * Channels];
             const float full = float((1 << (Bits - 1)) - 1);
-            for (uint32_t k = 0; k < Block * Channels; ++k) pcm[k] = FLAC__int32(std::lrint(std::clamp(block_[k], -1.0f, 1.0f) * full));
+            for (uint32_t k = 0; k < Block * Channels; ++k) {
+                block_[k] = std::clamp(block_[k], -1.0f, 1.0f);
+                pcm[k] = FLAC__int32(std::lrint(block_[k] * full));
+            }
             pending_.push_back(block_pos_);
             if (!FLAC__stream_encoder_process_interleaved(encoder_, pcm, Block)) fail("FLAC encoder failed");
+            if (!microphone_) capture_level_.sample(block_, Block * Channels, host_now_ns());
             filled_ = 0;
         }
     }

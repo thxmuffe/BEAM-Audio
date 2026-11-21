@@ -11,6 +11,10 @@ Subscription resets the reporting cadence, and that the measured Session
 average comes from the native timing batches. Confirm the timing and visible
 state on real Devices.
 
+Check the three native level readings on physical Devices: microphone input,
+encoded system capture and the mixed speaker output. Compare the local
+snapshot and consented Inspect for the same signal, including silence and stop.
+
 Web startup (owner 2026-11-20): the Mac Web launcher now stops the existing
 named Web Device before starting it with rebuilt code and the same saved
 identity/settings. A verified stale record was cleared and the owner's Web

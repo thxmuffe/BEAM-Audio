@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "ice.h"
+#include "level_meter.h"
 #include "recovery.h"
 #include "timing.h"
 
@@ -29,6 +30,8 @@ struct CaptureRing {
     std::array<Record, Records> records{};
     std::atomic<uint64_t> frames_written{0}, frames_read{0}, records_written{0}, records_read{0}, overruns{0};
     std::atomic<bool> active{false};
+    std::atomic<bool> meter_input{false};
+    LevelMeter input_level;
 
     void push(const float *in, uint32_t frames, uint64_t host);  // real-time safe
     void discard();                                              // consumer: skip what is queued
@@ -43,6 +46,8 @@ class Sender {
     Sender &operator=(const Sender &) = delete;
 
     uint32_t ssrc() const { return ssrc_; }
+    bool microphone() const { return microphone_; }
+    json capture_level(uint64_t now_ns) const { return capture_level_.read(now_ns); }
     uint64_t packet_index() const { return next_index_.load(std::memory_order_relaxed); }
     void set_input_rate(uint32_t rate) { in_rate_.store(rate); }
     uint32_t input_rate() const { return in_rate_.load(); }
@@ -62,6 +67,8 @@ class Sender {
     void append(const float *data, long frames);
 
     uint32_t ssrc_ = 0, rate_ = 0;
+    const bool microphone_;
+    LevelMeter capture_level_;
     std::atomic<uint32_t> in_rate_{0};
     Ice &ice_;
     srtp_t srtp_ = nullptr;

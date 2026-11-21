@@ -1,5 +1,27 @@
 # Current implementation and validation
 
+## On-demand level gossip — 2026-11-21
+
+- The metrics monitor and audio state changes send a signed level-interest
+  note. Each Device with Session-wide Inspect consent gossips its fresh
+  measurements at most once per note. Remote meters reach the monitor from
+  gossip; the cache preserves the last observation of each signal.
+- 69 targeted Erlang tests passed, including duplicate interest delivery,
+  signed level validation and out-of-order measurements. Live multi-Device
+  gossip is unverified.
+
+## Native Device levels — 2026-11-21
+
+- The native engine meters microphone input, the encoded system-audio source
+  and the final speaker mix. One OTP observer reads the three named meters
+  over the existing engine connection. The Device snapshot and consented
+  Inspect capabilities use that cache, with one row per signal.
+- The native engine built on Linux. A synthetic device test with in-memory
+  media transport checked nonzero microphone, encoded capture and mixed speaker
+  levels and verified that all three reached one Erlang gossip publication.
+  The engine omitted inactive meters after stopping. Physical Apple devices
+  and live ICE remain unverified.
+
 ## Playback and Response time gossip — 2026-11-21
 
 - The native engine measures packet timing locally during playback. Signed

@@ -65,6 +65,20 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
   Commands: `start_speaker`, `stop_speaker`, `start_capture` / `stop_capture`
   (system audio, microphone; several at once), `connect`, `remote`,
   `disconnect`, `route`, `clock_map`, `volume`, `delay`, `status`.
+- `levels` returns one current peak/RMS snapshot per physical audio path:
+  `microphone` at the input callback, `broadcast` at the encoded system-audio
+  source, and `speaker` on the final mix submitted to the output driver.
+  All use dBFS. No entry is returned when the path has no fresh measurement.
+  The OTP audio observer makes one read for all paths and caches it for the
+  local Device snapshot and Session level gossip. Engine commands and level
+  snapshots use the same control connection; PCM remains in the native engine.
+- A signed `levels_interest` note comes from the metrics monitor (at most
+  once a second) and audio transitions (on air starts and speaker switches).
+  Each Device sees a distinct interest once and may publish one signed
+  `levels` note with fresh values. The monitor reads those notes from its
+  cache. Old measurements keep their ages across new interests and audio
+  transitions. Devices share levels only with Session-wide Inspect permission.
+
 - **Crashes.** Let it crash. The supervisor restarts the engine; the crash
   report, with stack trace, is posted to Session chat.
 
