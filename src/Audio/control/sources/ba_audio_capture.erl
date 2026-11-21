@@ -35,7 +35,7 @@ unavailable() -> maps:from_list([{atom_to_binary(K),reason(K)} || K <- [micropho
 
 supported(Kind) -> lists:member(Kind,ba_settings:app(audio_capture_sources,[])).
 reason(microphone) -> <<"This Device cannot send its microphone.">>;
-reason(broadcast) -> <<"This Device cannot share its system audio (iOS allows no app to record other apps).">>.
+reason(broadcast) -> <<"This Device cannot share its system audio.">>.
 name(broadcast) -> ba_audio_capture_broadcast;
 name(microphone) -> ba_audio_capture_microphone.
 source(broadcast) -> {<<"system">>,<<"default-output">>,<<"System audio — FLAC"/utf8>>};

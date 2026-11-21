@@ -53,7 +53,7 @@ init([]) ->
 
 handle_call(snapshot,_,S) ->
     Public = ba_session_control_protocol:snapshot(maps:get(protocol,S)),
-    {reply,Public#{peer_errors => maps:with(maps:keys(maps:get(links,Public)),maps:get(peer_errors,S,#{})),peer_names => maps:with(maps:keys(maps:get(links,Public)),maps:get(peer_names,S)),relay => ba_session_desks:status(),membership => ba_session_membership:status(),rejected => maps:get(rejected,S),
+    {reply,Public#{peer_errors => maps:with(maps:keys(maps:get(links,Public)),maps:get(peer_errors,S,#{})),peer_names => maps:with(maps:keys(maps:get(links,Public)),maps:get(peer_names,S)),peer_playback => maps:with(maps:keys(maps:get(links,Public)),maps:get(peer_playback,S,#{})),relay => ba_session_desks:status(),membership => ba_session_membership:status(),rejected => maps:get(rejected,S),
         last_rejection => maps:get(last_rejection,S),diagnostics => ba_diagnostics:view(S)},S};
 handle_call({exclude,Peer},_,#{protocol := P}=S) ->
     case maps:find(Peer,live(P)) of {ok,Link} -> drop_link(Peer,maps:get(id,Link));error -> ok end,
@@ -200,7 +200,10 @@ event(Peer,{reply,<<"capabilities.reply">>,Value},S) ->
     HasError=lists:any(fun(E) -> maps:get(<<"state">>,E,<<>>)=:=<<"error">> end,
         maps:values(maps:get(<<"audio">>,Value,#{}))),
     Errors=maps:get(peer_errors,Next,#{}),
-    reply(Peer,{ok,Value},Next#{peer_errors => Errors#{Peer => HasError}});
+    %% Whether the peer takes playback requests (always or ask), for its controls.
+    Playback=maps:get(peer_playback,Next,#{}),
+    Offer=maps:get(<<"playback_control">>,Value,null),
+    reply(Peer,{ok,Value},Next#{peer_errors => Errors#{Peer => HasError},peer_playback => Playback#{Peer => Offer}});
 event(Peer,{reply,<<"capabilities.error">>,#{<<"reason">> := Reason}},S) ->
     reply(Peer,{error,binary_to_existing_atom(Reason)},S);
 event(Peer,{reply,<<"inspect.reply">>,Value},S) -> reply(Peer,{ok,Value},S);
@@ -301,7 +304,7 @@ reply(Peer,Result,#{callers := Callers} = S) ->
 reset(Reason,#{callers := Callers,protocol := Protocol} = S) ->
     maps:foreach(fun(_,From) -> gen_server:reply(From,{error,Reason}) end,Callers),
     maps:foreach(fun(Peer,Link) -> drop_link(Peer,maps:get(id,Link)) end,live(Protocol)),
-    S#{callers := #{},peer_names := #{},peer_errors => #{},protocol := ba_session_control_protocol:reset(Protocol,now_ms())}.
+    S#{callers := #{},peer_names := #{},peer_errors => #{},peer_playback => #{},protocol := ba_session_control_protocol:reset(Protocol,now_ms())}.
 rejected(Reason,S) -> ba_diagnostics:count(Reason,S#{rejected := maps:get(rejected,S)+1,last_rejection := Reason}).
 now_ms() -> erlang:monotonic_time(millisecond).
 terminate(_,S) ->

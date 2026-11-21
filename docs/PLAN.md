@@ -239,7 +239,7 @@ does not establish a working integration baseline.
 | Platform | Playback | Microphone | System audio capture |
 |---|---|---|---|
 | macOS | Core Audio | Core Audio | Core Audio process tap |
-| iPhone | RemoteIO | RemoteIO | Unavailable |
+| iPhone | RemoteIO | RemoteIO | System broadcast (upload extension → shared ring), untested on a device |
 | Windows | Windows shell pending | Windows shell pending | Windows shell pending |
 
 See [validation and release limits](PROGRESS.md). The receiver and sender

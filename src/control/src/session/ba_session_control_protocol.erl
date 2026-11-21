@@ -418,7 +418,8 @@ payload(<<"stream.message">>,P) -> ba_audio_stream_protocol:validate(P);
 payload(_,_) -> throw(forbidden_operation).
 
 capability_payload(P) ->
-    ba_session_passport:exact(P,[<<"instance">>,<<"revision">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>,<<"audio_trace">>,<<"audio_meters">>],maps:is_key(K,P)]),
+    ba_session_passport:exact(P,[<<"instance">>,<<"revision">>]++[K || K <- [<<"audio">>,<<"device_name">>,<<"audio_diagnostics">>,<<"audio_trace">>,<<"audio_meters">>,<<"playback_control">>],maps:is_key(K,P)]),
+    case maps:find(<<"playback_control">>,P) of error -> ok;{ok,Offer} -> true=lists:member(Offer,[<<"always">>,<<"ask">>]) end,
     case maps:find(<<"audio_meters">>,P) of error -> ok;{ok,Meters} -> ba_audio_diagnostics:validate_meters(Meters) end,
     case maps:find(<<"audio_trace">>,P) of error -> ok;{ok,Trace} -> ba_audio_diagnostics:validate_trace(Trace) end,
     case maps:find(<<"audio_diagnostics">>,P) of error -> ok;{ok,D} -> ba_audio_diagnostics:validate(D) end,

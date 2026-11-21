@@ -44,7 +44,7 @@ apple_configuration_preserves_session_memory(PlatformName) ->
         os:putenv("BA_PLATFORM",PlatformName),os:putenv("BA_STATE_DIR",Dir),
         ok=ba_app_session:configure(),
         ?assertEqual({ok,ba_audio_capture},application:get_env(ba_core,audio_capture_adapter)),
-        ?assertEqual({ok,case PlatformName of "mac" -> [broadcast,microphone];"ios" -> [microphone] end},
+        ?assertEqual({ok,[broadcast,microphone]},
                      application:get_env(ba_core,audio_capture_sources)),
         ?assertEqual({ok,true},application:get_env(ba_core,audio_automation)),
         ?assertEqual({ok,true},application:get_env(ba_core,restore_session_on_start)),
@@ -66,7 +66,8 @@ unavailable_capabilities_from_capture_adapter_test() ->
         application:set_env(ba_core,audio_capture_sources,[broadcast,microphone]),
         ?assertEqual(#{},ba_app_session:unavailable_capabilities()),
         application:set_env(ba_core,audio_capture_sources,[microphone]),
-        ?assertEqual([<<"broadcast">>],maps:keys(ba_app_session:unavailable_capabilities())),
+        %% Without system audio there is nothing to control playback of either.
+        ?assertEqual([<<"broadcast">>,<<"playback_control">>],lists:sort(maps:keys(ba_app_session:unavailable_capabilities()))),
         application:unset_env(ba_core,audio_capture_sources),
         application:unset_env(ba_core,audio_capture_adapter),
         ?assertEqual(#{},ba_app_session:unavailable_capabilities())

@@ -14,10 +14,11 @@ configure() ->
     end.
 configure(#{platform := Platform}) ->
     %% The native audio engine is the only audio path. What each platform's
-    %% engine shell can capture: iOS lets no app record other apps' audio.
+    %% engine shell can capture. iPhone system audio arrives through a system
+    %% broadcast the person starts (the app's broadcast upload extension).
     {Capture,Sources}=case Platform of
         mac -> {ba_audio_capture,[broadcast,microphone]};
-        ios -> {ba_audio_capture,[microphone]};
+        ios -> {ba_audio_capture,[broadcast,microphone]};
         _ -> {ba_no_capture,[]}
     end,
     application:set_env(ba_core,audio_automation,true),
@@ -68,6 +69,8 @@ snapshot() ->
                 local => D=:=Id,excluded => excluded(D),
                 playback => maps:get(D,Playback,#{playing => false,failed => false}),
                 has_error => maps:get(D,maps:get(peer_errors,Control,#{}),false),
+                %% always or ask when that Device takes playback requests, else null.
+                playback_control => maps:get(D,maps:get(peer_playback,Control,#{}),null),
                 privileges => maps:get(D,Privileges,[]),
                 requests => maps:get(D,maps:get(requests,Session,#{}),[]),
                 %% Only Devices this one has encountered are listed; connected
@@ -90,8 +93,9 @@ unavailable_capabilities() ->
         true -> Adapter:unavailable();
         false -> #{}
     end,
-    case {os:type(),maps:is_key(<<"broadcast">>,Audio)} of
-        {{unix,darwin},false} -> Audio;
+    %% Track control drives Music on a Mac; iPhone shares audio but cannot.
+    case {os:type(),ba_settings:env("BA_PLATFORM","")=/="ios",maps:is_key(<<"broadcast">>,Audio)} of
+        {{unix,darwin},true,false} -> Audio;
         _ -> Audio#{<<"playback_control">> => <<"Playback control is available when broadcasting Music on macOS.">>}
     end.
 device_privileges() ->

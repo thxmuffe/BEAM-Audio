@@ -3256,3 +3256,33 @@ are not all confirmed product defects. Apple tests were not executed here.
   (incl. new `playback_directions_test`), and a clang syntax check of the
   engine and macOS shell. Not built or run: the native engine; Play/pause on a
   real Mac with Music; the new layout has not been looked at.
+
+## 2026-11-21 — iPhone ON AIR through a system broadcast; floating controls
+
+- iPhone system audio: a ReplayKit broadcast upload extension
+  (`src/Audio/adapters/iOS/BroadcastExtension/BASystemAudioHandler.m`) keeps only
+  other apps' audio, converts it with AVAudioConverter to 48 kHz stereo float
+  and writes it to a ring in the app group container
+  (`ba_system_audio_ring.h`). The iPhone engine's new "system" capture reads it
+  from a silent RemoteIO output (which also keeps the app alive in the
+  background) with a mixable audio session, so Music keeps playing. ON AIR opens
+  the iOS broadcast sheet (`SystemAudioBroadcast.swift`, through a new
+  `DeviceRuntime.prepare` hook); the broadcast ending turns ON AIR off; going off
+  air ends the broadcast. A saved ON AIR does not resume after a restart, since
+  iOS needs the person to start the broadcast. Xcode: new `OpenSoundBroadcast`
+  extension target, app group `group.org.opensound.beamaudio.ios.prototype`.
+- Corrected layout: mic, speaker and ON AIR float at the top centre; playback
+  floats above the bottom row as one swipeable card per on-air source and on
+  that Device's row; Response time is inside each Session.
+- Devices announce `playback_control` (always or ask) in capabilities. This is
+  a new optional key: older builds reject the capability message while a Mac
+  broadcasts, so update every Device. Peers read capabilities once per
+  connection, so a broadcaster's later change shows after reconnecting.
+- Chat appends new messages in time order a few per frame instead of
+  rebuilding the list on every refresh.
+- Verified: unsigned device build of the iOS app with the extension (Xcode
+  27.1), iPhone engine rebuilt, 50 EUnit tests (one stale expectation in
+  `ba_app_session_tests` fixed), 38 WebApp Node tests, the browser test,
+  headless screenshots at 390 and 1100 px. Not verified: anything on a real
+  iPhone (broadcast sheet opening programmatically, which apps' audio iOS
+  delivers, background survival, sync quality), signing with the app group.

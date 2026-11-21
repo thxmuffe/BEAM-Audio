@@ -24,9 +24,10 @@ init([]) ->
 handle_continue(resolve_label,#{instance := Instance}=S) ->
     _=ba_device_label:local(Instance),{noreply,S}.
 
-handle_call(capability_metrics,_,S) -> {reply,capability_metrics(S),S};
-handle_call(capabilities,_,S) -> {reply,capability_snapshot(S),S};
-handle_call(status,_,S) ->
+handle_call(capability_metrics,_,S0) -> S=playback_seen(S0),{reply,capability_metrics(S),S};
+handle_call(capabilities,_,S0) -> S=playback_seen(S0),{reply,capability_snapshot(S),S};
+handle_call(status,_,S0) ->
+    S=playback_seen(S0),
     Audio=app_audio(S),
     MonitorAudio=maps:map(fun(_,Row) -> maps:remove(meter,Row) end,Audio),
     {reply,#{capabilities => capability_snapshot(S),monitor => capability_metrics(S,MonitorAudio),audio => Audio},S};
@@ -56,8 +57,19 @@ handle_info({'DOWN',_,process,P,_},#{audio_worker := P}=S) ->
 handle_info(_,S) -> {noreply,S}.
 
 changed(S) -> S#{revision := maps:get(revision,S)+1}.
-capability_snapshot(#{instance := Instance,revision := Revision}=S) ->
-    Base=#{<<"device_name">> => ba_device_label:local(Instance),<<"instance">> => Instance,<<"revision">> => Revision},
+%% Whether this Device takes playback requests (Previous, Play/pause, Next) and
+%% how: always or ask. Told to peers so their controls show it; the setting can
+%% change by many routes (policy, preset, undo), so a change is noticed here.
+playback_seen(S) ->
+    Offer=case maps:is_key(<<"playback_control">>,ba_app_session:unavailable_capabilities()) of
+        true -> none;
+        false -> try ba_device_config:policy(playback_control) of no -> none;Policy -> Policy catch _:_ -> none end
+    end,
+    case maps:get(playback,S,none) of Offer -> S;_ -> changed(S#{playback => Offer}) end.
+capability_snapshot(#{instance := Instance,revision := Revision}=S0) ->
+    Named=#{<<"device_name">> => ba_device_label:local(Instance),<<"instance">> => Instance,<<"revision">> => Revision},
+    Base=case maps:get(playback,S0,none) of none -> Named;Offer -> Named#{<<"playback_control">> => atom_to_binary(Offer)} end,
+    S=S0,
     case ba_settings:app(audio_automation,false) orelse maps:is_key(audio_view,S) of
         false -> Base;
         true -> Base#{<<"audio">> => maps:from_list([{atom_to_binary(K),
