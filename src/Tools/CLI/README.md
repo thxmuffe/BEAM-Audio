@@ -290,7 +290,11 @@ The console shows channel error reasons, clock state/correction, Mixer rendered/
 dropped/queued/clipped counts and nonzero failure totals. Cumulative totals
 appear as muted Failure history with the last event's age when available.
 Current channel errors still show as alerts. Missing diagnostics appear as
-unavailable. JSON retains the full projected map. Transport rejection counts
+unavailable. On a Device rendering speaker output, `mix gain` shows the
+normalization applied to the combined signal. Two contributing inputs show
+−6.0 dB (×0.5). One input shows 0.0 dB (×1). JSON reports the gain in
+hundredths of a decibel as `audio_diagnostics["mixer.gain_cdb"]`.
+Transport rejection counts
 are not a measurement of RTP network loss, and these reports do not measure
 physical speaker underruns or speaker alignment.
 

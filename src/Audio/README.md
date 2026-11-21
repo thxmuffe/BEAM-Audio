@@ -71,4 +71,6 @@ without starting capture/playback. Its cache feeds both local UI and signed
 remote monitoring. Private metrics and meter/analysis options follow the Device's
 Inspect consent, independently of calibration. Inspect also gates bounded runtime
 log reads through signed Session control; USB is unnecessary when control is reachable.
+The native speaker mixer reports its most recent block's normalization gain
+through the same observation. The CLI labels it `mix gain` in dB.
 See the CLI README for controls, field meanings and privacy/validation limits.

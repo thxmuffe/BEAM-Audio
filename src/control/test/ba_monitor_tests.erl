@@ -126,10 +126,15 @@ render_engine_counters_and_analysis_off_test() ->
     View=fun(D) -> #{<<"session">> => #{},<<"state">> => <<"authorized">>,<<"devices">> => [
         #{<<"id">> => binary:copy(<<"A">>,64),<<"state">> => <<"ok">>,<<"capabilities">> => #{<<"audio_diagnostics">> => D}}]} end,
     Text=iolist_to_binary(ba_cli_monitor:render(View(#{<<"transport.packets">> => 960,<<"transport.late">> => 2,
-        <<"transport.recovered">> => 5,<<"transport.nacks">> => 6,<<"transport.sent">> => 704,<<"transport.retransmits">> => 1}))),
+        <<"transport.recovered">> => 5,<<"transport.nacks">> => 6,<<"transport.sent">> => 704,<<"transport.retransmits">> => 1,
+        <<"mixer.gain_cdb">> => -602}))),
     ?assertNotEqual(nomatch,binary:match(Text,<<"in  960 pkts  2 late">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"5/6 recovered">>)),
     ?assertNotEqual(nomatch,binary:match(Text,<<"out 704 sends  1 resent">>)),
+    ?assertNotEqual(nomatch,binary:match(Text,<<"mix gain: -6.0 dB">>)),
+    Unity=iolist_to_binary(ba_cli_monitor:render(View(#{<<"mixer.gain_cdb">> => 0}))),
+    ?assertNotEqual(nomatch,binary:match(Unity,<<"mix gain: 0.0 dB">>)),
     Off=iolist_to_binary(ba_cli_monitor:render(View(#{<<"diagnostics.analysis">> => false,<<"diagnostics.meters">> => false}))),
     ?assertNotEqual(nomatch,binary:match(Off,<<"audio analysis off">>)),
-    ?assertEqual(nomatch,binary:match(Off,<<"clock unavailable">>)).
+    ?assertEqual(nomatch,binary:match(Off,<<"clock unavailable">>)),
+    ?assertEqual(nomatch,binary:match(Off,<<"mix gain">>)).

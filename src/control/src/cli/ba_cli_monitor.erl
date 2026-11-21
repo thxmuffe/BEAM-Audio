@@ -255,7 +255,7 @@ diagnostic_lines(R,Color) ->
                 false -> "  audio analysis off\n";
                 true -> [io_lib:format("  clock ~ts (~ts ns)  sample ~ts ms~n",[safe(maps:get(<<"clock.state">>,D,<<"unavailable">>)),
                             number(maps:get(<<"clock.remaining_correction_ns">>,D,null)),number(maps:get(<<"diagnostics.age_ms">>,D,null))]),
-                         mixer_line(D),peak_gain_line(D),engine_lines(D)]
+                         mixer_line(D),mix_gain_line(D),engine_lines(D)]
             end,
             [Analysis,Errors,failure_history_line(D,maps:get(<<"audio_trace">>,Caps,#{}),Color)]
     end.
@@ -265,9 +265,9 @@ mixer_line(D) ->
         true -> io_lib:format("  mixer ~ts rendered  ~ts dropped  ~ts queued  ~ts clipped~n",[
             number(maps:get(K,D,null)) || K <- [<<"mixer.rendered">>,<<"mixer.dropped">>,<<"mixer.queued_blocks">>,<<"mixer.clipped_frames">>]])
     end.
-peak_gain_line(#{<<"mixer.peak_gain_cdb">> := Gain}) when is_integer(Gain),Gain>= -9600,Gain=<0 ->
-    io_lib:format("  mix peak gain: ~.1f dB~n",[Gain/100]);
-peak_gain_line(_) -> [].
+mix_gain_line(#{<<"mixer.gain_cdb">> := Gain}) when is_integer(Gain),Gain>= -9600,Gain=<0 ->
+    io_lib:format("  mix gain: ~.1f dB~n",[Gain/100]);
+mix_gain_line(_) -> [].
 %% These totals outlive individual media attempts and describe history.
 failure_history_line(D,Trace,Color) ->
     Failures=[io_lib:format("~ts: ~B",[safe(K),V]) ||

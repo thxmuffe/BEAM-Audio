@@ -67,6 +67,20 @@ native_summary_is_allowlisted_not_arbitrary_state_test() ->
     ?assertNot(maps:is_key(<<"output.private">>,D))
     end).
 
+speaker_mix_gain_requires_a_fresh_native_sample_test() ->
+    ba_test_consent:with(#{inspect => true},fun() ->
+        GainKey= <<"mixer.gain_cdb">>,
+        Read=fun(Age) ->
+            ba_audio_diagnostics:snapshot(#{levels => #{speaker =>
+                #{mix_gain_cdb => -602,meter_age_ms => Age}}},#{})
+        end,
+        Fresh=Read(20),
+        ?assertEqual(-602,maps:get(GainKey,Fresh)),
+        ?assertEqual(ok,ba_audio_diagnostics:validate(Fresh)),
+        ?assertNot(maps:is_key(GainKey,Read(1001))),
+        ?assertException(error,_,ba_audio_diagnostics:validate(Fresh#{GainKey := 1}))
+    end).
+
 recent_failures_are_bounded_and_payload_free_test() ->
     ba_test_consent:with(#{inspect => true},fun() ->
     S=lists:foldl(fun(_,Acc) -> ba_diagnostics:count(missed_packet_target,Acc) end,#{},lists:seq(1,100)),

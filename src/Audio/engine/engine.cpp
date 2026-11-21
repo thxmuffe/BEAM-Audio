@@ -33,7 +33,6 @@
 #include "speaker.h"
 #include "term.h"
 #include "timing.h"
-#include "peak_limiter.h"
 
 namespace ba {
 namespace {
@@ -79,7 +78,7 @@ struct Engine {
     std::array<std::atomic<Sender *>, MaxCaptures> senders{};  // slot i drains capture_rings[i]
     std::atomic<uint32_t> out_rate{0};
     LevelMeter output_level;
-    PeakLimiter output_limiter;
+    static_assert(std::atomic<float>::is_always_lock_free);
     std::atomic<float> output_gain{1.0f};
     std::atomic<uint64_t> callbacks{0}, oversized{0};
     std::mutex task_mutex;
@@ -220,7 +219,6 @@ struct Engine {
             if (slot.load()) first = false;
         if (first && !out_rate.load()) {
             output_level.clear();
-            output_limiter = PeakLimiter{};
             output_gain.store(1.0f, std::memory_order_relaxed);
             out_rate.store(shell.start_output());
         }
@@ -332,7 +330,7 @@ struct Engine {
         if (out_rate.load()) {
             if (auto level = output_level.read(now); !level.is_null()) {
                 const float gain = output_gain.load(std::memory_order_relaxed);
-                level["peak_gain_cdb"] = std::lround(2000.0 * std::log10(std::max(gain, 0.000015848932f)));
+                level["mix_gain_cdb"] = std::lround(2000.0 * std::log10(gain));
                 out["speaker"] = std::move(level);
             }
         }
@@ -485,16 +483,15 @@ extern "C" void ba_engine_render(float *out, uint32_t frames, uint64_t host_time
     const uint32_t rate = e->out_rate.load(std::memory_order_relaxed);
     if (!rate) return;
     int64_t present = 0;
+    unsigned inputs = 0;
     if (e->clock.map(host_time_ns, present)) {
-        unsigned inputs = 0;
         for (auto &slot : e->speakers)
             if (ba::Speaker *s = slot.load(std::memory_order_acquire)) inputs += s->render(out, frames, present, rate);
-        if (inputs > 1) {
-            const float scale = 1.0f / float(inputs);
-            for (size_t i = 0; i < size_t(frames) * ba::Channels; ++i) out[i] = std::clamp(out[i] * scale, -1.0f, 1.0f);
-        }
     }
-    const float gain = e->output_limiter.apply(out, frames, ba::Channels, rate);
+    const float gain = inputs > 1 ? 1.0f / float(inputs) : 1.0f;
+    if (inputs > 1) {
+        for (size_t i = 0; i < size_t(frames) * ba::Channels; ++i) out[i] = std::clamp(out[i] * gain, -1.0f, 1.0f);
+    }
     e->output_gain.store(gain, std::memory_order_relaxed);
     e->output_level.sample(out, frames * ba::Channels, ba::host_now_ns());
 }
