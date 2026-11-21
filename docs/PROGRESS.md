@@ -1,5 +1,18 @@
 # Current implementation and validation
 
+## Source publication gossip and speaker mixing — 2026-11-21
+
+- Microphone and system capture use the same signed publication format.
+  Listeners receive the descriptor by gossip and use addressed messages for
+  subscription setup. Withdrawal revisions supersede older announcements.
+- The native speaker mixer divides the summed signal by the number of enabled
+  inputs that rendered a contribution. The speaker meter sees the result.
+- 71 targeted Erlang tests passed. A Linux native integration test routed
+  synthetic microphone and system signals through FLAC/SRTP using in-memory
+  transport. The mixed peak was -1.94 dBFS, the remaining source after mute
+  was -0.92 dBFS, and both muted read -96 dBFS. Physical devices and live ICE
+  remain unverified.
+
 ## On-demand level gossip — 2026-11-21
 
 - The metrics monitor and audio state changes send a signed level-interest

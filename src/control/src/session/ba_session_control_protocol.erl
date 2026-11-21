@@ -360,7 +360,7 @@ payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
         %% A gossiped note (ba_session_gossip checks its signature).
         <<"note">> ->
             ba_session_passport:exact(P,[<<"kind">>,<<"id">>,<<"packet">>]),true = ba_hex:valid(maps:get(<<"id">>,P),32),
-            Note = maps:get(<<"packet">>,P),true = is_binary(Note) andalso byte_size(Note) =< 2048;
+            Note = maps:get(<<"packet">>,P),true = is_binary(Note) andalso byte_size(Note) =< 6144;
         %% Request board entries (ba_session_board checks each signature).
         <<"board">> ->
             ba_session_passport:exact(P,[<<"kind">>,<<"entries">>]),Entries = maps:get(<<"entries">>,P),

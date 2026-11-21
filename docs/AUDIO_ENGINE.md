@@ -73,7 +73,8 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
   local Device snapshot and Session level gossip. Engine commands and level
   snapshots use the same control connection; PCM remains in the native engine.
 - A signed `levels_interest` note comes from the metrics monitor (at most
-  once a second) and audio transitions (on air starts and speaker switches).
+  once a second) and speaker switches. The first active audio publication
+  also requests the same refresh in its signed publication note.
   Each Device sees a distinct interest once and may publish one signed
   `levels` note with fresh values. The monitor reads those notes from its
   cache. Old measurements keep their ages across new interests and audio

@@ -150,7 +150,7 @@ void Speaker::read_ring(int64_t pos, long n, float *dest) {
     }
 }
 
-void Speaker::render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate) {
+bool Speaker::render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate) {
     if (int64_t now = 0; clock_.map(host_now_ns(), now)) render_lead_ns_.store(present - now, std::memory_order_relaxed);
     // Stream sample n plays at anchor + delay + n / rate.
     const double desired = double(present - anchor_ - delay_.load(std::memory_order_relaxed)) * rate_ / 1e9;
@@ -191,9 +191,10 @@ void Speaker::render(float *mix, uint32_t frames, int64_t present, uint32_t out_
         produced += d.output_frames_gen;
     }
     play_pos_ += double(produced) / applied;
-    const float gain = gain_.load(std::memory_order_relaxed);
-    for (long i = 0; i < produced * long(Channels); ++i) mix[i] += out[i] * gain;
+    const float gain = std::clamp(gain_.load(std::memory_order_relaxed), 0.0f, 1.0f);
+    for (long i = 0; i < produced * long(Channels); ++i) mix[i] += std::clamp(out[i], -1.0f, 1.0f) * gain;
     read_pos_.store(chunk_start_ + chunk_used_, std::memory_order_release);
+    return gain > 0 && produced > 0;
 }
 
 json Speaker::take_response() {

@@ -1,5 +1,5 @@
 %% Owns independent durable subscriptions and local publication permissions.
-%% Media is the native engine only: this process routes catalogue, subscription
+%% Media is the native engine only: this process receives publications and routes subscription
 %% and stream-setup control; audio never passes through it.
 -module(ba_audio_receiver).
 -behaviour(gen_server).
@@ -25,16 +25,15 @@ init([]) ->
     Items = ba_subscription:load(),
     erlang:send_after(250,self(),tick),
     Control = ba_session_scope:whereis(ba_session_control),true = is_pid(Control),monitor(process,Control),
-    self() ! catalog_bootstrap,
     {ok,#{sources => #{},offers => #{},subscriptions => maps:map(fun(_,I) -> waiting(I) end,Items),
-          providers => #{},catalogs => #{},contracts => #{},control => Control,
-          suspended => false,resume_after => undefined,rejected => 0,poll_at => now_ms()+5000}}.
+          providers => #{},publication_versions => #{},contracts => #{},control => Control,
+          suspended => false,resume_after => undefined,rejected => 0,link_due => now_ms()+10000}}.
 waiting(I) -> #{intent => I,state => waiting_for_source,media => undefined,retry_at => now_ms()}.
 handle_call(snapshot,_,S) ->
     View = maps:map(fun(_,R) ->
         I = maps:get(intent,R),(maps:merge(I,maps:with([state,source_paused,error,mix_ready],R)))#{transport => transport_status(R)}
     end,maps:get(subscriptions,S)),
-    Rows = [O#{device => Peer,source_key => Key} || {{Peer,Key},O} <- maps:to_list(maps:get(offers,S))],
+    Rows = [(maps:remove(expires_at,O))#{device => Peer,source_key => Key} || {{Peer,Key},O} <- maps:to_list(maps:get(offers,S))],
     {reply,#{subscriptions => View,offers => Rows,publications => map_size(maps:get(sources,S)),
              providers => map_size(maps:get(providers,S)),
              provider_status => [#{peer => maps:get(peer,maps:get(context,R)),source => maps:get(source,R),
@@ -50,8 +49,7 @@ handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pi
         false = maps:is_key(Key,Sources),
         _ = ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer),
         Ref = monitor(process,Pid),Entry = #{pid => Pid,monitor => Ref,offer => Offer},
-        case map_size(Sources) of 0 -> ba_audio_observer:request_levels();_ -> ok end,
-        {reply,ok,announce_catalog(S#{sources := Sources#{Key => Entry}})}
+        {reply,ok,announce_publication(Key,map_size(Sources)=:=0,S#{sources := Sources#{Key => Entry}})}
     catch throw:on_air_required -> {reply,{error,on_air_required},S};
           _:_ -> {reply,{error,invalid_or_duplicate_publication},S} end;
 handle_call({contract,Direction,Peer,Key,Id,Revision},_,#{contracts := Contracts} = S) ->
@@ -81,6 +79,7 @@ handle_call({subscribe,Peer,Key,channel},_,#{subscriptions := Items,offers := Of
             Next = persist(S#{subscriptions := Items#{Id => waiting(I)}}),
             {reply,{ok,Id},restore_one(Id,false,Next)};
         {true,_,_} -> {reply,{error,already_subscribed},S};
+        {false,{ok,_},_} -> {reply,{error,source_or_link_unavailable},introduce(Peer,S)};
         _ -> {reply,{error,source_or_link_unavailable},S}
     end;
 handle_call({stop,Id},_,S) -> {reply,ok,unsubscribe(Id,S)};
@@ -115,43 +114,12 @@ handle_cast(network_changed,S) ->
     %% Media workers check their addresses now instead of at their next poll;
     %% they reconnect only if the addresses really changed.
     [P ! network_hint || P <- ba_audio_sup:media()],
-    {noreply,S#{poll_at => now_ms()}};
+    {noreply,S#{link_due => now_ms()}};
 handle_cast(_,S) -> {noreply,S}.
-handle_info(catalog_bootstrap,S) -> {noreply,refresh_all(S)};
-%% A gossiped "on air" note from a Device that may not be a neighbour: read its
-%% catalogue (saying hello first if needed). Playback consent decides the rest.
-handle_info({on_air_announced,Peer},#{offers := Offers}=S) ->
-    case lists:any(fun({P,_}) -> P=:=Peer end,maps:keys(Offers)) of
-        true -> {noreply,S};
-        false ->
-            %% Announced sources count as known for a minute, so the read follows
-            %% the hello if there was no relationship yet.
-            Wanted = (maps:get(wanted,S,#{}))#{Peer => now_ms()+60000},
-            {_,Next} = catalog(Peer,S#{wanted => Wanted}),{noreply,Next}
-    end;
-handle_info({audio_link_up,#{peer := Peer,link := Link}},S) ->
-    %% Only a source this Device already knows is re-read; others announce.
-    case {lists:member(Peer,known_sources(S)),context(Peer)} of
-        {true,{ok,#{link := Link}}} ->
-            Cs=maps:get(catalogs,S),
-            Pending=case maps:find(Peer,Cs) of
-                {ok,#{link := Link}} -> Cs;
-                _ -> maps:remove(Peer,Cs)
-            end,
-            {_,Next}=catalog(Peer,S#{catalogs := Pending}),{noreply,Next};
-        _ -> {noreply,S}
-    end;
+handle_info({publication,Peer,Body},S) -> {noreply,receive_publication(Peer,Body,S)};
 handle_info(tick,S) ->
     erlang:send_after(250,self(),tick),
-    Catalogs = maps:filter(fun(_,C) -> maps:get(deadline,C)>now_ms() end,maps:get(catalogs,S)),
-    %% Push (catalog.changed) is the path; this re-read of known sources every
-    %% 5 s repairs a lost notice and keeps those relationships alive while
-    %% listening. Each read is independent.
-    Polled = case now_ms()>=maps:get(poll_at,S,0) of
-        true -> refresh_all(S#{catalogs := Catalogs,poll_at => now_ms()+5000});
-        false -> S#{catalogs := Catalogs}
-    end,
-    Next = announce_new(Polled),
+    Next = maintain_links(renew_publications(expire_publications(S))),
     Final = lists:foldl(fun(Id,Acc) -> restore_one(Id,true,Acc) end,Next,maps:keys(maps:get(subscriptions,Next))),
     Recovered=case maps:get(suspended,Final) of
         true -> Final;
@@ -194,9 +162,7 @@ handle_info({audio_link_renewed,#{peer := Peer,link := Link,deadline := Until}},
         _ -> {noreply,reject(S)}
     end;
 handle_info({audio_link_down,Peer,Link},S) ->
-    Next = stop_matching(fun(R) -> scoped(Peer,Link,R) end,S),
-    Offers = maps:filter(fun({P,_},_) -> P=/=Peer end,maps:get(offers,Next)),
-    {noreply,Next#{offers := Offers,catalogs := maps:remove(Peer,maps:get(catalogs,Next))}};
+    {noreply,stop_matching(fun(R) -> scoped(Peer,Link,R) end,S)};
 handle_info({audio_signal,Pid,P},S) ->
     case transport(Pid,S) of
         {Side,Key,R} ->
@@ -225,7 +191,7 @@ handle_info({publication_rebound,Pid,Offer},#{sources := Sources}=S) ->
                     false -> Acc
                 end
             end,S,maps:to_list(maps:get(providers,S))),
-            {noreply,announce_catalog(Next#{sources := Sources#{Key := E#{offer := Offer}}})};
+            {noreply,announce_publication(Key,Next#{sources := Sources#{Key := E#{offer := Offer}}})};
         _ -> {noreply,reject(S)}
     end;
 handle_info({publication_state,Pid,B},#{sources := Sources} = S) ->
@@ -238,7 +204,7 @@ handle_info({publication_state,Pid,B},#{sources := Sources} = S) ->
                 case maps:get(source,R)=:=Key of true -> R#{paused := B};false -> R end
             end,maps:get(providers,S)),
             Next=S#{sources := Sources#{Key := E#{offer := O#{paused := B}}},providers := Providers},
-            {noreply,case maps:get(paused,O)=:=B of true -> Next;false -> announce_catalog(Next) end};
+            {noreply,case maps:get(paused,O)=:=B of true -> Next;false -> announce_publication(Key,Next) end};
         _ -> {noreply,reject(S)}
     end;
 handle_info({'DOWN',_,process,Pid,_},#{control := Pid} = S) -> {stop,normal,S};
@@ -256,46 +222,12 @@ handle_info({'DOWN',Ref,process,Pid,Reason},S) ->
             case Reason of normal -> Removed;_ -> ba_diagnostics:count(Reason,Removed) end;
         none -> S
     end,
-    Sources = maps:filter(fun(_,#{monitor := M}) -> M=/=Ref end,maps:get(sources,Next)),
+    OldSources = maps:get(sources,Next),
+    Sources = maps:filter(fun(_,#{monitor := M}) -> M=/=Ref end,OldSources),
     Updated=Next#{sources := Sources},
-    {noreply,case map_size(Sources)=:=map_size(maps:get(sources,Next)) of
-        true -> Updated;false -> announce_catalog(Updated)
-    end};
+    {noreply,lists:foldl(fun announce_publication/2,Updated,maps:keys(OldSources)--maps:keys(Sources))};
 handle_info(_,S) -> {noreply,S}.
 
-incoming(#{peer := Peer},_,#{<<"kind">> := <<"catalog.changed">>},#{catalogs := Cs}=S) ->
-    %% Changes arriving while a snapshot is in flight request one more snapshot,
-    %% rather than losing the event or launching overlapping reads.
-    case maps:find(Peer,Cs) of
-        {ok,#{deadline := Deadline}=C} ->
-            case now_ms()<Deadline of
-                true -> S#{catalogs := Cs#{Peer := C#{dirty => true}}};
-                false -> {_,Next}=catalog(Peer,S#{catalogs := maps:remove(Peer,Cs)}),Next
-            end;
-        error -> {_,Next}=catalog(Peer,S),Next
-    end;
-incoming(#{peer := Peer} = Context,Id,#{<<"kind">> := <<"catalog.read">>},S) ->
-    maps:foreach(fun(Key,#{offer := Offer}) ->
-        send(Peer,Id,ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer))
-    end,maps:get(sources,S)),send(Peer,Id,#{<<"kind">> => <<"catalog.end">>}),_ = Context,S;
-incoming(#{peer := Peer,link := Link},Id,#{<<"kind">> := <<"catalog.offer">>} = P,#{catalogs := Cs} = S) ->
-    #{id := Id,link := Link,deadline := Deadline,offers := Offers} = C = maps:get(Peer,Cs),
-    true = now_ms()<Deadline,true = map_size(Offers)<16,
-    Key = maps:get(<<"source">>,P),false = maps:is_key(Key,Offers),
-    true=publication_allowed(Peer,Key),
-    D = ba_audio_stream_protocol:descriptor(P),
-    O = #{name => maps:get(<<"name">>,P),source_key => Key,incarnation => maps:get(<<"incarnation">>,P),
-          paused => maps:get(<<"paused">>,P),profiles => #{channel => D}},
-    S#{catalogs := Cs#{Peer := C#{offers := Offers#{Key => O}}}};
-incoming(#{peer := Peer,link := Link},Id,#{<<"kind">> := <<"catalog.end">>},#{catalogs := Cs,offers := Old} = S) ->
-    #{id := Id,link := Link,deadline := Deadline,offers := Offers}=C = maps:get(Peer,Cs),true = now_ms()<Deadline,
-    Kept = maps:filter(fun({P,_},_) -> P=/=Peer end,Old),
-    Added = maps:from_list([{{Peer,K},O} || {K,O} <- maps:to_list(Offers)]),
-    Next=S#{catalogs := maps:remove(Peer,Cs),offers := maps:merge(Kept,Added)},
-    case maps:get(dirty,C,false) of
-        true -> {_,Refreshed}=catalog(Peer,Next),Refreshed;
-        false -> Next
-    end;
 incoming(Context,Id,#{<<"kind">> := <<"subscribe">>} = P,S) -> admit(Context,Id,P,S);
 incoming(Context,Id,#{<<"kind">> := <<"accepted">>} = P,S) ->
     R = maps:get(Id,maps:get(subscriptions,S)),matches(Context,P,R),opening = maps:get(state,R),
@@ -399,54 +331,79 @@ enable_output(_,#{media := P}=R) ->
         ok -> {ok,maps:remove(error,R#{mix_ready => true})};
         E -> E
     end.
-catalog(Peer,#{catalogs := Cs} = S) ->
-    case {maps:is_key(Peer,Cs),context(Peer)} of
-        {false,{ok,#{link := Link}}} ->
-            Id = fresh(),
-            case send(Peer,Id,#{<<"kind">> => <<"catalog.read">>}) of
-                ok -> {ok,S#{catalogs := Cs#{Peer => #{id => Id,link => Link,deadline => now_ms()+5000,offers => #{}}}}};
-                Error -> {Error,S}
-            end;
-        %% A known source whose relationship lapsed: say hello; its start
-        %% (audio_link_up) triggers the read.
-        {false,_} -> ba_session_control:introduce(Peer),{{error,no_link},S};
-        _ -> {{error,pending},S}
+%% A signed source update replaces earlier revisions from the same Device.
+%% Retain withdrawal revisions after removing their offers so delayed gossip
+%% cannot make the source live again.
+receive_publication(Peer,#{<<"source">> := Key,<<"revision">> := Rev,<<"offer">> := Wire},S) ->
+    Ref={Peer,Key},Versions=maps:get(publication_versions,S,#{}),
+    case Rev>element(1,maps:get(Ref,Versions,{0,0})) of
+        false -> S;
+        true ->
+            Now=now_ms(),Next=S#{publication_versions => Versions#{Ref => {Rev,Now+60000}}},
+            case Wire=/=null andalso publication_allowed(Peer,Key) andalso not ba_app_session:excluded(Peer) of
+                false -> remove_offer(Ref,Next);
+                true ->
+                    Inc=maps:get(<<"incarnation">>,Wire),Offers=maps:get(offers,Next),
+                    Updated=case maps:get(Ref,Offers,undefined) of
+                        #{incarnation := Old} when Old=/=Inc -> remove_offer(Ref,Next);
+                        _ -> Next
+                    end,
+                    Offer=#{name => maps:get(<<"name">>,Wire),source_key => Key,incarnation => Inc,
+                        paused => maps:get(<<"paused">>,Wire),profiles => #{channel => ba_audio_stream_protocol:descriptor(Wire)},
+                        expires_at => Now+30000},
+                    Updated#{offers := (maps:get(offers,Updated))#{Ref => Offer}}
+            end
     end.
-%% Dark Sessions: an ON AIR Device tells the Devices it can reach that it has
-%% something to subscribe to ("subscribe to my audio"); each decides under its
-%% own Playback consent ("open your speakers"). Nobody discovers sources.
-announce_catalog(#{sources := Sources}=S) ->
-    Readers = readers(),announce(Readers,S),
-    %% Beyond direct neighbours, the announcement spreads by gossip.
-    case map_size(Sources)>0 of
-        true -> try ba_session_membership:announce(<<"on_air">>) catch exit:_ -> ok end;
-        false -> ok
+
+remove_offer({Peer,Key}=Ref,#{offers := Offers}=S) ->
+    case maps:is_key(Ref,Offers) of
+        true -> stop_contract({receive_audio,Peer,Key},S#{offers := maps:remove(Ref,Offers)});
+        false -> S
+    end.
+
+expire_publications(#{offers := Offers}=S) ->
+    Now=now_ms(),Versions=maps:filter(fun(_,{_,Until}) -> Now<Until end,maps:get(publication_versions,S,#{})),
+    lists:foldl(fun remove_offer/2,S#{publication_versions => Versions},
+        [Ref || {Ref,#{expires_at := Until}} <- maps:to_list(Offers),Now>=Until]).
+
+announce_publication(Key,S) -> announce_publication(Key,false,S).
+
+announce_publication(Key,Refresh,#{sources := Sources}=S) ->
+    Wire=case maps:find(Key,Sources) of
+        {ok,#{offer := Offer}} -> ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer);
+        error -> null
     end,
-    S#{announced => Readers,announce_at => now_ms()+30000}.
-%% New reachable Devices hear about live sources; all hear again every 30 s.
-announce_new(#{sources := Sources}=S) when map_size(Sources)>0 ->
-    case now_ms()>=maps:get(announce_at,S,0) of
-        true -> announce_catalog(S);
-        false ->
-            Readers = readers(),New = Readers--maps:get(announced,S,[]),
-            announce(New,S),S#{announced => lists:usort(maps:get(announced,S,[])++New)}
-    end;
-announce_new(S) -> S.
-announce(Peers,_) -> [send(Peer,fresh(),#{<<"kind">> => <<"catalog.changed">>}) || Peer <- Peers],ok.
-%% Devices this one can reach that may read catalogues.
-readers() ->
-    case membership() of
-        {ok,#{policy := #{peers := Peers}}} ->
-            [Peer || {Peer,Permissions} <- maps:to_list(Peers),lists:member(stream_read,Permissions),
-                not ba_app_session:excluded(Peer)];
-        _ -> []
+    Revision=max(erlang:system_time(microsecond),maps:get(publication_revision,S,0)+1),
+    ba_session_membership:announce(<<"publication">>,#{<<"source">> => Key,<<"revision">> => Revision,
+        <<"offer">> => Wire,<<"refresh_levels">> => Refresh}),
+    S#{publication_revision => Revision}.
+
+renew_publications(S) ->
+    Now=now_ms(),
+    case Now>=maps:get(publish_due,S,Now) of
+        true -> lists:foldl(fun announce_publication/2,S#{publish_due => Now+10000},maps:keys(maps:get(sources,S,#{})));
+        false -> S
     end.
-%% Sources this Device knows of: current offers and saved subscriptions.
-known_sources(#{offers := Offers,subscriptions := Subs}=S) ->
-    Now = now_ms(),
-    lists:usort([P || {P,_} <- maps:keys(Offers)]++[maps:get(device,I) || #{intent := I} <- maps:values(Subs)]++
-        [P || {P,Until} <- maps:to_list(maps:get(wanted,S,#{})),Until>Now]).
-refresh_all(S) -> lists:foldl(fun(Peer,Acc) -> {_,Next}=catalog(Peer,Acc),Next end,S,known_sources(S)).
+
+%% Keep relationships only for subscriptions. Introductions never read source
+%% data: the signed announcement already contains the descriptor.
+maintain_links(#{subscriptions := Subs,offers := Offers}=S) ->
+    Now=now_ms(),Next=S#{introductions => maps:filter(fun(_,Until) -> Now<Until end,maps:get(introductions,S,#{}))},
+    case not maps:get(suspended,S) andalso Now>=maps:get(link_due,S,Now) of
+        true ->
+            Peers=lists:usort([P || #{intent := #{device := P,source_key := Key}} <- maps:values(Subs),
+                maps:is_key({P,Key},Offers)]),
+            lists:foldl(fun introduce/2,Next#{link_due => Now+10000},Peers);
+        false -> Next
+    end.
+
+introduce(Peer,S) ->
+    Now=now_ms(),Recent=maps:get(introductions,S,#{}),
+    case Now>=maps:get(Peer,Recent,Now) of
+        true -> ba_session_control:introduce(Peer),S#{introductions => Recent#{Peer => Now+2000}};
+        false -> S
+    end.
+
 membership() -> try ba_session_membership:current() catch exit:_ -> {error,unavailable} end.
 context(Peer) -> try ba_session_control:audio_context(Peer) catch exit:_ -> {error,unavailable} end.
 send(Peer,Id,P) -> ba_session_control:audio_message(Peer,Id,P).
@@ -578,10 +535,7 @@ transport_status(_) -> #{}.
 publication_allowed(Peer,Key) ->
     case membership() of
         {ok,#{device_privileges := Privileges}} ->
-            case maps:find(Peer,Privileges) of
-                {ok,Held} -> ba_session_privileges:may_publish(Held,Key);
-                error -> false
-            end;
+            ba_session_privileges:may_publish(maps:get(Peer,Privileges,[]),Key);
         _ -> false
     end.
 

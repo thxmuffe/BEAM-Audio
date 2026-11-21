@@ -30,7 +30,6 @@ authorize(Op,Payload,Permissions) ->
 required(<<"status.read">>,_) -> [status_read];
 required(<<"capabilities.read">>,_) -> [capabilities_read];
 required(<<"inspect.read">>,_) -> [capabilities_read];
-required(<<"stream.message">>,#{<<"kind">> := <<"catalog.read">>}) -> [stream_read];
 required(<<"stream.message">>,#{<<"kind">> := <<"subscribe">>}) -> [stream_subscribe];
 %% Session requests, answered by the Device able to execute them (a grant holder,
 %% or the target of End). Anyone may ask for or give up a privilege.

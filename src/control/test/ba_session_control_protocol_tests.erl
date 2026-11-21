@@ -204,22 +204,24 @@ membership_deadline_is_synchronous_test() ->
     {_,Peer,_,_,Fresh,_} = fixture(),
     ?assertMatch({error,_,_},p(connect,[Peer,5,Fresh#{membership_deadline => 5}])).
 
-catalogue_change_uses_authenticated_audio_channel_test() ->
+stream_state_uses_authenticated_audio_channel_test() ->
     {A,B,_,_,SA,SB} = connected(),
-    Id=binary:copy(<<"C">>,32),Payload=#{<<"kind">> => <<"catalog.changed">>},
+    Id=binary:copy(<<"C">>,32),Payload=#{<<"kind">> => <<"state">>,<<"source">> => <<"music">>,
+        <<"incarnation">> => Id,<<"attempt">> => Id,<<"paused">> => true},
     {ok,Packet,_}=p(audio_message,[B,Id,Payload,5,SA]),
     {ok,[],[{audio,Id,Payload,#{peer := A}}],Received}=p(receive_packet,[A,Packet,6,SB]),
     ?assertMatch({error,_,_},p(receive_packet,[A,Packet,7,Received])).
 
 stream_control_requires_grants_and_exact_schema_test() ->
     {A,B,_,_,SA,SB} = connected(),
-    Id = binary:copy(<<"A">>,32),P = #{<<"kind">> => <<"catalog.read">>},
+    Id = binary:copy(<<"A">>,32),
+    Base = #{<<"source">> => <<"music">>,<<"incarnation">> => Id,<<"attempt">> => Id},
+    P = Base#{<<"kind">> => <<"subscribe">>,<<"contract">> => Id,<<"revision">> => 1},
     {ok,Packet,_} = p(audio_message,[B,Id,P,5,SA]),
     ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
     Policy = maps:get(policy,SB),
     Granted = SB#{policy := Policy#{members := #{A => [stream_read,stream_subscribe]}}},
     ?assertMatch({ok,[],[{audio,Id,P,#{peer := A}}],_},p(receive_packet,[A,Packet,6,Granted])),
-    Base = #{<<"source">> => <<"music">>,<<"incarnation">> => Id,<<"attempt">> => Id},
     ?assertMatch({error,_,_},p(audio_message,[B,Id,Base#{<<"kind">> => <<"signal.offer">>,<<"sdp">> => <<"unsigned generic SDP">>},5,SA])),
     ?assertMatch({error,_,_},p(audio_message,[B,Id,P#{<<"pcm">> => <<"audio is not control">>},5,SA])).
 

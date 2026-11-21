@@ -35,7 +35,7 @@ class Speaker {
     // Packet thread: ask the sender again for packets still missing.
     void send_nacks(Ice &ice);
     // Audio thread: add this stream's frames for Session time `present` to mix.
-    void render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate);
+    bool render(float *mix, uint32_t frames, int64_t present, uint32_t out_rate);
     json status();
     // Packet thread: the Response time this stream needed since the last call
     // (count, sum_ns, mean_ms, p85_ms, p99_ms, max_ms), then a fresh window.

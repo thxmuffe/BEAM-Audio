@@ -477,8 +477,13 @@ extern "C" void ba_engine_render(float *out, uint32_t frames, uint64_t host_time
     if (!rate) return;
     int64_t present = 0;
     if (e->clock.map(host_time_ns, present)) {
+        unsigned inputs = 0;
         for (auto &slot : e->speakers)
-            if (ba::Speaker *s = slot.load(std::memory_order_acquire)) s->render(out, frames, present, rate);
+            if (ba::Speaker *s = slot.load(std::memory_order_acquire)) inputs += s->render(out, frames, present, rate);
+        if (inputs > 1) {
+            const float scale = 1.0f / float(inputs);
+            for (size_t i = 0; i < size_t(frames) * ba::Channels; ++i) out[i] = std::clamp(out[i] * scale, -1.0f, 1.0f);
+        }
     }
     e->output_level.sample(out, frames * ba::Channels, ba::host_now_ns());
 }
