@@ -32,17 +32,17 @@ ios_device_name_test() ->
 
 native_app_hosting_device_web_is_not_web_test() ->
     Old=[{K,os:getenv(K)} || K <- ["BA_PLATFORM","BA_DEVICE_NAME","BA_NATIVE_APP"]],
-    Origin=application:get_env(ba_device_web,origin),
+    Origin=persistent_term:get({ba_device_web,origin},undefined),
     try
         os:putenv("BA_PLATFORM","windows"),os:putenv("BA_DEVICE_NAME","PC"),
-        application:set_env(ba_device_web,origin,<<"http://127.0.0.1:57528">>),
+        persistent_term:put({ba_device_web,origin},<<"http://127.0.0.1:57528">>),
         Type=ba_device_label:display(<<"PC">>),
         ?assertEqual(<<Type/binary," | Web | 57528 | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>)),
         os:putenv("BA_NATIVE_APP","1"),
         ?assertEqual(<<Type/binary," | ABCDEF01">>,ba_device_label:local(<<"ABCDEF012345">>))
     after
         lists:foreach(fun({K,false}) -> os:unsetenv(K);({K,V}) -> os:putenv(K,V) end,Old),
-        case Origin of undefined -> application:unset_env(ba_device_web,origin);{ok,V} -> application:set_env(ba_device_web,origin,V) end
+        case Origin of undefined -> persistent_term:erase({ba_device_web,origin});V -> persistent_term:put({ba_device_web,origin},V) end
     end.
 
 observer_label_is_visible_before_the_host_name_test() ->

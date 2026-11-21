@@ -1,6 +1,9 @@
 %% Exact, flat control messages; PCM/encoded audio never enter Desk envelopes.
 -module(ba_audio_stream_protocol).
--export([validate/1,offer/3,descriptor/1]).
+-export([validate/1,offer/3,descriptor/1,wire_profile/0]).
+-define(WIRE_PROFILE,<<"engine_flac_srtp_v2">>).
+
+wire_profile() -> ?WIRE_PROFILE.
 validate(#{<<"kind">> := K} = P) ->
     case K of
         <<"catalog.read">> -> ba_session_passport:exact(P,[<<"kind">>]);
@@ -55,8 +58,8 @@ offer(Key,Inc,#{name := Name,paused := Paused,profiles := #{channel := D}}) ->
           <<"channels">> => maps:get(channel_count,D),<<"format">> => atom_to_binary(maps:get(sample_format,D)),
           <<"clock">> => maps:get(clock,D)},
     engine_flac = maps:get(stream_handler,D),
-    Native = P#{<<"transport">> => <<"engine_flac_srtp_v1">>},ok=validate(Native),Native.
-descriptor(#{<<"transport">> := <<"engine_flac_srtp_v1">>,<<"rate">> := R,<<"channels">> := 2,
+    Native = P#{<<"transport">> => ?WIRE_PROFILE},ok=validate(Native),Native.
+descriptor(#{<<"transport">> := ?WIRE_PROFILE,<<"rate">> := R,<<"channels">> := 2,
         <<"format">> := <<"float32_le">>,<<"clock">> := Clock}) when R=:=44100;R=:=48000 ->
     text(Clock,128),#{encoding => pcm,sample_format => float32_le,sample_rate => R,channel_count => 2,
         clock => Clock,stream_handler => engine_flac};

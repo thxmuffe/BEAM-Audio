@@ -116,7 +116,7 @@ handle_call({request,#{<<"instance">> := I}=R},_,#{<<"instance">> := I}=S) ->
     %% not import modules from a web application they do not package.
     WebURL=case whereis(ba_device_web_sup) of
         undefined -> null;
-        _ -> application:get_env(ba_device_web,origin,null)
+        _ -> persistent_term:get({ba_device_web,origin},null)
     end,
     Meta=#{observer => maps:get(<<"observer">>,S,false),name => maps:get(<<"name">>,S),instance => I,os_pid => list_to_binary(os:getpid()),node => atom_to_binary(node()),startup_error => maps:get(startup_error,S),web_url => WebURL},
     {reply,Reply#{managed => Meta},S};

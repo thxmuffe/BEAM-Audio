@@ -2,7 +2,7 @@
 
 <img src="src/Branding/beam-audio.svg" width="96" height="96" alt="BEAM Audio logo">
 
-BEAM Audio is an open-source **Erlang/OTP runtime for synchronized network audio and cooperative processing**. Independent Devices can publish and subscribe to live sound, voluntarily offer their speakers, microphones and computing resources, and gather in temporary **Buffees** (called **Sessions** in user interfaces). Every audio packet carries its own sender-assigned **Presentation Target** on a shared clock, allowing receivers to schedule playback independently for the same intended moment.
+BEAM Audio is an open-source **Erlang/OTP runtime for synchronized network audio and cooperative processing**. Independent Devices can publish and subscribe to live sound, voluntarily offer their speakers, microphones and computing resources, and gather in **Sessions**. Each Device derives Session time from UTC. A stream maps its audio sample positions to that timeline so receivers can schedule the same sound for the same time.
 
 The aim is to connect anything from a phone and a laptop to dedicated speaker endpoints, multizone sound systems, home cinemas and installations. Distributed DSP, spatial audio and automatic acoustic calibration are longer-term goals; they are not finished features.
 
@@ -10,9 +10,9 @@ The aim is to connect anything from a phone and a laptop to dedicated speaker en
 
 The Erlang core is portable, but **native audio support and application integration vary by platform**:
 
-- **macOS — active development:** BEAM runtime, headless Device CLI and native Core Audio capture/output adapters. Application integration and physical speaker timing still need validation.
-- **Windows — active development:** BEAM runtime, local web control service and WASAPI audio adapters. The existing native wxErlang app still has a legacy compatibility path; end-to-end native audio is not yet qualified.
-- **iOS / iPadOS — partial implementation:** Embedded BEAM runtime and Apple audio bindings exist. Current application migration, packaging and on-device playback validation are incomplete; iPadOS is not separately qualified.
+- **macOS:** BEAM runtime, Device CLI, and native Core Audio playback, microphone and system audio capture. The OpenSound Mac app bundles the engine.
+- **Windows:** BEAM runtime and local web control. Capture and playback await a Windows audio engine adapter.
+- **iOS:** OpenSound embeds BEAM and the audio engine. The native adapter provides playback and microphone capture. System audio capture is unavailable. iPadOS has no separate validation.
 - **Linux — core and services:** Erlang/OTP runtime and the Elixir/Phoenix Reception can run on Linux. A maintained Linux capture/playback adapter and complete Device packaging are not yet provided.
 - **Raspberry Pi / ARM Linux — intended target:** Suitable for standalone speakers and processors once Linux audio adapters and deployment packaging are available.
 - **Android — planned:** No Android Device app or native audio adapter yet.
@@ -22,13 +22,13 @@ The Erlang core is portable, but **native audio support and application integrat
 
 ## How it works
 
-**Erlang/OTP** manages Device lifecycles, permissions, subscriptions, Jobs and the shared playback timeline. **Reception** introduces Devices and relays authenticated control messages without owning their Buffees. Replaceable **Stream Handlers** carry PCM or Opus audio over WebRTC; local **Audio Engines** and platform adapters handle decoding, buffering and hardware output. Devices retain control over their own resources.
+**Erlang/OTP** manages Device lifecycles, permissions, subscriptions, Jobs and the shared playback timeline. **Reception** introduces Devices and routes opaque Session messages. The native C++ engine encodes FLAC and sends it over SRTP, with libjuice handling ICE connectivity. The engine and platform adapters handle capture, recovery, buffering and playback. Audio payloads stay in native code. Devices retain control over their own resources.
 
 The system is designed for IP networks, from local networks to the internet. Reception and WebRTC help with discovery and connectivity, but firewalls, NAT policies and network conditions can still prevent a connection.
 
 ## Project status and getting started
 
-The headless control and audio paths have automated checks, including scheduled PCM/Opus handling. **Physical speaker alignment, uninterrupted playback and full cross-platform interoperability are not yet established.** This is a developing runtime, not a finished consumer audio product.
+Automated checks cover Session control and parts of native media scheduling and recovery. Physical speaker alignment, uninterrupted playback and full cross-platform interoperability still need validation. See [current validation](docs/PROGRESS.md).
 
 ```sh
 rebar3 compile

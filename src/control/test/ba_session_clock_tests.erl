@@ -16,6 +16,25 @@ unreachable_server_keeps_system_time_test() ->
         ?assertMatch(#{state := synchronized,source := system},ba_session_clock:status())
     end).
 
+resync_replaces_the_pending_read_timer_test() ->
+    with_clock(#{clock_reference => {ntp,"127.0.0.1",9},clock_interval_ms => 60000},fun() ->
+        Pid=whereis(ba_session_clock),
+        {ok,Old}=read_timer(Pid),
+        [ba_session_clock:resync(network_changed) || _ <- lists:seq(1,3)],
+        #{timer := undefined,query := {Worker,Monitor}}=sys:get_state(Pid),
+        ?assertEqual(false,erlang:read_timer(Old)),
+        Pid ! {timeout,Old,read},
+        ?assertMatch(#{timer := undefined,query := {Worker,Monitor}},sys:get_state(Pid)),
+        {ok,New}=read_timer(Pid),
+        ?assertNotEqual(Old,New),
+        Pid ! {timeout,Old,read},
+        ?assertMatch(#{timer := New,query := undefined},sys:get_state(Pid))
+    end).
+
+read_timer(Pid) ->
+    await(fun() -> is_reference(maps:get(timer,sys:get_state(Pid))) end),
+    {ok,maps:get(timer,sys:get_state(Pid))}.
+
 with_clock(Env,Fun) ->
     application:load(ba_core),
     Keys=maps:keys(Env),

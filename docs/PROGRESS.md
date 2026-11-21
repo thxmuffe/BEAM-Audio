@@ -1,5 +1,22 @@
 # Current implementation and validation
 
+## Clock, media profile and DeviceWeb lifecycle — 2026-11-21
+
+- Session clock resync cancels the pending read or uses the in-flight query.
+  A regression test checks that repeated resyncs and stale timer messages
+  leave one scheduled read.
+- Stream offers advertise `engine_flac_srtp_v2`, which requires the
+  `packet_index` already carried in stream setup. Both endpoints need the
+  new profile for Session audio.
+- DeviceWeb publishes its current origin without calling the application
+  controller during shutdown. The listener lifecycle test can now check
+  stop and restart. The monitor fixture uses the current Inspect consent.
+- Linux with OTP 27: core compiled, 149 of 151 core tests and six of seven
+  DeviceWeb tests passed. The other three tests require Unix sockets that
+  returned `eperm` in the test environment. The OpenSound web build and all
+  37 frontend unit tests passed. Native apps and physical audio were outside
+  this run.
+
 ## Mac Web restart default — 2026-11-20
 
 - The Mac Web launcher now stops its existing named Web Device before starting

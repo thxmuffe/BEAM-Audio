@@ -44,11 +44,10 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
   iPhone's path notifications) and starts a new connection (ICE restart); the
   sender follows. Streams are identified by SSRC and SRTP key, so playback
   continues from the same buffer.
-- **Keys.** Session control payloads are visible to the Reception, so no key
-  ever travels in them. Each side puts an ephemeral X25519 public key in its
-  signed stream setup; Erlang derives the 30-byte SRTP master key and salt with
-  ECDH + HKDF-SHA256 and hands it to the local engine. No DTLS or SDP: trust
-  already lives in Erlang.
+- **Keys.** Session control payloads are sealed between Devices. The sender
+  generates the SRTP key and salt. Each side includes an ephemeral X25519 public
+  key in its signed stream setup. Erlang uses ECDH and HKDF-SHA256 to derive a
+  wrapping key for delivering the media key to the intended receiver.
 - **Clock.** Owns the Session clock and sends the mapping
   `session_ns = host_ns × (1 + ppm) + offset`, refreshed periodically.
 - **Stream anchors.** Distributes, per stream, the Session time of RTP sample
@@ -59,7 +58,9 @@ OS audio (Core Audio, WASAPI, AAudio/Oboe, PipeWire)
   first packet and seeds libsrtp's rollover counter before authentication.
   This preserves ongoing streams after 16-bit sequence wrap without resetting
   an established receiver's replay state. The focused native regression passes;
-  deployment and real-phone handover validation remain pending.
+  deployment and real-phone handover validation remain pending. The offer
+  advertises `engine_flac_srtp_v2` for this setup format. Update both sending
+  and receiving Devices together when moving from profile v1.
 - **Lifecycle.** One OTP process owns each engine; the engine is linked to it.
   Commands: `start_speaker`, `stop_speaker`, `start_capture` / `stop_capture`
   (system audio, microphone; several at once), `connect`, `remote`,
@@ -132,6 +133,9 @@ The macOS shell is `src/Audio/adapters/macOS/engine_shell.mm`; the Erlang owner
 is `src/Audio/control/engine/ba_audio_engine.erl`. Build with
 `scripts/platforms/macOS/build-engine.sh` (pinned libraries via
 `prepare-engine-deps.py`).
+
+The macOS and iOS shells are implemented. The Windows, Android and Linux
+rows describe planned platform work.
 
 ## Hosting and the control protocol
 

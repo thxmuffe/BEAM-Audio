@@ -43,7 +43,7 @@ normal_capabilities_include_label_but_not_metrics_test() ->
         ?assertNot(maps:is_key(<<"audio_diagnostics">>,Normal)),
         Entry=maps:get(<<"broadcast">>,maps:get(<<"audio">>,Normal)),
         ?assertEqual([<<"available">>,<<"consent">>,<<"state">>],lists:sort(maps:keys(Entry))),
-        {reply,Metrics,_}=ba_test_consent:with(#{calibrate_speaker => true},
+        {reply,Metrics,_}=ba_test_consent:with(#{inspect => true},
             fun() -> ba_device_handler:handle_call(capability_metrics,undefined,S) end),
         ?assertEqual(maps:get(<<"device_name">>,Normal),maps:get(<<"device_name">>,Metrics)),
         ?assertMatch(#{<<"mixer.dropped">> := 3,<<"diagnostics.analysis">> := true},maps:get(<<"audio_diagnostics">>,Metrics)),

@@ -5,25 +5,25 @@ is a receiver's current intent; a Media Session is a temporary transport attempt
 Keep their lifetimes separate. The shared runtime negotiates formats, permissions,
 local Contracts/consent and authenticated session context before starting media.
 
-Microphone contribution is available to Guests with local consent. Other Sources
-require Chef permission. Ownership itself does not enable capture. The shared
-receiver validates both local publication and remote source catalogues.
+Microphone capture follows the local Device's consent. System audio publication
+also requires the Session's `on_air` privilege. The shared receiver validates
+local publication and remote source catalogues.
 
-The current path carries PCM over isolated WebRTC transports, with each packet
-independently carrying its broadcaster-assigned shared playback target. Erlang
-owns target calculation, clock conversion, eligibility, buffering and correction.
-The reference Mixer requires compatible source rate and clock. It renders at the
-approved target, or records explicit missed/invalid/overlapping/output failures.
-No adaptive backend may silently select replacement targets.
+The native engine sends FLAC over SRTP on ICE connections. Stream offers name
+`engine_flac_srtp_v2`. Stream setup includes the sender's packet index and a
+Session time anchor for the RTP sample positions. Erlang owns eligibility,
+stream lifetime and timing policy. The engine buffers, recovers and decodes
+packets, then schedules playback from the sample position and the Session's
+Response time.
 
 Pause, unsubscribe, consent withdrawal, Contract revocation and source incarnation
 changes fence affected media. Recovery negotiates a fresh eligible attempt instead
-of replaying stale buffers. Subscription intent is scoped to the live Buffee.
+of replaying stale buffers. Subscription intent is scoped to the live Session.
 No PID, socket, device deadline or live buffer is durable membership evidence.
 
 The app Device Handler starts eligible audio Workers from desired settings.
 Speaker receive, microphone capture and system capture are separate actions.
 The Web UI submits commands; the browser itself does not carry audio.
 
-See [audio engine](AUDIO_ENGINE.md), [clock](BUFFEE_TIME.md),
-[ownership](BUFFEE_MEMBERSHIP.md) and [current validation](PROGRESS.md).
+See [audio engine](AUDIO_ENGINE.md), [clock](SESSION_TIME.md),
+[Session policy](SESSION_MEMBERSHIP.md) and [current validation](PROGRESS.md).

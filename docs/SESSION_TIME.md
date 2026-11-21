@@ -21,7 +21,7 @@ enough for now (owner decision 2026-11-20).
   system clock;
 - reads the system clock again at once after a resume or network change
   (`resync/1`), then asks the server, since the monotonic clock may have
-  paused.
+  paused. A resync replaces the scheduled read or reuses the in-flight query.
 
 Readers use `session_time/1` and `presentation/1` (times plus the Response
 time); `status/0` feeds the monitor and diagnostics. The audio engine receives

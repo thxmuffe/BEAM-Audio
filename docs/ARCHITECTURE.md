@@ -21,48 +21,31 @@ remain planned work. Local execution tokens enforce approved resource use.
 **Audio stream control** is Erlang's configuration and supervision of native
 streams. Native code owns capture, codecs, media transport and playback.
 
-The older implementation notes below are historical and may lag the current
-code; current decisions and remaining work are tracked in PLAN.md.
-
 Use local OTP supervision, messaging, monitors and process groups. Cross-device
-operations use authenticated, scoped protocol messages; ordinary Buffee Devices
-never obtain Distributed Erlang access. Reception authenticates connections and
-routes opaque envelopes. It does not administer membership or interpret audio.
+operations use authenticated, scoped Session messages. Reception authenticates
+connections and routes opaque envelopes. Session policy and privileges live
+with the Devices. A join certificate proves admission, and signed policy
+records `grant`, `on_air` and `end_session` privileges. Saved Device identity
+and policy survive ordinary Leave and shutdown. See [Session admission and policy](SESSION_MEMBERSHIP.md).
 
-Owner is trusted administration; Chef/Guest are participation roles. Process
-placement confers no ownership. Saved identity and policy survive ordinary Leave
-and shutdown. Destroy is explicit. See [membership](BUFFEE_MEMBERSHIP.md).
+Each Device derives its own UTC mapping. Erlang owns Session presentation
+policy and stream lifecycle. Native code uses sample-position timestamps to
+schedule playback and owns FLAC, SRTP, buffering and output. Only control,
+signalling, timing metadata and bounded diagnostics cross the BEAM boundary.
+See [Session time](SESSION_TIME.md), the [audio engine](AUDIO_ENGINE.md) and
+[Session streams](SESSION_STREAMS.md).
 
-Erlang owns the shared clock reference, Session presentation policy and native
-stream lifecycle. Native adapters/libraries own samples and encoded media,
-sample-position timestamps, RTP/RTCP timing mappings, buffering and output.
-Only control, signalling, timing metadata and bounded diagnostics cross the
-BEAM boundary. The default PCM path is legacy and still violates this target
-boundary; replace it after native playback, recovery and timing qualification.
-See the [audio engine design](AUDIO_ENGINE.md).
-
-Routine liveness and timing must stay scoped to relevant peers/streams and use
-bounded concurrent work, not per-Device Session-wide pings. The explicit CLI
-Inspector can request Session-wide diagnostics; ordinary app snapshots read
-local state. Control requests authenticate themselves and no longer keep a link
-with every peer; audio discovery still reads every peer's catalogue while audio
-automation runs, and the Session membership handshake still pairs every present
-Device. Making Session topology scale is separate unfinished work. Concurrent collection by the
-Inspector does not make that full-mesh topology scalable.
-
-DSP interfaces and reference implementations remain in BEAM Audio. Keep optional
-backends isolated and avoid speculative abstractions. Swift hosts retain OS
-permissions and identity storage while reusing the web UI and shared BEAM APIs.
-
-Current contracts: [clock](BUFFEE_TIME.md), [audio engine](AUDIO_ENGINE.md),
-[streams](BUFFEE_STREAMS.md), [builds](BUILDING.md).
+Routine work targets relevant peers and active streams. A CLI Inspector can
+explicitly collect wider Session diagnostics. Relaying across neighbours at
+large Session sizes remains planned work. Swift hosts keep OS permission and
+identity handling and reuse the web UI and the shared BEAM APIs.
 
 ## Parallel local Sessions
 
 `ba_sessions` owns the web tab manifest. The existing default Session keeps its
 registered names and saved files. Additional Sessions use `ba_session_sup` OTP
 trees; `ba_session_scope` resolves local worker names, ETS tables and saved
-state under `sessions/<BuffeeId>/`. OTP ancestor metadata supplies the scope
+state under `sessions/<SessionId>/`. OTP ancestor metadata supplies the scope
 to supervised children; explicitly spawned helpers inherit it. Term names use
 OTP `global` registration in the unnamed VM, without enabling Distributed Erlang.
 
@@ -77,7 +60,7 @@ Session documents alive; UI navigation does not own audio process lifetime.
 
 Permission settings belong to one Device-owned `ba_device_config`, not Session
 supervision trees. Every Session resolves that shared owner. Session broadcast
-intent stays in its own `ba_buffee` process. Session leave/rejoin has no authority
+intent stays in its own `ba_session` process. Session leave/rejoin has no authority
 to copy or grant Device permissions. The current-profile permission owner starts
 with all grants OFF and refuses history changes that would grant a permission.
 Final resource enforcement and acknowledged revocation are planned, not complete;

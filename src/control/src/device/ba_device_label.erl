@@ -11,7 +11,7 @@ local(Instance) ->
     %% merely draws the same UI in its own window sets BA_NATIVE_APP=1.
     Origin=case ba_settings:env("BA_NATIVE_APP") of
         "1" -> <<>>;
-        _ -> application:get_env(ba_device_web,origin,<<>>)
+        _ -> persistent_term:get({ba_device_web,origin},<<>>)
     end,
     format(Label,Origin,Instance).
 format(Name,Origin,Instance) ->

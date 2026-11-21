@@ -98,7 +98,7 @@ window reports success/failure and waits for a key. Open the output at
 `python build.py --test` or Git Bash `./build.sh windows --test`. The build and a fresh MSVC launcher/
 identity-helper compilation were validated on Windows.
 
-Windows packages the shared frontend and `buffee_control` through DeviceWeb in
+Windows packages the shared frontend and BEAM Device runtime through DeviceWeb in
 an installed Chrome/Edge window. Python, Windows OTP/rebar3 and Visual Studio
 C++ tools are required. Windows has no audio until its engine shell exists
 (plan step 4). See the [Windows guide](../../OpenSound/docs/Windows/README.md).

@@ -60,7 +60,7 @@ init([]) ->
     true=is_integer(Interval) andalso Interval>=100 andalso Interval=<600000,
     true=is_integer(PPM) andalso PPM>0 andalso PPM<1000000,
     %% Usable at once from the system clock; the time server refines it.
-    S=#{reference => Reference,interval => Interval,ppm => PPM,query => undefined,blocked => false,
+    S=#{reference => Reference,interval => Interval,ppm => PPM,query => undefined,timer => undefined,blocked => false,
         clock => #{reference => reference_name(Reference),last_error => null,corrections => 0,steps => 0}},
     self() ! read,
     {ok,apply_reading(system,measure(system),S)}.
@@ -69,15 +69,13 @@ handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 
 %% The monotonic clock may have paused (suspend) or the network changed:
 %% re-read the system clock now, then ask the time server.
-handle_cast(resync,S) -> handle_info(read,apply_reading(system,measure(system),S));
+handle_cast(resync,S) ->
+    {noreply,start_query(apply_reading(system,measure(system),cancel_timer(S)))};
 handle_cast(_,S) -> {noreply,S}.
 
-handle_info(read,#{query := undefined,blocked := false,reference := {ntp,_,_}=R}=S) ->
-    Owner=self(),
-    {Pid,Ref}=ba_session_scope:spawn_monitor(fun() ->
-        Owner ! {reading,self(),try measure(R) catch _:_ -> {error,query_failed} end} end),
-    {noreply,S#{query := {Pid,Ref}}};
-handle_info(read,S) -> {noreply,schedule(S)};
+handle_info(read,S) -> {noreply,start_query(S)};
+handle_info({timeout,Ref,read},#{timer := Ref}=S) ->
+    {noreply,start_query(S#{timer := undefined})};
 handle_info({reading,Pid,Result},#{query := {Pid,Ref}}=S) ->
     demonitor(Ref,[flush]),
     Next=case Result of
@@ -93,7 +91,21 @@ handle_info(_,S) -> {noreply,S}.
 terminate(_,#{query := {Pid,_}}) -> exit(Pid,kill),ok;
 terminate(_,_) -> ok.
 
-schedule(#{interval := I}=S) -> erlang:send_after(I,self(),read),S.
+start_query(#{query := undefined,blocked := false,reference := {ntp,_,_}=R}=S) ->
+    Owner=self(),
+    {Pid,Ref}=ba_session_scope:spawn_monitor(fun() ->
+        Owner ! {reading,self(),try measure(R) catch _:_ -> {error,query_failed} end} end),
+    S#{query := {Pid,Ref}};
+start_query(S) -> S.
+
+schedule(#{blocked := false,interval := I}=S) ->
+    S#{timer := erlang:start_timer(I,self(),read)};
+schedule(S) -> S.
+
+cancel_timer(#{timer := undefined}=S) -> S;
+cancel_timer(#{timer := Ref}=S) ->
+    _=erlang:cancel_timer(Ref),
+    S#{timer := undefined}.
 
 apply_reading(Source,{ok,#{offset_ns := Offset,sampled_at := At}=R},#{clock := D,ppm := PPM}=S) ->
     {Mapping,Kind}=case maps:get(mapping,D,undefined) of

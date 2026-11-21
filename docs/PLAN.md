@@ -1,5 +1,10 @@
 # Current plan
 
+Build sending and receiving Devices with the same BEAM Audio revision for the
+next playback check. Stream offers now advertise `engine_flac_srtp_v2` for
+setup messages carrying the sender's packet index. On-device validation of
+reconnection remains open.
+
 Web startup (owner 2026-11-20): the Mac Web launcher now stops the existing
 named Web Device before starting it with rebuilt code and the same saved
 identity/settings. A verified stale record was cleared and the owner's Web
@@ -21,7 +26,7 @@ previous plan. **Goal: audio works on every platform.**
 [Simplification plan](#simplification-plan-owner-concern-2026-11-19-tackle-soon);
 (2) the rights model, soon after; (3) packet recovery and audio quality last.
 iPhone background playback works (owner confirmed). Native microphone capture
-is deferred.
+is implemented on iPhone and needs on-device validation.
 
 Web rejoin (2026-11-20): fixed both the frontend redraw race and the backend
 crash on old saved-tab metadata. Real HTTP + Chromium checks now verify that
@@ -94,16 +99,13 @@ does not establish a working integration baseline.
   and passed to neighbours; grant holders answer with signed granted/declined
   entries. ON AIR spreads as signed gossip notes. Every Session message is
   sealed end to end (ChaCha20-Poly1305, key from the link secret). Gossip
-  carries timing policy only, never time measurements; each Device syncs to UTC
-  itself. Still to do: listeners relaying streams for very large Sessions, and
+  carries measured Response times for display. Each Device reads UTC itself.
+  Still to do: listeners relaying streams for very large Sessions, and
   a bounded random sample from Reception itself.
-- **One audio transport: native AAC (owner decision 2026-11-19).** Native AAC
-  over GStreamer RTP is the only transport. The PCM-through-Erlang path and the
-  Opus path are deleted now, accepting a period where audio may be broken on
-  platforms without native capture/playback yet. Packet recovery builds on it:
-  RTP retransmission (NACK/RTX) within the buffer first, redundant packets (RED,
-  the owner's overlapping-packets idea) for bursts; measure lost vs late vs
-  dropped before tuning. Goal: continuous playback with no audible gaps.
+- **One audio transport: native FLAC over SRTP.** The C++ engine uses libjuice
+  for ICE and can request retransmission from a short send history. Measure lost,
+  late and dropped packets before tuning for continuous playback. See
+  [the audio engine design](AUDIO_ENGINE.md).
 - **Rights are signed grants held by the requester (owner decision 2026-11-19;
   implement after the audio work).** Every request ends rejected, approved by
   the user, or approved by automation; an approval is signed and given to the
@@ -152,23 +154,16 @@ does not establish a working integration baseline.
   Admission is a join certificate checked per request (control v3); the
   pairing handshake and participant list are gone (dark Sessions, PROGRESS
   2026-11-19). The clock regression after the grant holder leaves is fixed.
-  Next: clock follows the ON AIR stream a listener is subscribed to; relaying
-  to unreachable Devices stays deferred.
+  Devices derive Session time from UTC independently. Relaying to unreachable
+  Devices stays deferred.
 - **OTP ownership is mandatory.** Native streams stop when their owning OTP
   process, required supervisor, authority or runtime stops or crashes. Independent
   native teardown and forced termination must prevent orphan media connections;
   terminate callbacks and queued cleanup alone do not meet this requirement.
-- **Quality before low latency.** Native buffering varies on demand up to ten
-  seconds; ten seconds is a maximum, not a fixed delay or prefill. The previous
-  Automatic taper toward 3 s remains implemented policy, not a quality target
-  or native limit.
-  The owner accepted continuous native streams with periodic global-time
-  mappings, packet recovery and smooth sample-rate correction. Prefer standard
-  RTP/RTCP and established native libraries. Send an initial mapping promptly,
-  then refresh it periodically (about five seconds was proposed; exact cadence
-  and correction limits need implementation evidence). This replaces the earlier
-  independent absolute-target requirement per packet. A native AAC prototype is now opt-in;
-  the default media path remains legacy.
+- **Quality before low latency.** Continuous streams anchor their sample
+  positions to Session time and use packet recovery and smooth sample-rate
+  correction. [Session time](SESSION_TIME.md) describes the configured delay
+  and measured delay shown in Settings.
 - **Session, Device, privileges** (`grant`, `on_air`, `end_session`); no roles.
   Holding the invitation link is enough to participate; links last forever.
 - **Can moderate** is the Settings switch for the existing `end_session`
@@ -193,30 +188,29 @@ does not establish a working integration baseline.
 - **Continuous media follows the shared Session schedule.** Sample positions
   and explicit global-time mappings determine playback; arrival time does not.
   Native libraries may reorder/recover packets and correct sample rate smoothly,
-  while Erlang sets Session timing policy. Existing absolute-target packets
-  remain the legacy implementation until native integration replaces them.
+  while Erlang sets Session timing policy.
 - **Timestamped audio regions may overlap.** Investigate continuous resampling
   for clock-rate correction and short crossfades at deliberate splices. Do not
   fade every packet independently. Regions retain their assigned targets;
-  packet transfer boundaries must not dictate audible joins. The current Mixer
-  still rejects same-source overlaps; this rendering work is not implemented.
-- **Automatic Response time is opt-in.** Devices report averaged deadline
-  overshoot; the clock authority applies diminishing increases, tapering below
-  3 s. Manual values disable Automatic. Targets already assigned are preserved.
+  packet transfer boundaries must not dictate audible joins.
+- **Response time is set in signed Session policy.** Devices report measurements
+  for display. Automatic adjustment is future work.
 - Crash notices stay visible in chat; presence/reconnect/removal lines are
   debug-level. Version on every home page: `0.<OpenSound commit count>`.
 - Reception stays a small opaque service; nothing here needs a Reception update.
 
-## Where audio stands (2026-11-19, native AAC only)
+## Current platform audio
 
-PCM and Opus were deleted (owner decision). The table is the native coverage;
-everything not listed has no audio until a native host exists.
+| Platform | Playback | Microphone | System audio capture |
+|---|---|---|---|
+| macOS | Core Audio | Core Audio | Core Audio process tap |
+| iPhone | RemoteIO | RemoteIO | Unavailable |
+| Windows | Windows shell pending | Windows shell pending | Windows shell pending |
 
-| Platform | Playback | Microphone | ON AIR (system audio) | Verified |
-|---|---|---|---|---|
-| Windows | native host (app/Web Device) | none | WASAPI loopback → AAC | helper smoke + real loopback/WASAPI probes pass; no Session listening test |
-| macOS | none in the app (GStreamer not packaged); none in CLI | none | CLI helper (Core Audio tap → AAC) | headless native smoke passes; not listened to |
-| iOS | native host (always started) | none | none | Mac→iPhone audible at 800 ms / 2 s, wavering; 150 ms silent |
+See [validation and release limits](PROGRESS.md). The receiver and sender
+need the same BEAM Audio stream profile.
+
+## Historical audio notes (2026-11-19)
 
 Earlier observations below describe the deleted PCM path and are history.
 
@@ -563,9 +557,8 @@ real Devices first (see SESSION_TIME.md).
 - Improvement plan for buffers/timing from listening results (e.g. mixer lead
   at short Response times; OS stalls > 50 ms drop blocks on loaded Windows).
 - Long-term audio objects: overlapping packets mixed by default.
-- iOS ON AIR on iOS 27; iOS 26 needs a ReplayKit broadcast extension/native
-  integration (current build has neither); iPhone background playback (if wanted).
-- Opus path qualification (`--opus` scenario needs `BA_GSTREAMER_PYTHON`).
+- iPhone system audio capture needs a supported OS capture source and an
+  adapter for the current engine.
 - A playback test with a known tone started/stopped by the test (counters alone
   can pass for silence).
 
