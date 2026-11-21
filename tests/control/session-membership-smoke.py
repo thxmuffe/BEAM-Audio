@@ -88,20 +88,11 @@ def main():
             old_id = x.identity['id']
             connect(a, x)
             assert a.request('revoke',peer=old_id)['ok']
-            control.wait(x,lambda s:s['membership']['state']=='revoked');sync(a,y)
-            assert 'error' in x.request('connect',peer=y.identity['id'])
-            # Forwardability must not let a removed identity bypass revocation.
-            assert x.request('leave_session')['ok']
+            # Kick is not Ban: the kicked Device leaves, then returns through the same link.
+            control.wait(x,lambda s:s['membership']['state']!='authorized')
             assert x.request('join_session',invitation=invitation)['ok']
-            control.wait(x,lambda s:s['membership']['state']=='revoked')
-            # Address book (contacts): saving contact works locally on y without sync
-            assert y.request('put_contact',id=a.identity['id'],name='Owner')['ok']
-            assert y.request('put_contact',id=old_id,name='FormerPeer')['ok']
-            assert y.request('group_contacts',name='Friends',ids=[a.identity['id'],old_id])['ok']
-            contacts = y.request('list_contacts')
-            assert a.identity['id'] in contacts['contacts'] and old_id in contacts['contacts']
-            assert 'Friends' in contacts['groups']
-            # Ephemeral session end: Owner departure terminates gathering; contacts persist
+            control.wait(x,lambda s:s['membership']['state']=='authorized')
+            # Ephemeral session end: Owner departure terminates gathering
             x.close()
             assert a.request('end_session')['ok']
             end=time.monotonic()+15
@@ -114,11 +105,7 @@ def main():
                         break
                     assert time.monotonic()<end,lifecycle
                     time.sleep(.1)
-            y_seed=y.seed;y.close();y=runtime('member1',y_seed)
-            retained_contacts = y.request('list_contacts')
-            assert a.identity['id'] in retained_contacts['contacts']
-            assert 'Friends' in retained_contacts['groups']
-            print('PASS: shared invitation admits distinct Devices; leave/rejoin; revoked identity denied; two independent Desks, one Owner/Session; capability-limited messages; explicit grants; Desk failure isolation; revocation; ephemeral teardown; contacts preserved; no OTP distribution or apps')
+            print('PASS: shared invitation admits distinct Devices; leave/rejoin; kicked Device returns by invitation; two independent Desks, one Owner/Session; capability-limited messages; explicit grants; Desk failure isolation; revocation; ephemeral teardown; no OTP distribution or apps')
         finally:
             for r in runtimes:r.close()
             for d in desks:

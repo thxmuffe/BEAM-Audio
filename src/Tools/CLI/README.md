@@ -446,7 +446,7 @@ defaults. Every configuration read goes through `ba_settings`: the file may
 override environment variables (`{environment,#{"BA_..." => "..."}}`) and ba_core
 application settings (`{runtime,#{key => value}}`). Secrets never go in it: the
 identity seed stays in its own private file. Hardware failure is separate
-observed state. Shared Offset, contacts, ephemeral
+observed state. Shared Offset, Session memory, ephemeral
 exclusions and Session membership are not in Device audio history. Saved intent
 cannot revive a Session, bypass OS permissions or restore packet/clock state.
 

@@ -1,7 +1,7 @@
 %% One active Session per local Session scope. Ownership survives leaving or app shutdown.
 -module(ba_session).
 -behaviour(gen_server).
--export([start_link/0,create/3,join/1,start/1,status/0,connection/0,disconnect/0,remember/2,leave/0,end_session/0,invite/2,ended/1,broadcast/0,broadcast/1,broadcast_token/0]).
+-export([start_link/0,create/3,join/1,start/1,status/0,connection/0,disconnect/0,remember/2,leave/0,end_session/0,ended/1,broadcast/0,broadcast/1,broadcast_token/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 -export([forget_session/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
@@ -22,7 +22,6 @@ remember(Pid,Saved) -> gen_server:cast(ba_session_scope:ref(?MODULE),{remember,P
 leave() -> gen_server:call(ba_session_scope:ref(?MODULE),leave,15000).
 forget_session(Session) -> gen_server:call(ba_session_scope:ref(?MODULE),{forget_session,Session},15000).
 end_session() -> gen_server:call(ba_session_scope:ref(?MODULE),end_session,15000).
-invite(Selection,TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite,Selection,TTL}).
 ended(Membership) -> gen_server:cast(ba_session_scope:ref(?MODULE),{ended,Membership}).
 init([]) ->
     %% Load the record schema's atoms before binary_to_term(...,[safe]).
@@ -51,11 +50,6 @@ handle_call({start,Input},_,#{state := idle}=S) ->
             {reply,Result,Next}
     end;
 handle_call({start,_},_,S) -> {reply,{error,already_in_session},S};
-handle_call({invite,Selection,TTL},_,#{state := active}=S) ->
-    Result = case ba_contacts:resolve(Selection) of
-        {ok,Ids} -> ba_session_membership:invite_devices(Ids,TTL);
-        Error -> Error
-    end,{reply,Result,S};
 handle_call(end_session,_,#{state := active}=S) ->
     case ba_session_membership:end_session() of
         ok -> {reply,ok,ended_session(S)};

@@ -3214,3 +3214,24 @@ Windows smoke retest: `builds/test-results/20261120-134226/summary.json`, log
 `builds/intermediates/shared-web-retest.log`. It still fails, so aggregate counts
 are unchanged. Failures include stale assertions and unresolved behavior; they
 are not all confirmed product defects. Apple tests were not executed here.
+
+## 2026-11-21 — saved Devices removed; Kick is not Ban
+
+- Saved Devices, custom groups, Add to group, drag-to-group and invite-a-saved-
+  Device are gone from the UI, the preview, the Device API (`save_contact`,
+  `put_contact`, `contact_from_invitation`, `delete_contact`, `put_group`,
+  `delete_group`, `list_contacts`, `invite` with a selection) and the test
+  probe. A Device remembers Sessions and their invitation links, plus the last
+  name seen for each Device a remembered Session lists (`contacts.names`,
+  pruned when a Session is forgotten). Stored saved-Device names migrate into
+  that cache; groups are dropped. Reaching many installed Devices belongs to a
+  separate, not-yet-designed installation layer.
+- Kick (`revoke/1` by a grant holder) drops the Device from `members` and sends
+  it `ended`; it no longer adds it to the policy's `removed` list, so the
+  invitation link admits it again. `removed` stays in the signed statement for
+  Ban, which is not implemented.
+- Verified: 50 EUnit tests in the touched modules (incl. new `kick_is_not_ban`),
+  38 WebApp Node tests and the headless browser Devices test. Not run: the
+  membership and reconnect smoke tests (updated for the new Kick) need the
+  Reception service compiled. The full EUnit run is blocked by an unrelated
+  syntax error in `ba_audio_catalog_events_tests.erl` (`Key=<<"music">>`).

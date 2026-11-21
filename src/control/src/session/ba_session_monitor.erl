@@ -28,7 +28,7 @@ snapshot(#{metrics := Metrics,plain := Plain}) when is_boolean(Metrics),is_list(
             [meter_row(maps:get(Id,Known,#{id => Id,state => observed}),maps:get(Id,Levels,#{})) || Id <- Ids];
         false -> ReadRows
     end,
-    #{session => Session,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(contacts,Local)) || Row <- Rows],
+    #{session => Session,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(names,maps:get(contacts,Local))) || Row <- Rows],
       state => maps:get(state,Session),observed_at_ms => erlang:system_time(millisecond)}.
 meter_row(Row,Levels) when map_size(Levels)=:=0 -> Row;
 meter_row(Row,Levels) ->
@@ -40,9 +40,9 @@ meter_row(Row,Levels) ->
     end,Audio,Levels),
     Row#{capabilities => Caps#{<<"audio">> => Updated}}.
 
-named(#{id := Id}=Row,#{contacts := Contacts}) ->
+named(#{id := Id}=Row,Names) ->
     Caps=maps:get(capabilities,Row,#{}),
-    case maps:get(<<"device_name">>,Caps,maps:get(Id,Contacts,<<>>)) of
+    case maps:get(<<"device_name">>,Caps,maps:get(Id,Names,<<>>)) of
         <<>> -> Row;Name -> Row#{name => Name}
     end.
 read(Self,Self,Metrics) ->

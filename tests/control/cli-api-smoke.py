@@ -39,11 +39,12 @@ with tempfile.TemporaryDirectory(prefix='ba-cli-api-') as directory:
 
         muted = call({'method': 'speaker_mute', 'muted': True, 'request_id': 'generic-1'})
         assert muted['live']['muted'] is True and muted['request_id'] == 'generic-1'
-        group = 'Studio 🎵 "A"'
-        grouped = call({'method': 'put_group', 'name': group, 'ids': []}, stdin=True)
-        assert grouped['contacts']['groups'][group] == []
+        tag = 'Studio 🎵 "A"'
+        unmuted = call({'method': 'speaker_mute', 'muted': False, 'request_id': tag}, stdin=True)
+        assert unmuted['live']['muted'] is False and unmuted['request_id'] == tag
+        assert not {'put_group', 'save_contact', 'list_contacts'} & set(methods)
         assert call({'method': 'configuration'})['result']['consent'] == original['consent']
-        print('PASS: public methods discovered; generic JSON/stdin preserves Unicode, arrays, booleans and request IDs', flush=True)
+        print('PASS: public methods discovered; generic JSON/stdin preserves Unicode, booleans and request IDs', flush=True)
 
         slot = call({'method': 'new_session'})['session_id']
         scoped = call({'method': 'snapshot', 'session': slot})

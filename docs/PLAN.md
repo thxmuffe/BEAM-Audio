@@ -148,8 +148,8 @@ does not establish a working integration baseline.
   requests only and does not revoke earlier grants. Rights are not invalidated
   easily: only a kick or a ban ends them (a fresh per-Session key on rejoin, or
   an equivalent mechanism), so old grants stop working only then.
-  Current code differs (shared statement; No revokes; one permanent key; kicked
-  Devices are refused).
+  Current code differs (shared statement; No revokes; one permanent key). Kick
+  is not Ban: a kicked Device returns through the link; Ban is not implemented.
 - **Playback continues in the background and when locked, on every Device;
   joins never interrupt other Devices' playback (owner 2026-11-19).**
 - **Erlang controls the pipes; audio stays native (2026-11-18 clarification).**

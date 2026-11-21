@@ -132,15 +132,16 @@ can still open the Session again, arriving as an unprivileged participant of an
 empty Session with the same ID. End reaches the Devices the ending Device can reach or has encountered. Without the privilege the call returns `end_privilege_required`;
 a `grant` holder can request the privilege for itself first. Ordinary Leave or
 transport loss never substitutes for End. End is an ordinary signed request (`session.request`, kind `ended`) that needs `end_session`.
-`revoke/1` lists the Device as removed in the next statement and sends it to the
-Devices it concerns, including the removed one, which stays visible as `revoked`.
-Forwarding the link does not clear a removal; explicitly inviting that contact
-may.
+`revoke/1` is Kick, not Ban: it drops the Device from `members` (so its
+privileges end) in the next statement and sends it `ended`, so it leaves. It may
+return through the invitation link as an unprivileged participant. The policy's
+`removed` list is reserved for Ban (refusing the link); it lives only in the
+gossiped Session statement. Nothing writes it yet.
 
 No durable public end registry or offline ceremony is introduced. Because the
 link never changes, End and removal reach only Devices that are present or that
-later meet a Device holding the newer policy. A removed Device that returns to an
-empty Session is alone there until such a Device arrives.
+later meet a Device holding the newer policy. A Device that returns to an empty
+Session is alone there until such a Device arrives.
 
 ## Privilege requests
 

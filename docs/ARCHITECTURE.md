@@ -49,7 +49,7 @@ state under `sessions/<SessionId>/`. OTP ancestor metadata supplies the scope
 to supervised children; explicitly spawned helpers inherit it. Term names use
 OTP `global` registration in the unnamed VM, without enabling Distributed Erlang.
 
-Identity and contacts belong to the Device. `ba_desk_connections_sup` shares one
+Identity and Session memory belong to the Device. `ba_desk_connections_sup` shares one
 `ba_relay` connection per URL, dispatching mailboxes to the owning Session and
 combining presence watches. Closing a Session detaches only its mailboxes and
 sends a scoped signed offline announcement. It never closes another Session’s

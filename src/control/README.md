@@ -10,7 +10,7 @@ module names do not depend on folders):
 | Folder | Holds |
 | --- | --- |
 | `src/` | the application, top supervisor, runtime facade, settings, app bridges (Mac stdio, iOS loopback) |
-| `device/` | the Device: API, configuration and consent, handler, requests, identity store, contacts |
+| `device/` | the Device: API, configuration and consent, handler, requests, identity store, Session memory |
 | `session/` | Sessions: lifecycle, control links and protocol, membership and privileges, passport, chat, gossip |
 | `reception/` | Reception (desk) connections and routing |
 | `clock/` | the Session clock, its filter and mapping, time protocol, SNTP |
@@ -64,7 +64,7 @@ and the existing Device API commands with an optional `session` field. Replies
 include `session_id` and `sessions`. Omitting the field targets the first open
 Session. Native hosts continue to use the default single-Session API.
 
-Additional Session trees share identity, contacts and Reception sockets, with
+Additional Session trees share identity, Session memory and Reception sockets, with
 separate membership, clock, chat and media state. Closed Owner Sessions can be
 reopened with their invitation. The open-tab manifest restores after shutdown.
 

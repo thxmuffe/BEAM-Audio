@@ -6,7 +6,7 @@
 %% newer side sharing it. The highest revision wins.
 -module(ba_session_membership).
 -behaviour(gen_server).
--export([announce/1,announce/2,set_response_time/1,adjust_response_time/1,response_setting/0,start_link/0,status/0,current/0,invite/1,invite_devices/2,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1,resend_chat/0]).
+-export([announce/1,announce/2,set_response_time/1,adjust_response_time/1,response_setting/0,start_link/0,status/0,current/0,invite/1,grant/2,revoke/1,grant_privilege/2,take_privilege/2,decline_privilege/2,request_privilege/1,end_session/0,rename/1,resend_chat/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,format_status/1]).
 -ifdef(TEST).
 -export([order/3]).
@@ -38,7 +38,6 @@ start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MO
 status() -> gen_server:call(ba_session_scope:ref(?MODULE),status).
 current() -> gen_server:call(ba_session_scope:ref(?MODULE),current).
 invite(TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite,TTL}).
-invite_devices(Ids,TTL) -> gen_server:call(ba_session_scope:ref(?MODULE),{invite_devices,Ids,TTL}).
 grant(Device,Permissions) -> gen_server:call(ba_session_scope:ref(?MODULE),{grant,Device,Permissions}).
 revoke(Device) -> gen_server:call(ba_session_scope:ref(?MODULE),{revoke,Device}).
 
@@ -97,22 +96,6 @@ handle_call(current,_,#{state := authorized} = S) -> {reply,{ok,view(S)},S};
 handle_call(current,_,S) -> {reply,{error,maps:get(state,S)},S};
 %% Every participant holds the same permanent link and may share it.
 handle_call({invite,_},_,S) -> {reply,{ok,maps:get(link,S)},S};
-handle_call({invite_devices,Ids,_},_,S) when is_list(Ids),length(Ids)>0,length(Ids)=<15 ->
-    case lists:all(fun(Id) -> Id=:=undefined orelse ba_hex:valid(Id,64) end,Ids) of
-        false -> {reply,{error,invalid_invitation},S};
-        true ->
-            %% Explicitly inviting a removed contact lifts the removal; forwarding does not.
-            Lift = [Id || Id <- Ids,Id=/=undefined,lists:member(Id,removed(S))],
-            Next = case Lift=/=[] andalso grant_holder(S) of
-                true -> update(fun(P) -> {ok,P#{<<"removed">> := maps:get(<<"removed">>,P)--Lift}} end,S);
-                false -> {ok,S}
-            end,
-            case Next of
-                {ok,S1} -> {reply,{ok,[#{device => Id,invitation => maps:get(link,S)} || Id <- Ids]},S1};
-                Error -> {reply,Error,S}
-            end
-    end;
-handle_call({invite_devices,_,_},_,S) -> {reply,{error,invalid_invitation},S};
 handle_call(end_session,_,#{state := authorized,policy := P}=S) ->
     case ba_session_privileges:has(end_session,maps:get(id,S),P) of
         false -> {reply,{error,end_privilege_required},S};
@@ -186,21 +169,22 @@ handle_call({revoke,Device},_,#{id := Id,policy := Policy}=S) ->
         {true,false,false} -> {reply,{error,kick_privilege_required},S};
         %% The same signed End authorization can disconnect just one target.
         %% Do not require an Admin to be online for a live kick. Ask any present
-        %% grant holder to record removal too, without granting policy-signing
+        %% grant holder to drop its privileges too, without granting policy-signing
         %% or privilege-management powers to the moderator.
         {true,false,true} ->
             Direct=ba_session_control:session_request([Device],#{<<"kind">> => <<"ended">>}),
             Recorded=ask_holders(#{<<"kind">> => <<"remove_request">>,<<"device">> => Device},S),
             Result=case {Direct,Recorded} of {ok,_} -> ok;{_,ok} -> ok;_ -> Recorded end,
             {reply,Result,S};
-        {true,true,_} -> reply(update(fun(P) ->
-            Manager = case maps:get(<<"manager">>,P) of Device -> maps:get(<<"authority">>,P);M -> M end,
-            Removed = lists:usort([Device|maps:get(<<"removed">>,P)]),
-            case length(Removed) =< 31 of
-                true -> {ok,P#{<<"manager">> := Manager,<<"members">> := maps:remove(Device,maps:get(<<"members">>,P)),
-                               <<"removed">> := Removed}};
-                false -> {error,too_many_removed}
-            end end,S),S)
+        %% Kick is not Ban: the Device loses its privileges and is told the
+        %% Session ended for it, but may return through the invitation link.
+        %% The policy's removed list is reserved for Ban.
+        {true,true,_} ->
+            _=ba_session_control:session_request([Device],#{<<"kind">> => <<"ended">>}),
+            reply(update(fun(P) ->
+                Manager = case maps:get(<<"manager">>,P) of Device -> maps:get(<<"authority">>,P);M -> M end,
+                {ok,P#{<<"manager">> := Manager,<<"members">> := maps:remove(Device,maps:get(<<"members">>,P))}}
+            end,S),S)
     end;
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 %% The chat starts after this process and may miss the first publish.

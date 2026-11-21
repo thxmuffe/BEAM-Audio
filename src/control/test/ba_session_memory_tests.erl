@@ -20,15 +20,19 @@ grows_and_keeps_kicked_devices_test() -> fixture(fun() ->
     ?assertEqual(<<"Rooftop">>,maps:get(name,maps:get(?S,maps:get(sessions,ba_contacts:list()))))
 end).
 
-%% Earlier versions saved each Session as a group named after it; those become Session entries.
-old_session_groups_become_sessions_test() -> fixture(fun() ->
+%% Earlier versions saved Devices, groups and each Session as a group named after it.
+%% Session groups become Session entries; saved Device names become the name cache
+%% for Devices a remembered Session lists; the lists themselves are dropped.
+old_saved_devices_and_groups_migrate_test() -> fixture(fun() ->
     gen_server:stop(ba_contacts),
-    ok=ba_settings:put(contacts,#{contacts => #{id($A) => <<"Mac">>},groups => #{<<"GOLDEN">> => [id($A)],<<"Kitchen">> => []},
-                                  session_groups => #{?S => <<"GOLDEN">>}}),
+    ok=ba_settings:put(contacts,#{contacts => #{id($A) => <<"Mac">>,id($B) => <<"Unseen">>},
+                                  groups => #{<<"GOLDEN">> => [id($A)],<<"Kitchen">> => []},
+                                  auto_names => #{},session_groups => #{?S => <<"GOLDEN">>}}),
     {ok,_}=ba_contacts:start_link(),
-    L=ba_contacts:list(),
-    ?assertEqual(#{<<"Kitchen">> => []},maps:get(groups,L)),
-    ?assertEqual(#{name => <<"GOLDEN">>,link => null,devices => #{id($A) => member}},maps:get(?S,maps:get(sessions,L)))
+    ?assertEqual(#{names => #{id($A) => <<"Mac">>},
+                   sessions => #{?S => #{name => <<"GOLDEN">>,link => null,devices => #{id($A) => member}}}},
+                 ba_contacts:list()),
+    ?assertEqual([names,sessions],lists:sort(maps:keys(ba_settings:get(contacts,#{}))))
 end).
 
 sync() -> _=ba_contacts:list(),ok.
@@ -54,7 +58,7 @@ forget_survives_background_observation_test() -> fixture(fun() ->
     %% A restored worker or a delayed peer update is not the user's Join.
     ba_contacts:observe(?S,<<"IRON2">>,[id($A),id($B)]),sync(),
     ?assertNot(maps:is_key(?S,maps:get(sessions,ba_contacts:list()))),
-    ?assertNot(maps:is_key(id($B),maps:get(contacts,ba_contacts:list()))),
+    ?assertNot(maps:is_key(id($B),maps:get(names,ba_contacts:list()))),
     gen_server:stop(ba_contacts),{ok,_}=ba_contacts:start_link(),
     ba_contacts:observe(?S,<<"IRON2">>,[id($A)]),sync(),
     ?assert(ba_contacts:forgotten(?S)),

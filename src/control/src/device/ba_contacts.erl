@@ -1,7 +1,9 @@
-%% Device-local address book. Saving a key never grants Session permissions.
+%% Device-local memory of Sessions. Individual Devices are not kept as a list:
+%% this Device remembers Sessions (and their invitation links), and only the
+%% last name seen for each Device so its rows stay readable while it is away.
 -module(ba_contacts).
 -behaviour(gen_server).
--export([start_link/0,list/0,put/2,delete/1,group/2,delete_group/1,resolve/1,observe/3,observe_name/2]).
+-export([start_link/0,list/0,observe/3,observe_name/2]).
 %% Sessions memory: every Session this Device has known, by Session id, with its
 %% name, its original invitation link and the Devices seen there. It only grows:
 %% a Device is never removed, a kicked one keeps its place with status kicked.
@@ -12,11 +14,6 @@ observe(Session,Name,Ids) -> gen_server:cast(?MODULE,{observe,Session,Name,Ids})
 observe_name(Id,Name) -> gen_server:cast(?MODULE,{observe_name,Id,Name}).
 start_link() -> gen_server:start_link({local,?MODULE},?MODULE,[],[]).
 list() -> gen_server:call(?MODULE,list).
-put(Id,Name) -> gen_server:call(?MODULE,{put,Id,Name}).
-delete(Id) -> gen_server:call(?MODULE,{delete,Id}).
-group(Name,Ids) -> gen_server:call(?MODULE,{group,Name,Ids}).
-delete_group(Name) -> gen_server:call(?MODULE,{delete_group,Name}).
-resolve(Selection) -> gen_server:call(?MODULE,{resolve,Selection}).
 link(Link) -> gen_server:cast(?MODULE,{link,Link}).
 kicked(Session,Device) -> gen_server:cast(?MODULE,{kicked,Session,Device}).
 rename_session(Session,Name) -> gen_server:call(?MODULE,{rename_session,Session,Name}).
@@ -26,23 +23,26 @@ forget_session(Session) -> gen_server:call(?MODULE,{forget_session,Session}).
 forgotten(Session) -> forgotten(Session,ba_settings:get(contacts,#{})).
 forgotten(Session,S) -> maps:is_key(Session,maps:get(forgotten_sessions,S,#{})).
 init([]) ->
-    S=sessions_from_groups(ba_settings:get(contacts,#{contacts => #{},groups => #{}})),
+    S=prune(migrate(ba_settings:get(contacts,#{}))),
     ok=ba_settings:put(contacts,S),{ok,S}.
-%% Earlier versions kept each Session as a group named after it; those become Session entries.
-sessions_from_groups(#{groups := Groups}=S) ->
-    Links=maps:get(session_groups,S,#{}),Sessions=maps:get(sessions,S,#{}),
-    Moved=maps:fold(fun(Session,Group,Acc) ->
+%% Earlier versions kept saved Devices and groups (once also each Session as a
+%% group named after it). Session groups become Session entries and saved
+%% Device names become the name cache; the lists themselves are dropped.
+migrate(S0) ->
+    Groups=maps:get(groups,S0,#{}),Links=maps:get(session_groups,S0,#{}),
+    Sessions=maps:fold(fun(Session,Group,Acc) ->
         case maps:is_key(Session,Acc) of
             true -> Acc;
             false -> Acc#{Session => #{name => Group,link => null,devices => maps:from_keys(maps:get(Group,Groups,[]),member)}}
-        end end,Sessions,Links),
-    (maps:remove(session_groups,S))#{groups := maps:without(maps:values(Links),Groups),sessions => Moved}.
-handle_call(list,_,S) -> {reply,maps:with([contacts,groups,sessions],S),S};
+        end end,maps:get(sessions,S0,#{}),Links),
+    Names=maps:merge(maps:get(contacts,S0,#{}),maps:get(names,S0,#{})),
+    (maps:without([contacts,groups,session_groups,auto_names],S0))#{sessions => Sessions,names => Names}.
+handle_call(list,_,S) -> {reply,maps:with([sessions,names],S),S};
 handle_call({forget_session,Session},_,S) ->
     Sessions=maps:get(sessions,S,#{}),
     case maps:is_key(Session,Sessions) of
         true -> Forgotten=maps:get(forgotten_sessions,S,#{}),
-            Next=S#{sessions := maps:remove(Session,Sessions),forgotten_sessions => Forgotten#{Session => true}},
+            Next=prune(S#{sessions := maps:remove(Session,Sessions),forgotten_sessions => Forgotten#{Session => true}}),
             ok=ba_settings:put(contacts,Next),{reply,ok,Next};
         false -> {reply,{error,unknown_session},S}
     end;
@@ -51,35 +51,11 @@ handle_call({rename_session,Session,Name},_,S) ->
     case maps:find(Session,Sessions) of
         {ok,E} -> case label(Name) of
             true -> Next=S#{sessions := Sessions#{Session => E#{name := Name}}},ok=ba_settings:put(contacts,Next),{reply,ok,Next};
-            false -> {reply,{error,invalid_contact_or_group},S}
+            false -> {reply,{error,invalid_session_name},S}
         end;
         error -> {reply,{error,unknown_session},S}
     end;
-handle_call({resolve,Selection},_,#{contacts := Contacts,groups := Groups}=S) ->
-    Result = try
-        Ids = case Selection of {group,Name} -> maps:get(Name,Groups);L when is_list(L) -> L end,
-        true = length(Ids)>0 andalso length(Ids)=<15,
-        true = lists:usort(Ids)=:=lists:sort(Ids),
-        true = lists:all(fun(Id) -> maps:is_key(Id,Contacts) end,Ids),{ok,Ids}
-    catch _:_ -> {error,invalid_contact_selection} end,
-    {reply,Result,S};
-handle_call(Command,_,S) ->
-    try update(Command,S) of
-        Next -> ok=ba_settings:put(contacts,Next),{reply,ok,Next}
-    catch error:{badmatch,false} -> {reply,{error,invalid_contact_or_group},S};
-          error:{badkey,_} -> {reply,{error,unknown_contact},S};
-          error:function_clause -> {reply,{error,invalid_contact_or_group},S}
-    end.
-update({put,Id,Name},#{contacts := Contacts}=S) ->
-    true = ba_hex:valid(Id,64),true = contact_label(Name),
-    (manual_name(Id,S))#{contacts := Contacts#{Id => Name}};
-update({delete,Id},#{contacts := Contacts,groups := Groups}=S) ->
-    S#{contacts := maps:remove(Id,Contacts),groups := maps:map(fun(_,Ids) -> lists:delete(Id,Ids) end,Groups)};
-update({group,Name,Ids},#{contacts := Contacts,groups := Groups}=S) ->
-    true = label(Name),true = is_list(Ids) andalso length(Ids)=<15,
-    true = lists:usort(Ids)=:=lists:sort(Ids),
-    true = lists:all(fun(Id) -> maps:is_key(Id,Contacts) end,Ids),S#{groups := Groups#{Name => Ids}};
-update({delete_group,Name},#{groups := Groups}=S) -> S#{groups := maps:remove(Name,Groups)}.
+handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 label(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<128 -> is_list(unicode:characters_to_list(B));
 label(_) -> false.
 handle_cast({observe,Session,Name,Ids},S) ->
@@ -88,8 +64,7 @@ handle_cast({observe,Session,Name,Ids},S) ->
         true=not forgotten(Session,S),
         true=is_list(Ids) andalso length(Ids)=<32,
         true=lists:all(fun(Id) -> ba_hex:valid(Id,64) end,Ids),
-        Collected=lists:foldl(fun(Id,Acc) -> observed_name(Id,binary:part(Id,0,12),Acc) end,S,lists:usort(Ids)),
-        persist(seen(Session,Name,Ids,Collected),S)
+        persist(seen(Session,Name,Ids,S),S)
     catch error:{badmatch,false} -> {noreply,S} end;
 %% The first link known for a Session is kept: it is the Session's permanent invitation.
 handle_cast({link,Link},S) ->
@@ -108,27 +83,13 @@ handle_cast({kicked,Session,Device},S) ->
         error -> {noreply,S}
     end;
 handle_cast({observe_name,Id,Name},S) ->
-    case ba_hex:valid(Id,64) andalso contact_label(Name) of
-        true -> persist(observed_name(Id,Name,S),S);
+    case ba_hex:valid(Id,64) andalso name_label(Name) of
+        true -> persist(S#{names := (maps:get(names,S))#{Id => Name}},S);
         false -> {noreply,S}
     end;
 handle_cast(_,S) -> {noreply,S}.
 persist(S,S) -> {noreply,S};
 persist(Next,_) -> ok=ba_settings:put(contacts,Next),{noreply,Next}.
-manual_name(Id,S) ->
-    case maps:find(auto_names,S) of
-        {ok,Names} -> S#{auto_names := maps:remove(Id,Names)};
-        error -> S
-    end.
-observed_name(Id,Name,#{contacts := Contacts}=S) ->
-    Auto=maps:get(auto_names,S,#{}),Fallback=binary:part(Id,0,12),
-    case maps:find(Id,Contacts) of
-        error -> S#{contacts := Contacts#{Id => Name},auto_names => Auto#{Id => Name}};
-        {ok,Old} -> case maps:get(Id,Auto,undefined)=:=Old of
-            true when Name=/=Fallback -> S#{contacts := Contacts#{Id => Name},auto_names => Auto#{Id => Name}};
-            _ -> S
-        end
-    end.
 %% Devices are added, never removed; one seen again as a member is a member again.
 seen(Session,Name,Ids,S) ->
     Sessions=maps:get(sessions,S,#{}),
@@ -137,6 +98,10 @@ seen(Session,Name,Ids,S) ->
     S#{sessions => Sessions#{Session => E#{devices := D,last => now_s()}}}.
 %% When this Device last took part, for listing Sessions most recent first.
 now_s() -> erlang:system_time(second).
-contact_label(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<256 -> is_list(unicode:characters_to_list(B));
-contact_label(_) -> false.
+name_label(B) when is_binary(B),byte_size(B)>0,byte_size(B)=<256 -> is_list(unicode:characters_to_list(B));
+name_label(_) -> false.
+%% A name is kept only while some remembered Session lists that Device.
+prune(#{sessions := Sessions,names := Names}=S) ->
+    Seen=lists:foldl(fun(#{devices := D},Acc) -> maps:merge(Acc,D) end,#{},maps:values(Sessions)),
+    S#{names := maps:with(maps:keys(Seen),Names)}.
 handle_info(_,S) -> {noreply,S}.

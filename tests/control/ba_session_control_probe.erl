@@ -76,9 +76,6 @@ command(#{<<"op">> := <<"create_session">>,<<"name">> := Name,<<"desks">> := URL
     ensure_started(),result(ba_session:create(Name,URLs,undefined));
 command(#{<<"op">> := <<"join_session">>,<<"invitation">> := Link},_,_) ->
     ensure_started(),result(ba_session:join(Link));
-command(#{<<"op">> := <<"invite_session">>,<<"selection">> := Sel},_,_) ->
-    ensure_started(),Selection = case Sel of #{<<"group">> := G} -> {group,G};L -> L end,
-    result(ba_session:invite(Selection,3600));
 command(#{<<"op">> := <<"leave_session">>},_,_) -> ensure_started(),result(ba_session:leave());
 command(#{<<"op">> := <<"end_session">>},_,_) -> ensure_started(),result(ba_session:end_session());
 command(#{<<"op">> := <<"session_status">>},_,_) -> ensure_started(),ba_session:status();
@@ -110,15 +107,6 @@ command(#{<<"op">> := <<"saved_sessions">>},_,_) ->
     #{return_link => ba_device_store:load(session_connection,undefined)=/=undefined,
       sessions => maps:keys(ba_device_store:load(saved_sessions,#{}))};
 command(#{<<"op">> := <<"crash_session">>},_,_) -> exit(whereis(ba_session_membership),kill),#{ok => true};
-command(#{<<"op">> := <<"list_contacts">>},_,_) -> ensure_started(),ba_contacts:list();
-command(#{<<"op">> := <<"put_contact">>,<<"id">> := Id,<<"name">> := Name},_,_) ->
-    ensure_started(),result(ba_contacts:put(Id,Name));
-command(#{<<"op">> := <<"delete_contact">>,<<"id">> := Id},_,_) ->
-    ensure_started(),result(ba_contacts:delete(Id));
-command(#{<<"op">> := <<"group_contacts">>,<<"name">> := Name,<<"ids">> := Ids},_,_) ->
-    ensure_started(),result(ba_contacts:group(Name,Ids));
-command(#{<<"op">> := <<"delete_group">>,<<"name">> := Name},_,_) ->
-    ensure_started(),result(ba_contacts:delete_group(Name));
 command(#{<<"op">> := <<"invite">>},_,_) -> result(ba_session_membership:invite(3600));
 command(#{<<"op">> := <<"grant">>,<<"peer">> := Peer,<<"permissions">> := Ps},_,_) ->
     result(ba_session_membership:grant(Peer,Ps));

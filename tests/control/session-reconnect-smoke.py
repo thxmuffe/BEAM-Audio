@@ -71,14 +71,14 @@ try:
         assert restored['session'] == old['session']
         assert restored['membership'] == old['membership']
         assert member.request('start_app')['connection']['state'] == 'joined'
-        # A persisted Passport cannot bypass removal while the app is closed.
+        # Kick is not Ban: a Device kicked while its app is closed returns
+        # through its saved invitation on restart.
         assert member.request('disconnect_app')['ok']
         member.close()
         assert owner.request('revoke', peer=member.identity['id'])['ok']
         member = runtime('member', seed)
         member.request('start_app')
-        control.wait(member, lambda s: s['membership']['state'] == 'revoked')
-        assert member.request('start_app')['connection']['state'] == 'revoked'
+        control.wait(member, lambda s: s['membership']['state'] == 'authorized')
         # An explicit Leave differs from closing the app: it clears reconnect intent.
         assert member.request('leave_session')['ok']
         member.close()
@@ -95,7 +95,7 @@ try:
             assert restarted['state'] in ('joined', 'rejoining'), restarted
             assert restarted['name'] == 'Test gathering' and restarted['session'] == old['session']
             owner.close()
-        print('PASS: OTP immediately restores participant from its saved link and policy; same Session; private storage; revocation still enforced; explicit Leave clears intent; grant holder restart returns to the same Session; no UI or audio')
+        print('PASS: OTP immediately restores participant from its saved link and policy; same Session; private storage; a kicked Device returns by its link; explicit Leave clears intent; grant holder restart returns to the same Session; no UI or audio')
 finally:
     for r in runtimes:
         r.close()

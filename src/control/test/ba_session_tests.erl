@@ -23,6 +23,7 @@ session_test_() ->
       fun leave_and_resume_owner/0,
       fun response_time_selection_survives_rejoin_and_ignores_adjustments_when_fixed/0,
       fun ending_needs_its_own_privilege/0,
+      fun kick_is_not_ban/0,
       fun bridge_json_protocol/0,
       fun owner_name_in_connection/0,
       fun crash_notice_does_not_block_supervision/0]}.
@@ -101,29 +102,22 @@ idle_and_lifecycle() ->
     ?assertEqual(<<"Living Room Jam">>, maps:get(name, Status)),
     ?assertEqual(authorized, maps:get(state, Status)),
     ?assertEqual({error, already_in_session}, ba_session:create(<<"Another">>,[URL],undefined)),
-    FriendId = binary:copy(<<"1">>, 64),
-    ok = ba_contacts:put(FriendId, <<"Alice">>),
-    {ok, Links} = ba_session:invite([FriendId], 3600),
-    ?assertEqual(1, length(Links)),
-    [#{invitation := Link, device := FriendId}] = Links,
+    {ok, Link} = ba_session_membership:invite(null),
     ?assert(is_binary(Link)),
     ?assertEqual(ok, ba_session:end_session()),
     ?assertEqual(#{state => idle}, ba_session:status()).
 
 bridge_json_protocol() ->
-    Id = binary:copy(<<"3">>, 64),
     %% The bridge takes the page's commands (ba_device_api:client_methods/0) and refuses the rest.
-    Refused = json:decode(ba_bridge:request(json:encode(#{method => <<"list_contacts">>, request_id => <<"r0">>}))),
-    ?assertEqual(<<"Unsupported command.">>, maps:get(<<"error">>, Refused)),
-    ?assertEqual(<<"r0">>, maps:get(<<"request_id">>, Refused)),
-    PutReq = json:encode(#{method => <<"save_contact">>, value => Id, name => <<"Charlie">>}),
-    PutRes = json:decode(ba_bridge:request(PutReq)),
-    ?assertEqual(null, maps:get(<<"error">>, PutRes)),
-    ListReq = json:encode(#{method => <<"snapshot">>}),
-    ListRes = json:decode(ba_bridge:request(ListReq)),
+    %% Saved Devices and groups no longer exist; their old commands are refused.
+    [begin
+        Refused = json:decode(ba_bridge:request(json:encode(#{method => M, request_id => <<"r0">>}))),
+        ?assertEqual(<<"Unsupported command.">>, maps:get(<<"error">>, Refused)),
+        ?assertEqual(<<"r0">>, maps:get(<<"request_id">>, Refused))
+     end || M <- [<<"list_contacts">>,<<"save_contact">>,<<"put_group">>]],
+    ListRes = json:decode(ba_bridge:request(json:encode(#{method => <<"snapshot">>}))),
     ?assertEqual(null, maps:get(<<"error">>, ListRes)),
-    Result = maps:get(<<"contacts">>, ListRes),
-    ?assertEqual(<<"Charlie">>, maps:get(Id, maps:get(<<"contacts">>, Result))),
+    ?assertEqual([<<"names">>,<<"sessions">>], lists:sort(maps:keys(maps:get(<<"contacts">>, ListRes)))),
     SnapReq = json:encode(#{method => <<"snapshot">>}),
     SnapRes = json:decode(ba_bridge:request(SnapReq)),
     ?assertEqual(<<"session_control">>, maps:get(<<"profile">>, SnapRes)),
@@ -139,6 +133,19 @@ ending_needs_its_own_privilege() ->
     %% A grant holder's own request needs nobody else's approval.
     ok=ba_session_membership:request_privilege(End),
     ok=ba_session:end_session(),?assertEqual(#{state => idle},ba_session:status()).
+%% Kick drops the Device's privileges; it is not a Ban, so the policy's
+%% removed list stays empty and the invitation link still admits it.
+kick_is_not_ban() ->
+    ok=ba_session:create(<<"Kick">>,[<<"ws://127.0.0.1:4000/relay/v1">>],undefined),
+    Peer=binary:copy(<<"7">>,64),
+    ok=ba_session_membership:grant_privilege(Peer,ba_session_privileges:wire(on_air)),
+    {ok,#{policy := #{members := Before}}}=ba_session_membership:current(),
+    ?assert(maps:is_key(Peer,Before)),
+    ok=ba_session_membership:revoke(Peer),
+    {ok,#{policy := #{members := After,removed := Removed}}}=ba_session_membership:current(),
+    ?assertNot(maps:is_key(Peer,After)),
+    ?assertEqual([],Removed),
+    ok=ba_session:end_session().
 leave_and_resume_owner() ->
     ok=ba_session:create(<<"Remember ownership">>,[<<"ws://127.0.0.1:4000/relay/v1">>],undefined),
     Before=ba_session:status(),{ok,Link}=ba_session_membership:invite(null),

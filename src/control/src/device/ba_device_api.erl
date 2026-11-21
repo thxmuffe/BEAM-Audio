@@ -5,15 +5,13 @@
 %% command arguments and their validation belong to the Device API below.
 methods() -> lists:usort(client_methods()++[
     <<"monitor">>,<<"readiness">>,<<"configuration">>,<<"capabilities">>,
-    <<"list_contacts">>,<<"contact_from_invitation">>,<<"put_contact">>,
     <<"network_changed">>,<<"audio_lifecycle">>]).
 %% The one list of commands an app window may send (web, Mac, iOS, Windows).
 client_methods() ->
     [<<"audio_diagnostics">>,<<"answer_consent">>,<<"playback_step">>,<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_session">>,<<"join_session">>,<<"leave_session">>,
      <<"end_session">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"preset">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
-     <<"ui_get">>,<<"ui_set">>,<<"microphone_live">>,<<"speaker_mute">>,<<"undo">>,<<"redo">>,<<"send">>,<<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
-     <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
-     <<"save_contact">>,<<"delete_contact">>,<<"put_group">>,<<"delete_group">>].
+     <<"ui_get">>,<<"ui_set">>,<<"microphone_live">>,<<"speaker_mute">>,<<"undo">>,<<"redo">>,<<"send">>,<<"offset">>,<<"inspect">>,<<"invitation">>,
+     <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>].
 request(Request) when is_map(Request) ->
     %% The owner's local commands are this Device's user deciding; remote
     %% requests are decided by ba_device_request instead.
@@ -128,23 +126,6 @@ command(#{<<"method">> := <<"playback_step">>,<<"device">> := Peer,<<"direction"
 command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_response_time:set(Offset);
 command(#{<<"method">> := <<"invitation">>}) -> remember_link(ba_session_membership:invite(null));
 command(#{<<"method">> := <<"snapshot">>}) -> null;
-command(#{<<"method">> := <<"list_contacts">>}) ->
-    {ok, ba_contacts:list()};
-command(#{<<"method">> := <<"save_contact">>,<<"value">> := Value,<<"name">> := Name}) ->
-    case ba_hex:valid(Value,64) of
-        true -> ba_contacts:put(Value,Name);
-        false -> {_,I}=ba_session_passport:parse_invitation(Value),ba_contacts:put(maps:get(<<"authority">>,I),Name)
-    end;
-command(#{<<"method">> := <<"contact_from_invitation">>,<<"invitation">> := Link,<<"name">> := Name}) ->
-    {_,I}=ba_session_passport:parse_invitation(Link),ba_contacts:put(maps:get(<<"authority">>,I),Name);
-command(#{<<"method">> := <<"put_contact">>, <<"id">> := Id, <<"name">> := Name}) ->
-    ba_contacts:put(Id, Name);
-command(#{<<"method">> := <<"delete_contact">>, <<"id">> := Id}) ->
-    ba_contacts:delete(Id);
-command(#{<<"method">> := <<"put_group">>, <<"name">> := Name, <<"ids">> := Ids}) ->
-    ba_contacts:group(Name, Ids);
-command(#{<<"method">> := <<"delete_group">>, <<"name">> := Name}) ->
-    ba_contacts:delete_group(Name);
 %% A Session exists once its invitation link exists: creating one makes its link.
 command(#{<<"method">> := <<"create_session">>, <<"name">> := Name, <<"desks">> := Desks}=C) ->
     case ba_session:create(Name, Desks, maps:get(<<"nonce">>, C, undefined)) of
@@ -174,13 +155,6 @@ command(#{<<"method">> := <<"forget_saved_session">>,<<"entry">> := Session}) ->
     end;
 command(#{<<"method">> := <<"rename_saved_session">>,<<"entry">> := Session,<<"name">> := Name}) ->
     ba_contacts:rename_session(Session,Name);
-command(#{<<"method">> := <<"invite">>, <<"selection">> := Sel} = Req) ->
-    TTL = maps:get(<<"ttl">>, Req, null),
-    Selection = case Sel of
-        #{<<"group">> := G} -> {group, G};
-        Ids when is_list(Ids) -> Ids
-    end,
-    ba_session:invite(Selection, TTL);
 %% A kicked Device stays in this Device's memory of the Session, marked kicked.
 command(#{<<"method">> := <<"remove_device">>,<<"device">> := Device}) ->
     case ba_session_membership:revoke(Device) of
