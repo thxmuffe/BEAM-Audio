@@ -5,7 +5,7 @@
 -behaviour(gen_server).
 -export([start_link/0,snapshot/0,subscribe/3,stop/0,stop/1,
          playback/2,set_contract/5,clear_contract/3,register_source/1,
-         suspend/0,resume/0,network_changed/0]).
+         suspend/0,resume/0,network_changed/0,broadcast_incarnation/0]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,format_status/1]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 snapshot() -> call(snapshot).
@@ -18,6 +18,11 @@ clear_contract(Direction,Peer,Source) -> call({clear_contract,Direction,Peer,Sou
 register_source(Pid) -> call({register,Pid}).
 suspend() -> call(suspend).
 resume() -> call(resume).
+broadcast_incarnation() ->
+    case ba_session_scope:whereis(?MODULE) of
+        undefined -> undefined;
+        Pid -> gen_server:call(Pid,broadcast_incarnation)
+    end.
 network_changed() -> gen_server:cast(ba_session_scope:ref(?MODULE),network_changed).
 call(Request) ->
     case ba_audio_sup:ensure_started() of ok -> gen_server:call(ba_session_scope:ref(?MODULE),Request,10000);Error -> Error end.
@@ -29,6 +34,12 @@ init([]) ->
           providers => #{},publication_versions => #{},contracts => #{},control => Control,
           suspended => false,resume_after => undefined,rejected => 0,link_due => now_ms()+10000}}.
 waiting(I) -> #{intent => I,state => waiting_for_source,media => undefined,retry_at => now_ms()}.
+handle_call(broadcast_incarnation,_,#{sources := Sources,suspended := Suspended}=S) ->
+    Inc=case {Suspended,maps:get(<<"default-output">>,Sources,#{})} of
+        {false,#{offer := #{paused := false,incarnation := Active}}} -> Active;
+        _ -> undefined
+    end,
+    {reply,Inc,S};
 handle_call(snapshot,_,S) ->
     View = maps:map(fun(_,R) ->
         I = maps:get(intent,R),(maps:merge(I,maps:with([state,source_paused,error,mix_ready],R)))#{transport => transport_status(R)}

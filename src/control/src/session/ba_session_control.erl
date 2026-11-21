@@ -2,7 +2,7 @@
 -module(ba_session_control).
 -behaviour(gen_server).
 -export([start_link/0, snapshot/0, connect/1, exclude/1, read_status/1,read_capabilities/1,read_capabilities/2,read_inspection/2]).
--export([session_request/2,introduce/1,audio_message/3,chat_message/3,audio_context/1]).
+-export([session_request/2,send_session_request/2,introduce/1,audio_message/3,chat_message/3,audio_context/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, format_status/1]).
 -define(BEHIND_MS,2000).
 
@@ -16,6 +16,8 @@ introduce(Peer) -> gen_server:cast(ba_session_scope:ref(?MODULE),{introduce,Peer
 %% Signed Session requests from membership to the Devices that execute them.
 %% Asynchronous: membership is called by this process for snapshots.
 session_request(Peers,Payload) -> gen_server:cast(ba_session_scope:ref(?MODULE),{session_request,Peers,Payload}).
+send_session_request(Peer,Payload) ->
+    gen_server:call(ba_session_scope:ref(?MODULE),{session_request,Peer,Payload}).
 
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 snapshot() -> gen_server:call(ba_session_scope:ref(?MODULE),snapshot).
@@ -83,6 +85,8 @@ handle_call({audio_message,Peer,Id,Payload},{Owner,_},S) ->
                 {error,R,_} -> {reply,{error,R},S}
             end
     end;
+handle_call({session_request,Peer,Payload},_,S) ->
+    {Reply,Next}=send_session_request(Peer,Payload,S),{reply,Reply,Next};
 handle_call({connect,Peer},_,S) ->
     case ba_app_session:excluded(Peer) of true -> {reply,{error,peer_excluded},S};false -> connect_peer(Peer,S) end;
 
@@ -102,17 +106,21 @@ handle_cast({introduce,Peer},S) ->
     {_,_,Next} = connect_peer(Peer,S),{noreply,Next};
 handle_cast({session_request,Peers,Payload},S) ->
     {noreply,lists:foldl(fun(Peer,Acc) ->
-        Id = binary:encode_hex(crypto:strong_rand_bytes(16)),
-        case ba_session_control_protocol:session_message(Peer,Id,Payload,now_ms(),maps:get(protocol,Acc)) of
-            {ok,Packet,Protocol} ->
-                case send(Peer,Packet,Acc) of
-                    ok -> Acc#{protocol := Protocol};
-                    _ -> ba_diagnostics:count(session_request_unsent,Acc#{protocol := Protocol})
-                end;
-            {error,_,_} -> ba_diagnostics:count(session_request_invalid,Acc)
-        end
+        {_,Next}=send_session_request(Peer,Payload,Acc),Next
     end,S,Peers)};
 handle_cast(_,S) -> {noreply,S}.
+
+send_session_request(Peer,Payload,S) ->
+    Id = binary:encode_hex(crypto:strong_rand_bytes(16)),
+    case ba_session_control_protocol:session_message(Peer,Id,Payload,now_ms(),maps:get(protocol,S)) of
+        {ok,Packet,Protocol} ->
+            Next=S#{protocol := Protocol},
+            case send(Peer,Packet,S) of
+                ok -> {ok,Next};
+                Error -> {Error,ba_diagnostics:count(session_request_unsent,Next)}
+            end;
+        {error,Reason,_} -> {{error,Reason},ba_diagnostics:count(session_request_invalid,S)}
+    end.
 
 handle_info({membership_authorized,View},S) ->
     Config = maps:with([policy,routes,envelope],View),
@@ -247,6 +255,9 @@ event(_,{audio,Id,Payload,Context},S) ->
         {error,overloaded} -> ba_diagnostics:count(audio_owner_overloaded,S);
         _ -> S
     end;
+event(_,{session,_,#{<<"kind">> := Kind}=Payload,Context},S)
+        when Kind=:= <<"playback_step">>;Kind=:= <<"playback_result">> ->
+    ba_playback_control:receive_request(Payload,Context),S;
 event(Peer,{session,_,Payload,_},S) ->
     gen_server:cast(ba_session_scope:ref(ba_session_membership),{session_request,Peer,Payload}),S;
 event(Peer,{link_replaced,Old},S) ->

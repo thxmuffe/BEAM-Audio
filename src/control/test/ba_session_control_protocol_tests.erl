@@ -44,6 +44,19 @@ engine_endpoint_roundtrip_test() ->
     [?assertException(error,_,ba_audio_stream_protocol:validate(P#{<<"ice">> := Bad}))
         || Bad <- [null,<<>>,<<"a=candidate:only">>,binary:copy(<<"a=ice-ufrag:x a=ice-pwd:y ">>,200)]].
 
+playback_request_is_addressed_authorized_and_single_delivery_test() ->
+    {A,B,_,_,SA,SB}=connected(),
+    Id=binary:copy(<<"E">>,32),
+    Request=#{<<"kind">> => <<"playback_step">>,<<"direction">> => <<"next">>,<<"incarnation">> => Id},
+    {ok,Packet,_}=p(session_message,[B,Id,Request,5,SA]),
+    ?assertMatch({error,_,SB},p(receive_packet,[A,Packet,6,SB])),
+    Policy=maps:get(policy,SB),
+    Authorized=SB#{policy := Policy#{members := #{A => [stream_subscribe]}}},
+    ?assertMatch({error,_,Authorized},p(receive_packet,[A,Packet,31000,Authorized])),
+    {ok,[],[{session,Id,Request,#{peer := A}}],Next}=p(receive_packet,[A,Packet,6,Authorized]),
+    ?assertMatch({error,_,Next},p(receive_packet,[A,Packet,7,Next])),
+    ?assertMatch({error,_,_},p(session_message,[B,Id,Request#{<<"direction">> := <<"shell">>},8,SA])).
+
 status_roundtrip_and_replay_test() ->
     {A,B,_,_,SA,SB} = connected(),
     {ok,Request,A1} = p(request_status,[B,5,SA]),

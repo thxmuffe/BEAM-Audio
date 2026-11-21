@@ -216,7 +216,12 @@ dispatch(Peer,#{<<"op">> := <<"hello">>,<<"request">> := Request},Now,S) ->
     {Packet,Next} = outgoing(Peer,<<"ready">>,Request,#{},Now,S),
     {ok,[Packet],[],Next};
 dispatch(_,#{<<"op">> := <<"ready">>},_,S) -> {ok,[],[],S};
-dispatch(Peer, #{<<"op">> := Op,<<"request">> := Request,<<"payload">> := Payload}, Now, S) ->
+dispatch(Peer, #{<<"op">> := Op,<<"request">> := Request,<<"payload">> := Payload,<<"sent">> := Sent}, Now, S) ->
+    case {Op,Payload} of
+        {<<"session.request">>,#{<<"kind">> := <<"playback_step">>}} ->
+            true=abs(wall(Now)-Sent)=<30000;
+        _ -> ok
+    end,
     case ba_device_request:authorize(Op,Payload,held(Peer,S)) of
         ok -> authorized(Peer,Op,Request,Payload,Now,S);
         {error,forbidden} -> forbidden(Peer,Op,Request,Payload,Now,S)
@@ -357,6 +362,8 @@ payload(<<"chat.message">>,P) ->
     true=is_list(unicode:characters_to_list(Text));
 payload(<<"session.request">>,#{<<"kind">> := Kind}=P) ->
     case Kind of
+        <<"playback_step">> -> ba_playback_control:validate(P);
+        <<"playback_result">> -> ba_playback_control:validate(P);
         %% A gossiped note (ba_session_gossip checks its signature).
         <<"note">> ->
             ba_session_passport:exact(P,[<<"kind">>,<<"id">>,<<"packet">>]),true = ba_hex:valid(maps:get(<<"id">>,P),32),

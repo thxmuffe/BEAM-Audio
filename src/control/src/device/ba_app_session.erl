@@ -85,10 +85,14 @@ safe(F,Default) -> try F() catch exit:_ -> Default end.
 %% adapter callback; native hosts may add their own (iOS sharing picker).
 unavailable_capabilities() ->
     Adapter=ba_settings:app(audio_capture_adapter,undefined),
-    case is_atom(Adapter) andalso Adapter=/=undefined andalso code:ensure_loaded(Adapter)=:={module,Adapter}
+    Audio=case is_atom(Adapter) andalso Adapter=/=undefined andalso code:ensure_loaded(Adapter)=:={module,Adapter}
             andalso erlang:function_exported(Adapter,unavailable,0) of
         true -> Adapter:unavailable();
         false -> #{}
+    end,
+    case {os:type(),maps:is_key(<<"broadcast">>,Audio)} of
+        {{unix,darwin},false} -> Audio;
+        _ -> Audio#{<<"playback_control">> => <<"Playback control is available when broadcasting Music on macOS.">>}
     end.
 device_privileges() ->
     case ba_session_membership:current() of

@@ -25,6 +25,24 @@ ask_requests_wait_for_this_devices_answer_test() -> fixture(fun(_) ->
     ?assertEqual({error,waiting_for_approval},ba_device_config:request(Key,<<"PEER">>))
 end).
 
+playback_approval_consumes_one_action_and_requires_its_own_policy_test() -> fixture(fun(_) ->
+    Key=playback_control,Peer= <<"PEER">>,Id= <<"ACTION">>,
+    Pending=#{id => Id,direction => <<"next">>,deadline => erlang:monotonic_time(millisecond)+30000},
+    ok=ba_device_config:auto_accept(true,#{}),
+    ?assertEqual({error,waiting_for_approval},ba_device_request:approve(Key,Peer,Pending)),
+    ?assertMatch([#{id := Id,key := Key,from := Peer,direction := <<"next">>}],
+        maps:get(requests,ba_device_config:snapshot())),
+    ?assertMatch({ok,#{id := Id,direction := <<"next">>}},ba_device_config:answer_action(Key,Id)),
+    ?assertEqual({error,request_expired},ba_device_config:answer_action(Key,Id)),
+    ?assertEqual(ask,ba_device_config:policy(Key)),
+    ?assertEqual({error,waiting_for_approval},ba_device_request:approve(Key,Peer,Pending)),
+    ok=ba_device_config:policy(Key,no,#{}),
+    ?assertEqual({error,request_expired},ba_device_config:answer_action(Key,Id)),
+    ?assertEqual({error,refused},ba_device_request:approve(Key,Peer,Pending)),
+    ok=ba_device_config:policy(Key,always,#{}),
+    ?assertEqual(ok,ba_device_request:approve(Key,Peer,Pending))
+end).
+
 shared_approval_pipeline_test() -> fixture(fun(_) ->
     Keys=[speaker,on_air_requests,moderator_requests],
     ok=ba_device_config:auto_accept(false,#{}),

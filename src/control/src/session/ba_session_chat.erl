@@ -3,11 +3,12 @@
 %% privilege changes. Info entries are never sent; every Device derives its own.
 -module(ba_session_chat).
 -behaviour(gen_server).
--export([start_link/0,send/1,history/0]).
+-export([start_link/0,send/1,history/0,notice/3]).
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
 start_link() -> gen_server:start_link(ba_session_scope:registration(?MODULE),?MODULE,[],[]).
 send(Text) -> gen_server:call(ba_session_scope:ref(?MODULE),{send,Text}).
 history() -> gen_server:call(ba_session_scope:ref(?MODULE),history).
+notice(Topic,Subject,Text) -> gen_server:cast(ba_session_scope:ref(?MODULE),{notice,Topic,Subject,Text}).
 init([]) ->
     process_flag(trap_exit,true),
     %% One shared handler dispatches notices to the reporting Session.
@@ -21,6 +22,8 @@ handle_call(history,_,#{messages := M}=S) -> {reply,lists:reverse(M),S};
 handle_call({send,Text},_,S) when is_binary(Text),byte_size(Text)>0,byte_size(Text)=<4096 ->
     {Reply,M}=publish(Text,maps:get(messages,S)),{reply,Reply,S#{messages := M}};
 handle_call(_,_,S) -> {reply,{error,invalid_text},S}.
+handle_cast({notice,Topic,Subject,Text},S) ->
+    {noreply,info(Subject,Text,#{topic => Topic},S)};
 handle_cast(_,S) -> {noreply,S}.
 handle_info(resync,S) ->
     case ba_session_scope:whereis(ba_session_membership) of undefined -> ok;_ -> ba_session_membership:resend_chat() end,
@@ -66,10 +69,11 @@ named() ->
      {grant,<<"can now give and take privileges">>,<<"can no longer give and take privileges">>},
      {end_session,<<"can now moderate">>,<<"can no longer moderate">>}].
 %% The text completes a sentence that starts with the subject Device's name.
-info(Subject,Text,#{messages := M}=S) ->
+info(Subject,Text,S) -> info(Subject,Text,#{},S).
+info(Subject,Text,Fields,#{messages := M}=S) ->
     Entry=#{id => binary:encode_hex(crypto:strong_rand_bytes(16)),sender => Subject,text => Text,
             time => erlang:system_time(second),level => info},
-    S#{messages := lists:sublist([Entry|M],200)}.
+    S#{messages := lists:sublist([maps:merge(Fields,Entry)|M],200)}.
 %% Not part of the user-visible history; OTP Logger at debug level only.
 debug(Subject,Text,S) ->
     logger:debug(#{event => session_notice,device => Subject,text => Text}),S.

@@ -9,6 +9,7 @@ init([]) ->
          [#{id => ba_session_membership,start => {ba_session_membership,start_link,[]},restart => temporary,significant => true},
           #{id => ba_device_sup,start => {ba_device_sup,start_link,[]},type => supervisor,shutdown => infinity},
           #{id => ba_session_control,start => {ba_session_control,start_link,[]}},
+          #{id => ba_playback_control,start => {ba_playback_control,start_link,[]}},
           #{id => ba_session_chat,start => {ba_session_chat,start_link,[]}},
           #{id => ba_response_time,start => {ba_response_time,start_link,[]}},
           #{id => ba_session_clock_sup,start => {ba_session_clock_sup,start_link,[]},type => supervisor,shutdown => infinity}]}}.

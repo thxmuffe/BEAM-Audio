@@ -48,12 +48,21 @@ T property(AudioObjectID object, AudioObjectPropertySelector s, AudioObjectPrope
     check(AudioObjectGetPropertyData(object, &a, 0, nullptr, &size, &value), "read audio property");
     return value;
 }
+std::vector<AudioObjectID> object_list(AudioObjectID object, AudioObjectPropertyAddress property) {
+    UInt32 size = 0;
+    check(AudioObjectGetPropertyDataSize(object, &property, 0, nullptr, &size), "size audio object list");
+    std::vector<AudioObjectID> ids(size / sizeof(AudioObjectID));
+    if (size) check(AudioObjectGetPropertyData(object, &property, 0, nullptr, &size, ids.data()), "read audio object list");
+    ids.resize(size / sizeof(AudioObjectID));
+    return ids;
+}
 
 // One running capture: a system tap, the microphone or the test tone. Several
 // run at once, each feeding its own engine slot.
 struct Capture {
     int slot = -1;
     AudioObjectID tap = kAudioObjectUnknown, aggregate = kAudioObjectUnknown, device = kAudioObjectUnknown;
+    AudioObjectID tapped_output = kAudioObjectUnknown;
     AudioDeviceIOProcID io = nullptr;
     uint64_t latency_ns = 0;  // input path before the callback sees a frame
     std::vector<float> interleaved = std::vector<float>(8192 * 2);
@@ -79,11 +88,7 @@ UInt32 device_latency(AudioObjectID device, AudioObjectPropertyScope scope) {
 // on this Mac (the app's, the CLI's, the Web Device's), whatever its path. A
 // feedback loop through the speakers is the failure this prevents.
 NSArray<NSNumber *> *engine_processes() {
-    auto a = address(kAudioHardwarePropertyProcessObjectList);
-    UInt32 size = 0;
-    check(AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, nullptr, &size), "list audio processes");
-    std::vector<AudioObjectID> processes(size / sizeof(AudioObjectID));
-    check(AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, nullptr, &size, processes.data()), "read audio processes");
+    const auto processes = object_list(kAudioObjectSystemObject, address(kAudioHardwarePropertyProcessObjectList));
     NSMutableArray<NSNumber *> *excluded = [NSMutableArray array];
     for (AudioObjectID process : processes) {
         pid_t pid = 0;
@@ -94,6 +99,21 @@ NSArray<NSNumber *> *engine_processes() {
         if (proc_name(pid, name, sizeof(name)) > 0 && !strcmp(name, "ba_audio_engine")) [excluded addObject:@(process)];
     }
     return excluded;
+}
+
+bool music_on_output(AudioObjectID output) {
+    for (AudioObjectID process : object_list(kAudioObjectSystemObject, address(kAudioHardwarePropertyProcessObjectList))) {
+        try {
+            if (!property<UInt32>(process, kAudioProcessPropertyIsRunningOutput)) continue;
+            NSString *bundle = CFBridgingRelease(property<CFStringRef>(process, kAudioProcessPropertyBundleID));
+            if (![bundle isEqualToString:@"com.apple.Music"]) continue;
+            const auto outputs = object_list(process, address(kAudioProcessPropertyDevices, kAudioObjectPropertyScopeOutput));
+            if (std::find(outputs.begin(), outputs.end(), output) != outputs.end()) return true;
+        } catch (const std::runtime_error &) {
+            // The process can end while the HAL list is being read.
+        }
+    }
+    return false;
 }
 
 OSStatus captured(AudioObjectID, const AudioTimeStamp *, const AudioBufferList *in, const AudioTimeStamp *time, AudioBufferList *,
@@ -178,6 +198,7 @@ class MacShell final : public ba::Shell {
     // Every process's output except our engines, through a private tap.
     static uint32_t start_system(Capture &c) {
         const AudioObjectID out = property<AudioObjectID>(kAudioObjectSystemObject, kAudioHardwarePropertyDefaultOutputDevice);
+        c.tapped_output = out;
         NSString *uid = CFBridgingRelease(property<CFStringRef>(out, kAudioDevicePropertyDeviceUID));
         CATapDescription *description = [[CATapDescription alloc] initExcludingProcesses:engine_processes() andDeviceUID:uid withStream:0];
         description.name = @"BEAM Audio engine capture";
@@ -287,6 +308,50 @@ class MacShell final : public ba::Shell {
         if (it == captures_.end()) return;
         release(*it->second);
         captures_.erase(it);
+    }
+
+    ba::json playback_step(bool next) override {
+        @autoreleasepool {
+            bool music_captured = false;
+            for (const auto &[slot, capture] : captures_) {
+                if (capture->tap != kAudioObjectUnknown && music_on_output(capture->tapped_output)) {
+                    music_captured = true;
+                    break;
+                }
+            }
+            if (!music_captured) return {{"status", "no_playable_track"}};
+
+            // Only fixed AppleScript commands are used. Network text never
+            // becomes AppleScript or an application identifier.
+            NSString *command = next ? @"next track" : @"previous track";
+            NSString *source = [NSString stringWithFormat:
+                @"if application \"/System/Applications/Music.app\" is not running then return {false, \"\"}\n"
+                 "with timeout of 3 seconds\n"
+                 "tell application \"/System/Applications/Music.app\"\n"
+                 "if player state is not playing then return {false, \"\"}\n"
+                 "if class of current track is URL track then return {false, \"\"}\n"
+                 "if duration of current track is less than or equal to 0 then return {false, \"\"}\n"
+                 "%@\n"
+                 "try\n"
+                 "if player state is playing then return {true, name of current track}\n"
+                 "end try\n"
+                 "return {true, \"\"}\n"
+                 "end tell\n"
+                 "end timeout", command];
+            NSDictionary *error = nil;
+            NSAppleEventDescriptor *result = [[[NSAppleScript alloc] initWithSource:source] executeAndReturnError:&error];
+            if (!result) {
+                const auto code = [error[NSAppleScriptErrorNumber] integerValue];
+                return {{"status", code == -1743 || code == -1744 ? "automation_denied" : "unavailable"}};
+            }
+            if (![[result descriptorAtIndex:1] booleanValue]) return {{"status", "no_playable_track"}};
+            ba::json response = {{"status", "done"}};
+            NSData *track = [[[result descriptorAtIndex:2] stringValue] dataUsingEncoding:NSUTF8StringEncoding];
+            if (track.length && track.length <= 512) {
+                response["track"] = std::string(static_cast<const char *>(track.bytes), track.length);
+            }
+            return response;
+        }
     }
 };
 }  // namespace

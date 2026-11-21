@@ -5,4 +5,5 @@
 <key>CFBundleName</key><string>BEAM Audio CLI Capture</string>
 <key>NSMicrophoneUsageDescription</key><string>Publish microphone audio when you explicitly enable mic for a CLI Device.</string>
 <key>NSAudioCaptureUsageDescription</key><string>Publish system output when you explicitly enable broadcast for a CLI Device.</string>
+<key>NSAppleEventsUsageDescription</key><string>Change tracks in Music when you approve playback requests while broadcasting.</string>
 </dict></plist>

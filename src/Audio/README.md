@@ -74,3 +74,9 @@ log reads through signed Session control; USB is unnecessary when control is rea
 The native speaker mixer reports its most recent block's normalization gain
 through the same observation. The CLI labels it `mix gain` in dB.
 See the CLI README for controls, field meanings and privacy/validation limits.
+
+Experimental track requests use the macOS shell's Music adapter. It checks
+that Music is actively using the output being captured and that it has a
+finite, non-URL track playing. macOS may request Automation permission.
+The command result can include the track title, which the runtime sends
+only to the Device that requested the change.

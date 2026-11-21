@@ -9,7 +9,7 @@ methods() -> lists:usort(client_methods()++[
     <<"network_changed">>,<<"audio_lifecycle">>]).
 %% The one list of commands an app window may send (web, Mac, iOS, Windows).
 client_methods() ->
-    [<<"audio_diagnostics">>,<<"answer_consent">>,<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_session">>,<<"join_session">>,<<"leave_session">>,
+    [<<"audio_diagnostics">>,<<"answer_consent">>,<<"playback_step">>,<<"rename_session">>,<<"list_sessions">>,<<"new_session">>,<<"close_session">>,<<"snapshot">>,<<"create_session">>,<<"join_session">>,<<"leave_session">>,
      <<"end_session">>,<<"capability">>,<<"policy">>,<<"auto_accept">>,<<"auto_grant">>,<<"preset">>,<<"decline_privilege">>,<<"rename_saved_session">>,<<"forget_saved_session">>,
      <<"ui_get">>,<<"ui_set">>,<<"microphone_live">>,<<"speaker_mute">>,<<"undo">>,<<"redo">>,<<"send">>,<<"offset">>,<<"inspect">>,<<"invitation">>,<<"invite">>,
      <<"request_privilege">>,<<"grant_privilege">>,<<"take_privilege">>,<<"remove_device">>,<<"exclude">>,
@@ -83,6 +83,9 @@ command(#{<<"method">> := <<"capability">>,<<"capability">> := <<"broadcast">>,<
 command(#{<<"method">> := <<"capability">>,<<"capability">> := K,<<"enabled">> := B}=R) ->
     ba_device_config:change(#{capability_key(K) => B},config_options(R));
 %% This Device's user answers a pending Ask request for one of its own uses.
+command(#{<<"method">> := <<"answer_consent">>,<<"key">> := <<"playback_control">>,<<"id">> := Id,<<"allow">> := Allow})
+        when is_boolean(Allow) ->
+    ba_playback_control:answer(Id,Allow);
 command(#{<<"method">> := <<"answer_consent">>,<<"key">> := K,<<"allow">> := Allow}=R) when is_boolean(Allow) ->
     ba_device_config:answer(capability_key(K),Allow,config_options(R));
 command(#{<<"method">> := <<"auto_accept">>,<<"enabled">> := Enabled}=R) when is_boolean(Enabled) ->
@@ -104,6 +107,7 @@ command(#{<<"method">> := <<"policy">>,<<"key">> := K,<<"value">> := V}=R) ->
         <<"on_air_requests">> -> on_air_requests;
         <<"moderator_requests">> -> moderator_requests;
         <<"location">> -> location;
+        <<"playback_control">> -> playback_control;
         <<"calibration">> -> calibration;
         <<"dsp">> -> dsp;
         _ -> capability_key(K)
@@ -119,6 +123,8 @@ command(#{<<"method">> := <<"grant_privilege">>,<<"device">> := Device,<<"privil
 command(#{<<"method">> := <<"take_privilege">>,<<"device">> := Device,<<"privilege">> := Name}) ->
     ba_session_membership:take_privilege(Device,ba_session_privileges:parse(Name));
 command(#{<<"method">> := <<"send">>,<<"text">> := Text}) -> ba_session_chat:send(Text);
+command(#{<<"method">> := <<"playback_step">>,<<"device">> := Peer,<<"direction">> := Direction,<<"incarnation">> := Inc}) ->
+    ba_playback_control:request(Peer,Direction,Inc);
 command(#{<<"method">> := <<"offset">>,<<"offset_ms">> := Offset}) -> ba_response_time:set(Offset);
 command(#{<<"method">> := <<"invitation">>}) -> remember_link(ba_session_membership:invite(null));
 command(#{<<"method">> := <<"snapshot">>}) -> null;

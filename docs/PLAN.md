@@ -1,5 +1,11 @@
 # Current plan
 
+Test experimental track requests with rebuilt Devices. Play a finite track in
+Music on the broadcasting Mac, choose **Devices → ⋯ → Next** on a listener,
+approve it in the Mac’s Requests panel, then check the result in the listener’s
+Chat. Repeat for Previous, declining a request and a stopped or replaced
+broadcast. Verify the first macOS Automation prompt in the native and Web hosts.
+
 Build sending and receiving Devices with the same BEAM Audio revision for the
 next playback check. Stream offers now advertise `engine_flac_srtp_v2` for
 setup messages carrying the sender's packet index. On-device validation of
@@ -30,6 +36,8 @@ See [PROGRESS.md](PROGRESS.md).
 Check the three native level readings on physical Devices: microphone input,
 encoded system capture and the mixed speaker output. Compare the local
 snapshot and consented Inspect for the same signal, including silence and stop.
+Check the monitor's mix gain with two broadcasters, then stop one and confirm
+that the receiving Device goes from −6.0 dB to 0.0 dB.
 
 Web startup (owner 2026-11-20): the Mac Web launcher now stops the existing
 named Web Device before starting it with rebuilt code and the same saved

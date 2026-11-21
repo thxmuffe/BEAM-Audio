@@ -2,12 +2,12 @@
 %% configuration. One serialized owner records changes from every supported client.
 -module(ba_device_config).
 -behaviour(gen_server).
--export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3,auto_accept/2,auto_grant/2,preset/2,request/2,answer/3]).
+-export([start_link/0,consent/0,snapshot/0,change/2,undo/1,redo/1,allowed/1,token/1,policy/1,policy/3,auto_accept/2,auto_grant/2,preset/2,request/2,answer/3,request_action/3,answer_action/2]).
 %% Device resources the Session may ask to use, and requests from other Devices
 %% that this Device answers. Each has a policy: always, ask (default) or no.
 %% PROTECTED uses still carry a consent flag; the others are recorded choices only.
 -define(PROTECTED,[speaker,microphone,calibrate_microphone,calibrate_speaker,dsp,inspect]).
--define(USES,[location]).
+-define(USES,[location,playback_control]).
 %% Requests for rights: on_air, and moderator rights (grant, end_session).
 -define(GRANTS,[on_air_requests,moderator_requests]).
 -define(ANSWERS,?USES++?GRANTS).
@@ -28,6 +28,8 @@ auto_grant(Enabled,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{au
 %% Device's user answers in Requests; a declined requester is not asked again
 %% until the policy changes. Never blocks the caller.
 request(Key,From) -> gen_server:call(ba_session_scope:ref(?MODULE),{request,Key,From}).
+request_action(Key,From,Action) -> gen_server:call(?MODULE,{request_action,Key,From,Action}).
+answer_action(Key,Id) -> gen_server:call(?MODULE,{answer_action,Key,Id}).
 %% The user's answer: Allow turns the use on (a normal, recorded change).
 answer(Key,Allow,Options) -> gen_server:call(ba_session_scope:ref(?MODULE),{answer,Key,Allow,Options}).
 %% A named bundle of the settings below; only `advanced` leaves them for the person to set.
@@ -117,8 +119,31 @@ public(#{states := States,cursor := C,revision := R}=S) ->
       undo_label => case C of 0 -> null;_ -> maps:get(label,lists:nth(C+1,States)) end,
       redo_label => case C+1<length(States) of true -> maps:get(label,lists:nth(C+2,States));false -> null end,
       cursor => C,entries => [E#{selected => I=:=C} || {I,E} <- lists:zip(lists:seq(0,length(States)-1),States)],
-      requests => [#{key => K,from => F} || {K,Fs} <- lists:sort(maps:to_list(maps:get(requests,S,#{}))),not maps:get(K,current(S),false),F <- Fs]}.
+      requests => [#{key => K,from => F} || {K,Fs} <- lists:sort(maps:to_list(maps:get(requests,S,#{}))),not maps:get(K,current(S),false),F <- Fs]
+        ++ [maps:with([key,id,from,direction],Action) || Action <- maps:values(live_actions(S))]}.
 handle_call(consent,_,S) -> {reply,current(S),S};
+handle_call({request_action,Key,From,#{id := Id}=Action},_,S) ->
+    case effective_policy(Key,S) of
+        always -> {reply,ok,S};
+        no -> {reply,{error,refused},S};
+        ask ->
+            Actions=live_actions(S),
+            case map_size(Actions)>=8 orelse lists:any(fun(A) ->
+                maps:with([key,from],A)=:=#{key => Key,from => From}
+            end,maps:values(Actions)) of
+                true -> {reply,{error,busy},S};
+                false ->
+                    changed(),
+                    {reply,{error,waiting_for_approval},S#{actions => Actions#{Id => Action#{key => Key,from => From}}}}
+            end
+    end;
+handle_call({answer_action,Key,Id},_,S) ->
+    Actions=live_actions(S),
+    case maps:take(Id,Actions) of
+        {#{key := Key}=Action,Rest} ->
+            changed(),{reply,{ok,Action},S#{actions => Rest}};
+        _ -> {reply,{error,request_expired},S#{actions => Actions}}
+    end;
 handle_call({request,Key,From},_,S) when is_binary(From) ->
     case lists:member(Key,?PROTECTED++?ANSWERS) of
         false -> {reply,{error,invalid_configuration},S};
@@ -162,7 +187,8 @@ handle_call({preset,Name,Options},From,S) ->
     case lists:member(Name,?PRESETS) of
         false -> {reply,{error,invalid_configuration},S};
         true ->
-            V=preset_values(Name),Auto=maps:get(auto_accept,V),Choices=case maps:get(choices,V) of keep -> maps:get(choices,S,#{});C -> C end,
+            V=preset_values(Name),Auto=maps:get(auto_accept,V),Before=maps:get(choices,S,#{}),
+            Choices=case maps:get(choices,V) of keep -> Before;C -> maps:merge(C,maps:with([playback_control],Before)) end,
             Patch=preset_patch(V#{choices => Choices}),
             %% The barrier takes stops and grants as separate changes: stop first.
             Stops=maps:filter(fun(K,On) -> not On andalso maps:get(K,current(S),false) end,Patch),
@@ -194,7 +220,9 @@ handle_call({policy,Key,Value,Options},From,S) ->
                     {reply,ok,lists:foldl(fun(K,Acc) -> choose(K,Value,Acc) end,Next,Keys)};
                 Other -> Other
             end;
-        {true,_,true} -> {reply,ok,choose(Key,Value,S)};
+        {true,_,true} ->
+            Next=choose(Key,Value,S),
+            {reply,ok,Next#{actions => live_actions(Next)}};
         _ -> {reply,{error,invalid_configuration},S}
     end;
 handle_call(Command,_,S) ->
@@ -305,12 +333,20 @@ request_allowed(Key,S) ->
     end.
 
 %% Approval policy is evaluated here for both rights and resource requests.
+%% Playback control requires its own standing choice.
+effective_policy(playback_control,S) -> policy_of(playback_control,S);
 effective_policy(Key,S) ->
     Override=case lists:member(Key,?GRANTS) of
         true -> maps:get(auto_grant,S,false);
         false -> auto(S)
     end,
     case Override of true -> always;false -> policy_of(Key,S) end.
+
+live_actions(S) ->
+    Now=erlang:monotonic_time(millisecond),
+    maps:filter(fun(_,#{key := Key,deadline := Until}) ->
+        Until>Now andalso effective_policy(Key,S)=:=ask
+    end,maps:get(actions,S,#{})).
 
 %% Rights requests already live on the signed Session board. Resource requests
 %% live in Device settings until answered; do not duplicate board entries here.

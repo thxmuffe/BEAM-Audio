@@ -146,7 +146,7 @@ view(Snap) ->
     Handler=#{<<"audio">> => maps:map(fun(_,R) when is_map(R) -> maps:with([<<"state">>,<<"error">>],R);(_,R) -> R end,
                                       maps:get(<<"audio">>,maps:get(<<"handler">>,Snap,#{}),#{}))},
     Audio0=maps:get(<<"audio">>,Snap,#{}),
-    Audio=#{<<"offers">> => [maps:with([<<"device">>,<<"source_key">>],O) || O <- maps:get(<<"offers">>,Audio0,[]),is_map(O)],
+    Audio=#{<<"offers">> => [maps:with([<<"device">>,<<"source_key">>,<<"incarnation">>,<<"paused">>],O) || O <- maps:get(<<"offers">>,Audio0,[]),is_map(O)],
             <<"subscriptions">> => maps:map(fun(_,I) when is_map(I) -> maps:with([<<"state">>,<<"device">>,<<"playing">>],I);(_,I) -> I end,
                                            maps:get(<<"subscriptions">>,Audio0,#{}))},
     Managed=maps:with([<<"name">>],maps:get(<<"managed">>,Snap,#{})),

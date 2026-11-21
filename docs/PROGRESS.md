@@ -1,5 +1,30 @@
 # Current implementation and validation
 
+## Experimental playback requests
+
+- Device menus offer Previous and Next for a visible system-audio broadcaster.
+  The requests are signed and addressed to that Device. Playback control
+  settings are Always, Ask and No, with Ask as the default. An approval
+  consumes one request. The broadcaster checks its current publication and
+  Session rights again before acting.
+- The macOS adapter targets Music when it is actively playing a finite track on
+  the captured output. The requester sees the result and available track title
+  in Chat. Other players and platforms currently have no adapter.
+- Core and DeviceWeb compilation, macOS syntax checks, AppleScript compilation,
+  40 isolated Erlang tests and 31 frontend tests passed. A pre-existing
+  catalogue test syntax error blocks the normal EUnit runner. Live Music,
+  macOS Automation permission and two-Device use still need validation.
+
+## Monitor mix gain
+
+- The terminal monitor shows the native mixer’s actual gain on each receiving
+  Device. Two contributing inputs give −6.0 dB and one gives 0.0 dB. The gain
+  is exposed through Inspect when the speaker measurement is fresh.
+- Core compilation, native syntax checks and 17 isolated diagnostics and
+  monitor tests passed. The normal EUnit command hit an unrelated syntax
+  error in the catalogue test after the merge. Live display needs rebuilt
+  receiving Devices and monitor.
+
 ## Faster reconnection after a network change
 
 - An authenticated replacement request on the same Subscription, source and

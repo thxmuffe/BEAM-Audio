@@ -9,12 +9,11 @@
 %%      exercise a Session right the requester holds approve automatically.
 %%   4. execute:      the caller acts only on an approved request.
 %%
-%% Each stage is evaluated per request against current state; no decision is
-%% remembered. A request waiting in Requests is not executed later: once the
-%% user allows the use, the requester's retry is a new request, checked again.
+%% Each stage is evaluated per request against current state. A resource grant
+%% permits future requests. An action approval consumes one pending request.
 %% No process, cache or network work is introduced by this module.
 -module(ba_device_request).
--export([authorize/3,approve/2]).
+-export([authorize/3,approve/2,approve/3]).
 
 %% Rights are the requester's Session permissions from installed policy.
 authorize(Op,Payload,Permissions) ->
@@ -31,6 +30,7 @@ required(<<"status.read">>,_) -> [status_read];
 required(<<"capabilities.read">>,_) -> [capabilities_read];
 required(<<"inspect.read">>,_) -> [capabilities_read];
 required(<<"stream.message">>,#{<<"kind">> := <<"subscribe">>}) -> [stream_subscribe];
+required(<<"session.request">>,#{<<"kind">> := <<"playback_step">>}) -> [stream_subscribe];
 %% Session requests, answered by the Device able to execute them (a grant holder,
 %% or the target of End). Anyone may ask for or give up a privilege.
 %% Microphone publishers need no on_air privilege, so all members may ask a
@@ -43,4 +43,8 @@ required(_,_) -> [].
 %% Every approval uses the same serialized Device settings owner.
 approve(Use,Requester) ->
     try ba_device_config:request(Use,Requester)
+    catch exit:_ -> {error,consent_required} end.
+
+approve(Use,Requester,Action) ->
+    try ba_device_config:request_action(Use,Requester,Action)
     catch exit:_ -> {error,consent_required} end.
