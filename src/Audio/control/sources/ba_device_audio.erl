@@ -89,7 +89,7 @@ reconcile(S) ->
                         [] -> #{state => case Playing of true -> running;false -> ready end}
                     end
             end,
-            Audio0=(maps:get(audio,Captured,#{}))#{speaker => Speaker#{meter => maps:get(receive_meter,NextView,#{})}},
+            Audio0=(maps:get(audio,Captured,#{}))#{speaker => Speaker},
             Audio=case maps:get(broadcast,Requested) andalso not OnAir of
                 true -> Audio0#{broadcast => #{state => waiting_for_privilege,error => <<"This Device needs the on-air privilege.">>}};
                 false -> Audio0

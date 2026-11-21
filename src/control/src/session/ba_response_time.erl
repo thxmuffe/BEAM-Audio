@@ -99,6 +99,10 @@ local_playback(Known,Active,Failed,#{active := Old,started := Previous,failed :=
             Revision=max(erlang:system_time(microsecond),maps:get(revision_playback,S)+1),
             Fields=#{<<"playing">> => Playing,<<"failed">> => Failed,<<"started">> => Started,<<"revision">> => Revision},
             publish(<<"playback">>,Fields),
+            case Playing=/=(Old=/=[]) of
+                true -> ba_audio_observer:request_levels();
+                false -> ok
+            end,
             reset_cadence(Started,Next#{revision_playback := Revision,playback_states :=
                 States#{Self => #{playing => Playing,failed => Failed,revision => Revision}}});
         false -> Next

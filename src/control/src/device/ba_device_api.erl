@@ -149,7 +149,11 @@ command(#{<<"method">> := <<"join_session">>, <<"invitation">> := Link}) ->
     case ba_session:join(Link) of ok -> ba_contacts:link(Link),ok;Other -> Other end;
 %% Live audio actions next to ON AIR; saved like every Device setting.
 command(#{<<"method">> := <<"microphone_live">>,<<"enabled">> := B}) when is_boolean(B) -> ba_settings:put(mic_live,B);
-command(#{<<"method">> := <<"speaker_mute">>,<<"muted">> := B}) when is_boolean(B) -> ba_settings:put(muted,B);
+command(#{<<"method">> := <<"speaker_mute">>,<<"muted">> := B}) when is_boolean(B) ->
+    Old=ba_settings:get(muted,false),
+    ok=ba_settings:put(muted,B),
+    case B=/=Old of true -> ba_audio_observer:request_levels();false -> ok end,
+    ok;
 %% The window's own state (which page is open) is a Device setting like the rest.
 command(#{<<"method">> := <<"ui_get">>}) -> {ok,ba_settings:get(ui,#{})};
 command(#{<<"method">> := <<"ui_set">>,<<"key">> := <<"view">>,<<"value">> := View}) ->

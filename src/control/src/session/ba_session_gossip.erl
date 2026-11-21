@@ -1,7 +1,7 @@
 %% Signed notes passed from neighbour to neighbour so they reach the whole
 %% Session without anyone knowing everyone (epidemic broadcast). A note is
 %% checked on each hop, forwarded once (by ID), and expires after two minutes.
-%% Kinds: on_air, measured Response time batches, and playback state changes.
+%% Includes playback state, Response time batches and on-demand meter updates.
 -module(ba_session_gossip).
 -export([note/6,note/7,check/3,expire/2]).
 -define(TTL,120).
@@ -29,6 +29,12 @@ check(Id,Packet,#{session := Session,invitation := Invitation}) ->
         Now = erlang:system_time(second),
         true = is_integer(At) andalso At > Now-?TTL andalso At =< Now+?SKEW,
         true = ba_session_passport:joined(Session,Author,Join,Invitation),
+        case Body of
+            #{<<"kind">> := <<"levels_interest">>} -> true=At>Now-5;
+            #{<<"kind">> := <<"levels">>,<<"sampled_at_ms">> := SampleAt} ->
+                true=At>Now-5, true=abs(SampleAt div 1000-At)=<1;
+            _ -> ok
+        end,
         {ok,Body}
     catch _:_ -> error end.
 
@@ -38,7 +44,18 @@ fields(<<"response">>,#{<<"count">> := N,<<"sum_ns">> := Sum}=F) when map_size(F
 fields(<<"playback">>,#{<<"playing">> := Playing,<<"failed">> := Failed,
     <<"started">> := Started,<<"revision">> := Rev}=F) when map_size(F)=:=4,
     is_boolean(Playing),is_boolean(Failed),is_boolean(Started),is_integer(Rev),Rev>0,
-    Rev=<9007199254740991, (not Started orelse Playing) -> ok.
+    Rev=<9007199254740991, (not Started orelse Playing) -> ok;
+fields(<<"levels_interest">>,F) when map_size(F)=:=0 -> ok;
+fields(<<"levels">>,#{<<"levels">> := Levels,<<"sampled_at_ms">> := Time}=F)
+        when map_size(F)=:=2,is_integer(Time),Time>0,Time=<9007199254740991,
+             is_map(Levels),map_size(Levels)>0,map_size(Levels)=<3 ->
+    maps:foreach(fun(Key,#{<<"peak_db">> := Peak,<<"rms_db">> := Rms,<<"meter_age_ms">> := Age}=Level) ->
+        true=lists:member(Key,[<<"speaker">>,<<"microphone">>,<<"broadcast">>]),
+        true=map_size(Level)=:=3,
+        true=is_number(Peak) andalso Peak>= -96 andalso Peak=<48,
+        true=is_number(Rms) andalso Rms>= -96 andalso Rms=<Peak,
+        true=is_integer(Age) andalso Age>=0 andalso Age=<1000
+    end,Levels),ok.
 
 %% Seen note IDs (Id => arrival second) older than a note's life are forgotten.
 expire(Seen,Now) -> maps:filter(fun(_,At) -> At > Now-2*?TTL end,Seen).

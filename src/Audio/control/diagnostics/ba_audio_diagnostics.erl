@@ -1,7 +1,7 @@
 %% Bounded, payload-free projection of existing local audio/clock observations.
 %% Cached by the Device Handler; remote reads never poll the audio processes.
 -module(ba_audio_diagnostics).
--export([snapshot/2,validate/1,trace/1,validate_trace/1,meters/1,validate_meters/1,options/0,configure/1,configure/2,validate_options/1,enabled/1]).
+-export([snapshot/2,validate/1,trace/1,validate_trace/1,validate_meters/1,options/0,configure/1,configure/2,validate_options/1,enabled/1]).
 %% Inspection has its own consent; observing existing state does not use
 %% microphone or speaker calibration. Never changes audio
 %% consent, packet targets or mandatory failure accounting.
@@ -108,14 +108,6 @@ setup_fields(#{setup := Setup},Acc) when is_map(Setup) ->
         end
     end,A2,[stun_urls,turn_urls]);
 setup_fields(_,Acc) -> Acc.
-meters(Audio) ->
-    case enabled(meters) of
-        false -> #{};
-        true ->
-            Pairs=[{<<"receive_max">>,maps:get(receive_meter,Audio,#{})},
-                {<<"output_submitted">>,maps:get(output_meter,maps:get(mixer,Audio,#{}),#{})}],
-            maps:from_list([{K,V} || {K,V} <- Pairs,maps:is_key(<<"peak_db">>,V)])
-    end.
 validate_meters(M) ->
     true=is_map(M) andalso map_size(M)=<2,
     maps:foreach(fun(K,E) ->

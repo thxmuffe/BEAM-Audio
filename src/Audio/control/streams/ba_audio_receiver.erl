@@ -50,6 +50,7 @@ handle_call({register,Pid},_,#{sources := Sources} = S) when is_pid(Pid),node(Pi
         false = maps:is_key(Key,Sources),
         _ = ba_audio_stream_protocol:offer(Key,maps:get(incarnation,Offer),Offer),
         Ref = monitor(process,Pid),Entry = #{pid => Pid,monitor => Ref,offer => Offer},
+        case map_size(Sources) of 0 -> ba_audio_observer:request_levels();_ -> ok end,
         {reply,ok,announce_catalog(S#{sources := Sources#{Key => Entry}})}
     catch throw:on_air_required -> {reply,{error,on_air_required},S};
           _:_ -> {reply,{error,invalid_or_duplicate_publication},S} end;

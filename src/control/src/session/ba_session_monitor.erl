@@ -11,13 +11,35 @@ configure(Device,Options) ->
     end.
 snapshot(#{metrics := Metrics,plain := Plain}) when is_boolean(Metrics),is_list(Plain),length(Plain)=<32 ->
     Local=ba_app_session:snapshot(),Session=maps:get(session,Local),Self=maps:get(device,Local),
+    case Metrics andalso maps:get(state,Session)=:=authorized of
+        true -> ba_audio_observer:request_levels();
+        false -> ok
+    end,
     %% An explicit observer reads the Devices it knows plus the ones Reception
     %% reports reachable; reading them is how it bumps into them.
     Peers=lists:usort([Self|maps:get(members,Session,[])++maps:get(participants,Session,[])]),Parent=self(),Ref=make_ref(),
     Workers=[{Peer,ba_session_scope:spawn_monitor(fun() -> Parent ! {Ref,Peer,read(Peer,Self,Metrics andalso not lists:member(Peer,Plain))} end)} || Peer <- Peers],
-    Rows=collect(Workers,Ref,erlang:monotonic_time(millisecond)+6500,[]),
+    ReadRows=collect(Workers,Ref,erlang:monotonic_time(millisecond)+6500,[]),
+    Rows=case Metrics of
+        true ->
+            Levels=ba_audio_observer:session_levels(),
+            Known=maps:from_list([{maps:get(id,Row),Row} || Row <- ReadRows]),
+            Ids=lists:usort(maps:keys(Known)++maps:keys(Levels)),
+            [meter_row(maps:get(Id,Known,#{id => Id,state => observed}),maps:get(Id,Levels,#{})) || Id <- Ids];
+        false -> ReadRows
+    end,
     #{session => Session,device => Self,clock => maps:get(clock,Local),devices => [named(Row,maps:get(contacts,Local)) || Row <- Rows],
       state => maps:get(state,Session),observed_at_ms => erlang:system_time(millisecond)}.
+meter_row(Row,Levels) when map_size(Levels)=:=0 -> Row;
+meter_row(Row,Levels) ->
+    Caps=maps:get(capabilities,Row,#{}),Audio=maps:get(<<"audio">>,Caps,#{}),
+    Updated=maps:fold(fun(Key,Level,Acc) ->
+        Entry=maps:get(Key,Acc,#{<<"state">> => <<"observed">>}),
+        Stage=case Key of <<"speaker">> -> <<"output_submitted">>;_ -> <<"capture">> end,
+        Acc#{Key => maps:merge(Entry,Level#{<<"meter_stage">> => Stage})}
+    end,Audio,Levels),
+    Row#{capabilities => Caps#{<<"audio">> => Updated}}.
+
 named(#{id := Id}=Row,#{contacts := Contacts}) ->
     Caps=maps:get(capabilities,Row,#{}),
     case maps:get(<<"device_name">>,Caps,maps:get(Id,Contacts,<<>>)) of

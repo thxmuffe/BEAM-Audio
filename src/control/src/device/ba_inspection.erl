@@ -10,7 +10,15 @@ chunk_size() -> ?MAX.
 capabilities(false,_) -> {ok,ba_device_handler:capabilities(false)};
 capabilities(true,Requester) ->
     case ba_device_request:approve(inspect,Requester) of
-        ok -> {ok,ba_device_handler:capabilities(true)};
+        ok when Requester=:=<<"local">> -> {ok,ba_device_handler:capabilities(true)};
+        ok ->
+            Caps=ba_device_handler:capabilities(true),
+            case maps:find(<<"audio">>,Caps) of
+                {ok,Rows} -> {ok,Caps#{<<"audio">> := maps:map(fun(_,Row) ->
+                    maps:without([<<"peak_db">>,<<"rms_db">>,<<"meter_age_ms">>,<<"meter_stage">>],Row)
+                end,Rows)}};
+                error -> {ok,Caps}
+            end;
         Error -> Error
     end.
 validate_request(P) ->

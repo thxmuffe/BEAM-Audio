@@ -27,7 +27,9 @@ handle_continue(resolve_label,#{instance := Instance}=S) ->
 handle_call(capability_metrics,_,S) -> {reply,capability_metrics(S),S};
 handle_call(capabilities,_,S) -> {reply,capability_snapshot(S),S};
 handle_call(status,_,S) ->
-    {reply,#{capabilities => capability_snapshot(S),monitor => capability_metrics(S),audio => app_audio(S)},S};
+    Audio=app_audio(S),
+    MonitorAudio=maps:map(fun(_,Row) -> maps:remove(meter,Row) end,Audio),
+    {reply,#{capabilities => capability_snapshot(S),monitor => capability_metrics(S,MonitorAudio),audio => Audio},S};
 handle_call(_,_,S) -> {reply,{error,unsupported},S}.
 handle_cast(audio_changed,#{audio_worker := P}=S) -> ba_device_audio:changed(P),{noreply,changed(S)};
 handle_cast(_,S) -> {noreply,S}.
@@ -82,22 +84,26 @@ no_worker_speaker(Mixer) ->
 %% What the app window shows: the Worker's rows, or the explicit no-Worker speaker.
 app_audio(S) ->
     Audio=maps:get(audio,S,#{}),
-    case maps:is_key(speaker,Audio) orelse ba_settings:app(audio_automation,false) of
+    Rows=case maps:is_key(speaker,Audio) orelse ba_settings:app(audio_automation,false) of
         true -> Audio;
         false -> Audio#{speaker => no_worker_speaker(maps:get(mixer,maps:get(audio_view,S,#{}),#{}))}
-    end.
-capability_metrics(S) ->
-    View=maps:get(audio_view,S,#{}),
-    Mixer=maps:get(mixer,View,#{}),
-    Speaker=maps:get(speaker,maps:get(audio,S,#{}),no_worker_speaker(Mixer)),
-    OutputMeter=maps:get(output_meter,Mixer,#{}),
-    Meter=case map_size(OutputMeter) of 0 -> maps:get(receive_meter,View,#{});_ -> OutputMeter end,
-    Audio=(maps:get(audio,S,#{}))#{speaker => Speaker#{meter => Meter}},
-    MetricsState=S#{audio => Audio},
-    Named0=capability_snapshot(MetricsState),
-    Named=case ba_audio_diagnostics:enabled(meters) of
-        true -> Named0#{<<"audio_meters">> => ba_audio_diagnostics:meters(View)};false -> Named0
     end,
+    Levels=maps:get(levels,maps:get(audio_view,S,#{}),#{}),
+    Now=erlang:monotonic_time(millisecond),
+    Elapsed=max(0,Now-maps:get(audio_observed_at,S,Now)),
+    maps:fold(fun(Key,Level,Acc) ->
+        case Level of
+            #{peak_db := Peak,rms_db := Rms,meter_age_ms := Age} when Age+Elapsed=<1000 ->
+                Stage=case Key of speaker -> <<"output_submitted">>;_ -> <<"capture">> end,
+                Meter=#{<<"peak_db">> => Peak,<<"rms_db">> => Rms,<<"meter_age_ms">> => Age+Elapsed,<<"meter_stage">> => Stage},
+                Default=#{state => running},
+                Acc#{Key => (maps:get(Key,Acc,Default))#{meter => Meter}};
+            _ -> Acc
+        end
+    end,Rows,Levels).
+capability_metrics(S) -> capability_metrics(S,app_audio(S)).
+capability_metrics(S,Audio) ->
+    Named=capability_snapshot(S#{audio => Audio}),
     SampleAge=case maps:find(audio_observed_at,S) of
         {ok,At} -> #{<<"diagnostics.age_ms">> => max(0,erlang:monotonic_time(millisecond)-At)};
         error -> #{}
@@ -112,7 +118,7 @@ capability_metrics(S) ->
     case maps:find(<<"audio">>,WithTrace) of
         error -> WithTrace;
         {ok,WireAudio} -> WithTrace#{<<"audio">> := maps:map(fun(K,Entry) ->
-            %% Every consent key, including calibration and DSP; K came from atom_to_binary above.
+            %% K is one of the three audio capability keys.
             Key=binary_to_existing_atom(K),
             Row=maps:get(Key,Audio,#{}),
             EntryMeter=case ba_audio_diagnostics:enabled(meters) of true -> maps:get(meter,Row,#{});false -> #{} end,

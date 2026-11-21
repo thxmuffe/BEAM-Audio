@@ -76,6 +76,32 @@ playback_and_response_gossip_are_signed_and_validated_test() ->
     ?assertMatch({ok,#{<<"playing">> := true,<<"started">> := true}},ba_session_gossip:check(PId,PlaybackPacket,Ctx)),
     ?assertError(function_clause,ba_session_gossip:note(Session,Asker,Join,<<"playback">>,Playback#{<<"playing">> := false},AK)).
 
+only_the_first_copy_of_meter_interest_reaches_the_observer_test() ->
+    {Session,InvKey,#{invitation := Invitation},P,{Holder,_},{Asker,AK}}=setup(),
+    Join=ba_session_passport:join(Session,Asker,InvKey),
+    {Id,Packet}=ba_session_gossip:note(Session,Asker,Join,<<"levels_interest">>,#{},AK),
+    Note=#{<<"kind">> => <<"note">>,<<"id">> => Id,<<"packet">> => Packet},
+    State=#{state => authorized,id => Holder,session => Session,invitation => Invitation,
+        policy => P#{<<"removed">> => []},seen => #{},reachable => #{},encountered => [],rejected => 0},
+    true=register(ba_audio_observer,self()),
+    try
+        {noreply,Next}=ba_session_membership:handle_cast({session_request,<<"first">>,Note},State),
+        ?assertMatch(#{seen := #{Id := _}},Next),
+        ?assertEqual({noreply,Next},ba_session_membership:handle_cast({session_request,<<"second">>,Note},Next)),
+        receive {'$gen_cast',levels_interest} -> ok after 0 -> ?assert(false) end,
+        receive {'$gen_cast',levels_interest} -> ?assert(false) after 0 -> ok end
+    after unregister(ba_audio_observer) end.
+
+meter_note_round_trips_without_binding_to_a_request_test() ->
+    {Session,InvKey,Ctx,_,_,{Asker,AK}}=setup(),
+    Join=ba_session_passport:join(Session,Asker,InvKey),
+    Level=#{<<"peak_db">> => -3.0,<<"rms_db">> => -6.0,<<"meter_age_ms">> => 20},
+    Fields=#{<<"sampled_at_ms">> => erlang:system_time(millisecond),<<"levels">> => #{<<"speaker">> => Level}},
+    {Id,Packet}=ba_session_gossip:note(Session,Asker,Join,<<"levels">>,Fields,AK),
+    ?assertMatch({ok,#{<<"levels">> := #{<<"speaker">> := Level}}},ba_session_gossip:check(Id,Packet,Ctx)),
+    ?assertError({badmatch,false},ba_session_gossip:note(Session,Asker,Join,<<"levels">>,
+        Fields#{<<"levels">> := #{<<"incorrect">> => Level}},AK)).
+
 %% A granted request stays answered even after the privilege is taken back.
 granted_request_stays_closed_test() ->
     {Session,InvKey,Ctx,P,{Holder,HK},{Asker,AK}}=setup(),

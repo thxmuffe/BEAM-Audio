@@ -212,6 +212,7 @@ handle_cast({announce,NoteId,Kind,Fields},#{state := authorized,id := Id}=S) ->
         {NoteId,Packet} ->
             Note = #{<<"kind">> => <<"note">>,<<"id">> => NoteId,<<"packet">> => Packet},
             ba_session_control:session_request(contacts(S),Note),
+            case Kind of <<"levels_interest">> -> ba_audio_observer:levels_interest();_ -> ok end,
             {noreply,S#{seen := (maps:get(seen,S))#{NoteId => erlang:system_time(second)}}}
     catch _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
     end;
@@ -284,6 +285,8 @@ session_request(Peer,#{<<"kind">> := <<"note">>,<<"id">> := NoteId,<<"packet">> 
                 {<<"on_air">>,false} -> notify_audio({on_air_announced,Author});
                 {<<"response">>,false} -> ba_response_time:reported(NoteId,Body);
                 {<<"playback">>,false} -> ba_response_time:remote_playback(Author,Body);
+                {<<"levels_interest">>,false} -> ba_audio_observer:levels_interest();
+                {<<"levels">>,false} -> ba_audio_observer:reported_levels(Author,Body);
                 _ -> ok
             end,
             [ba_session_control:session_request([D],Note) || D <- contacts(S),D=/=Peer,D=/=Author],

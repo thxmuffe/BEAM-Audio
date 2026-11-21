@@ -29,6 +29,37 @@ render_missing_levels_is_not_silence_test() ->
     ?assertNotEqual(nomatch,binary:match(Text,<<"running">>)).
 
 
+gossiped_levels_keep_the_last_observation_for_each_signal_test() ->
+    Speaker=#{<<"peak_db">> => -9.0,<<"rms_db">> => -14.0,<<"meter_age_ms">> => 10},
+    Mic=Speaker#{<<"peak_db">> := -3.0},
+    Report=fun(Time,Levels,S) -> ba_audio_observer:handle_cast({reported_levels,<<"peer">>,
+        #{<<"sampled_at_ms">> => Time,<<"levels">> => Levels}},S) end,
+    {noreply,S1}=Report(20,#{<<"speaker">> => Speaker},#{}),
+    {noreply,S2}=Report(21,#{<<"microphone">> => Mic},S1),
+    ?assertEqual({noreply,S2},Report(19,#{<<"speaker">> => Mic},S2)),
+    {reply,Levels,_}=ba_audio_observer:handle_call(session_levels,undefined,S2),
+    ?assertMatch(#{<<"peer">> := #{<<"speaker">> := #{<<"peak_db">> := -9.0},
+        <<"microphone">> := #{<<"peak_db">> := -3.0}}},Levels).
+
+native_levels_have_one_row_per_signal_test() ->
+    Level=fun(Peak,Age) -> #{peak_db => Peak,rms_db => Peak-3,meter_age_ms => Age} end,
+    S=#{instance => binary:copy(<<"A">>,32),revision => 0,audio_view => #{levels =>
+        #{microphone => Level(-6.0,0),speaker => Level(-12.0,0),broadcast => Level(-18.0,0)}}},
+    ba_test_consent:with(#{inspect => true},fun() ->
+        {reply,Local,_}=ba_device_handler:handle_call(status,undefined,S),
+        ?assertMatch(#{microphone := #{meter := #{<<"peak_db">> := -6.0}},
+            speaker := #{meter := #{<<"peak_db">> := -12.0,<<"meter_stage">> := <<"output_submitted">>}},
+            broadcast := #{meter := #{<<"peak_db">> := -18.0}}},maps:get(audio,Local)),
+        {reply,Metrics,_}=ba_device_handler:handle_call(capability_metrics,undefined,S),
+        ?assertNot(maps:is_key(<<"audio_meters">>,Metrics)),
+        ?assertMatch(#{<<"microphone">> := #{<<"peak_db">> := -6.0},<<"speaker">> := #{<<"peak_db">> := -12.0},
+            <<"broadcast">> := #{<<"peak_db">> := -18.0}},maps:get(<<"audio">>,Metrics)),
+        ?assertNot(maps:is_key(<<"peak_db">>,maps:get(<<"speaker">>,
+            maps:get(<<"audio">>,maps:get(monitor,Local))))),
+        {reply,Expired,_}=ba_device_handler:handle_call(status,undefined,S#{audio_observed_at => erlang:monotonic_time(millisecond)-1001}),
+        ?assertNot(maps:is_key(meter,maps:get(speaker,maps:get(audio,Expired),#{})))
+    end).
+
 normal_capabilities_include_label_but_not_metrics_test() ->
     OldName=os:getenv("BA_DEVICE_NAME"),os:putenv("BA_DEVICE_NAME","Test Device"),
     Old=application:get_env(ba_core,audio_automation),application:set_env(ba_core,audio_automation,true),
