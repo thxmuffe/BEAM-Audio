@@ -1,9 +1,8 @@
 %% Local app boundary. Consent is device-local; no remote caller can enable it.
 -module(ba_app_session).
 -export([configure/0,configure/1,consent/0,capability/2,snapshot/0,exclude/2,excluded/1,contract/3]).
--ifdef(TEST).
+%% Also read by ba_device_handler: what this Device takes requests for.
 -export([unavailable_capabilities/0]).
--endif.
 configure() ->
     case ba_settings:env("BA_PLATFORM") of
         "mac" -> application:set_env(ba_core,restore_session_on_start,true),configure(#{platform => mac});
