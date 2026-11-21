@@ -51,11 +51,11 @@ network_hints_preserve_clock_acquisition_and_live_media_test() ->
                     {noreply,Next}=ba_audio_receiver:handle_cast(network_changed,Acc),Next
                 end,Before,lists:seq(1,3)),
                 ?assertEqual(Clock,status()),?assertEqual(undefined,get(test_resync)),
-                ?assertEqual(maps:remove(poll_at,Before),maps:remove(poll_at,After)),
+                ?assertEqual(maps:remove(link_due,Before),maps:remove(link_due,After)),
                 ?assert(is_process_alive(Media)),no_attempt(),
                 {noreply,_}=ba_audio_receiver:handle_info(tick,After),
-                receive {attempt,_,#{<<"kind">> := <<"catalog.read">>}} -> ok
-                    after 1000 -> error(no_discovery_refresh) end,
+                receive {introduction,Peer} -> ok
+                    after 1000 -> error(no_subscription_keepalive) end,
                 ?assert(is_process_alive(Media)),no_attempt()
             end,[acquiring,synchronized])
         after
@@ -68,6 +68,7 @@ fixture(Fun) ->
     I = ba_subscription_tests:intent(<<"music">>),Id = maps:get(id,I),Peer = maps:get(device,I),
     Context = #{peer => Peer,link => binary:copy(<<"D">>,32),session => maps:get(session,I),deadline => erlang:monotonic_time(millisecond)+10000},
     Parent = self(),Control = spawn(fun() -> (fun Loop(Result) -> receive
+        {'$gen_cast',{introduce,P}} -> Parent ! {introduction,P},Loop(Result);
         {'$gen_call',From,{audio_context,_}} -> gen_server:reply(From,{ok,Context}),Loop(Result);
         {'$gen_call',From,{audio_message,_,Request,P}} -> Parent ! {attempt,Request,P},gen_server:reply(From,Result),Loop(Result);
         {test_send_result,Next} -> Loop(Next)
@@ -80,7 +81,8 @@ fixture(Fun) ->
     S = #{subscriptions => #{Id => R},offers => #{{Peer,<<"music">>} => #{incarnation => binary:copy(<<"E">>,32),profiles => #{channel => D}}},
         contracts => #{{receive_audio,Peer,<<"music">>} => #{id => binary:copy(<<"C">>,32),revision => 1}},
         suspended => false,resume_after => 100,sources => #{},providers => #{},
-        catalogs => #{},poll_at => erlang:monotonic_time(millisecond)+10000},
+        catalogs => #{},poll_at => erlang:monotonic_time(millisecond)+10000,
+        publication_versions => #{},link_due => erlang:monotonic_time(millisecond)+10000},
     try Fun(S,Id) after
         exit(Control,kill),unregister_if_present(ba_session_control),
         case OldPort of false -> os:unsetenv("BA_AUDIO_ENGINE");_ -> os:putenv("BA_AUDIO_ENGINE",OldPort) end,

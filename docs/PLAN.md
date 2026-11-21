@@ -123,7 +123,8 @@ does not establish a working integration baseline.
   through Reception (a sticky random sample of at most 32 neighbours). The
   request board is a signed grow-only log each Device keeps, synced on contact
   and passed to neighbours; grant holders answer with signed granted/declined
-  entries. ON AIR spreads as signed gossip notes. Every Session message is
+  entries. Signed audio publication notes include the descriptor or withdraw
+  it. Every Session message is
   sealed end to end (ChaCha20-Poly1305, key from the link secret). Gossip
   carries measured Response times for display. Each Device reads UTC itself.
   Still to do: listeners relaying streams for very large Sessions, and

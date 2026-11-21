@@ -6,9 +6,6 @@
 wire_profile() -> ?WIRE_PROFILE.
 validate(#{<<"kind">> := K} = P) ->
     case K of
-        <<"catalog.read">> -> ba_session_passport:exact(P,[<<"kind">>]);
-        <<"catalog.changed">> -> ba_session_passport:exact(P,[<<"kind">>]);
-        <<"catalog.end">> -> ba_session_passport:exact(P,[<<"kind">>]);
         <<"catalog.offer">> ->
             ba_session_passport:exact(P,[<<"kind">>,<<"source">>,<<"incarnation">>,<<"name">>,<<"rate">>,<<"channels">>,<<"format">>,<<"clock">>,<<"paused">>,<<"transport">>]),
             identity(P),text(maps:get(<<"name">>,P),128),

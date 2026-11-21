@@ -220,7 +220,10 @@ handle_cast({announce,NoteId,Kind,Fields},#{state := authorized,id := Id}=S) ->
         {NoteId,Packet} ->
             Note = #{<<"kind">> => <<"note">>,<<"id">> => NoteId,<<"packet">> => Packet},
             ba_session_control:session_request(contacts(S),Note),
-            case Kind of <<"levels_interest">> -> ba_audio_observer:levels_interest();_ -> ok end,
+            case Kind=:=<<"levels_interest">> orelse maps:get(<<"refresh_levels">>,Fields,false) of
+                true -> ba_audio_observer:levels_interest();
+                false -> ok
+            end,
             {noreply,S#{seen := (maps:get(seen,S))#{NoteId => erlang:system_time(second)}}}
     catch _:_ -> {noreply,S#{rejected := maps:get(rejected,S)+1}}
     end;
@@ -290,7 +293,13 @@ session_request(Peer,#{<<"kind">> := <<"note">>,<<"id">> := NoteId,<<"packet">> 
             {ok,#{<<"kind">> := Kind,<<"author">> := Author}=Body} = ba_session_gossip:check(NoteId,Packet,board_context(S)),
             false = lists:member(Author,removed(S)),
             case {Kind,Author=:=Id} of
-                {<<"on_air">>,false} -> notify_audio({on_air_announced,Author});
+                {<<"publication">>,false} ->
+                    notify_audio({publication,Author,Body}),
+                    case maps:get(<<"refresh_levels">>,Body) andalso ba_session_privileges:may_publish(
+                            permissions(Author,maps:get(policy,S)),maps:get(<<"source">>,Body)) of
+                        true -> ba_audio_observer:levels_interest();
+                        false -> ok
+                    end;
                 {<<"response">>,false} -> ba_response_time:reported(NoteId,Body);
                 {<<"playback">>,false} -> ba_response_time:remote_playback(Author,Body);
                 {<<"levels_interest">>,false} -> ba_audio_observer:levels_interest();

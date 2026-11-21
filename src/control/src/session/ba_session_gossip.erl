@@ -30,6 +30,7 @@ check(Id,Packet,#{session := Session,invitation := Invitation}) ->
         true = is_integer(At) andalso At > Now-?TTL andalso At =< Now+?SKEW,
         true = ba_session_passport:joined(Session,Author,Join,Invitation),
         case Body of
+            #{<<"kind">> := <<"publication">>} -> true=At>Now-30;
             #{<<"kind">> := <<"levels_interest">>} -> true=At>Now-5;
             #{<<"kind">> := <<"levels">>,<<"sampled_at_ms">> := SampleAt} ->
                 true=At>Now-5, true=abs(SampleAt div 1000-At)=<1;
@@ -38,7 +39,14 @@ check(Id,Packet,#{session := Session,invitation := Invitation}) ->
         {ok,Body}
     catch _:_ -> error end.
 
-fields(<<"on_air">>,F) when map_size(F)=:=0 -> ok;
+fields(<<"publication">>,#{<<"source">> := Source,<<"revision">> := Revision,
+        <<"offer">> := Offer,<<"refresh_levels">> := Refresh}=F)
+        when map_size(F)=:=4,is_binary(Source),byte_size(Source)>0,byte_size(Source)=<128,
+             is_integer(Revision),Revision>0,Revision=<9007199254740991,is_boolean(Refresh) ->
+    case Offer of
+        null when not Refresh -> ok;
+        #{<<"source">> := Source,<<"kind">> := <<"catalog.offer">>} -> ba_audio_stream_protocol:validate(Offer)
+    end;
 fields(<<"response">>,#{<<"count">> := N,<<"sum_ns">> := Sum}=F) when map_size(F)=:=2,
     is_integer(N),N>0,N=<1000000,is_integer(Sum),Sum>=0,Sum=<9007199254740991 -> ok;
 fields(<<"playback">>,#{<<"playing">> := Playing,<<"failed">> := Failed,

@@ -58,10 +58,11 @@ envelope_round_trip_and_session_binding_test() ->
 gossip_note_test() ->
     {Session,InvKey,Ctx,_,_,{Asker,AK}}=setup(),
     Join=ba_session_passport:join(Session,Asker,InvKey),
-    {Id,Packet}=ba_session_gossip:note(Session,Asker,Join,<<"on_air">>,#{},AK),
-    ?assertMatch({ok,#{<<"author">> := Asker,<<"kind">> := <<"on_air">>}},ba_session_gossip:check(Id,Packet,Ctx)),
+    Fields=#{<<"source">> => <<"microphone">>,<<"revision">> => 1,<<"offer">> => null,<<"refresh_levels">> => false},
+    {Id,Packet}=ba_session_gossip:note(Session,Asker,Join,<<"publication">>,Fields,AK),
+    ?assertMatch({ok,#{<<"author">> := Asker,<<"kind">> := <<"publication">>}},ba_session_gossip:check(Id,Packet,Ctx)),
     ?assertEqual(error,ba_session_gossip:check(Id,Packet,Ctx#{session := binary:copy(<<"B">>,32)})),
-    {Bad,BadPacket}=ba_session_gossip:note(Session,Asker,binary:copy(<<"0">>,128),<<"on_air">>,#{},AK),
+    {Bad,BadPacket}=ba_session_gossip:note(Session,Asker,binary:copy(<<"0">>,128),<<"publication">>,Fields,AK),
     ?assertEqual(error,ba_session_gossip:check(Bad,BadPacket,Ctx)).
 
 playback_and_response_gossip_are_signed_and_validated_test() ->
