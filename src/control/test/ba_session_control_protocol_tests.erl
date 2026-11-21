@@ -403,3 +403,10 @@ session_requests_are_signed_requests_test() ->
          #{<<"kind">> => <<"rename_request">>,<<"name">> => <<>>},
          #{<<"kind">> => <<"remove_request">>,<<"device">> => <<"x">>},
          End#{<<"extra">> => true},#{<<"kind">> => <<"rpc">>}]].
+
+%% Previous, next and play/pause are the only playback requests.
+playback_directions_test() ->
+    Inc=binary:copy(<<"A">>,32),
+    Step=fun(D) -> ba_playback_control:validate(#{<<"kind">> => <<"playback_step">>,<<"direction">> => D,<<"incarnation">> => Inc}) end,
+    [?assertEqual(ok,Step(D)) || D <- [<<"previous">>,<<"next">>,<<"playpause">>]],
+    ?assertError(_,Step(<<"stop">>)).

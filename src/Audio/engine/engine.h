@@ -33,7 +33,8 @@ struct Shell {
     // rate; frames arrive through ba_engine_capture(slot, ...).
     virtual uint32_t start_capture(int slot, const std::string &source) = 0;
     virtual void stop_capture(int slot) = 0;
-    virtual json playback_step(bool) { return {{"status", "unsupported"}}; }
+    // direction: "previous", "next" or "playpause".
+    virtual json playback_step(const std::string &) { return {{"status", "unsupported"}}; }
 };
 
 // Port program (macOS, Windows, Linux): serves Erlang on stdin/stdout as OTP

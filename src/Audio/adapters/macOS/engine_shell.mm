@@ -310,8 +310,10 @@ class MacShell final : public ba::Shell {
         captures_.erase(it);
     }
 
-    ba::json playback_step(bool next) override {
+    ba::json playback_step(const std::string &direction) override {
         @autoreleasepool {
+            // Play/pause also works while paused; track steps need a playing track.
+            const bool toggle = direction == "playpause";
             bool music_captured = false;
             for (const auto &[slot, capture] : captures_) {
                 if (capture->tap != kAudioObjectUnknown && music_on_output(capture->tapped_output)) {
@@ -319,16 +321,17 @@ class MacShell final : public ba::Shell {
                     break;
                 }
             }
-            if (!music_captured) return {{"status", "no_playable_track"}};
+            // Paused Music is not on any output, so resuming needs only a running broadcast.
+            if (!music_captured && !(toggle && !captures_.empty())) return {{"status", "no_playable_track"}};
 
             // Only fixed AppleScript commands are used. Network text never
             // becomes AppleScript or an application identifier.
-            NSString *command = next ? @"next track" : @"previous track";
+            NSString *command = toggle ? @"playpause" : direction == "next" ? @"next track" : @"previous track";
             NSString *source = [NSString stringWithFormat:
                 @"if application \"/System/Applications/Music.app\" is not running then return {false, \"\"}\n"
                  "with timeout of 3 seconds\n"
                  "tell application \"/System/Applications/Music.app\"\n"
-                 "if player state is not playing then return {false, \"\"}\n"
+                 "%@"
                  "if class of current track is URL track then return {false, \"\"}\n"
                  "if duration of current track is less than or equal to 0 then return {false, \"\"}\n"
                  "%@\n"
@@ -337,7 +340,7 @@ class MacShell final : public ba::Shell {
                  "end try\n"
                  "return {true, \"\"}\n"
                  "end tell\n"
-                 "end timeout", command];
+                 "end timeout", toggle ? @"" : @"if player state is not playing then return {false, \"\"}\n", command];
             NSDictionary *error = nil;
             NSAppleEventDescriptor *result = [[[NSAppleScript alloc] initWithSource:source] executeAndReturnError:&error];
             if (!result) {

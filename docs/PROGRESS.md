@@ -3235,3 +3235,24 @@ are not all confirmed product defects. Apple tests were not executed here.
   membership and reconnect smoke tests (updated for the new Kick) need the
   Reception service compiled. The full EUnit run is blocked by an unrelated
   syntax error in `ba_audio_catalog_events_tests.erl` (`Key=<<"music">>`).
+
+## 2026-11-21 — Devices page holds the controls; three-state buttons; play/pause
+
+- The Devices page now runs: mic, speaker, ON AIR; Sessions; Response time
+  (moved from Settings); Previous, Play/pause, Next. The top bar keeps only the
+  requests bell and the Session selector.
+- Mic, speaker and ON AIR show their real state as disabled (greyed), closed
+  (no colour) or open (red for all three; the speaker was green). While heading
+  elsewhere the outer edge blinks in the target state's colour (red to open,
+  plain to close, grey to disable). New cases: stopping ON AIR or the mic shows
+  the open fill with a closing edge; a Settings change being confirmed shows a
+  grey edge. Pressing never disables.
+- Playback controls ask the Device broadcasting system audio in the current
+  Session. New `playpause` direction in `ba_playback_control`, the engine
+  command and the macOS Music adapter (resuming needs only a running
+  broadcast, since paused Music is on no output). Music's playing state is not
+  reported, so Play/pause is a one-shot toggle.
+- Verified: 38 WebApp Node tests, the headless browser test, 44 EUnit tests
+  (incl. new `playback_directions_test`), and a clang syntax check of the
+  engine and macOS shell. Not built or run: the native engine; Play/pause on a
+  real Mac with Music; the new layout has not been looked at.

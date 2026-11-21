@@ -168,8 +168,8 @@ struct Engine {
         if (op == "stop_capture") return stop_capture(c.at("ssrc"));
         if (op == "playback_step") {
             const std::string direction = c.at("direction");
-            if (direction != "next" && direction != "previous") fail("invalid playback direction");
-            return shell.playback_step(direction == "next");
+            if (direction != "next" && direction != "previous" && direction != "playpause") fail("invalid playback direction");
+            return shell.playback_step(direction);
         }
         if (op == "capture_index") {
             Sender *s = find_sender(c.at("ssrc"));

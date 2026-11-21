@@ -35,7 +35,7 @@ answer(Id,Allow) ->
 
 validate(#{<<"kind">> := <<"playback_step">>,<<"direction">> := Direction,<<"incarnation">> := Inc}=P) ->
     ba_session_passport:exact(P,[<<"kind">>,<<"direction">>,<<"incarnation">>]),
-    true=lists:member(Direction,[<<"previous">>,<<"next">>]),
+    true=lists:member(Direction,[<<"previous">>,<<"next">>,<<"playpause">>]),
     true=ba_hex:valid(Inc,32),ok;
 validate(#{<<"kind">> := <<"playback_result">>,<<"status">> := Status}=P) ->
     true=lists:member(Status,[<<"done">>,<<"waiting_for_approval">>,<<"declined">>,<<"refused">>,
@@ -124,14 +124,14 @@ track_text(Track) ->
         andalso is_list(unicode:characters_to_list(Track)).
 
 message(<<"done">>,Track) when is_binary(Track) -> <<"reports now playing: ",Track/binary>>;
-message(<<"done">>,_) -> <<"sent the track command to Music">>;
-message(<<"waiting_for_approval">>,_) -> <<"is waiting for approval to change track">>;
-message(<<"declined">>,_) -> <<"declined the track request">>;
+message(<<"done">>,_) -> <<"sent the playback command to Music">>;
+message(<<"waiting_for_approval">>,_) -> <<"is waiting for approval to control playback">>;
+message(<<"declined">>,_) -> <<"declined the playback request">>;
 message(<<"refused">>,_) -> <<"does not allow playback requests">>;
 message(<<"busy">>,_) -> <<"already has a playback request in progress">>;
 message(<<"unsupported">>,_) -> <<"does not support playback control on this platform">>;
 message(<<"no_playable_track">>,_) -> <<"has no supported Music track playing on the captured output">>;
 message(<<"automation_denied">>,_) -> <<"needs macOS Automation permission to control Music">>;
-message(<<"unavailable">>,_) -> <<"could not change track. Check that it is still broadcasting">>.
+message(<<"unavailable">>,_) -> <<"could not control playback. Check that it is still broadcasting">>.
 
 now_ms() -> erlang:monotonic_time(millisecond).
